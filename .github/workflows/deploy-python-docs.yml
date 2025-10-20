@@ -1,0 +1,101 @@
+name: Deploy MkDocs to GitHub Pages
+
+on:
+  release:
+    types: [published]  # Trigger when GitHub Release is published
+    # Release tag must match 'v*-python' (e.g., v25.9.1-python)
+  
+  # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy (e.g., 25.9.1 or dev)'
+        required: true
+        default: 'dev'
+      set_latest:
+        description: 'Set as latest version?'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: https://humemai.github.io/arcadedb/
+    defaults:
+      run:
+        working-directory: bindings/python
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for mike versioning
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install mkdocs-material mkdocs-git-revision-date-localized-plugin mike
+      
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Extract version from release tag or input
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            SET_LATEST="${{ github.event.inputs.set_latest }}"
+          else
+            # Extract version from release tag (v25.9.1-python -> 25.9.1)
+            TAG_NAME="${{ github.event.release.tag_name }}"
+            
+            # Verify tag matches v*-python pattern
+            if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-python$ ]]; then
+              echo "❌ Release tag must match 'v*-python' pattern (e.g., v25.9.1-python, got: $TAG_NAME)"
+              exit 1
+            fi
+            
+            # Strip 'v' prefix and '-python' suffix
+            VERSION="${TAG_NAME#v}"      # Remove 'v' prefix
+            VERSION="${VERSION%-python}" # Remove '-python' suffix
+            SET_LATEST="true"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "set_latest=$SET_LATEST" >> $GITHUB_OUTPUT
+          echo "📦 Deploying documentation version: $VERSION"
+      
+      - name: Deploy with mike (set as latest)
+        if: steps.version.outputs.set_latest == 'true'
+        run: |
+          mike deploy --push --update-aliases \
+            ${{ steps.version.outputs.version }} latest \
+            --title "${{ steps.version.outputs.version }} (latest)"
+          mike set-default --push latest
+      
+      - name: Deploy with mike (not latest)
+        if: steps.version.outputs.set_latest != 'true'
+        run: |
+          mike deploy --push \
+            ${{ steps.version.outputs.version }} \
+            --title "${{ steps.version.outputs.version }}"
