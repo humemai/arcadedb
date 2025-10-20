@@ -67,12 +67,12 @@ jobs:
             VERSION="${{ github.event.inputs.version }}"
             SET_LATEST="${{ github.event.inputs.set_latest }}"
           else
-            # Extract version from release tag (v25.9.1-python -> 25.9.1)
+            # Extract version from release tag (v25.9.1-python -> 25.9.1 or v25.9.1.1-python -> 25.9.1.1)
             TAG_NAME="${{ github.event.release.tag_name }}"
             
-            # Verify tag matches v*-python pattern
-            if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-python$ ]]; then
-              echo "❌ Release tag must match 'v*-python' pattern (e.g., v25.9.1-python, got: $TAG_NAME)"
+            # Verify tag matches v*-python pattern (allows optional 4th version number)
+            if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?-python$ ]]; then
+              echo "❌ Release tag must match 'v*-python' pattern (e.g., v25.9.1-python or v25.9.1.1-python, got: $TAG_NAME)"
               exit 1
             fi
             
