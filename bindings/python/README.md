@@ -8,15 +8,15 @@ Native Python bindings for ArcadeDB - the multi-model database that supports Gra
 
 ## 📚 Documentation
 
-**[📖 Read the Full Documentation →](https://humemai.github.io/arcadedb/)**
+**[📖 Read the Full Documentation →](https://humemai.github.io/arcadedb/latest)**
 
 Quick links:
-- [Installation Guide](https://humemai.github.io/arcadedb/getting-started/installation/)
-- [Quick Start Tutorial](https://humemai.github.io/arcadedb/getting-started/quickstart/)
-- [Distribution Comparison](https://humemai.github.io/arcadedb/getting-started/distributions/)
-- [User Guide](https://humemai.github.io/arcadedb/guide/core/database/)
-- [API Reference](https://humemai.github.io/arcadedb/api/database/)
-- [Examples](https://humemai.github.io/arcadedb/examples/basic/)
+- [Installation Guide](https://humemai.github.io/arcadedb/latest/getting-started/installation/)
+- [Quick Start Tutorial](https://humemai.github.io/arcadedb/latest/getting-started/quickstart/)
+- [Distribution Comparison](https://humemai.github.io/arcadedb/latest/getting-started/distributions/)
+- [User Guide](https://humemai.github.io/arcadedb/latest/guide/core/database/)
+- [API Reference](https://humemai.github.io/arcadedb/latest/api/database/)
+- [Examples](https://humemai.github.io/arcadedb/latest/examples/)
 
 ---
 
@@ -37,7 +37,7 @@ pip install arcadedb-embedded-minimal
 pip install arcadedb-embedded
 ```
 
-**Requirements**: Java 11+ must be installed ([details](https://humemai.github.io/arcadedb/getting-started/installation/#java-runtime-environment-jre))
+**Requirements**: Java 11+ must be installed ([details](https://humemai.github.io/arcadedb/latest/getting-started/installation/#java-runtime-environment-jre))
 
 ### 5-Minute Example
 
@@ -59,7 +59,7 @@ with arcadedb.create_database("/tmp/mydb") as db:
         print(f"Name: {record.get_property('name')}")
 ```
 
-**[👉 See full tutorial](https://humemai.github.io/arcadedb/getting-started/quickstart/)**
+**[👉 See full tutorial](https://humemai.github.io/arcadedb/latest/getting-started/quickstart/)**
 
 ---
 
@@ -89,7 +89,7 @@ All three packages are **embedded** - they run ArcadeDB in your Python process:
 
 All use the same import: `import arcadedb_embedded as arcadedb`
 
-**[📊 Detailed comparison](https://humemai.github.io/arcadedb/getting-started/distributions/)**
+**[📊 Detailed comparison](https://humemai.github.io/arcadedb/latest/getting-started/distributions/)**
 
 ---
 
@@ -125,7 +125,7 @@ cd bindings/python/
 ./build-all.sh full        # ~158 MB
 ```
 
-Built wheels will be in `dist/`. **[Build instructions](https://humemai.github.io/arcadedb/getting-started/installation/#building-from-source)**
+Built wheels will be in `dist/`. **[Build instructions](https://humemai.github.io/arcadedb/latest/getting-started/installation/#building-from-source)**
 
 ---
 
@@ -144,13 +144,13 @@ arcadedb_embedded/
 └── jvm.py              # JVM lifecycle management
 ```
 
-**[Architecture details](https://humemai.github.io/arcadedb/development/architecture/)**
+**[Architecture details](https://humemai.github.io/arcadedb/latest/development/architecture/)**
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! See [CONTRIBUTING.md](../../CONTRIBUTING.md) and our [development guide](https://humemai.github.io/arcadedb/development/contributing/).
+Contributions are welcome! See [CONTRIBUTING.md](../../CONTRIBUTING.md) and our [development guide](https://humemai.github.io/arcadedb/latest/development/contributing/).
 
 ---
 
@@ -162,7 +162,7 @@ Apache License 2.0 - see [LICENSE](../../LICENSE)
 
 ## 🔗 Links
 
-- **Documentation**: https://humemai.github.io/arcadedb/
+- **Documentation**: https://humemai.github.io/arcadedb/latest/
 - **PyPI (Headless)**: https://pypi.org/project/arcadedb-embedded-headless/
 - **PyPI (Minimal)**: https://pypi.org/project/arcadedb-embedded-minimal/
 - **GitHub**: https://github.com/humemai/arcadedb

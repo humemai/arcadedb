@@ -3,7 +3,7 @@ name: Deploy MkDocs to GitHub Pages
 on:
   release:
     types: [published]  # Trigger when GitHub Release is published
-    # Release tag must match 'v*-python' (e.g., v25.9.1-python)
+    # Release tag should contain 'python' (case-insensitive, e.g., v25.9.1-python, v1.0.0-Python)
   
   # Allow manual trigger for testing
   workflow_dispatch:
@@ -39,7 +39,30 @@ jobs:
         working-directory: bindings/python
     
     steps:
+      - name: Check if this is a Python release
+        if: github.event_name == 'release'
+        id: check-python-release
+        run: |
+          TAG_NAME="${{ github.event.release.tag_name }}"
+          TAG_LOWER=$(echo "$TAG_NAME" | tr '[:upper:]' '[:lower:]')
+          
+          if [[ "$TAG_LOWER" == *"python"* ]]; then
+            echo "✅ This is a Python release: $TAG_NAME"
+            echo "is-python-release=true" >> $GITHUB_OUTPUT
+          else
+            echo "⏭️ Not a Python release (tag: $TAG_NAME), skipping docs deployment"
+            echo "is-python-release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+      
+      - name: Skip workflow for non-Python releases
+        if: github.event_name == 'release' && steps.check-python-release.outputs.is-python-release != 'true'
+        run: |
+          echo "This is not a Python release, exiting gracefully"
+          exit 0
+      
       - name: Checkout repository
+        if: github.event_name != 'release' || steps.check-python-release.outputs.is-python-release == 'true'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history for mike versioning
@@ -62,6 +85,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
       
       - name: Extract version from release tag or input
+        if: github.event_name != 'release' || steps.check-python-release.outputs.is-python-release == 'true'
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -70,16 +94,17 @@ jobs:
           else
             # Extract version from release tag (v25.9.1-python -> 25.9.1 or v25.9.1.1-python -> 25.9.1.1)
             TAG_NAME="${{ github.event.release.tag_name }}"
+            TAG_LOWER=$(echo "$TAG_NAME" | tr '[:upper:]' '[:lower:]')
             
-            # Verify tag matches v*-python pattern (allows optional 4th version number)
-            if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?-python$ ]]; then
-              echo "❌ Release tag must match 'v*-python' pattern (e.g., v25.9.1-python or v25.9.1.1-python, got: $TAG_NAME)"
+            # Verify tag contains 'python' (case-insensitive)
+            if [[ ! "$TAG_LOWER" == *"python"* ]]; then
+              echo "❌ Release tag should contain 'python' (case-insensitive), got: $TAG_NAME"
               exit 1
             fi
             
-            # Strip 'v' prefix and '-python' suffix
+            # Strip 'v' prefix and remove everything after and including '-python' or '-Python', etc.
             VERSION="${TAG_NAME#v}"      # Remove 'v' prefix
-            VERSION="${VERSION%-python}" # Remove '-python' suffix
+            VERSION="${VERSION%%-[Pp][Yy][Tt][Hh][Oo][Nn]*}" # Remove '-python' suffix (case-insensitive)
             SET_LATEST="true"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -87,7 +112,7 @@ jobs:
           echo "📦 Deploying documentation version: $VERSION"
       
       - name: Deploy with mike (set as latest)
-        if: steps.version.outputs.set_latest == 'true'
+        if: (github.event_name != 'release' || steps.check-python-release.outputs.is-python-release == 'true') && steps.version.outputs.set_latest == 'true'
         run: |
           mike deploy --push --update-aliases \
             ${{ steps.version.outputs.version }} latest \
@@ -95,7 +120,7 @@ jobs:
           mike set-default --push latest
       
       - name: Deploy with mike (not latest)
-        if: steps.version.outputs.set_latest != 'true'
+        if: (github.event_name != 'release' || steps.check-python-release.outputs.is-python-release == 'true') && steps.version.outputs.set_latest != 'true'
         run: |
           mike deploy --push \
             ${{ steps.version.outputs.version }} \

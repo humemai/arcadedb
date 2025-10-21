@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 # Python-specific patch version (increment for Python-only releases)
-PYTHON_PATCH = 2  # Change this to 2, 3, etc. for subsequent Python patches
+PYTHON_PATCH = 0  # Change this to 2, 3, etc. for subsequent Python patches
 
 def extract_version_from_pom(pom_path):
     """Extract version from Maven pom.xml and convert to PEP 440 format"""

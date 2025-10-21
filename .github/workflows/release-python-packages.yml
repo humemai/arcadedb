@@ -6,7 +6,37 @@ on:
     # Release tag must match 'v*-python' (e.g., v3.0.5-python)
 
 jobs:
+  # Check if this is a Python release
+  check-release:
+    name: Validate Python Release Tag
+    runs-on: ubuntu-latest
+    outputs:
+      is-python-release: ${{ steps.check.outputs.is-python-release }}
+    steps:
+      - name: Check if release tag contains 'python' (case-insensitive)
+        id: check
+        run: |
+          TAG_NAME="${{ github.event.release.tag_name }}"
+          TAG_LOWER=$(echo "$TAG_NAME" | tr '[:upper:]' '[:lower:]')
+          
+          if [[ "$TAG_LOWER" == *"python"* ]]; then
+            echo "✅ This is a Python release: $TAG_NAME"
+            echo "is-python-release=true" >> $GITHUB_OUTPUT
+          else
+            echo "⏭️ Not a Python release (tag: $TAG_NAME), skipping workflow"
+            echo "is-python-release=false" >> $GITHUB_OUTPUT
+          fi
+  
+  # Run tests first to ensure quality
+  test:
+    name: Run Tests Before Release
+    needs: check-release
+    if: needs.check-release.outputs.is-python-release == 'true'
+    uses: ./.github/workflows/test-python-bindings.yml
+    secrets: inherit
+  
   build:
+    needs: test  # Wait for tests to pass
     name: Build Python Distribution (${{ matrix.distribution }})
     runs-on: ubuntu-latest
     strategy:
@@ -41,7 +71,8 @@ jobs:
 
   publish-headless:
     name: Publish arcadedb-embedded-headless to PyPI
-    needs: build
+    needs: [check-release, build]
+    if: needs.check-release.outputs.is-python-release == 'true'
     runs-on: ubuntu-latest
     environment: pypi-headless
     permissions:
@@ -57,7 +88,8 @@ jobs:
 
   publish-minimal:
     name: Publish arcadedb-embedded-minimal to PyPI
-    needs: build
+    needs: [check-release, build]
+    if: needs.check-release.outputs.is-python-release == 'true'
     runs-on: ubuntu-latest
     environment: pypi-minimal
     permissions:
@@ -73,7 +105,8 @@ jobs:
 
   publish-full:
     name: Publish arcadedb-embedded to PyPI
-    needs: build
+    needs: [check-release, build]
+    if: needs.check-release.outputs.is-python-release == 'true'
     runs-on: ubuntu-latest
     environment: pypi-full
     permissions:

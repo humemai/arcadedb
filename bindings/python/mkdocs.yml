@@ -149,13 +149,17 @@ nav:
     - Vector: api/vector.md
     - Importer: api/importer.md
     - Exceptions: api/exceptions.md
-  - Examples:
-    - Basic Usage: examples/basic.md
-    - Vector Search: examples/vectors.md
-    - Server Patterns: examples/server.md
-    - Import Data: examples/import.md
   - Development:
-    - Testing: development/testing.md
+    - Testing:
+      - Overview: development/testing.md
+      - Quick Start: development/testing/overview.md
+      - Core Tests: development/testing/test-core.md
+      - Server Tests: development/testing/test-server.md
+      - Concurrency Tests: development/testing/test-concurrency.md
+      - Server Patterns: development/testing/test-server-patterns.md
+      - Data Import Tests: development/testing/test-importer.md
+      - Gremlin Tests: development/testing/test-gremlin.md
+      - Best Practices: development/testing/best-practices.md
     - Documentation: development/documentation.md
     - Release Workflow: development/release.md
     - Architecture: development/architecture.md
