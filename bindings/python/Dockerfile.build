@@ -1,53 +1,32 @@
 # Multi-stage Docker build for ArcadeDB Python bindings
 # Supports building all three distributions: headless, minimal, full
+# 
+# REQUIRED BUILD ARGS (passed from build-all.sh):
+#   DISTRIBUTION - one of: headless, minimal, full
+#   ARCADEDB_TAG - version tag from pom.xml (e.g., 25.10.1-SNAPSHOT)
 
-ARG DISTRIBUTION=headless
+ARG DISTRIBUTION
+ARG ARCADEDB_TAG
 
-# Stage 1: Build Java components
-FROM maven:3.9-eclipse-temurin-21 AS java-builder
+# Stage 1: Use prebuilt ArcadeDB image to obtain compiled JARs
+# ArcadeDB publishes three separate images:
+#   - arcadedata/arcadedb-headless (minimal JARs, no Studio)
+#   - arcadedata/arcadedb-minimal (includes Studio, excludes Gremlin/GraphQL/MongoDB/Redis)
+#   - arcadedata/arcadedb (full distribution with all features)
+FROM arcadedata/arcadedb:${ARCADEDB_TAG} AS java-builder-full
+FROM arcadedata/arcadedb-minimal:${ARCADEDB_TAG} AS java-builder-minimal  
+FROM arcadedata/arcadedb-headless:${ARCADEDB_TAG} AS java-builder-headless
 
-WORKDIR /arcadedb
+# Select the right builder based on DISTRIBUTION arg (passed from build-all.sh)
+FROM java-builder-${DISTRIBUTION} AS java-builder
 
-# Copy git for buildnumber-maven-plugin (needs git revision info)
-COPY .git .git/
-
-# Copy all necessary files for Java build (excluding Python docs/build artifacts)
-COPY pom.xml .
-COPY README.md .
-COPY LICENSE .
-COPY console console/
-COPY coverage coverage/
-COPY e2e e2e/
-COPY e2e-perf e2e-perf/
-COPY engine engine/
-COPY graphql graphql/
-COPY gremlin gremlin/
-COPY grpc grpc/
-COPY grpc-client grpc-client/
-COPY grpcw grpcw/
-COPY integration integration/
-COPY metrics metrics/
-COPY mongodbw mongodbw/
-COPY network network/
-COPY package package/
-COPY postgresw postgresw/
-COPY redisw redisw/
-COPY server server/
-COPY studio studio/
-COPY bindings/python/src bindings/python/src/
-COPY bindings/python/tests bindings/python/tests/
-COPY bindings/python/*.py bindings/python/
-COPY bindings/python/pyproject.toml bindings/python/
-
-# Build all Java modules (skip tests for faster build)
-RUN echo "🔨 Building Java components..." && \
-    mvn clean package -DskipTests -B -q && \
-    echo "✅ Java build complete!"
+# nothing to do here; jars will be copied from /home/arcadedb/lib in the python-builder stage
 
 # Stage 2: Build Python wheel
+
 FROM python:3.11-slim AS python-builder
 
-# Install system dependencies
+# Install system dependencies (JDK needed for JPype at build/test time)
 RUN apt-get update && apt-get install -y \
     openjdk-21-jdk \
     && rm -rf /var/lib/apt/lists/*
@@ -58,8 +37,10 @@ ENV PATH=$PATH:$JAVA_HOME/bin
 
 WORKDIR /build
 
-# Copy Java build artifacts
-COPY --from=java-builder /arcadedb /arcadedb
+# Copy compiled JARs from the prebuilt ArcadeDB image
+# The official image places JARs under /home/arcadedb/lib
+RUN mkdir -p /build/jars
+COPY --from=java-builder /home/arcadedb/lib /build/jars/
 
 # Copy Python binding source
 COPY bindings/python/src ./src
@@ -69,23 +50,29 @@ COPY bindings/python/extract_version.py .
 COPY bindings/python/write_version.py .
 COPY bindings/python/pyproject.toml ./
 
+# Also copy repository pom.xml so extract_version.py can read it
+COPY ../../pom.xml /arcadedb/pom.xml
+
 # Install Python build dependencies
 RUN pip install --no-cache-dir build wheel setuptools jpype1
 
-# Build argument for distribution type
-ARG DISTRIBUTION=headless
+# Re-declare build args for this stage (required after FROM)
+ARG DISTRIBUTION
+ARG ARCADEDB_TAG
 ENV ARCADEDB_DISTRIBUTION=${DISTRIBUTION}
 
 # Extract version and copy JARs
+# Version is passed from build-all.sh via ARCADEDB_TAG build arg
 RUN echo "📌 Building distribution: ${DISTRIBUTION}" && \
-    export ARCADEDB_VERSION=$(python3 extract_version.py) && \
-    echo "📌 Version: ${ARCADEDB_VERSION}" && \
+    echo "📌 Docker tag used: ${ARCADEDB_TAG}" && \
     python3 write_version.py /arcadedb/pom.xml && \
     python3 setup_jars.py && \
     echo "📦 JAR files copied"
 
 # Build the wheel
-RUN export ARCADEDB_VERSION=$(python3 extract_version.py /arcadedb/pom.xml) && \
+# Extract PEP 440 version from pom.xml
+RUN export ARCADEDB_VERSION=$(python3 extract_version.py --format=pep440 /arcadedb/pom.xml) && \
+    echo "📦 Python package version: ${ARCADEDB_VERSION}" && \
     case ${DISTRIBUTION} in \
         headless) \
             PACKAGE_NAME="arcadedb-embedded-headless" && \

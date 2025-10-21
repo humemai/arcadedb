@@ -12,7 +12,6 @@ Environment Variables:
 
 import os
 import shutil
-import glob
 from pathlib import Path
 
 
@@ -27,63 +26,23 @@ def find_jar_files():
     
     print(f"📦 Building for distribution: {distribution}")
     
-    # Look for JAR files in the Maven target directories
-    # Try different locations based on environment
-    possible_roots = [
-        Path(__file__).parent.parent.parent,  # Normal case: bindings/python/setup_jars.py
-        Path("/arcadedb"),  # Docker case
-        Path.cwd().parent.parent,  # Alternative
+    # Look for JAR files copied from the ArcadeDB Docker image
+    # The Dockerfile copies JARs from the distribution-specific image to these locations
+    quick_paths = [
+        Path("/build/jars"),           # Docker build location
+        Path("/home/arcadedb/lib"),    # Direct from ArcadeDB image
     ]
-    
+
     found_jars = []
-    repo_root = None
-    
-    for root in possible_roots:
-        if not root.exists():
-            continue
-            
-        print(f"🔍 Searching for JARs in: {root}")
-        
-        # First, try to find the packaged distribution with all dependencies
-        # Build pattern based on distribution type
-        if distribution == "full":
-            # Full distribution has no suffix
-            package_lib_patterns = [
-                "package/target/arcadedb-*.dir/arcadedb-*/lib/*.jar",
-            ]
-        else:
-            # Minimal and headless have suffixes
-            package_lib_patterns = [
-                f"package/target/arcadedb-*-{distribution}.dir/arcadedb-*/lib/*.jar",
-            ]
-        
-        for pattern in package_lib_patterns:
-            jars = glob.glob(str(root / pattern))
+
+    # Check for jars from Docker image
+    for quick in quick_paths:
+        if quick.exists():
+            jars = list(map(str, quick.glob('*.jar')))
             if jars:
-                print(f"✅ Found {len(jars)} JAR files in {distribution} distribution")
+                print("✅ Found {} JAR files in: {}".format(len(jars), quick))
                 found_jars.extend(jars)
-                repo_root = root
                 break
-        
-        if found_jars:
-            break
-        
-        # Fallback: look for individual module JARs (without dependencies)
-        print(f"   Package distribution not found, trying individual modules...")
-        jar_patterns = [
-            "engine/target/arcadedb-engine-*.jar",
-            "network/target/arcadedb-network-*.jar",
-            "server/target/arcadedb-server-*.jar",
-        ]
-        
-        for pattern in jar_patterns:
-            jars = glob.glob(str(root / pattern))
-            found_jars.extend(jars)
-        
-        if found_jars:
-            print(f"✅ Found {len(found_jars)} module JAR files (warning: dependencies not included)")
-            repo_root = root
-            break
     
     # Remove duplicates while preserving order
     seen = set()
@@ -113,8 +72,8 @@ def copy_jars_to_package():
     
     if not jar_files:
         print("⚠️  Warning: No JAR files found!")
-        print("   Make sure you've built ArcadeDB with Maven first:")
-        print("   mvn clean package -DskipTests")
+        print("   This script expects to run inside a Docker build")
+        print("   where JARs are copied from the ArcadeDB image.")
         return False
     
     print(f"📦 Found {len(jar_files)} JAR files")
@@ -151,18 +110,11 @@ def main():
     
     if copy_jars_to_package():
         print("\n🎉 Setup completed successfully!")
-        print("💡 You can now build and install the package:")
-        print("   cd bindings/python")
-        print("   pip install -e .")
     else:
         print("\n❌ Setup failed!")
-        print("💡 Make sure to build ArcadeDB first:")
-        print("   mvn clean package -DskipTests")
-        print()
-        print("💡 Or build specific distribution:")
-        print("   mvn clean package -DskipTests -P minimal")
-        print("   mvn clean package -DskipTests -P headless")
-        print("   mvn clean package -DskipTests -P full")
+        print("💡 Make sure to run this via build-all.sh:")
+        print("   cd bindings/python")
+        print("   ./build-all.sh headless")
         return 1
     
     return 0

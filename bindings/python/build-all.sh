@@ -55,6 +55,13 @@ if [[ ! "$DISTRIBUTION" =~ ^(all|headless|minimal|full)$ ]]; then
     exit 1
 fi
 
+# Auto-detect Docker tag from pom.xml
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo -e "${CYAN}🔍 Detecting version from pom.xml...${NC}"
+DOCKER_TAG=$(python3 "$SCRIPT_DIR/extract_version.py" --format=docker)
+echo -e "${CYAN}📌 Docker tag: ${YELLOW}${DOCKER_TAG}${NC}"
+echo ""
+
 # Check if Docker is available
 if ! command -v docker &> /dev/null; then
     echo -e "${RED}❌ Docker is not installed or not in PATH${NC}"
@@ -95,6 +102,7 @@ build_distribution() {
     echo -e "${CYAN}📦 Building Docker image for $dist distribution...${NC}"
     docker build \
         --build-arg DISTRIBUTION=$dist \
+        --build-arg ARCADEDB_TAG=$DOCKER_TAG \
         --target export \
         -t arcadedb-python-bindings-$dist-export \
         -f Dockerfile.build \
@@ -104,6 +112,7 @@ build_distribution() {
     echo -e "${CYAN}🧪 Running tests in Docker...${NC}"
     docker build \
         --build-arg DISTRIBUTION=$dist \
+        --build-arg ARCADEDB_TAG=$DOCKER_TAG \
         --target tester \
         -t arcadedb-python-bindings-$dist \
         -f Dockerfile.build \
