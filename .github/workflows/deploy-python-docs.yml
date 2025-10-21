@@ -34,9 +34,6 @@ jobs:
     environment:
       name: github-pages
       url: https://humemai.github.io/arcadedb/
-    defaults:
-      run:
-        working-directory: bindings/python
     
     steps:
       - name: Check if this is a Python release
@@ -69,17 +66,21 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Set up Python
+        if: github.event_name != 'release' || steps.check-python-release.outputs.is-python-release == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
       
       - name: Install dependencies
+        if: github.event_name != 'release' || steps.check-python-release.outputs.is-python-release == 'true'
+        working-directory: bindings/python
         run: |
           pip install --upgrade pip
           pip install mkdocs-material mkdocs-git-revision-date-localized-plugin mike
       
       - name: Configure Git
+        if: github.event_name != 'release' || steps.check-python-release.outputs.is-python-release == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -113,6 +114,7 @@ jobs:
       
       - name: Deploy with mike (set as latest)
         if: (github.event_name != 'release' || steps.check-python-release.outputs.is-python-release == 'true') && steps.version.outputs.set_latest == 'true'
+        working-directory: bindings/python
         run: |
           mike deploy --push --update-aliases \
             ${{ steps.version.outputs.version }} latest \
@@ -121,6 +123,7 @@ jobs:
       
       - name: Deploy with mike (not latest)
         if: (github.event_name != 'release' || steps.check-python-release.outputs.is-python-release == 'true') && steps.version.outputs.set_latest != 'true'
+        working-directory: bindings/python
         run: |
           mike deploy --push \
             ${{ steps.version.outputs.version }} \
