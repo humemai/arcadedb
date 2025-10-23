@@ -1,0 +1,5 @@
+# Example output databases
+my_test_databases/
+
+# ArcadeDB logs
+log/
