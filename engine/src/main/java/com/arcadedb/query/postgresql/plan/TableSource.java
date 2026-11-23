@@ -165,6 +165,25 @@ public final class TableSource implements RelationSource {
 
   @Override
   public Iterator<Object[]> open() {
+    final Iterator<Document> records = openRecords();
+    return new Iterator<>() {
+      @Override
+      public boolean hasNext() {
+        return records.hasNext();
+      }
+
+      @Override
+      public Object[] next() {
+        return row(records.next());
+      }
+    };
+  }
+
+  /**
+   * The records of the rows, by the same access path as {@link #open()}: what {@code UPDATE} and {@code DELETE} need, because
+   * they change the record behind a row. {@link #rowOf(Document)} gives the row of one of them.
+   */
+  public Iterator<Document> openRecords() {
     switch (access) {
     case ID:
       return readById();
@@ -173,6 +192,11 @@ public final class TableSource implements RelationSource {
     default:
       return scan();
     }
+  }
+
+  /** The row of a record of this table, the values in the canonical classes of {@link PgType}. */
+  public Object[] rowOf(final Document record) {
+    return row(record);
   }
 
   // ---- reading ----
@@ -192,7 +216,7 @@ public final class TableSource implements RelationSource {
     return !only && database.getSchema().getType(typeName).instanceOf(table.name());
   }
 
-  private Iterator<Object[]> scan() {
+  private Iterator<Document> scan() {
     if (table.kind() == Table.Kind.EDGE && table.edgeScan() == Table.EdgeScan.VERTEX_WALK)
       return walk();
     final Iterator<Record> records = database.iterateType(table.name(), !only);
@@ -203,8 +227,8 @@ public final class TableSource implements RelationSource {
       }
 
       @Override
-      public Object[] next() {
-        return row((Document) records.next());
+      public Document next() {
+        return (Document) records.next();
       }
     };
   }
@@ -226,20 +250,20 @@ public final class TableSource implements RelationSource {
   }
 
   /** The outgoing edges of the vertices a lightweight edge can start at: nothing else sees a lightweight edge. */
-  private Iterator<Object[]> walk() {
+  private Iterator<Document> walk() {
     final String[] edgeTypes = typeNames().toArray(new String[0]);
     final Iterator<String> fromTables = table.walkFromTables().iterator();
     return new Iterator<>() {
       private Iterator<Record> vertices;
       private Iterator<Edge>   edges = Collections.emptyIterator();
-      private Object[]         next;
+      private Document         next;
 
       private boolean advance() {
         while (true) {
           if (edges.hasNext()) {
             final Edge edge = edges.next();
             if (belongs(edge)) {
-              next = row(edge);
+              next = edge;
               return true;
             }
           } else if (vertices != null && vertices.hasNext()) {
@@ -258,17 +282,17 @@ public final class TableSource implements RelationSource {
       }
 
       @Override
-      public Object[] next() {
+      public Document next() {
         if (!hasNext())
           throw new NoSuchElementException();
-        final Object[] result = next;
+        final Document result = next;
         next = null;
         return result;
       }
     };
   }
 
-  private Iterator<Object[]> readById() {
+  private Iterator<Document> readById() {
     final Object value = key.eval(NO_ROW);
     if (!(value instanceof String text))
       return Collections.emptyIterator();
@@ -280,11 +304,11 @@ public final class TableSource implements RelationSource {
       return Collections.emptyIterator();
     }
     if (record instanceof Document document && belongs(document))
-      return Collections.singletonList(row(document)).iterator();
+      return Collections.singletonList(document).iterator();
     return Collections.emptyIterator();
   }
 
-  private Iterator<Object[]> readByIndex() {
+  private Iterator<Document> readByIndex() {
     final Object value = key.eval(NO_ROW);
     if (value == null)
       return Collections.emptyIterator();
@@ -295,15 +319,15 @@ public final class TableSource implements RelationSource {
     final Object indexKey = toIndexKey(value, type.getProperty(keyColumn.property()).getType());
     if (indexKey == NO_MATCH)
       return Collections.emptyIterator();
-    final List<Object[]> rows = new ArrayList<>();
+    final List<Document> found = new ArrayList<>();
     final IndexCursor cursor = index.get(new Object[] { indexKey });
     while (cursor.hasNext()) {
       final Identifiable identifiable = cursor.next();
       final Record record = identifiable.getRecord();
       if (record instanceof Document document && belongs(document))
-        rows.add(row(document));
+        found.add(document);
     }
-    return rows.iterator();
+    return found.iterator();
   }
 
   /** The key as the index of a property of this type holds it, or {@link #NO_MATCH} when no value of the type is equal. */

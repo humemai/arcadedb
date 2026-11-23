@@ -1,0 +1,72 @@
+# PostgreSQL-style SQL prototype: the write corpus (fork issue #29).
+# Columns, separated by one TAB: id, status, checks, statement, expected.
+# id: unique, lower case, words joined by hyphens. Add a case at the end of its group; never renumber or reuse an id. An id that starts with err- is a statement the server must refuse: its expected result is the SQLSTATE and the tables after it are the ones before.
+# status: ok = the engine is expected to do what the server did. pending = it does not yet: the case is tried and reported, never failed; when the engine does what the server did the run fails until the flag is flipped.
+# checks: SELECT statements, separated by " ; ", that read the tables the statement touched, afterwards, in the same transaction. They never read the id of a new row (the two sides number new records differently). The rows of a table are compared as a multiset.
+# statement: one write, with backslash, tab, line feed and carriage return written as \\, \t, \n and \r. Every case runs in a transaction that is rolled back, so the cases are independent: PostgreSQL gets the trigger and the cascade of small-writes.sql, which make id generated and a deleted vertex take its edges, as the table view of ArcadeDB does.
+# expected: written by the generator from the real server, never by hand: {"result":<answer of the statement>,"after":[<answer of each check>]}. The answer of a statement without RETURNING is one row of the column count; the answers are the outcomes of answers.tsv, a table or {"error":"SQLSTATE"}. pending-server = the generator has not run on the case yet: add a case with that value, then run the generator.
+# Copyright © 2021-present Arcade Data Ltd (info@arcadedata.com)
+# SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
+# SPDX-License-Identifier: Apache-2.0
+id	status	checks	statement	expected
+insert-person	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name, age, city) VALUES (6, 'Fay', 33, 'Delft')	pending-server
+insert-person-returning	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name, age, city) VALUES (6, 'Fay', 33, 'Delft') RETURNING pid, name, age	pending-server
+insert-two-rows	ok	SELECT cid, name FROM company	INSERT INTO company (cid, name) VALUES (40, 'Dune'), (50, 'Elm')	pending-server
+insert-two-rows-returning	ok	SELECT cid, name FROM company	INSERT INTO company (cid, name) VALUES (40, 'Dune'), (50, 'Elm') RETURNING cid, name	pending-server
+insert-partial-columns	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name) VALUES (7, 'Gus')	pending-server
+insert-default-keyword	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name, age) VALUES (8, 'Hal', DEFAULT)	pending-server
+insert-null	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name, age) VALUES (9, 'Ivy', NULL)	pending-server
+insert-select	ok	SELECT cid, name FROM company	INSERT INTO company (cid, name) SELECT pid + 100, name FROM person WHERE city = 'Leiden'	pending-server
+insert-select-returning	ok	SELECT cid, name FROM company	INSERT INTO company (cid, name) SELECT pid + 100, name FROM person WHERE city = 'Leiden' RETURNING cid	pending-server
+insert-select-own-table	ok	SELECT cid, name FROM company	INSERT INTO company (cid, name) SELECT cid + 1000, name FROM company	pending-server
+insert-expressions	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name, age) VALUES (10, upper('jo'), 20 + 5)	pending-server
+insert-int-into-numeric	ok	SELECT oid, pid, total, placed, buyer FROM orders	INSERT INTO orders (oid, total) VALUES (200, 12)	pending-server
+insert-decimal-into-numeric	ok	SELECT oid, pid, total, placed, buyer FROM orders	INSERT INTO orders (oid, total) VALUES (200, 12.5)	pending-server
+insert-date-literal	ok	SELECT oid, pid, total, placed, buyer FROM orders	INSERT INTO orders (oid, placed) VALUES (201, '2026-04-01')	pending-server
+insert-int-into-text	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name) VALUES (11, 42)	pending-server
+insert-text-literal-into-int	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name, age) VALUES (12, 'Kim', '44')	pending-server
+insert-link-by-select	ok	SELECT oid, pid, total, placed, buyer FROM orders	INSERT INTO orders (oid, buyer) SELECT 202, id FROM person WHERE pid = 1	pending-server
+insert-link-null	ok	SELECT oid, pid, total, placed, buyer FROM orders	INSERT INTO orders (oid, buyer) VALUES (203, NULL)	pending-server
+insert-default-values	ok	SELECT cid, name FROM company	INSERT INTO company DEFAULT VALUES	pending-server
+err-insert-link-missing	ok	SELECT oid, pid, total, placed, buyer FROM orders	INSERT INTO orders (oid, buyer) VALUES (204, '#99:99')	pending-server
+err-insert-duplicate-person	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name) VALUES (1, 'Dup')	pending-server
+err-insert-duplicate-company	ok	SELECT cid, name FROM company	INSERT INTO company (cid, name) VALUES (10, 'Again')	pending-server
+err-insert-duplicate-after-a-good-row	ok	SELECT cid, name FROM company	INSERT INTO company (cid, name) VALUES (40, 'Dune'), (10, 'Again')	pending-server
+err-insert-id-given	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (id, pid, name) VALUES ('#9:9', 20, 'X')	pending-server
+err-insert-unknown-column	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, nope) VALUES (21, 1)	pending-server
+err-insert-too-many-values	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid) VALUES (22, 'x')	pending-server
+err-insert-too-few-values	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name) VALUES (23)	pending-server
+err-insert-column-twice	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, pid) VALUES (24, 25)	pending-server
+err-insert-bad-int	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name) VALUES ('abc', 'X')	pending-server
+err-insert-out-of-range	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name) VALUES (3000000000, 'X')	pending-server
+err-insert-text-into-int	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name) VALUES (26::text, 'X')	pending-server
+err-insert-boolean-into-int	ok	SELECT pid, name, age, city FROM person	INSERT INTO person (pid, name, age) VALUES (27, 'X', true)	pending-server
+err-insert-missing-table	ok	SELECT pid, name, age, city FROM person	INSERT INTO nope (a) VALUES (1)	pending-server
+update-one	ok	SELECT pid, name, age, city FROM person	UPDATE person SET age = 37 WHERE pid = 1	pending-server
+update-expression-returning	ok	SELECT pid, name, age, city FROM person	UPDATE person SET age = age + 1 WHERE city = 'Leiden' RETURNING pid, age	pending-server
+update-all-rows	ok	SELECT cid, name FROM company	UPDATE company SET name = upper(name)	pending-server
+update-set-null	ok	SELECT pid, name, age, city FROM person	UPDATE person SET city = NULL WHERE pid = 2	pending-server
+update-uses-the-old-row	ok	SELECT pid, name, age, city FROM person	UPDATE person SET age = pid, pid = age WHERE pid = 4	pending-server
+update-no-row	ok	SELECT pid, name, age, city FROM person	UPDATE person SET age = 1 WHERE pid = 999	pending-server
+update-default	ok	SELECT pid, name, age, city FROM person	UPDATE person SET age = DEFAULT WHERE pid = 1	pending-server
+update-null-condition	ok	SELECT pid, name, age, city FROM person	UPDATE person SET age = 0 WHERE age IS NULL	pending-server
+update-by-range	ok	SELECT pid, name, age, city FROM person	UPDATE person SET age = age + 10 WHERE age > 30	pending-server
+update-link-null	ok	SELECT oid, pid, total, placed, buyer FROM orders	UPDATE orders SET buyer = NULL WHERE oid = 100	pending-server
+update-text-literal-into-date	ok	SELECT oid, pid, total, placed, buyer FROM orders	UPDATE orders SET placed = '2027-01-01' WHERE oid = 100	pending-server
+err-update-link-missing	ok	SELECT oid, pid, total, placed, buyer FROM orders	UPDATE orders SET buyer = '#99:99' WHERE oid = 100	pending-server
+err-update-duplicate	ok	SELECT pid, name, age, city FROM person	UPDATE person SET pid = 2 WHERE pid = 1	pending-server
+err-update-id	ok	SELECT pid, name, age, city FROM person	UPDATE person SET id = '#9:9' WHERE pid = 1	pending-server
+err-update-unknown-column	ok	SELECT pid, name, age, city FROM person	UPDATE person SET nope = 1	pending-server
+err-update-bad-text	ok	SELECT pid, name, age, city FROM person	UPDATE person SET age = 'x' WHERE pid = 1	pending-server
+err-update-column-twice	ok	SELECT pid, name, age, city FROM person	UPDATE person SET age = 1, age = 2	pending-server
+err-update-text-into-int	ok	SELECT pid, name, age, city FROM person	UPDATE person SET age = 'x'::text WHERE pid = 1	pending-server
+err-update-where-not-boolean	ok	SELECT pid, name, age, city FROM person	UPDATE person SET age = 1 WHERE age	pending-server
+delete-one	ok	SELECT pid, name, age, city FROM person	DELETE FROM person WHERE pid = 5	pending-server
+delete-returning	ok	SELECT pid, name, age, city FROM person	DELETE FROM person WHERE pid = 5 RETURNING pid, name	pending-server
+delete-no-row	ok	SELECT pid, name, age, city FROM person	DELETE FROM person WHERE pid = 999	pending-server
+delete-null-condition	ok	SELECT pid, name, age, city FROM person	DELETE FROM person WHERE age IS NULL	pending-server
+delete-all-orders	ok	SELECT oid, pid, total, placed, buyer FROM orders	DELETE FROM orders	pending-server
+delete-company-without-edges	ok	SELECT cid, name FROM company ; SELECT since FROM works_at	DELETE FROM company WHERE cid = 30	pending-server
+delete-vertex-takes-its-edge	ok	SELECT pid, name, age, city FROM person ; SELECT since FROM works_at	DELETE FROM person WHERE pid = 3	pending-server
+delete-vertex-takes-both-edges	ok	SELECT cid, name FROM company ; SELECT since FROM works_at	DELETE FROM company WHERE cid = 20	pending-server
+delete-by-range	ok	SELECT pid, name, age, city FROM person ; SELECT since FROM works_at	DELETE FROM person WHERE age = 29 OR age IS NULL	pending-server

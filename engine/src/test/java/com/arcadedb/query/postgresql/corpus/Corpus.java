@@ -41,6 +41,12 @@ public final class Corpus {
   public static final String RESOURCE_DIRECTORY = "/postgresql/corpus/";
   public static final String SYNTAX_FILE        = "syntax.tsv";
   public static final String ANSWERS_FILE       = "answers.tsv";
+  /**
+   * The write statements of fork issue #29: {@code id}, {@code status}, {@code checks}, {@code statement}, {@code expected}. Each
+   * case runs one write on the {@code small} fixture, in a transaction that is rolled back, and then the {@code checks} (SELECT
+   * statements, separated by {@code " ; "}) that read what the statement did to the touched tables.
+   */
+  public static final String WRITES_FILE        = "writes.tsv";
   /** The TPC-H statements of fork issue #13: the columns of {@code answers.tsv}, the data of {@code TpchFixture}. */
   public static final String TPCH_FILE          = "tpch.tsv";
   /** The statements that language models wrote (fork issue #7): the columns of {@code syntax.tsv}, then model, group and duckdb. */
@@ -67,6 +73,17 @@ public final class Corpus {
 
   public static CorpusFile readTpch() throws IOException {
     return CorpusFile.readResource(RESOURCE_DIRECTORY + TPCH_FILE);
+  }
+
+  public static CorpusFile readWrites() throws IOException {
+    return CorpusFile.readResource(RESOURCE_DIRECTORY + WRITES_FILE);
+  }
+
+  public static List<WriteCase> writeCases(final CorpusFile file) {
+    final List<WriteCase> cases = new ArrayList<>();
+    for (final String[] row : file.rows)
+      cases.add(new WriteCase(row));
+    return cases;
   }
 
   public static List<SyntaxCase> syntaxCases(final CorpusFile file) {
@@ -195,6 +212,55 @@ public final class Corpus {
     }
 
     /** Whether the server must refuse the statement (an {@code err-} case). */
+    public boolean expectsRefusal() {
+      return row[ID].startsWith(ERROR_PREFIX);
+    }
+  }
+
+  /**
+   * A write of the parity corpus. {@code status} is {@code ok} or {@code pending} as for {@link AnswerCase}; {@code checks} is the
+   * list of {@code SELECT} statements that read the tables the write touched (never the {@code id} of a new row, which differs on
+   * the two sides); {@code expected} is a {@link WriteOutcome}. The answer of a write is the number of rows in the column
+   * {@code count}, or the rows of its {@code RETURNING}; an {@code err-} id is a write the server must refuse.
+   */
+  public static final class WriteCase {
+    public static final int ID = 0, STATUS = 1, CHECKS = 2, STATEMENT = 3, EXPECTED = 4;
+    public static final String CHECK_SEPARATOR = " ; ";
+
+    public final String[] row;
+
+    public WriteCase(final String[] row) {
+      this.row = row;
+    }
+
+    public String id() {
+      return row[ID];
+    }
+
+    public boolean pending() {
+      return "pending".equals(row[STATUS]);
+    }
+
+    public List<String> checks() {
+      final List<String> checks = new ArrayList<>();
+      for (final String check : row[CHECKS].split(java.util.regex.Pattern.quote(CHECK_SEPARATOR)))
+        if (!check.isEmpty())
+          checks.add(CorpusFile.unescape(check));
+      return checks;
+    }
+
+    public String statement() {
+      return CorpusFile.unescape(row[STATEMENT]);
+    }
+
+    public String expected() {
+      return row[EXPECTED];
+    }
+
+    public boolean hasOutcome() {
+      return !row[EXPECTED].isEmpty() && !PENDING_SERVER.equals(row[EXPECTED]);
+    }
+
     public boolean expectsRefusal() {
       return row[ID].startsWith(ERROR_PREFIX);
     }

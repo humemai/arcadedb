@@ -33,10 +33,12 @@ import com.arcadedb.query.postgresql.ast.TransactionStatement;
 import com.arcadedb.query.postgresql.ast.UpdateStatement;
 import com.arcadedb.query.postgresql.ast.WriteStatement;
 import com.arcadedb.query.postgresql.eval.Parameters;
+import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.parser.StatementParser;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.postgresql.plan.SelectPlan;
 import com.arcadedb.query.postgresql.plan.SelectPlanner;
+import com.arcadedb.query.postgresql.plan.WritePlanner;
 import com.arcadedb.query.sql.executor.ResultInternal;
 import com.arcadedb.query.sql.executor.ResultSet;
 import com.arcadedb.utility.CollectionUtils;
@@ -48,9 +50,10 @@ import java.util.Set;
 /**
  * The {@code postgresql} query language: PostgreSQL-style SQL over a relational view of the schema, next to {@code sql} and
  * {@code opencypher} and with no effect on either. It reads, and its parser reads the writes ({@code INSERT}, {@code UPDATE},
- * {@code DELETE}) and the transaction statements too; their executors are the next stages of fork issue #29, and until a stage
- * lands its statements are refused with SQLSTATE {@code 0A000} when they run ({@link #analyze} already classifies them). A
- * statement goes through three steps:
+ * {@code DELETE}) and the transaction statements too. {@code INSERT}, {@code UPDATE} and {@code DELETE} run on document and vertex
+ * tables ({@link WritePlanner}, fork issue #29); the other stages of that issue are not here yet, and until a stage lands its
+ * statements are refused with SQLSTATE {@code 0A000} when they run ({@link #analyze} classifies all of them). A statement goes
+ * through three steps:
  * <ol>
  * <li>the parser ({@link StatementParser}): text that is not PostgreSQL syntax is refused with SQLSTATE {@code 42601},
  * PostgreSQL syntax outside the subset ({@code WITH}, a subquery, a right join, DDL) with {@code 0A000};</li>
@@ -149,36 +152,49 @@ public class PostgreSQLQueryEngine implements QueryEngine {
 
   @Override
   public ResultSet query(final String query, final ContextConfiguration configuration, final Map<String, Object> parameters) {
-    return execute(query, Parameters.of(parameters));
+    return execute(query, Parameters.of(parameters), true);
   }
 
   @Override
   public ResultSet query(final String query, final ContextConfiguration configuration, final Object... parameters) {
-    return execute(query, Parameters.of(parameters));
+    return execute(query, Parameters.of(parameters), true);
   }
 
   /**
-   * A command is a query: {@code SELECT} runs, and a write or a transaction statement is refused with {@code 0A000} until the
-   * stage of fork issue #29 that runs it has landed.
+   * A command is a query: {@code SELECT}, {@code INSERT}, {@code UPDATE} and {@code DELETE} run, and a transaction statement is
+   * refused with {@code 0A000} until the stage of fork issue #29 that runs it has landed. A write is not idempotent, so
+   * {@code Database.query} refuses it as it does for {@code sql}: it runs through {@code command}.
    */
   @Override
   public ResultSet command(final String query, final ContextConfiguration configuration, final Map<String, Object> parameters) {
-    return execute(query, Parameters.of(parameters));
+    return execute(query, Parameters.of(parameters), false);
   }
 
   @Override
   public ResultSet command(final String query, final ContextConfiguration configuration, final Object... parameters) {
-    return execute(query, Parameters.of(parameters));
+    return execute(query, Parameters.of(parameters), false);
   }
 
-  private ResultSet execute(final String query, final Parameters parameters) {
+  /**
+   * @param readOnly true for {@code query}, the read-only entry of the database as it is for {@code sql}: a write or a transaction
+   *                 statement is refused there with SQLSTATE {@code 25006} (read_only_sql_transaction) and runs through
+   *                 {@code command}, which is what {@link #analyze} says by reporting it as not idempotent
+   */
+  private ResultSet execute(final String query, final Parameters parameters, final boolean readOnly) {
     final Statement statement = parse(query);
-    if (statement instanceof WriteStatement || statement instanceof ExplainWriteStatement || statement instanceof TransactionStatement)
+    if (readOnly && (statement instanceof WriteStatement || statement instanceof TransactionStatement))
+      throw new PostgreSQLEvaluationException("25006", "cannot execute " + statementName(statement)
+          + " in a read-only query: run it with command (" + statement.position() + ")");
+    if (statement instanceof TransactionStatement)
       throw new PostgreSQLFeatureNotSupportedException(statementName(statement) + " is not supported by the postgresql language yet ("
           + statement.position() + ")");
+    if (statement instanceof ExplainWriteStatement explain)
+      return explain(new WritePlanner(database, parameters).plan(explain.statement()).steps());
+    if (statement instanceof WriteStatement write)
+      return new WritePlanner(database, parameters).plan(write).execute(database);
     final SelectPlanner planner = new SelectPlanner(database, parameters);
     if (statement instanceof ExplainStatement explain)
-      return explain(planner.plan(explain.select()));
+      return explain(planner.plan(explain.select()).steps());
     return planner.plan((SelectStatement) statement).execute(database);
   }
 
@@ -193,11 +209,11 @@ public class PostgreSQLQueryEngine implements QueryEngine {
     };
   }
 
-  /** {@code EXPLAIN}: the plan, one line per row, and nothing is read. */
-  private PostgreSQLResultSet explain(final SelectPlan plan) {
+  /** {@code EXPLAIN}: the plan, one line per row, and nothing is read or written. */
+  private PostgreSQLResultSet explain(final List<String> steps) {
     final List<PostgreSQLResultSet.Column> columns = List.of(new PostgreSQLResultSet.Column(PLAN_COLUMN, "text"));
-    final PostgreSQLResultSet result = new PostgreSQLResultSet(columns, new PostgreSQLResultSet.Plan(plan.steps()));
-    for (final String line : plan.steps()) {
+    final PostgreSQLResultSet result = new PostgreSQLResultSet(columns, new PostgreSQLResultSet.Plan(steps));
+    for (final String line : steps) {
       final ResultInternal row = new ResultInternal(database);
       row.setProperty(PLAN_COLUMN, line);
       result.add(row);

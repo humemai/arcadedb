@@ -106,6 +106,38 @@ class CorpusFilesTest {
   }
 
   @Test
+  void writesFileIsWellFormed() throws IOException {
+    final CorpusFile file = Corpus.readWrites();
+    assertThat(file.columns).containsExactly("id", "status", "checks", "statement", "expected");
+    assertThat(file.rows).isNotEmpty();
+
+    final Set<String> ids = new HashSet<>();
+    for (final Corpus.WriteCase c : Corpus.writeCases(file)) {
+      assertThat(c.id()).as("id of %s", c.statement()).matches(ID);
+      assertThat(ids.add(c.id())).as("unique id %s", c.id()).isTrue();
+      assertThat(c.row[Corpus.WriteCase.STATUS]).as("status of %s", c.id()).isIn("ok", "pending");
+      assertThat(c.statement()).as("statement of %s", c.id()).matches("(?is)\\s*(INSERT|UPDATE|DELETE)\\b.*");
+      assertThat(c.checks()).as("checks of %s", c.id()).isNotEmpty().allSatisfy(check -> assertThat(check).startsWith("SELECT"));
+      assertThat(c.checks()).as("checks of %s never read the id of a new row", c.id())
+          .allSatisfy(check -> assertThat(check.toLowerCase()).doesNotContain(" id,").doesNotContain("select id"));
+      if (!c.hasOutcome())
+        continue;
+      final WriteOutcome outcome = WriteOutcome.fromJson(c.expected());
+      assertThat(outcome.result.isRefusal()).as("%s: a refusal exactly for an err- id", c.id()).isEqualTo(c.expectsRefusal());
+      assertThat(outcome.after).as("one answer per check of %s", c.id()).hasSameSizeAs(c.checks());
+      for (final Outcome after : outcome.after)
+        assertThat(after.isRefusal()).as("a check of %s is answered", c.id()).isFalse();
+      if (c.expectsRefusal())
+        assertThat(outcome.result.sqlState).as("SQLSTATE of %s", c.id()).matches(SQLSTATE);
+      else {
+        assertThat(outcome.result.table.rows).as("rows of %s", c.id()).isNotNull();
+        if (outcome.result.table.labels.equals(List.of("count")))
+          assertThat(outcome.result.table.rows).as("one row of count in %s", c.id()).hasSize(1);
+      }
+    }
+  }
+
+  @Test
   void aFilledFileNamesTheServerThatProducedIt() throws IOException {
     final CorpusFile syntax = Corpus.readSyntax();
     final CorpusFile answers = Corpus.readAnswers();
