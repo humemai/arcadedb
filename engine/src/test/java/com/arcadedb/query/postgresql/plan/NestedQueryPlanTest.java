@@ -89,7 +89,9 @@ class NestedQueryPlanTest extends TestHelper {
     assertThat(types("SELECT pid AS a FROM person UNION ALL SELECT total FROM orders")).containsExactly("a:numeric");
     assertThat(types("SELECT 1 AS a, NULL AS b UNION ALL SELECT 2, 'x'")).containsExactly("a:int4", "b:text");
     assertThat(types("SELECT 1 AS a UNION SELECT '2'")).containsExactly("a:int4");
-    assertThat(types("SELECT name FROM person UNION SELECT 'z'::text")).containsExactly("name:text");
+    // varchar and text convert to each other implicitly, so the type of the left operand stays
+    assertThat(types("SELECT name FROM person UNION SELECT 'z'::text")).containsExactly("name:varchar");
+    assertThat(types("SELECT 'z'::text AS name UNION SELECT name FROM person")).containsExactly("name:text");
     assertThat(types("SELECT name FROM person UNION SELECT name FROM company")).containsExactly("name:varchar");
     assertThat(types("SELECT placed AS d FROM orders UNION ALL SELECT '2026-01-01'::timestamp")).containsExactly("d:timestamp");
   }

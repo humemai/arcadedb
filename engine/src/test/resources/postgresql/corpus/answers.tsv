@@ -238,7 +238,7 @@ c1-with-body-is-set-operation	ordered	-	ok	WITH d AS (SELECT pid FROM person) SE
 c1-with-joined-to-table	ordered	-	ok	WITH big AS (SELECT oid, pid FROM orders WHERE total > 9) SELECT p.name, big.oid FROM big JOIN person p ON p.pid = big.pid ORDER BY big.oid	{"columns":["name","oid"],"types":["varchar","int4"],"rows":[["Ada",100],["Ada",101],["Bo",102]]}
 c1-with-materialized	multiset	-	ok	WITH t AS MATERIALIZED (SELECT 1 AS x) SELECT x FROM t	{"columns":["x"],"types":["int4"],"rows":[[1]]}
 c1-with-unused	multiset	-	ok	WITH t AS (SELECT 1 AS x) SELECT 2	{"columns":["?column?"],"types":["int4"],"rows":[[2]]}
-c1-with-alias-of-cte	ordered	-	ok	WITH t AS (SELECT pid, name FROM person) SELECT u.name FROM t AS u WHERE u.pid = 3	{"columns":["name"],"types":["varchar"],"rows":[["Cy"]]}
+c1-with-alias-of-cte	multiset	-	ok	WITH t AS (SELECT pid, name FROM person) SELECT u.name FROM t AS u WHERE u.pid = 3	{"columns":["name"],"types":["varchar"],"rows":[["Cy"]]}
 err-c1-with-column-list-too-long	multiset	-	ok	WITH t (a, b) AS (SELECT 1) SELECT * FROM t	{"error":"42P10"}
 err-c1-with-duplicate-name	multiset	-	ok	WITH t AS (SELECT 1), t AS (SELECT 2) SELECT * FROM t	{"error":"42712"}
 err-c1-with-reads-itself	multiset	-	ok	WITH t AS (SELECT * FROM t) SELECT * FROM t	{"error":"42P01"}

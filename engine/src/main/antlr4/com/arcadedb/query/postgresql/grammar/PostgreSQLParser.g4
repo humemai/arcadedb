@@ -119,7 +119,7 @@ insertColumn
 insertSource
   : unsupportedInsertSource skipRest   # insertUnsupported
   | valuesClause                       # insertFromValues
-  | selectStmt                         # insertFromSelect
+  | {_input.LA(1) != VALUES}? selectStmt   # insertFromSelect
   ;
 
 unsupportedInsertSource
