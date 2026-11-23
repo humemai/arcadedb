@@ -59,7 +59,7 @@ class ColumnTypeTest extends TestHelper {
     expected.put(Type.ARRAY_OF_SHORTS, ColumnType.INT4_ARRAY);
     expected.put(Type.ARRAY_OF_INTEGERS, ColumnType.INT4_ARRAY);
     expected.put(Type.ARRAY_OF_LONGS, ColumnType.INT8_ARRAY);
-    expected.put(Type.ARRAY_OF_FLOATS, ColumnType.FLOAT4_ARRAY);
+    expected.put(Type.ARRAY_OF_FLOATS, ColumnType.VECTOR);
     expected.put(Type.ARRAY_OF_DOUBLES, ColumnType.FLOAT8_ARRAY);
     // the types the wire has no PostgreSQL name for are text there, so they are here
     expected.put(Type.OFFSET_TIME, ColumnType.VARCHAR);
@@ -146,7 +146,7 @@ class ColumnTypeTest extends TestHelper {
         .containsEntry("c_map", "jsonb").containsEntry("c_embedded", "jsonb").containsEntry("c_link", "text")
         .containsEntry("c_list", "text[]").containsEntry("c_list_string", "text[]").containsEntry("c_list_int", "int4[]")
         .containsEntry("c_list_decimal", "numeric[]").containsEntry("c_list_embedded", "jsonb")
-        .containsEntry("c_floats", "float4[]");
+        .containsEntry("c_floats", "vector");
     assertThat(types).hasSize(21);
   }
 }
