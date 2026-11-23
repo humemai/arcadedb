@@ -118,8 +118,8 @@ insertColumn
 
 insertSource
   : unsupportedInsertSource skipRest   # insertUnsupported
-  | selectStmt                         # insertFromSelect
   | valuesClause                       # insertFromValues
+  | selectStmt                         # insertFromSelect
   ;
 
 unsupportedInsertSource
@@ -225,6 +225,12 @@ unsupportedTransactionStmt
 
 selectStmt
   : withClause? queryExpr sortClause? (unsupportedLockingClause skipRest)? selectLimit? (unsupportedLockingClause skipRest)?
+  | withClause unsupportedWithWrite skipRest
+  ;
+
+// WITH x AS (...) INSERT, UPDATE, DELETE or MERGE: the statement is not a query
+unsupportedWithWrite
+  : INSERT | UPDATE | DELETE | MERGE
   ;
 
 // WITH RECURSIVE is refused: the first alternative takes the rest of the statement

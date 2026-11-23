@@ -1543,25 +1543,24 @@ w1-bad-bare-alias	syntax-error	unknown	-	INSERT INTO company c VALUES (1)	w1 (fo
 w1-bad-update-no-set	syntax-error	unknown	-	UPDATE person WHERE pid = 1	w1 (fork issue #29)	42601
 w1-bad-delete-no-from	syntax-error	unknown	-	DELETE person	w1 (fork issue #29)	42601
 w1-bad-commit-extra	syntax-error	unknown	-	COMMIT 1	w1 (fork issue #29)	42601
-c1-union-all	pending-server	inside	-	SELECT 1 UNION ALL SELECT 2	written for the parser	-
-c1-union-distinct	pending-server	inside	-	SELECT 1 UNION DISTINCT SELECT 2	written for the parser	-
-c1-intersect-all	pending-server	inside	-	SELECT 1 INTERSECT ALL SELECT 1	written for the parser	-
-c1-except-all	pending-server	inside	-	SELECT 1 EXCEPT ALL SELECT 2	written for the parser	-
-c1-set-order-limit	pending-server	inside	-	SELECT a FROM t UNION SELECT b FROM u ORDER BY 1 LIMIT 3 OFFSET 1	written for the parser	-
-c1-set-parenthesised	pending-server	inside	-	(SELECT a FROM t ORDER BY a LIMIT 1) UNION ALL (SELECT b FROM u ORDER BY b DESC LIMIT 1)	written for the parser	-
-c1-set-nested-parentheses	pending-server	inside	-	((SELECT 1))	written for the parser	-
-c1-set-three	pending-server	inside	-	SELECT 1 UNION SELECT 2 INTERSECT SELECT 3 EXCEPT SELECT 4	written for the parser	-
-c1-set-with-values	pending-server	outside	-	SELECT 1 UNION VALUES (2)	written for the parser	-
-c1-derived-column-list	pending-server	inside	-	SELECT x FROM (SELECT a FROM t) AS s (x)	written for the parser	-
-c1-derived-no-alias	pending-server	inside	-	SELECT count(*) FROM (SELECT 1)	written for the parser	-
-c1-derived-in-join	pending-server	inside	-	SELECT * FROM a JOIN (SELECT x FROM b UNION SELECT y FROM c) s ON a.x = s.x	written for the parser	-
-c1-with-two	pending-server	inside	-	WITH a AS (SELECT 1), b (x) AS (SELECT 2) SELECT * FROM a, b	written for the parser	-
-c1-with-materialized	pending-server	inside	-	WITH a AS MATERIALIZED (SELECT 1) SELECT * FROM a	written for the parser	-
-c1-with-not-materialized	pending-server	inside	-	WITH a AS NOT MATERIALIZED (SELECT 1) SELECT * FROM a	written for the parser	-
-c1-with-in-parentheses	pending-server	inside	-	(WITH a AS (SELECT 1) SELECT * FROM a) UNION SELECT 2	written for the parser	-
-c1-with-recursive	pending-server	outside	-	WITH RECURSIVE a AS (SELECT 1) SELECT * FROM a	written for the parser	-
-c1-with-insert	pending-server	outside	-	WITH a AS (INSERT INTO t VALUES (1) RETURNING x) SELECT * FROM a	written for the parser	-
-c1-with-search	pending-server	outside	-	WITH RECURSIVE a AS (SELECT 1) SEARCH DEPTH FIRST BY x SET y SELECT * FROM a	written for the parser	-
-c1-multiple-order-by	pending-server	unknown	-	(SELECT 1 ORDER BY 1) ORDER BY 1	written for the parser	-
-c1-union-missing-operand	pending-server	unknown	-	SELECT 1 UNION	written for the parser	-
-c1-with-missing-body	pending-server	unknown	-	WITH a AS (SELECT 1)	written for the parser	-
+c1-union-all	ok	inside	-	SELECT 1 UNION ALL SELECT 2	written for the parser	-
+c1-union-distinct	ok	inside	-	SELECT 1 UNION DISTINCT SELECT 2	written for the parser	-
+c1-intersect-all	ok	inside	-	SELECT 1 INTERSECT ALL SELECT 1	written for the parser	-
+c1-except-all	ok	inside	-	SELECT 1 EXCEPT ALL SELECT 2	written for the parser	-
+c1-set-order-limit	ok	inside	-	SELECT a FROM t UNION SELECT b FROM u ORDER BY 1 LIMIT 3 OFFSET 1	written for the parser	42P01
+c1-set-parenthesised	ok	inside	-	(SELECT a FROM t ORDER BY a LIMIT 1) UNION ALL (SELECT b FROM u ORDER BY b DESC LIMIT 1)	written for the parser	42P01
+c1-set-nested-parentheses	ok	inside	-	((SELECT 1))	written for the parser	-
+c1-set-three	ok	inside	-	SELECT 1 UNION SELECT 2 INTERSECT SELECT 3 EXCEPT SELECT 4	written for the parser	-
+c1-set-with-values	ok	outside	-	SELECT 1 UNION VALUES (2)	written for the parser	-
+c1-derived-column-list	ok	inside	-	SELECT x FROM (SELECT a FROM t) AS s (x)	written for the parser	42P01
+c1-derived-no-alias	ok	inside	-	SELECT count(*) FROM (SELECT 1)	written for the parser	-
+c1-derived-in-join	ok	inside	-	SELECT * FROM a JOIN (SELECT x FROM b UNION SELECT y FROM c) s ON a.x = s.x	written for the parser	42P01
+c1-with-two	ok	inside	-	WITH a AS (SELECT 1), b (x) AS (SELECT 2) SELECT * FROM a, b	written for the parser	-
+c1-with-materialized	ok	inside	-	WITH a AS MATERIALIZED (SELECT 1) SELECT * FROM a	written for the parser	-
+c1-with-not-materialized	ok	inside	-	WITH a AS NOT MATERIALIZED (SELECT 1) SELECT * FROM a	written for the parser	-
+c1-with-in-parentheses	ok	inside	-	(WITH a AS (SELECT 1) SELECT * FROM a) UNION SELECT 2	written for the parser	-
+c1-with-recursive	ok	outside	-	WITH RECURSIVE a AS (SELECT 1) SELECT * FROM a	written for the parser	-
+c1-with-insert	ok	outside	-	WITH a AS (INSERT INTO t VALUES (1) RETURNING x) SELECT * FROM a	written for the parser	42P01
+c1-multiple-order-by	syntax-error	unknown	-	(SELECT 1 ORDER BY 1) ORDER BY 1	written for the parser	42601
+c1-union-missing-operand	syntax-error	unknown	-	SELECT 1 UNION	written for the parser	42601
+c1-with-missing-body	syntax-error	unknown	-	WITH a AS (SELECT 1)	written for the parser	42601

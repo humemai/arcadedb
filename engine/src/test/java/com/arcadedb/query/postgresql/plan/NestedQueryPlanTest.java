@@ -125,12 +125,12 @@ class NestedQueryPlanTest extends TestHelper {
 
   @Test
   void aWithClauseIsPlannedInOrderAndRead() {
-    final List<List<Object>> rows = new ArrayList<>();
+    final List<Integer> pids = new ArrayList<>();
     try (final ResultSet resultSet = database.query("postgresql",
         "WITH a AS (SELECT pid FROM person), b AS (SELECT pid FROM a WHERE pid > 3) SELECT pid FROM b ORDER BY pid")) {
       while (resultSet.hasNext())
-        rows.add(List.of(resultSet.next().getProperty("pid")));
+        pids.add(resultSet.next().<Integer>getProperty("pid"));
     }
-    assertThat(rows).containsExactly(List.of(4), List.of(5));
+    assertThat(pids).containsExactly(4, 5);
   }
 }
