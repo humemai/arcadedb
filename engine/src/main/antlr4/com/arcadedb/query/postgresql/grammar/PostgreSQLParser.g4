@@ -53,15 +53,27 @@ root
 
 stmt
   : selectStmt SEMI?       # selectCommand
+  | insertStmt SEMI?       # insertCommand
+  | updateStmt SEMI?       # updateCommand
+  | deleteStmt SEMI?       # deleteCommand
+  | transactionStmt SEMI?  # transactionCommand
   | explainStmt SEMI?      # explainCommand
+  | unsupportedTransactionStmt skipRest SEMI?   # unsupportedTransactionCommand
   | unsupportedStatement skipRest SEMI?   # unsupportedCommand
   | SEMI?                  # emptyCommand
   ;
 
 explainStmt
   : EXPLAIN selectStmt
+  | EXPLAIN writeStmt
   | EXPLAIN unsupportedExplainOption skipRest
   | EXPLAIN unsupportedStatement skipRest
+  ;
+
+writeStmt
+  : insertStmt
+  | updateStmt
+  | deleteStmt
   ;
 
 unsupportedExplainOption
@@ -73,11 +85,139 @@ unsupportedExplainOption
 
 // the first words of every other statement of PostgreSQL, WITH, VALUES, TABLE and a parenthesised query
 unsupportedStatement
-  : ABORT | ALTER | ANALYSE | ANALYZE | BEGIN | CALL | CHECKPOINT | CLOSE | CLUSTER | COMMENT | COMMIT | COPY | CREATE
-  | DEALLOCATE | DECLARE | DELETE | DISCARD | DO | DROP | END | EXECUTE | FETCH | GRANT | IMPORT | INSERT | LISTEN | LOAD
-  | LOCK | MERGE | MOVE | NOTIFY | PREPARE | REASSIGN | REFRESH | REINDEX | RELEASE | RESET | REVOKE | ROLLBACK | SAVEPOINT
-  | SECURITY | SET | SHOW | START | TRUNCATE | UNLISTEN | UPDATE | VACUUM | VALUES | WITH | TABLE
+  : ALTER | ANALYSE | ANALYZE | CALL | CHECKPOINT | CLOSE | CLUSTER | COMMENT | COPY | CREATE
+  | DEALLOCATE | DECLARE | DISCARD | DO | DROP | EXECUTE | FETCH | GRANT | IMPORT | LISTEN | LOAD
+  | LOCK | MERGE | MOVE | NOTIFY | PREPARE | REASSIGN | REFRESH | REINDEX | RELEASE | RESET | REVOKE | SAVEPOINT
+  | SECURITY | SET | SHOW | TRUNCATE | UNLISTEN | VACUUM | VALUES | WITH | TABLE
   | LPAREN+ (SELECT | WITH | VALUES | TABLE)
+  ;
+
+// ============================================================================
+// WRITES: INSERT, UPDATE and DELETE (InsertStmt, UpdateStmt and DeleteStmt of gram.y) and the transaction statements
+// ============================================================================
+
+insertStmt
+  : INSERT INTO target=insertTarget rest=insertRest (unsupportedOnConflict skipRest)? returningClause?
+  ;
+
+insertTarget
+  : qualifiedName (AS alias=colId)?
+  ;
+
+insertRest
+  : DEFAULT VALUES                                    # insertDefaultValues
+  | columns=insertColumnList? source=insertSource     # insertColumnsAndSource
+  ;
+
+insertColumnList
+  : LPAREN items+=insertColumn (COMMA items+=insertColumn)* RPAREN
+  ;
+
+insertColumn
+  : colId unsupportedIndirection?
+  ;
+
+insertSource
+  : selectStmt                         # insertFromSelect
+  | valuesClause                       # insertFromValues
+  | unsupportedInsertSource skipRest   # insertUnsupported
+  ;
+
+unsupportedInsertSource
+  : OVERRIDING
+  | WITH
+  | TABLE
+  | LPAREN+ (SELECT | WITH | VALUES | TABLE)
+  ;
+
+unsupportedOnConflict
+  : ON CONFLICT
+  ;
+
+valuesClause
+  : VALUES rows+=valuesRow (COMMA rows+=valuesRow)*
+  ;
+
+valuesRow
+  : LPAREN items+=writeValue (COMMA items+=writeValue)* RPAREN
+  ;
+
+// the right side of an assignment and a value of a VALUES row: an expression, or DEFAULT
+writeValue
+  : DEFAULT   # defaultValue
+  | aExpr     # expressionValue
+  ;
+
+returningClause
+  : RETURNING targetList
+  ;
+
+updateStmt
+  : UPDATE target=updateTarget SET items+=setClause (COMMA items+=setClause)* (unsupportedUpdateFrom skipRest)?
+    writeWhereClause? returningClause?
+  ;
+
+updateTarget
+  : relationExpr (AS? alias=colId)?
+  ;
+
+setClause
+  : column=colId unsupportedIndirection? EQ value=writeValue   # setSingle
+  | unsupportedMultiAssign skipRest                            # setMultiple
+  ;
+
+unsupportedMultiAssign
+  : LPAREN
+  ;
+
+unsupportedUpdateFrom
+  : FROM
+  ;
+
+deleteStmt
+  : DELETE FROM target=updateTarget (unsupportedDeleteUsing skipRest)? writeWhereClause? returningClause?
+  ;
+
+unsupportedDeleteUsing
+  : USING
+  ;
+
+writeWhereClause
+  : WHERE aExpr
+  | WHERE unsupportedCurrentOf
+  ;
+
+unsupportedCurrentOf
+  : CURRENT OF colId
+  ;
+
+transactionStmt
+  : BEGIN transactionKeyword? (unsupportedTransactionMode skipRest)?                   # beginTransaction
+  | START TRANSACTION (unsupportedTransactionMode skipRest)?                           # startTransaction
+  | (COMMIT | END) transactionKeyword? (unsupportedTransactionChain skipRest)?          # commitTransaction
+  | (ROLLBACK | ABORT) transactionKeyword? (unsupportedTransactionChain skipRest)?      # rollbackTransaction
+  ;
+
+transactionKeyword
+  : WORK
+  | TRANSACTION
+  ;
+
+unsupportedTransactionMode
+  : ISOLATION
+  | READ
+  | DEFERRABLE
+  | NOT
+  ;
+
+unsupportedTransactionChain
+  : AND
+  ;
+
+// two-phase commit and savepoints: the other statements that start with COMMIT or ROLLBACK
+unsupportedTransactionStmt
+  : (COMMIT | ROLLBACK) PREPARED
+  | ROLLBACK transactionKeyword? TO
   ;
 
 // ============================================================================

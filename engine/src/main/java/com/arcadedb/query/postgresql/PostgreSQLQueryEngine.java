@@ -24,10 +24,16 @@ import com.arcadedb.database.DatabaseInternal;
 import com.arcadedb.query.OperationType;
 import com.arcadedb.query.QueryEngine;
 import com.arcadedb.query.postgresql.ast.AstPrinter;
+import com.arcadedb.query.postgresql.ast.DeleteStatement;
 import com.arcadedb.query.postgresql.ast.EmptyStatement;
 import com.arcadedb.query.postgresql.ast.ExplainStatement;
+import com.arcadedb.query.postgresql.ast.ExplainWriteStatement;
+import com.arcadedb.query.postgresql.ast.InsertStatement;
 import com.arcadedb.query.postgresql.ast.SelectStatement;
 import com.arcadedb.query.postgresql.ast.Statement;
+import com.arcadedb.query.postgresql.ast.TransactionStatement;
+import com.arcadedb.query.postgresql.ast.UpdateStatement;
+import com.arcadedb.query.postgresql.ast.WriteStatement;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.parser.StatementParser;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
@@ -44,10 +50,13 @@ import java.util.Set;
 
 /**
  * The {@code postgresql} query language: PostgreSQL-style SQL over a relational view of the schema, next to {@code sql} and
- * {@code opencypher} and with no effect on either. It reads only. A statement goes through three steps:
+ * {@code opencypher} and with no effect on either. It reads, and its parser reads the writes ({@code INSERT}, {@code UPDATE},
+ * {@code DELETE}) and the transaction statements too; their executors are the next stages of fork issue #29, and until a stage
+ * lands its statements are refused with SQLSTATE {@code 0A000} when they run ({@link #analyze} already classifies them). A
+ * statement goes through three steps:
  * <ol>
  * <li>the parser ({@link StatementParser}): text that is not PostgreSQL syntax is refused with SQLSTATE {@code 42601},
- * PostgreSQL syntax outside the subset (every write, {@code WITH}, a subquery, a right join) with {@code 0A000};</li>
+ * PostgreSQL syntax outside the subset ({@code WITH}, a subquery, a right join, DDL) with {@code 0A000};</li>
  * <li>the planner ({@link SelectPlanner}): names are bound through the {@link com.arcadedb.query.postgresql.catalog.RelationalCatalog}
  * ({@code 42703}, {@code 42P01}, {@code 42702}), every expression is typed by the evaluator with PostgreSQL's rules
  * ({@code 42883}, {@code 42804}, {@code 22P02}) and the access path of the table is chosen;</li>
@@ -67,11 +76,22 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   /** The column of an {@code EXPLAIN}, as PostgreSQL names it. */
   static final String PLAN_COLUMN = "QUERY PLAN";
 
-  /** The analysis of every statement the language accepts: a read, never schema, never a write. */
-  private static final AnalyzedQuery READ = new AnalyzedQuery() {
+  /** The analysis of a {@code SELECT} and of an {@code EXPLAIN}: a read, never schema, never a write. */
+  private static final AnalyzedQuery READ = new Analysis(true, false, OperationType.READ);
+
+  private static final AnalyzedQuery INSERT = new Analysis(false, false, OperationType.CREATE);
+
+  private static final AnalyzedQuery UPDATE = new Analysis(false, false, OperationType.UPDATE);
+
+  private static final AnalyzedQuery DELETE = new Analysis(false, false, OperationType.DELETE);
+
+  /** {@code BEGIN}, {@code COMMIT} and {@code ROLLBACK} read and write nothing themselves: a request about the transaction. */
+  private static final AnalyzedQuery TRANSACTION = new Analysis(false, true, OperationType.READ);
+
+  private record Analysis(boolean idempotent, boolean transactionControl, OperationType operation) implements AnalyzedQuery {
     @Override
     public boolean isIdempotent() {
-      return true;
+      return idempotent;
     }
 
     @Override
@@ -80,10 +100,15 @@ public class PostgreSQLQueryEngine implements QueryEngine {
     }
 
     @Override
-    public Set<OperationType> getOperationTypes() {
-      return CollectionUtils.singletonSet(OperationType.READ);
+    public boolean isTransactionControl() {
+      return transactionControl;
     }
-  };
+
+    @Override
+    public Set<OperationType> getOperationTypes() {
+      return CollectionUtils.singletonSet(operation);
+    }
+  }
 
   public static class PostgreSQLQueryEngineFactory implements QueryEngineFactory {
     @Override
@@ -109,14 +134,20 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
-   * A {@code SELECT} is a read. Everything else is refused: text that is not PostgreSQL syntax with SQLSTATE {@code 42601},
-   * and a statement outside the subset, which includes the empty statement and every write, with SQLSTATE {@code 0A000} and
-   * its position.
+   * A {@code SELECT} and an {@code EXPLAIN} are reads, {@code INSERT}, {@code UPDATE} and {@code DELETE} the writes of their
+   * name, {@code BEGIN}, {@code COMMIT} and {@code ROLLBACK} transaction control. Everything else is refused: text that is not
+   * PostgreSQL syntax with SQLSTATE {@code 42601}, and a statement outside the subset, which includes the empty statement, with
+   * SQLSTATE {@code 0A000} and its position.
    */
   @Override
   public AnalyzedQuery analyze(final String query) {
-    parse(query);
-    return READ;
+    return switch (parse(query)) {
+      case InsertStatement ignored -> INSERT;
+      case UpdateStatement ignored -> UPDATE;
+      case DeleteStatement ignored -> DELETE;
+      case TransactionStatement ignored -> TRANSACTION;
+      default -> READ;
+    };
   }
 
   @Override
@@ -130,7 +161,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
-   * The language reads only, so a command is a query: {@code SELECT} runs, a write is refused.
+   * A command is a query: {@code SELECT} runs, and a write or a transaction statement is refused with {@code 0A000} until the
+   * stage of fork issue #29 that runs it has landed.
    */
   @Override
   public ResultSet command(final String query, final ContextConfiguration configuration, final Map<String, Object> parameters) {
@@ -144,6 +176,9 @@ public class PostgreSQLQueryEngine implements QueryEngine {
 
   private ResultSet execute(final String query, final Parameters parameters) {
     final Statement statement = parse(query);
+    if (statement instanceof WriteStatement || statement instanceof ExplainWriteStatement || statement instanceof TransactionStatement)
+      throw new PostgreSQLFeatureNotSupportedException(statementName(statement) + " is not supported by the postgresql language yet ("
+          + statement.position() + ")");
     final SelectPlanner planner = new SelectPlanner(database, parameters);
     if (statement instanceof ExplainStatement explain)
       return explain(planner.plan(explain.select()));
@@ -152,6 +187,17 @@ public class PostgreSQLQueryEngine implements QueryEngine {
     if (!plan.warnings().isEmpty() && database.getConfiguration().getValueAsBoolean(GlobalConfiguration.POSTGRESQL_JOIN_WARNING))
       JoinWarnings.shared().warn(database.getName(), AstPrinter.fingerprint(statement), plan.warnings());
     return plan.execute(database);
+  }
+
+  private static String statementName(final Statement statement) {
+    return switch (statement) {
+      case InsertStatement ignored -> "INSERT";
+      case UpdateStatement ignored -> "UPDATE";
+      case DeleteStatement ignored -> "DELETE";
+      case ExplainWriteStatement ignored -> "EXPLAIN of a write";
+      case TransactionStatement transaction -> transaction.kind().name();
+      default -> throw new IllegalStateException("Not a write: " + statement);
+    };
   }
 
   /** {@code EXPLAIN}: the plan, one line per row, and nothing is read. */
@@ -167,7 +213,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
-   * @return the syntax tree of a {@code SELECT} or of an {@code EXPLAIN} of one
+   * @return the syntax tree of a statement of the language
    *
    * @throws PostgreSQLSyntaxException               when the text is not PostgreSQL syntax
    * @throws PostgreSQLFeatureNotSupportedException when the text is outside the subset, or is the empty statement

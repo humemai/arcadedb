@@ -152,6 +152,9 @@ class AstTest {
       case SelectStatement s -> "select";
       case ExplainStatement s -> "explain";
       case EmptyStatement s -> "empty";
+      case ExplainWriteStatement s -> "explain-write";
+      case WriteStatement s -> "write";
+      case TransactionStatement s -> "transaction";
     };
     assertThat(statementKind).isEqualTo("empty");
 

@@ -407,18 +407,16 @@ class StatementParserTest {
 
   static Stream<String[]> refusals() {
     return Stream.of(
-        new String[] { "INSERT INTO a VALUES (1)", "INSERT is not supported by the postgresql language (line 1, column 1)" },
-        new String[] { "\n  update a set x = 1", "UPDATE is not supported by the postgresql language (line 2, column 3)" },
-        new String[] { "DELETE FROM a", "DELETE is not supported" },
+        new String[] { "\n  create table a (x int)", "CREATE is not supported by the postgresql language (line 2, column 3)" },
         new String[] { "CREATE TABLE t (a int)", "CREATE is not supported" },
-        new String[] { "BEGIN", "BEGIN is not supported" },
+        new String[] { "DROP TABLE t", "DROP is not supported" },
         new String[] { "SET search_path = x", "SET is not supported" },
         new String[] { "WITH x AS (SELECT 1) SELECT * FROM x", "WITH is not supported by the postgresql language (line 1, column 1)" },
         new String[] { "VALUES (1)", "VALUES is not supported" },
         new String[] { "TABLE t", "TABLE is not supported" },
         new String[] { "(SELECT 1)", "A parenthesised query is not supported by the postgresql language (line 1, column 1)" },
         new String[] { "EXPLAIN ANALYZE SELECT 1", "EXPLAIN with an option is not supported by the postgresql language (line 1, column 9)" },
-        new String[] { "EXPLAIN INSERT INTO a VALUES (1)", "INSERT is not supported" },
+        new String[] { "EXPLAIN CREATE TABLE t (a int)", "CREATE is not supported" },
         new String[] { "SELECT * FROM a RIGHT JOIN b ON a.x = b.x", "RIGHT JOIN is not supported by the postgresql language (line 1, column 17)" },
         new String[] { "SELECT * FROM a FULL OUTER JOIN b ON a.x = b.x", "FULL OUTER JOIN is not supported" },
         new String[] { "SELECT * FROM a CROSS JOIN b", "CROSS JOIN is not supported" },
@@ -474,8 +472,8 @@ class StatementParserTest {
   }
 
   @Test
-  void aWriteIsToldHowToRunIt() {
-    assertThatThrownBy(() -> StatementParser.parse("DELETE FROM a")).hasMessageContaining("{sql}");
+  void aStatementOutsideTheLanguageIsToldHowToRunIt() {
+    assertThatThrownBy(() -> StatementParser.parse("CREATE TABLE a (x int)")).hasMessageContaining("{sql}");
     assertThatThrownBy(() -> StatementParser.parse("WITH x AS (SELECT 1) SELECT 1")).hasMessageNotContaining("{sql}");
   }
 
