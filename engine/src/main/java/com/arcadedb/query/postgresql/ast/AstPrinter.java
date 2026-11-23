@@ -231,6 +231,8 @@ public final class AstPrinter {
       case Expression.IsNull isNull -> "(" + print(isNull.operand()) + (isNull.negated() ? " IS NOT NULL)" : " IS NULL)");
       case Expression.InList in ->
           "(" + print(in.operand()) + (in.negated() ? " NOT IN (" : " IN (") + printAll(in.values()) + "))";
+      case Expression.InSubquery in ->
+          "(" + print(in.operand()) + (in.negated() ? " NOT IN (" : " IN (") + print(in.query()) + "))";
       case Expression.Between between -> "(" + print(between.operand()) + (between.negated() ? " NOT BETWEEN " : " BETWEEN ")
           + print(between.low()) + " AND " + print(between.high()) + ")";
       case Expression.Like like -> "(" + print(like.operand()) + (like.negated() ? " NOT LIKE " : " LIKE ") + print(like.pattern())

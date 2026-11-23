@@ -505,6 +505,7 @@ aExpr
   | l=aExpr op=(PLUS | MINUS) r=aExpr                                         # additiveExpr
   | unsupportedPrefixOperator aExpr                                           # unsupportedPrefixExpr
   | l=aExpr OP r=aExpr                                                  # operatorExpr
+  | aExpr NOT? IN LPAREN selectStmt RPAREN                                    # inSubqueryExpr
   | aExpr NOT? IN LPAREN exprList RPAREN                                      # inListExpr
   | aExpr NOT? IN unsupportedInSubquery                                       # unsupportedInExpr
   | aExpr NOT? BETWEEN ASYMMETRIC? low=bExpr AND high=aExpr                   # betweenExpr

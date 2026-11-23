@@ -78,6 +78,12 @@ class NestedQueryPlanTest extends TestHelper {
   }
 
   @Test
+  void aSubqueryOfInOverTheCapStopsWithOutOfMemory() {
+    assertCapStops("SELECT name FROM person WHERE pid IN (SELECT pid FROM orders)", "a subquery");
+    assertCapStops("SELECT name FROM person WHERE name NOT IN (SELECT name FROM company)", "a subquery");
+  }
+
+  @Test
   void aSetOperationInsideADerivedTableChargesTheMemoryOfTheDerivedTable() {
     assertCapStops("SELECT count(*) FROM (SELECT name FROM person UNION ALL SELECT name FROM company) t", "a derived table");
   }
