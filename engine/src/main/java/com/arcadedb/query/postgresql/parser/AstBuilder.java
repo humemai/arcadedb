@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.parser;
 
+import com.arcadedb.query.postgresql.PostgreSQLInvalidEscapeException;
 import com.arcadedb.query.postgresql.ast.EmptyStatement;
 import com.arcadedb.query.postgresql.ast.ExplainStatement;
 import com.arcadedb.query.postgresql.ast.Expression;
@@ -548,10 +549,12 @@ final class AstBuilder {
 
   /**
    * Reads one or more quoted pieces: {@code ''} is a quote, a backslash starts an escape in an {@code E} string, and pieces
-   * separated by whitespace with a newline are joined.
+   * separated by whitespace with a newline are joined. A Unicode escape that is the first half of a surrogate pair has to be
+   * followed at once by the second half, as in the scanner of PostgreSQL.
    */
   private static String decodeQuoted(final String raw, final int from, final boolean escapes, final Token token) {
     final StringBuilder value = new StringBuilder();
+    final int[] high = { -1 };
     int i = from;
     final int n = raw.length();
     while (i < n) {
@@ -559,6 +562,9 @@ final class AstBuilder {
       i++;
       while (i < n) {
         final char c = raw.charAt(i);
+        final boolean unicodeAhead = escapes && c == '\\' && i + 1 < n && (raw.charAt(i + 1) == 'u' || raw.charAt(i + 1) == 'U');
+        if (high[0] >= 0 && !unicodeAhead)
+          throw Diagnostics.syntaxError("invalid Unicode surrogate pair", token);
         if (c == '\'') {
           if (i + 1 < n && raw.charAt(i + 1) == '\'') {
             value.append('\'');
@@ -568,7 +574,7 @@ final class AstBuilder {
             break;
           }
         } else if (escapes && c == '\\' && i + 1 < n) {
-          i = escape(raw, i + 1, value, token);
+          i = escape(raw, i + 1, value, high, token);
         } else {
           value.append(c);
           i++;
@@ -584,11 +590,13 @@ final class AstBuilder {
         }
       }
     }
+    if (high[0] >= 0)
+      throw Diagnostics.syntaxError("invalid Unicode surrogate pair", token);
     return value.toString();
   }
 
   /** The escape after a backslash in an {@code E} string; returns the index after it. */
-  private static int escape(final String raw, final int at, final StringBuilder value, final Token token) {
+  private static int escape(final String raw, final int at, final StringBuilder value, final int[] high, final Token token) {
     final char c = raw.charAt(at);
     switch (c) {
     case 'b':
@@ -606,31 +614,63 @@ final class AstBuilder {
     case 't':
       value.append('\t');
       return at + 1;
-    case 'x':
-      return digits(raw, at + 1, 16, 2, 1, value, token);
+    case 'x': {
+      // up to two hex digits; without one the escape is the letter itself
+      int end = at + 1;
+      while (end < raw.length() && end - (at + 1) < 2 && Character.digit(raw.charAt(end), 16) >= 0)
+        end++;
+      if (end == at + 1) {
+        value.append('x');
+        return end;
+      }
+      value.appendCodePoint(Integer.parseInt(raw.substring(at + 1, end), 16));
+      return end;
+    }
     case 'u':
-      return digits(raw, at + 1, 16, 4, 4, value, token);
+      return unicode(raw, at + 1, 4, value, high, token);
     case 'U':
-      return digits(raw, at + 1, 16, 8, 8, value, token);
+      return unicode(raw, at + 1, 8, value, high, token);
     default:
-      if (c >= '0' && c <= '7')
-        return digits(raw, at, 8, 3, 1, value, token);
+      if (c >= '0' && c <= '7') {
+        // up to three octal digits
+        int end = at;
+        int octal = 0;
+        while (end < raw.length() && end - at < 3 && raw.charAt(end) >= '0' && raw.charAt(end) <= '7')
+          octal = octal * 8 + (raw.charAt(end++) - '0');
+        value.appendCodePoint(octal);
+        return end;
+      }
       value.append(c);
       return at + 1;
     }
   }
 
-  private static int digits(final String raw, final int from, final int radix, final int max, final int min,
-      final StringBuilder value, final Token token) {
-    int end = from;
-    while (end < raw.length() && end - from < max && Character.digit(raw.charAt(end), radix) >= 0)
-      end++;
-    if (end - from < min)
-      throw Diagnostics.syntaxError("invalid escape sequence in the string", token);
-    final int codePoint = Integer.parseInt(raw.substring(from, end), radix);
-    if (!Character.isValidCodePoint(codePoint))
+  /** {@code \\uXXXX} and {@code \\UXXXXXXXX}: too few digits is an invalid escape sequence, an unpaired surrogate a syntax error. */
+  private static int unicode(final String raw, final int from, final int digits, final StringBuilder value, final int[] high,
+      final Token token) {
+    final int end = from + digits;
+    boolean hex = end <= raw.length();
+    for (int i = from; hex && i < end; i++)
+      hex = Character.digit(raw.charAt(i), 16) >= 0;
+    if (!hex)
+      throw new PostgreSQLInvalidEscapeException(
+          "invalid Unicode escape: Unicode escapes must be \\uXXXX or \\UXXXXXXXX (" + Diagnostics.position(token) + ")");
+
+    final long code = Long.parseLong(raw.substring(from, end), 16);
+    if (high[0] >= 0) {
+      if (code < 0xDC00 || code > 0xDFFF)
+        throw Diagnostics.syntaxError("invalid Unicode surrogate pair", token);
+      value.appendCodePoint(Character.toCodePoint((char) high[0], (char) code));
+      high[0] = -1;
+    } else if (code >= 0xD800 && code <= 0xDBFF) {
+      high[0] = (int) code;
+    } else if (code >= 0xDC00 && code <= 0xDFFF) {
+      throw Diagnostics.syntaxError("invalid Unicode surrogate pair", token);
+    } else if (code == 0 || code > 0x10FFFF) {
       throw Diagnostics.syntaxError("invalid Unicode escape value", token);
-    value.appendCodePoint(codePoint);
+    } else {
+      value.appendCodePoint((int) code);
+    }
     return end;
   }
 

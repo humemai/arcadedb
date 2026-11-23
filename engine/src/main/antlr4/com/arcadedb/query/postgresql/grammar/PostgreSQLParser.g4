@@ -54,14 +54,14 @@ root
 stmt
   : selectStmt SEMI?       # selectCommand
   | explainStmt SEMI?      # explainCommand
-  | unsupportedStatement   # unsupportedCommand
+  | unsupportedStatement skipRest SEMI?   # unsupportedCommand
   | SEMI?                  # emptyCommand
   ;
 
 explainStmt
   : EXPLAIN selectStmt
-  | EXPLAIN unsupportedExplainOption
-  | EXPLAIN unsupportedStatement
+  | EXPLAIN unsupportedExplainOption skipRest
+  | EXPLAIN unsupportedStatement skipRest
   ;
 
 unsupportedExplainOption
@@ -85,14 +85,14 @@ unsupportedStatement
 // ============================================================================
 
 selectStmt
-  : SELECT selectQuantifier? targetList? unsupportedInto? fromClause? whereClause? groupClause? havingClause?
-    unsupportedWindowClause? unsupportedSetOperation? sortClause? unsupportedLockingClause? selectLimit?
-    unsupportedLockingClause?
+  : SELECT selectQuantifier? targetList? (unsupportedInto skipRest)? fromClause? whereClause? groupClause? havingClause?
+    (unsupportedWindowClause skipRest)? (unsupportedSetOperation skipRest)? sortClause?
+    (unsupportedLockingClause skipRest)? selectLimit? (unsupportedLockingClause skipRest)?
   ;
 
 selectQuantifier
   : ALL
-  | DISTINCT unsupportedDistinctOn?
+  | DISTINCT (unsupportedDistinctOn skipRest)?
   ;
 
 unsupportedDistinctOn
@@ -145,7 +145,7 @@ tableRef
   | tableRef unsupportedJoinKind JOIN tableRef joinQual?  # unsupportedJoinRef
   | LPAREN tableRef RPAREN                                # parenRef
   | LPAREN tableRef RPAREN unsupportedJoinAlias           # unsupportedParenAliasRef
-  | unsupportedTableRef                                   # unsupportedRef
+  | unsupportedTableRef unsupportedTableAlias?            # unsupportedRef
   ;
 
 joinKind
@@ -159,7 +159,7 @@ joinQual
   ;
 
 unsupportedJoinUsing
-  : USING
+  : USING parenGroup (AS colId)?
   ;
 
 unsupportedJoinKind
@@ -170,21 +170,20 @@ unsupportedJoinKind
   ;
 
 unsupportedJoinAlias
-  : AS colId
-  | colId
+  : AS? colId unsupportedColumnAliases?
   ;
 
 unsupportedTablesample
-  : TABLESAMPLE
+  : TABLESAMPLE funcName parenGroup (REPEATABLE parenGroup)?
   ;
 
 unsupportedTableRef
-  : LATERAL
-  | ROWS FROM LPAREN
-  | XMLTABLE
-  | JSON_TABLE
-  | funcName LPAREN
-  | LPAREN+ (SELECT | WITH | VALUES | TABLE)
+  : LATERAL (parenGroup | funcName parenGroup)
+  | ROWS FROM parenGroup
+  | XMLTABLE parenGroup
+  | JSON_TABLE parenGroup
+  | funcName parenGroup
+  | subqueryGroup
   ;
 
 relationExpr
@@ -207,7 +206,11 @@ aliasClause
   ;
 
 unsupportedColumnAliases
-  : LPAREN
+  : parenGroup
+  ;
+
+unsupportedTableAlias
+  : AS? colId unsupportedColumnAliases?
   ;
 
 // ---------------------------------------------------------------- WHERE, GROUP BY, HAVING
@@ -231,8 +234,8 @@ unsupportedGroupByQuantifier
   ;
 
 unsupportedGroupingSet
-  : (ROLLUP | CUBE) LPAREN exprList RPAREN
-  | GROUPING SETS
+  : (ROLLUP | CUBE) parenGroup
+  | GROUPING SETS parenGroup
   | LPAREN RPAREN
   ;
 
@@ -252,7 +255,7 @@ sortBy
   ;
 
 unsupportedSortUsing
-  : USING
+  : USING (LT | GT | EQ | LE | GE | NE | OP | PLUS | MINUS | STAR | SLASH | PERCENT | CARET)
   ;
 
 nullsOrder
@@ -270,11 +273,11 @@ limitClause
   ;
 
 unsupportedLimitComma
-  : COMMA
+  : COMMA aExpr
   ;
 
 unsupportedFetchClause
-  : FETCH
+  : FETCH (FIRST | NEXT) fetchFirstValue? (ROW | ROWS) (ONLY | WITH TIES)
   ;
 
 offsetClause
@@ -297,7 +300,8 @@ aExpr
   : cExpr                                                                     # primaryExpr
   | aExpr TYPECAST typename                                                   # typecastExpr
   | op=(PLUS | MINUS) aExpr                                                   # unaryExpr
-  | aExpr unsupportedPostfix                                                  # unsupportedPostfixExpr
+  | aExpr unsupportedCollate                                                  # unsupportedCollateExpr
+  | aExpr unsupportedAtTimeZone                                               # unsupportedAtTimeZoneExpr
   | l=aExpr CARET r=aExpr                                                     # powerExpr
   | l=aExpr op=(STAR | SLASH | PERCENT) r=aExpr                               # multiplicativeExpr
   | l=aExpr op=(PLUS | MINUS) r=aExpr                                         # additiveExpr
@@ -315,6 +319,7 @@ aExpr
   | l=aExpr op=(LT | GT | EQ | LE | GE | NE) r=aExpr                          # comparisonExpr
   | aExpr IS NOT? NULL                                                        # isNullExpr
   | aExpr op=(ISNULL | NOTNULL)                                               # isNullPostfixExpr
+  | aExpr unsupportedIsDistinct                                               # unsupportedIsDistinctExpr
   | aExpr unsupportedIsForm                                                   # unsupportedIsExpr
   | NOT aExpr                                                                 # notExpr
   | l=aExpr AND r=aExpr                                                       # andExpr
@@ -334,17 +339,12 @@ bExpr
   | l=bExpr op=(LT | GT | EQ | LE | GE | NE) r=bExpr                          # bComparisonExpr
   ;
 
-unsupportedPostfix
-  : COLLATE
-  | AT (TIME ZONE | LOCAL)
-  ;
-
 unsupportedPrefixOperator
   : OP
   ;
 
 unsupportedInSubquery
-  : LPAREN+ (SELECT | WITH | VALUES | TABLE)
+  : subqueryGroup
   ;
 
 unsupportedSymmetric
@@ -356,11 +356,11 @@ unsupportedPatternOperator
   ;
 
 unsupportedQuantifiedComparison
-  : (EQ | LT | GT | LE | GE | NE | PLUS | MINUS | STAR | SLASH | PERCENT | CARET | OP) (ANY | SOME | ALL) LPAREN
+  : (EQ | LT | GT | LE | GE | NE | PLUS | MINUS | STAR | SLASH | PERCENT | CARET | OP) (ANY | SOME | ALL) parenGroup
   ;
 
 unsupportedIsForm
-  : IS NOT? (TRUE | FALSE | UNKNOWN | DISTINCT FROM | DOCUMENT | NORMALIZED | NFC | NFD | NFKC | NFKD | OF | JSON)
+  : IS NOT? (TRUE | FALSE | UNKNOWN | DOCUMENT | NORMALIZED | NFC | NFD | NFKC | NFKD | OF parenGroup | JSON)
   ;
 
 cExpr
@@ -369,7 +369,7 @@ cExpr
   | PARAM                                                                      # paramExpr
   | LPAREN aExpr RPAREN                                                        # parenExpr
   | LPAREN aExpr RPAREN unsupportedIndirection                                 # unsupportedParenIndirectionExpr
-  | LPAREN aExpr unsupportedRowComma                                           # unsupportedRowExpr
+  | LPAREN aExpr unsupportedRowComma RPAREN                                   # unsupportedRowExpr
   | caseExpr                                                                   # caseExprAlt
   | CAST LPAREN aExpr AS typename RPAREN                                       # castExpr
   | funcApplication unsupportedFunctionSuffix?                                 # functionCallExpr
@@ -386,32 +386,32 @@ cExpr
   ;
 
 unsupportedIndirection
-  : DOT
-  | LBRACKET
+  : DOT (colLabel | STAR)
+  | bracketGroup
   ;
 
 unsupportedRowComma
-  : COMMA
+  : COMMA balancedTokens
   ;
 
 unsupportedFunctionSuffix
-  : WITHIN GROUP
-  | FILTER LPAREN
-  | OVER (LPAREN | colId)
+  : WITHIN GROUP parenGroup
+  | FILTER parenGroup
+  | OVER (parenGroup | colId)
   ;
 
 // a subquery, EXISTS, an array, a row, GROUPING, and the keyword functions the subset does not have
 unsupportedPrimary
-  : LPAREN+ (SELECT | WITH | VALUES | TABLE)
-  | EXISTS LPAREN
-  | ARRAY (LBRACKET | LPAREN)
-  | ROW LPAREN
-  | GROUPING LPAREN
+  : subqueryGroup
+  | EXISTS parenGroup
+  | ARRAY (bracketGroup | parenGroup)
+  | ROW parenGroup
+  | GROUPING parenGroup
   | CURRENT_ROLE | CURRENT_USER | SESSION_USER | SYSTEM_USER | USER | CURRENT_CATALOG | CURRENT_SCHEMA
-  | COLLATION FOR
+  | COLLATION FOR parenGroup
   | (OVERLAY | NORMALIZE | TREAT | XMLCONCAT | XMLELEMENT | XMLEXISTS | XMLFOREST | XMLPARSE | XMLPI | XMLROOT | XMLSERIALIZE
     | JSON | JSON_ARRAY | JSON_ARRAYAGG | JSON_EXISTS | JSON_OBJECT | JSON_OBJECTAGG | JSON_QUERY | JSON_SCALAR
-    | JSON_SERIALIZE | JSON_VALUE | MERGE_ACTION) LPAREN
+    | JSON_SERIALIZE | JSON_VALUE | MERGE_ACTION) parenGroup
   ;
 
 columnRef
@@ -419,7 +419,7 @@ columnRef
   ;
 
 unsupportedSubscript
-  : LBRACKET
+  : bracketGroup
   ;
 
 caseExpr
@@ -454,11 +454,12 @@ funcArgList
 funcArgExpr
   : unsupportedNamedArg
   | unsupportedVariadic
+  | unsupportedStarArg
   | aExpr
   ;
 
 unsupportedNamedArg
-  : paramName (COLON_EQUALS | EQUALS_GREATER)
+  : paramName (COLON_EQUALS | EQUALS_GREATER) aExpr
   ;
 
 paramName
@@ -466,11 +467,11 @@ paramName
   ;
 
 unsupportedVariadic
-  : VARIADIC
+  : VARIADIC aExpr
   ;
 
 unsupportedAggregateOrder
-  : ORDER BY
+  : ORDER BY balancedTokens
   ;
 
 extractArg
@@ -524,7 +525,7 @@ sconst
   ;
 
 unsupportedUnicodeString
-  : USCONST
+  : USCONST (UESCAPE SCONST)?
   ;
 
 unsupportedBitString
@@ -548,7 +549,7 @@ typename
   ;
 
 unsupportedSetof
-  : SETOF
+  : SETOF simpleTypename arrayBounds?
   ;
 
 arrayBounds
@@ -613,9 +614,9 @@ intervalSecond
   ;
 
 unsupportedBitType
-  : BIT VARYING?
-  | NATIONAL
-  | NCHAR
+  : BIT VARYING? parenGroup?
+  | NATIONAL (CHARACTER | CHAR) VARYING? parenGroup?
+  | NCHAR VARYING? parenGroup?
   ;
 
 // ============================================================================
@@ -625,7 +626,7 @@ unsupportedBitType
 identTok
   : IDENT
   | QUOTED_IDENT
-  | UIDENT
+  | unsupportedUnicodeIdent
   ;
 
 colId
@@ -651,6 +652,50 @@ colLabel
 bareColLabel
   : identTok
   | bareLabelKeyword
+  ;
+
+unsupportedCollate
+  : COLLATE colId (DOT colLabel)*
+  ;
+
+unsupportedAtTimeZone
+  : AT LOCAL
+  | AT TIME ZONE aExpr
+  ;
+
+unsupportedIsDistinct
+  : IS NOT? DISTINCT FROM aExpr
+  ;
+
+unsupportedStarArg
+  : colId (DOT colLabel)* DOT STAR
+  ;
+
+unsupportedUnicodeIdent
+  : UIDENT (UESCAPE SCONST)?
+  ;
+
+// Groups of tokens that the grammar does not read but has to be able to skip, so that what follows them is still read.
+parenGroup
+  : LPAREN balancedTokens RPAREN
+  ;
+
+bracketGroup
+  : LBRACKET (~(LBRACKET | RBRACKET) | bracketGroup)* RBRACKET
+  ;
+
+balancedTokens
+  : (~(LPAREN | RPAREN) | parenGroup)*
+  ;
+
+subqueryGroup
+  : LPAREN (SELECT | WITH | VALUES | TABLE) balancedTokens RPAREN
+  | LPAREN subqueryGroup RPAREN
+  ;
+
+// the rest of the statement after a construct the grammar does not read
+skipRest
+  : (~SEMI)*
   ;
 
 unreservedKeyword

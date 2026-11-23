@@ -64,7 +64,8 @@ public final class StatementParser {
     lexer.removeErrorListeners();
     lexer.addErrorListener(errors);
 
-    final PostgreSQLParser parser = new PostgreSQLParser(new CommonTokenStream(lexer));
+    final CommonTokenStream stream = new CommonTokenStream(lexer);
+    final PostgreSQLParser parser = new PostgreSQLParser(stream);
     parser.removeErrorListeners();
     final UnsupportedCollector collector = new UnsupportedCollector(parser.getRuleNames());
     errors.collector = collector;
@@ -72,6 +73,9 @@ public final class StatementParser {
     parser.addErrorListener(errors);
 
     final PostgreSQLParser.RootContext root = parser.root();
+
+    // what PostgreSQL rejects after it has read the text is a syntax error too, and comes before a construct it does not support
+    StatementChecks.run(root, stream);
 
     // the text is PostgreSQL syntax; if a construct outside the subset came in it, say so
     if (collector.first != null)

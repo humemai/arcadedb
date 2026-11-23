@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql.parser;
 
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
+import com.arcadedb.query.postgresql.PostgreSQLInvalidEscapeException;
 import com.arcadedb.query.postgresql.PostgreSQLSyntaxException;
 import com.arcadedb.query.postgresql.ast.AstPrinter;
 import com.arcadedb.query.postgresql.ast.EmptyStatement;
@@ -518,5 +519,50 @@ class StatementParserTest {
     assertThat(select("SELECT a FROM t")).isEqualTo(select("SELECT\n\n  a\n    FROM t -- comment"));
     assertThat(select("SELECT a FROM t")).isNotEqualTo(select("SELECT b FROM t"));
     assertThat(List.of(select("SELECT 1"))).containsExactly(select(" SELECT 1 "));
+  }
+
+  // ------------------------------------------------------------------------------------------------ what PostgreSQL itself refuses
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "SELECT a FROM t FETCH FIRST 2 ROW WITH TIES",
+      "SELECT a FROM t ORDER BY a FETCH FIRST 1 ROW WITH TIES FOR UPDATE SKIP LOCKED",
+      "SELECT U&'wrong: \\061'", "SELECT U&'wrong: \\+0061'", "SELECT U&'wrong: +0061' UESCAPE +",
+      "SELECT U&'wrong: +0061' UESCAPE '+'", "SELECT U&'wrong: \\db99'", "SELECT U&'wrong: \\db99xy'",
+      "SELECT U&'wrong: \\db99\\\\'", "SELECT U&'wrong: \\db99\\0061'", "SELECT U&'wrong: \\+2FFFFF'",
+      "SELECT E'wrong: \\udb99'", "SELECT E'wrong: \\udb99xy'", "SELECT E'wrong: \\udb99\\\\'",
+      "SELECT E'wrong: \\udb99\\u0061'", "SELECT E'wrong: \\U0000db99\\U00000061'", "SELECT E'wrong: \\udc99'" })
+  void textThatPostgreSQLRefusesIsASyntaxErrorEvenInsideAConstructTheSubsetDoesNotHave(final String text) {
+    assertThatThrownBy(() -> StatementParser.parse(text)).as(text).isInstanceOf(PostgreSQLSyntaxException.class);
+  }
+
+  @Test
+  void anEscapeThatPostgreSQLCallsInvalidIsNotASyntaxError() {
+    assertThatThrownBy(() -> StatementParser.parse("SELECT E'wrong: \\u061'")).isInstanceOfSatisfying(
+        PostgreSQLInvalidEscapeException.class, e -> assertThat(e.getSqlState()).isEqualTo("22025"));
+    assertThatThrownBy(() -> StatementParser.parse("SELECT E'wrong: \\U0061'")).isInstanceOf(
+        PostgreSQLInvalidEscapeException.class);
+    // a hex escape with no digit is the letter, a surrogate pair is one character
+    assertThat(stringValue("SELECT E'\\xZ'")).isEqualTo("xZ");
+    assertThat(stringValue("SELECT E'\\ud83d\\ude00'")).isEqualTo("\uD83D\uDE00");
+    assertThat(stringValue("SELECT E'\\U0001f600'")).isEqualTo("\uD83D\uDE00");
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {
+      "SELECT U&'d\\0061t'", "SELECT U&'d!0061t' UESCAPE '!'", "SELECT 1 AS U&\"\\\" UESCAPE '!'",
+      "SELECT * FROM (a JOIN b USING (i)) AS x WHERE a.t = 1", "SELECT * FROM (a JOIN b USING (i) AS x) AS xx WHERE x.i = 1",
+      "SELECT * FROM a LEFT JOIN (b JOIN (SELECT 123 AS x) ss ON b.q = x) ON a.q = b.q ORDER BY 1, 2",
+      "SELECT * FROM (t1 a (x, y, z) CROSS JOIN t2 b (d, e)) AS tx (i, j, k, l, m)",
+      "SELECT t1.q2, count(t2.*) FROM t1 LEFT JOIN (SELECT * FROM t3 OFFSET 0) t2 ON (t1.q2 = t2.q1) GROUP BY t1.q2",
+      "SELECT 1 FROM (unnest(ARRAY[1, (SELECT 2)]) AS u(b) RIGHT JOIN (VALUES (1)) AS v(b) USING (b) FULL JOIN t i8 ON true) AS j, length(j::text) f",
+      "SELECT j FROM i4 LEFT JOIN (LATERAL (VALUES (i4.f1)) AS v(a) CROSS JOIN i8) AS j ON (j.q1 = 123), i4b WHERE i4.f1 = 0",
+      "SELECT * FROM x JOIN (y x CROSS JOIN z y(ff)) j ON q1 = f1",
+      "SELECT v.* FROM (x LEFT JOIN (SELECT q1 FROM t) y ON x.q2 = y.q1), LATERAL (SELECT x.q1 UNION ALL SELECT x.q2) v(vx, vy)",
+      "SELECT * FROM a JOIN LATERAL (SELECT 1 UNION ALL SELECT 2) ss ON true",
+      "SELECT bar.* FROM (t1 JOIN t2 USING (a) AS foo) AS bar, t3 FOR UPDATE OF bar",
+      "SELECT row_to_json(x.*) FROM a JOIN b USING (i) AS x WHERE a.t = 'one'" })
+  void aConstructOutsideTheSubsetIsRefusedWhateverFollowsIt(final String text) {
+    assertThatThrownBy(() -> StatementParser.parse(text)).as(text).isInstanceOf(PostgreSQLFeatureNotSupportedException.class);
   }
 }
