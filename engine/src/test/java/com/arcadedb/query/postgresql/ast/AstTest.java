@@ -140,6 +140,7 @@ class AstTest {
       case Expression.InList e -> "in";
       case Expression.InSubquery e -> "in-subquery";
       case Expression.ScalarSubquery e -> "scalar-subquery";
+      case Expression.Exists e -> "exists";
       case Expression.Between e -> "between";
       case Expression.Like e -> "like";
       case Expression.Case e -> "case";

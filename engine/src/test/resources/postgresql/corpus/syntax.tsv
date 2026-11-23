@@ -73,7 +73,7 @@ union	ok	inside	-	SELECT 1 UNION SELECT 2	written for the parser	-
 values	ok	outside	-	VALUES (1), (2)	written for the parser	-
 subquery-from	ok	inside	-	SELECT * FROM (SELECT 1) s	written for the parser	-
 subquery-in	ok	inside	-	SELECT name FROM person WHERE pid IN (SELECT pid FROM orders)	written for the parser	-
-exists	ok	outside	-	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid)	written for the parser	-
+exists	ok	inside	-	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid)	written for the parser	-
 window	ok	outside	-	SELECT name, row_number() OVER (ORDER BY name) FROM person	written for the parser	-
 distinct-on	ok	outside	-	SELECT DISTINCT ON (city) city, name FROM person	written for the parser	-
 ilike	ok	outside	-	SELECT name FROM person WHERE name ILIKE 'a%'	written for the parser	-
@@ -1589,3 +1589,10 @@ c4-using-alias	pending-server	outside	-	SELECT * FROM a JOIN b USING (x) AS j	wr
 c4-using-right	pending-server	outside	-	SELECT * FROM a RIGHT JOIN b USING (x)	written for the parser	-
 c4-using-empty-list	pending-server	unknown	-	SELECT * FROM a JOIN b USING ()	written for the parser	-
 c4-join-without-condition	pending-server	unknown	-	SELECT * FROM a JOIN b	written for the parser	-
+c5-exists-select-list	pending-server	inside	-	SELECT EXISTS (SELECT 1 FROM t WHERE t.a = u.a) FROM u	written for the parser	-
+c5-not-exists	pending-server	inside	-	SELECT a FROM u WHERE NOT EXISTS (SELECT 1 FROM t WHERE t.a = u.a)	written for the parser	-
+c5-exists-with-set-operation	pending-server	inside	-	SELECT a FROM u WHERE EXISTS (SELECT 1 UNION SELECT 2)	written for the parser	-
+c5-exists-parenthesised-twice	pending-server	inside	-	SELECT a FROM u WHERE EXISTS ((SELECT 1))	written for the parser	-
+c5-exists-values	pending-server	outside	-	SELECT EXISTS (VALUES (1))	written for the parser	-
+c5-exists-without-subquery	pending-server	unknown	-	SELECT EXISTS (1)	written for the parser	-
+c5-exists-unclosed	pending-server	unknown	-	SELECT EXISTS (SELECT 1	written for the parser	-

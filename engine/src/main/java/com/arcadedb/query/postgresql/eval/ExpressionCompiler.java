@@ -20,6 +20,13 @@ package com.arcadedb.query.postgresql.eval;
 
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.ast.Expression;
+import com.arcadedb.query.postgresql.ast.SelectItem;
+import com.arcadedb.query.postgresql.ast.SelectStatement;
+import com.arcadedb.query.postgresql.ast.SetOperationStatement;
+import com.arcadedb.query.postgresql.ast.SortItem;
+import com.arcadedb.query.postgresql.ast.Statement;
+import com.arcadedb.query.postgresql.ast.TableReference;
+import com.arcadedb.query.postgresql.ast.WithStatement;
 import com.arcadedb.query.postgresql.ast.TypeName;
 
 import java.math.BigDecimal;
@@ -109,6 +116,7 @@ public final class ExpressionCompiler {
       case Expression.InList e -> inList(e);
       case Expression.InSubquery e -> inSubquery(e);
       case Expression.ScalarSubquery e -> scalarSubquery(e);
+      case Expression.Exists e -> exists(e);
       case Expression.Between e -> between(e);
       case Expression.Like e -> like(e);
       case Expression.Case e -> caseExpression(e);
@@ -176,6 +184,7 @@ public final class ExpressionCompiler {
       out.addAll(e.values());
     }
     case Expression.InSubquery e -> out.add(e.operand());
+    case Expression.Exists e -> collectReferences(e.query(), out);
     case Expression.Between e -> {
       out.add(e.operand());
       out.add(e.low());
@@ -204,6 +213,62 @@ public final class ExpressionCompiler {
     }
     }
     return out;
+  }
+
+  /** Every column reference in a query, at any depth: the ones a correlated subquery can read from the query around it are among them. */
+  private static void collectReferences(final Statement query, final List<Expression> out) {
+    switch (query) {
+    case SelectStatement select -> {
+      for (final SelectItem item : select.items())
+        if (item instanceof SelectItem.Projection projection)
+          collectReferences(projection.expression(), out);
+      for (final TableReference from : select.from())
+        collectReferences(from, out);
+      if (select.where() != null)
+        collectReferences(select.where(), out);
+      for (final Expression group : select.groupBy())
+        collectReferences(group, out);
+      if (select.having() != null)
+        collectReferences(select.having(), out);
+      for (final SortItem sort : select.orderBy())
+        collectReferences(sort.expression(), out);
+    }
+    case SetOperationStatement set -> {
+      collectReferences(set.left(), out);
+      collectReferences(set.right(), out);
+      for (final SortItem sort : set.orderBy())
+        collectReferences(sort.expression(), out);
+    }
+    case WithStatement with -> {
+      for (final WithStatement.Cte cte : with.ctes())
+        collectReferences(cte.query(), out);
+      collectReferences(with.body(), out);
+    }
+    default -> {
+    }
+    }
+  }
+
+  private static void collectReferences(final TableReference from, final List<Expression> out) {
+    switch (from) {
+    case TableReference.Join join -> {
+      collectReferences(join.left(), out);
+      collectReferences(join.right(), out);
+      if (join.condition() != null)
+        collectReferences(join.condition(), out);
+    }
+    case TableReference.Subquery subquery -> collectReferences(subquery.query(), out);
+    default -> {
+    }
+    }
+  }
+
+  private static void collectReferences(final Expression expression, final List<Expression> out) {
+    if (expression instanceof Expression.ColumnRef)
+      out.add(expression);
+    else
+      for (final Expression child : children(expression))
+        collectReferences(child, out);
   }
 
   // ---- constants and parameters ----
@@ -678,6 +743,14 @@ public final class ExpressionCompiler {
       }
       return unknown ? null : (Object) negated;
     });
+  }
+
+  /** {@code EXISTS (subquery)}: never {@code NULL}. The planner decides how the rows are found (see {@link SubqueryPlanner#exists}). */
+  private Evaluable exists(final Expression.Exists e) {
+    final SubqueryPlanner planner = scope.subqueries();
+    if (planner == null)
+      throw new PostgreSQLFeatureNotSupportedException("A subquery is not supported in this clause");
+    return planner.exists(e.query(), this);
   }
 
   /**

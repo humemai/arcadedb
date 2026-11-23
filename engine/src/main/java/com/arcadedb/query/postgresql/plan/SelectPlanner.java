@@ -58,6 +58,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Turns a {@code SELECT} of the subset into a {@link SelectPlan}: binds the names, types every expression with the evaluator,
@@ -375,30 +376,231 @@ public class SelectPlanner {
    * here, run once when the first row needs it, and its rows are kept under the memory cap of the joins (SQLSTATE {@code 53200}).
    */
   private SubqueryPlanner subqueryPlanner() {
-    return query -> {
-      final QueryPlan plan = planQuery(query, false);
-      final MaterializedSource.Materialization kept = new MaterializedSource.Materialization(plan, joinMemoryCap, "a subquery");
-      final List<PgType> types = plan.outputTypes();
-      final List<String> typeNames = new ArrayList<>();
-      for (final PostgreSQLResultSet.Column column : plan.columns())
-        typeNames.add(column.typeName());
-      return new Subquery() {
-        @Override
-        public List<PgType> types() {
-          return types;
-        }
+    return new SubqueryPlanner() {
+      @Override
+      public Subquery plan(final Statement query) {
+        return planSubquery(query);
+      }
 
-        @Override
-        public List<String> typeNames() {
-          return typeNames;
-        }
-
-        @Override
-        public List<Object[]> rows() {
-          return kept.rows();
-        }
-      };
+      @Override
+      public Evaluable exists(final Statement query, final ExpressionCompiler outer) {
+        return planExists(query, outer);
+      }
     };
+  }
+
+  private Subquery planSubquery(final Statement query) {
+    final QueryPlan plan = planQuery(query, false);
+    final MaterializedSource.Materialization kept = new MaterializedSource.Materialization(plan, joinMemoryCap, "a subquery");
+    final List<PgType> types = plan.outputTypes();
+    final List<String> typeNames = new ArrayList<>();
+    for (final PostgreSQLResultSet.Column column : plan.columns())
+      typeNames.add(column.typeName());
+    return new Subquery() {
+      @Override
+      public List<PgType> types() {
+        return types;
+      }
+
+      @Override
+      public List<String> typeNames() {
+        return typeNames;
+      }
+
+      @Override
+      public List<Object[]> rows() {
+        return kept.rows();
+      }
+    };
+  }
+
+  // ---- EXISTS ----
+
+  /** Which query a column reference belongs to, for the references of a term of the {@code WHERE} clause of a subquery. */
+  private enum Side {
+    NONE, INNER, OUTER, MIXED
+  }
+
+  /**
+   * {@code EXISTS (query)}. A subquery that reads no column of the query around it is run once, with {@code LIMIT 1}, and the answer
+   * is whether it had a row. A correlated one is a hash semi join: its {@code WHERE} terms that read the outer query must be
+   * equalities between an expression of the subquery and an expression of the outer query; those are taken out, the subquery runs
+   * once for the expressions of its side of them, and the rows are kept in a hash set (under the memory cap). An outer row is then a
+   * probe: its keys are in the set or not, and a {@code NULL} key never is, because no equality with {@code NULL} is true.
+   * {@code NOT EXISTS} is the negation, an anti join, and keeps the rows with a {@code NULL} key.
+   *
+   * @throws PostgreSQLFeatureNotSupportedException for any other correlation
+   */
+  private Evaluable planExists(final Statement query, final ExpressionCompiler outer) {
+    if (query instanceof SelectStatement select && !select.from().isEmpty() && select.where() != null) {
+      final Evaluable correlated = correlatedExists(select, outer);
+      if (correlated != null)
+        return correlated;
+    }
+    final Statement asked = query instanceof SelectStatement select && select.limit() == null && select.offset() == null
+        ? new SelectStatement(select.position(), select.distinct(), select.items(), select.from(), select.where(), select.groupBy(),
+        select.having(), select.orderBy(), new Expression.IntegerLiteral(select.position(), java.math.BigInteger.ONE), null)
+        : query;
+    final Subquery subquery = planSubquery(asked);
+    return new Evaluable.Node(PgType.BOOL, row -> !subquery.rows().isEmpty());
+  }
+
+  private Evaluable correlatedExists(final SelectStatement select, final ExpressionCompiler outer) {
+    // the columns that the subquery's own FROM clause offers decide which references are its own and which are the outer query's
+    final RelationSource innerSource = hasJoin(select.from())
+        ? new JoinPlanner(database, catalog, parameters, joinTables(), joinMemoryCap).plan(select.from(), null).source()
+        : planFrom(select.from());
+    final RelationScope innerScope = new RelationScope(innerSource.columns(), catalog, subqueryPlanner(), innerSource.outputs());
+
+    final List<Expression> local = new ArrayList<>();
+    final List<Expression> innerKeys = new ArrayList<>();
+    final List<Expression> outerKeys = new ArrayList<>();
+    for (final Expression term : conjuncts(select.where())) {
+      if (hasExists(term)) {
+        local.add(term);
+        continue;
+      }
+      final Side whole = sideOf(term, innerScope, outer);
+      if (whole == Side.NONE || whole == Side.INNER) {
+        local.add(term);
+        continue;
+      }
+      if (term instanceof Expression.BinaryOp equality && equality.operator() == Expression.BinaryOperator.EQUAL) {
+        final Side left = sideOf(equality.left(), innerScope, outer);
+        final Side right = sideOf(equality.right(), innerScope, outer);
+        if (left == Side.INNER && right == Side.OUTER) {
+          innerKeys.add(equality.left());
+          outerKeys.add(equality.right());
+          continue;
+        }
+        if (left == Side.OUTER && right == Side.INNER) {
+          innerKeys.add(equality.right());
+          outerKeys.add(equality.left());
+          continue;
+        }
+      }
+      throw new PostgreSQLFeatureNotSupportedException("A correlated subquery is supported in EXISTS and NOT EXISTS when each term of its "
+          + "WHERE clause that reads a column of the outer query is an equality between an expression of the subquery and an "
+          + "expression of the outer query");
+    }
+    if (outerKeys.isEmpty())
+      return null;
+
+    if (!select.groupBy().isEmpty() || select.having() != null || select.limit() != null || select.offset() != null)
+      throw new PostgreSQLFeatureNotSupportedException("A correlated EXISTS with GROUP BY, HAVING, LIMIT or OFFSET is not supported");
+    for (final SelectItem item : select.items())
+      if (item instanceof SelectItem.Projection projection && ExpressionCompiler.containsAggregate(projection.expression()))
+        throw new PostgreSQLFeatureNotSupportedException("A correlated EXISTS with an aggregate is not supported");
+
+    // the subquery that gives the keys: its own terms, and for each correlation the expression of its side
+    final List<SelectItem> items = new ArrayList<>();
+    for (int i = 0; i < innerKeys.size(); i++)
+      items.add(new SelectItem.Projection(select.position(), innerKeys.get(i), new Name(select.position(), "k" + i, true)));
+    Expression rest = null;
+    for (final Expression term : local)
+      rest = rest == null ? term : new Expression.BinaryOp(select.position(), Expression.BinaryOperator.AND, rest, term);
+    final QueryPlan plan = planQuery(new SelectStatement(select.position(), false, items, select.from(), rest, List.of(), null,
+        List.of(), null, null), false);
+    final MaterializedSource.Materialization kept = new MaterializedSource.Materialization(plan, joinMemoryCap, "an EXISTS subquery");
+
+    final int count = outerKeys.size();
+    final Evaluable[] outerEvaluables = new Evaluable[count];
+    final List<Function<Object, Object>> innerToCommon = new ArrayList<>();
+    final List<Function<Object, Object>> outerToCommon = new ArrayList<>();
+    for (int i = 0; i < count; i++) {
+      final Evaluable key = outer.resolveOutput(outer.compile(outerKeys.get(i)));
+      final PgType innerType = plan.outputTypes().get(i);
+      final PgType outerType = key.type();
+      // "inner = outer" is typed as PostgreSQL types it: no such operator is 42883
+      outer.comparison(Expression.BinaryOperator.EQUAL, new Evaluable.Slot(innerType, plan.columns().get(i).typeName(), 0),
+          new Evaluable.Slot(outerType, key.typeName(), 1));
+      final PgType common = SetTypes.resolve(innerType, outerType, "EXISTS");
+      outerEvaluables[i] = key;
+      innerToCommon.add(value -> SelectPlan.normalize(SetTypes.convert(value, innerType, common)));
+      outerToCommon.add(value -> SelectPlan.normalize(SetTypes.convert(value, outerType, common)));
+    }
+
+    final ExistsKeys probe = new ExistsKeys(kept, innerToCommon);
+    return new Evaluable.Node(PgType.BOOL, row -> {
+      final List<Object> key = new ArrayList<>(count);
+      for (int i = 0; i < count; i++) {
+        final Object value = outerEvaluables[i].eval(row);
+        if (value == null)
+          return Boolean.FALSE;
+        key.add(outerToCommon.get(i).apply(value));
+      }
+      return probe.load().contains(key);
+    });
+  }
+
+  /** The keys of the rows of a correlated subquery, loaded on the first probe; a row with a {@code NULL} key matches nothing. */
+  private static final class ExistsKeys {
+    private final MaterializedSource.Materialization rows;
+    private final List<Function<Object, Object>>      toCommon;
+    private       Set<List<Object>>                   keys;
+
+    ExistsKeys(final MaterializedSource.Materialization rows, final List<Function<Object, Object>> toCommon) {
+      this.rows = rows;
+      this.toCommon = toCommon;
+    }
+
+    synchronized Set<List<Object>> load() {
+      if (keys == null) {
+        final Set<List<Object>> loaded = new HashSet<>();
+        for (final Object[] row : rows.rows()) {
+          final List<Object> key = new ArrayList<>(toCommon.size());
+          boolean complete = true;
+          for (int i = 0; i < toCommon.size() && complete; i++)
+            if (row[i] == null)
+              complete = false;
+            else
+              key.add(toCommon.get(i).apply(row[i]));
+          if (complete)
+            loaded.add(key);
+        }
+        keys = loaded;
+      }
+      return keys;
+    }
+  }
+
+  private static boolean hasExists(final Expression expression) {
+    if (expression instanceof Expression.Exists)
+      return true;
+    for (final Expression child : ExpressionCompiler.children(expression))
+      if (hasExists(child))
+        return true;
+    return false;
+  }
+
+  private static void referencesIn(final Expression expression, final List<Expression.ColumnRef> out) {
+    if (expression instanceof Expression.ColumnRef reference)
+      out.add(reference);
+    else
+      for (final Expression child : ExpressionCompiler.children(expression))
+        referencesIn(child, out);
+  }
+
+  /** Whether the columns an expression reads are all the subquery's, all the outer query's, both, or none. */
+  private static Side sideOf(final Expression expression, final RelationScope inner, final ExpressionCompiler outer) {
+    final List<Expression.ColumnRef> references = new ArrayList<>();
+    referencesIn(expression, references);
+    boolean hasInner = false;
+    boolean hasOuter = false;
+    for (final Expression.ColumnRef reference : references) {
+      try {
+        inner.column(reference);
+        hasInner = true;
+      } catch (final PostgreSQLReferenceException notTheSubquerys) {
+        try {
+          outer.compile(reference);
+        } catch (final PostgreSQLReferenceException neither) {
+          throw notTheSubquerys;
+        }
+        hasOuter = true;
+      }
+    }
+    return hasInner && hasOuter ? Side.MIXED : hasOuter ? Side.OUTER : hasInner ? Side.INNER : Side.NONE;
   }
 
   /** The constants of {@code LIMIT} and {@code OFFSET}: no column is in scope. */

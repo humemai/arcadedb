@@ -310,3 +310,26 @@ err-c4-using-column-not-on-the-left	multiset	-	ok	SELECT 1 FROM person p JOIN or
 err-c4-using-column-not-on-the-right	multiset	-	ok	SELECT 1 FROM person p JOIN company c USING (pid)	pending-server
 err-c4-using-column-twice-on-the-left	multiset	-	ok	SELECT 1 FROM person p JOIN company c ON true JOIN orders o USING (id)	pending-server
 err-c4-using-qualified-name-is-ambiguous-once-merged-is-not	multiset	-	ok	SELECT id FROM person p JOIN orders o USING (pid)	pending-server
+c5-exists-correlated-equality	ordered	-	ok	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid) ORDER BY name	pending-server
+c5-not-exists-is-the-anti-join	ordered	-	ok	SELECT name FROM person p WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid) ORDER BY name	pending-server
+c5-exists-with-a-local-condition	ordered	-	ok	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid AND o.total > 20) ORDER BY name	pending-server
+c5-exists-equality-written-the-other-way-round	ordered	-	ok	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE p.pid = o.pid) ORDER BY name	pending-server
+c5-exists-two-correlations	multiset	-	ok	SELECT count(*) FROM orders a WHERE EXISTS (SELECT 1 FROM orders b WHERE b.pid = a.pid AND b.total = a.total)	pending-server
+c5-exists-with-a-join-in-the-subquery	multiset	-	ok	SELECT count(*) FROM orders a WHERE EXISTS (SELECT 1 FROM orders b JOIN person q ON q.pid = b.pid WHERE b.oid = a.oid AND q.age > 30)	pending-server
+c5-exists-null-key-never-matches	ordered	-	ok	SELECT oid FROM orders o WHERE EXISTS (SELECT 1 FROM person p WHERE p.pid = o.pid) ORDER BY oid	pending-server
+c5-not-exists-keeps-a-null-key	ordered	-	ok	SELECT oid FROM orders o WHERE NOT EXISTS (SELECT 1 FROM person p WHERE p.pid = o.pid) ORDER BY oid	pending-server
+c5-exists-uncorrelated-true	multiset	-	ok	SELECT count(*) FROM person WHERE EXISTS (SELECT 1 FROM orders WHERE total > 90)	pending-server
+c5-exists-uncorrelated-false	multiset	-	ok	SELECT count(*) FROM person WHERE EXISTS (SELECT 1 FROM orders WHERE total > 1000)	pending-server
+c5-not-exists-uncorrelated	multiset	-	ok	SELECT count(*) FROM person WHERE NOT EXISTS (SELECT 1 FROM orders WHERE total > 1000)	pending-server
+c5-exists-in-the-select-list	ordered	-	ok	SELECT pid, EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid) AS has_order FROM person p ORDER BY pid	pending-server
+c5-exists-under-or	ordered	-	ok	SELECT name FROM person p WHERE age > 50 OR EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid AND o.total > 90) ORDER BY name	pending-server
+c5-exists-on-a-table-of-a-join	ordered	-	ok	SELECT p.name, c.name AS company FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON w.target_id = c.id WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid) ORDER BY p.name, w.since	pending-server
+c5-exists-in-a-derived-table	multiset	-	ok	SELECT count(*) FROM (SELECT pid FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid)) t	pending-server
+c5-exists-over-a-with	ordered	-	ok	WITH big AS (SELECT pid FROM orders WHERE total > 20) SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM big b WHERE b.pid = p.pid) ORDER BY name	pending-server
+c5-exists-key-of-numeric-against-integer	ordered	-	ok	SELECT oid FROM orders o WHERE EXISTS (SELECT 1 FROM person p WHERE p.pid * 5 = o.total) ORDER BY oid	pending-server
+c5-exists-in-the-on-condition	ordered	-	ok	SELECT p.name, o.oid FROM person p JOIN orders o ON o.pid = p.pid AND EXISTS (SELECT 1 FROM company c WHERE c.cid = o.oid - 90) ORDER BY o.oid	pending-server
+c5-exists-the-subquery-select-list-is-free	multiset	-	ok	SELECT count(*) FROM person p WHERE EXISTS (SELECT o.total, o.oid * 2 FROM orders o WHERE o.pid = p.pid)	pending-server
+c5-exists-over-a-set-operation	multiset	-	ok	SELECT count(*) FROM person WHERE EXISTS (SELECT 1 UNION SELECT 2)	pending-server
+c5-not-exists-over-a-derived-table-in-the-subquery	ordered	-	ok	SELECT name FROM person p WHERE NOT EXISTS (SELECT 1 FROM (SELECT pid FROM orders WHERE total > 20) t WHERE t.pid = p.pid) ORDER BY name	pending-server
+err-c5-exists-unknown-column	multiset	-	ok	SELECT 1 WHERE EXISTS (SELECT 1 FROM person WHERE nosuch = 1)	pending-server
+err-c5-exists-type-mismatch	multiset	-	ok	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.name)	pending-server
