@@ -292,6 +292,57 @@ class PgParityIT {
   }
 
   /**
+   * The agent SQL corpus (fork issue #7): the statements that language models wrote, in {@code agent-sql.tsv}, parsed and
+   * described by the server and never run. They are written against the tables of {@code agent-sql-schema.sql}, which the server
+   * gets in a database of its own (the {@code small} fixture has other tables), so that it binds their names: a statement that is
+   * valid there comes back {@code ok}, one with an unknown table or column {@code ok} with the SQLSTATE of the later stage, as
+   * for {@code syntax.tsv}. Regenerate writes the {@code pg18} and {@code detail} columns, nobody types them. The parser side is
+   * measured by {@code AgentSqlFitTest} of the engine tests.
+   */
+  @Test
+  @Order(6)
+  void agentSqlCorpus() throws Exception {
+    final Path path = corpusFile(Corpus.AGENT_SQL_FILE);
+    final Path schema = corpusFile(Corpus.AGENT_SQL_SCHEMA);
+    assumeTrue(Files.exists(path) && Files.exists(schema), "the agent SQL corpus is not on this branch yet");
+    final PostgresServer.ParseSession session = pg.createDatabase("agentsql", Files.readString(schema, StandardCharsets.UTF_8));
+    final CorpusFile file = CorpusFile.read(path);
+    final List<String> failures = new ArrayList<>();
+    int changed = 0;
+    for (final String[] row : file.rows) {
+      final Corpus.SyntaxCase c = new Corpus.SyntaxCase(row);
+      final String[] server;
+      try {
+        server = syntaxOutcome(session.parseOutcome(c.statement()));
+      } catch (final IllegalStateException driverFailure) {
+        failures.add(c.id() + ": " + driverFailure.getMessage());
+        continue;
+      }
+      if (regenerate) {
+        if (c.hasOutcome() && !c.pg18().equals(server[0])) {
+          ++changed;
+          line("agent-sql-changed", c.id(), "the corpus said " + c.pg18() + ", the server says " + server[0] + " " + server[1]);
+        }
+        row[Corpus.SyntaxCase.PG18] = server[0];
+        row[Corpus.SyntaxCase.DETAIL] = server[1];
+      } else if (!c.hasOutcome())
+        failures.add(c.id() + ": the corpus has no outcome, run the generator");
+      else if (!c.pg18().equals(server[0]) || !c.detail().equals(server[1]))
+        failures.add(c.id() + ": the corpus says " + c.pg18() + " " + c.detail() + ", the server now says " + server[0] + " "
+            + server[1]);
+    }
+    final String summary = "agent sql: " + file.rows.size() + " statements, " + changed + " whose pg18 the server changed";
+    REPORT.add(summary);
+    System.out.println("pgparity: " + summary);
+
+    if (regenerate) {
+      stamp(file);
+      file.write(path);
+    }
+    assertTrue(failures.isEmpty(), String.join("\n", failures));
+  }
+
+  /**
    * The server's parse outcome ({@code ok}, {@code syntax-error 42601}, {@code error <SQLSTATE>}) as the two columns of
    * {@code syntax.tsv}: {@code pg18} ({@code ok}, {@code syntax-error}, {@code feature-not-supported}) and {@code detail} (the
    * SQLSTATE, {@code -} when the server accepted the statement). A later stage that refused a parsed statement (an unknown
