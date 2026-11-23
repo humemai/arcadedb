@@ -54,6 +54,16 @@ public final class SmallFixture {
   }
 
   public static void createSchema(final Database database) {
+    createSchema(database, true);
+  }
+
+  /**
+   * The schema of {@link #createSchema(Database)}, optionally without the three unique indexes: the {@code small-noindex}
+   * variant of fork issue #9, where a join of {@code orders} to {@code person} on {@code pid} has no index behind it.
+   *
+   * @param indexes whether to create the unique indexes on {@code person.pid}, {@code company.cid} and {@code orders.oid}
+   */
+  public static void createSchema(final Database database, final boolean indexes) {
     final Schema schema = database.getSchema();
 
     final VertexType person = schema.createVertexType(PERSON);
@@ -61,12 +71,14 @@ public final class SmallFixture {
     person.createProperty("name", Type.STRING);
     person.createProperty("age", Type.INTEGER);
     person.createProperty("city", Type.STRING);
-    schema.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, PERSON, "pid");
+    if (indexes)
+      schema.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, PERSON, "pid");
 
     final VertexType company = schema.createVertexType(COMPANY);
     company.createProperty("cid", Type.INTEGER);
     company.createProperty("name", Type.STRING);
-    schema.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, COMPANY, "cid");
+    if (indexes)
+      schema.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, COMPANY, "cid");
 
     final EdgeType worksAt = schema.createEdgeType(WORKS_AT);
     worksAt.createProperty("since", Type.INTEGER);
@@ -81,7 +93,8 @@ public final class SmallFixture {
     orders.createProperty("address", Type.MAP);
     orders.createProperty("tags", Type.LIST, "STRING");
     orders.createProperty("buyer", Type.LINK, PERSON);
-    schema.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, ORDERS, "oid");
+    if (indexes)
+      schema.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, ORDERS, "oid");
   }
 
   public static void load(final Database database) {

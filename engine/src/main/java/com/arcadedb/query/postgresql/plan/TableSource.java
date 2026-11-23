@@ -116,6 +116,29 @@ public final class TableSource implements RelationSource {
     return access;
   }
 
+  /** The name the statement uses for this table: its alias, or the table name when there is no alias. */
+  public String relation() {
+    return relation;
+  }
+
+  /**
+   * The row of a record of this table, the values of its columns in the evaluator's value space. The traversal of the join
+   * planner reads the edges of a vertex and turns each into the row a scan of the edge table gives.
+   */
+  public Object[] rowOf(final Document record) {
+    return row(record);
+  }
+
+  /** Whether a record is a row of this table: of the type, or of a subtype unless the read is {@code ONLY}. */
+  public boolean holds(final Document record) {
+    return belongs(record);
+  }
+
+  /** The edge types a read of this table covers: the type and, unless the read is {@code ONLY}, all its subtypes. */
+  public String[] edgeTypeNames() {
+    return typeNames().toArray(new String[0]);
+  }
+
   /** The same table read through the index on the property of {@code column}, for the rows where it equals {@code key}. */
   public TableSource withIndexLookup(final Column column, final Evaluable key) {
     return new TableSource(database, table, relation, only, Access.INDEX, column, key);
