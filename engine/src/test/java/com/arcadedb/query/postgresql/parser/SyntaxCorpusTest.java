@@ -20,13 +20,10 @@ package com.arcadedb.query.postgresql.parser;
 
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.PostgreSQLSyntaxException;
+import com.arcadedb.query.postgresql.corpus.Corpus;
 import org.junit.jupiter.api.Test;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -46,51 +43,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * answer.
  */
 class SyntaxCorpusTest {
-  private static final String RESOURCE = "/postgresql/corpus/syntax.tsv";
-
   private enum Verdict {
     ACCEPTED, REFUSED_0A000, REFUSED_42601, INTERNAL_ERROR
   }
 
+  /** {@code line} is the number of the entry in the corpus, from 1. */
   private record Entry(int line, String id, String pg18, String subset, String gap, String statement, String source) {
   }
 
+  /** The corpus is read through the classes of the parity harness, which also write it: {@code Corpus}. */
   private static List<Entry> read() throws IOException {
     final List<Entry> entries = new ArrayList<>();
-    try (final InputStream stream = SyntaxCorpusTest.class.getResourceAsStream(RESOURCE)) {
-      assertThat(stream).as("the corpus file " + RESOURCE).isNotNull();
-      final BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));
-      String text;
-      int line = 0;
-      while ((text = reader.readLine()) != null) {
-        ++line;
-        if (text.isEmpty() || text.startsWith("#"))
-          continue;
-        final String[] columns = text.split("\t", -1);
-        assertThat(columns).as("line " + line + " of the corpus has six columns").hasSize(6);
-        entries.add(new Entry(line, columns[0], columns[1], columns[2], columns[3], unescape(columns[4]), columns[5]));
-      }
-    }
+    int number = 0;
+    for (final Corpus.SyntaxCase c : Corpus.syntaxCases(Corpus.readSyntax()))
+      entries.add(new Entry(++number, c.id(), c.pg18(), c.subset(), c.gap(), c.statement(), c.source()));
     return entries;
-  }
-
-  private static String unescape(final String text) {
-    final StringBuilder result = new StringBuilder(text.length());
-    for (int i = 0; i < text.length(); i++) {
-      final char c = text.charAt(i);
-      if (c == '\\' && i + 1 < text.length()) {
-        final char next = text.charAt(++i);
-        result.append(switch (next) {
-          case 't' -> '\t';
-          case 'r' -> '\r';
-          case 'n' -> '\n';
-          default -> next;
-        });
-      } else {
-        result.append(c);
-      }
-    }
-    return result.toString();
   }
 
   private static Verdict verdictOf(final Entry entry, final StringBuilder detail) {

@@ -1,0 +1,123 @@
+#
+# Copyright © 2021-present Arcade Data Ltd (info@arcadedata.com)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
+# SPDX-License-Identifier: Apache-2.0
+#
+
+# Fork only (humemai/arcadedb, PostgreSQL-style SQL prototype): the fast loop of the answer parity harness (fork issue #2). The
+# harness (com.arcadedb.e2e.pgparity in the e2e module) runs each statement of the corpus on the postgresql language of the
+# engine and on a real PostgreSQL 18 started through Testcontainers, and compares the outcomes. The java-e2e-tests job of
+# mvn-test.yml runs the same classes after a build of the whole tree and a Docker image (the better part of an hour); this
+# builds only what the harness needs (the e2e module with the modules it depends on: the engine and its test classes, the
+# network and gRPC client modules) and runs only the classes of the pgparity package, on every push to a feat/pg-* branch and on
+# every pull request into the prototype branch. The corpus classes themselves (comparison rules, file formats) are tested
+# without a server by the engine tests of pg-prototype-engine-tests.yml.
+#
+# Started by hand with the input regenerate on, it rewrites the expected cells of the two corpus files from the real server and
+# uploads them as an artifact (the workflow has no write access): the generator is never on in a run that a push or a pull
+# request starts. Drop this file when anything goes upstream.
+name: PostgreSQL prototype - answer parity
+
+on:
+  pull_request:
+    branches:
+      - feat/postgresql-prototype
+  push:
+    branches:
+      - "feat/pg-**"
+  workflow_dispatch:
+    inputs:
+      regenerate:
+        description: "Generator mode: rewrite the expected cells of the corpus from the real server and upload the files"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One run per branch and kind: a push to a branch with an open pull request starts the run of the pull request too, and the
+# newer one cancels the older. A run started by hand is its own kind, so a push does not cancel a generator run. head_ref is the
+# branch of a pull request, ref_name the branch of a push or a dispatch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'auto' }}
+  cancel-in-progress: true
+
+jobs:
+  parity:
+    name: Answer parity against PostgreSQL 18
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PGPARITY_REGENERATE: ${{ inputs.regenerate == true && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: "temurin"
+          java-version: 21
+          cache: "maven"
+
+      # The e2e module needs the engine test-jar (SmallFixture and the corpus classes), a package-phase artifact. -am builds the
+      # modules e2e depends on and installs them, the way the build job of mvn-test.yml does, without running any test.
+      - name: Build the e2e module and what it depends on
+        run: ./mvnw install -DskipTests --batch-mode --errors --show-version -pl e2e -am
+
+      # -Pintegration turns the integration tests on. -Dit.test names the two classes of the pgparity package: every other
+      # class of the module needs the ArcadeDB image that this workflow does not build.
+      - name: Run the parity harness
+        run: >-
+          ./mvnw verify -Pintegration --batch-mode --errors --show-version -pl e2e
+          -Dit.test=PostgresServerIT,PgParityIT
+          -Dpgparity.regenerate="${PGPARITY_REGENERATE}"
+
+      - name: Report of the run
+        if: always()
+        run: |
+          if [ -f e2e/target/pgparity/report.txt ]; then
+            {
+              echo '## PostgreSQL parity report'
+              echo
+              echo '```'
+              cat e2e/target/pgparity/report.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Generator runs only: the files to commit. The run has no write access, so the files go through an artifact.
+      - name: Upload the regenerated corpus
+        if: ${{ always() && inputs.regenerate == true }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pgparity-corpus
+          path: |
+            engine/src/test/resources/postgresql/corpus/syntax.tsv
+            engine/src/test/resources/postgresql/corpus/answers.tsv
+            e2e/target/pgparity/report.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload the test reports of a red run
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pgparity-test-reports
+          path: |
+            e2e/target/failsafe-reports/*
+            e2e/target/pgparity/report.txt
+          if-no-files-found: ignore
+          retention-days: 7
