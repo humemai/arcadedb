@@ -40,6 +40,7 @@ import com.arcadedb.query.postgresql.parser.StatementParser;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.postgresql.plan.SelectPlan;
 import com.arcadedb.query.postgresql.plan.SelectPlanner;
+import com.arcadedb.query.postgresql.plan.WriteErrors;
 import com.arcadedb.query.postgresql.plan.WritePlanner;
 import com.arcadedb.query.postgresql.plan.join.JoinWarnings;
 import com.arcadedb.query.sql.executor.ResultInternal;
@@ -53,10 +54,9 @@ import java.util.Set;
 /**
  * The {@code postgresql} query language: PostgreSQL-style SQL over a relational view of the schema, next to {@code sql} and
  * {@code opencypher} and with no effect on either. It reads, and its parser reads the writes ({@code INSERT}, {@code UPDATE},
- * {@code DELETE}) and the transaction statements too. {@code INSERT}, {@code UPDATE} and {@code DELETE} run on document and vertex
- * tables ({@link WritePlanner}, fork issue #29); the other stages of that issue are not here yet, and until a stage lands its
- * statements are refused with SQLSTATE {@code 0A000} when they run ({@link #analyze} classifies all of them). A statement goes
- * through three steps:
+ * {@code DELETE}) and the transaction statements too. {@code INSERT}, {@code UPDATE} and {@code DELETE} run on document, vertex and
+ * edge tables ({@link WritePlanner}, fork issue #29), and {@code BEGIN}, {@code COMMIT} and {@code ROLLBACK} are the transaction of
+ * the database. A statement goes through three steps:
  * <ol>
  * <li>the parser ({@link StatementParser}): text that is not PostgreSQL syntax is refused with SQLSTATE {@code 42601},
  * PostgreSQL syntax outside the subset ({@code WITH}, a subquery, a right join, DDL) with {@code 0A000};</li>
@@ -164,9 +164,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
-   * A command is a query: {@code SELECT}, {@code INSERT}, {@code UPDATE} and {@code DELETE} run, and a transaction statement is
-   * refused with {@code 0A000} until the stage of fork issue #29 that runs it has landed. A write is not idempotent, so
-   * {@code Database.query} refuses it as it does for {@code sql}: it runs through {@code command}.
+   * A command runs every statement of the language. A write and a transaction statement are not idempotent, so
+   * {@code Database.query} refuses them as it does for {@code sql}: they run through {@code command}.
    */
   @Override
   public ResultSet command(final String query, final ContextConfiguration configuration, final Map<String, Object> parameters) {
@@ -179,32 +178,112 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
+   * The transaction block of one thread of this database. {@code BEGIN} opens it, and an error inside it fails it: every statement
+   * after that is {@code 25P02} until {@code ROLLBACK} or {@code COMMIT}, and {@code COMMIT} of a failed block is a rollback, as in
+   * PostgreSQL. A block exists only when this language opened the transaction: a transaction that the caller opened with
+   * {@code Database.begin()} is the caller's, and a failed statement in it is taken back by the database and leaves it usable.
+   */
+  private static final class Block {
+    private boolean open;
+    private boolean failed;
+  }
+
+  private final ThreadLocal<Block> block = ThreadLocal.withInitial(Block::new);
+
+  /** The engine keeps no state but the block of each thread, so one instance serves the database. */
+  @Override
+  public boolean isReusable() {
+    return true;
+  }
+
+  /**
    * @param readOnly true for {@code query}, the read-only entry of the database as it is for {@code sql}: a write or a transaction
    *                 statement is refused there with SQLSTATE {@code 25006} (read_only_sql_transaction) and runs through
    *                 {@code command}, which is what {@link #analyze} says by reporting it as not idempotent
    */
   private ResultSet execute(final String query, final Parameters parameters, final boolean readOnly) {
-    final Statement statement = parse(query);
-    if (readOnly && (statement instanceof WriteStatement || statement instanceof TransactionStatement))
-      throw new PostgreSQLEvaluationException("25006", "cannot execute " + statementName(statement)
-          + " in a read-only query: run it with command (" + statement.position() + ")");
-    if (statement instanceof TransactionStatement)
-      throw new PostgreSQLFeatureNotSupportedException(statementName(statement) + " is not supported by the postgresql language yet ("
-          + statement.position() + ")");
-    if (statement instanceof ExplainWriteStatement explain)
-      return explain(new WritePlanner(database, parameters).plan(explain.statement()).steps());
-    if (statement instanceof WriteStatement write)
-      return new WritePlanner(database, parameters).plan(write).execute(database);
-    final SelectPlanner planner = new SelectPlanner(database, parameters);
-    if (statement instanceof ExplainStatement explain) {
-      final SelectPlan explained = planner.plan(explain.select());
-      return explain(explained.steps(), explained.warnings());
+    final Block state = block.get();
+    if (state.open && !database.isTransactionActive()) {
+      // the transaction ended in another way: the caller committed it, or the database closed it
+      state.open = false;
+      state.failed = false;
     }
-    final SelectPlan plan = planner.plan((SelectStatement) statement);
-    // a join that no edge, link or index supports: one warning in the log for each distinct statement (fork issue #9)
-    if (!plan.warnings().isEmpty() && database.getConfiguration().getValueAsBoolean(GlobalConfiguration.POSTGRESQL_JOIN_WARNING))
-      JoinWarnings.shared().warn(database.getName(), AstPrinter.fingerprint(statement), plan.warnings());
-    return plan.execute(database);
+    try {
+      final Statement statement = parse(query);
+      if (state.failed) {
+        if (statement instanceof TransactionStatement transaction && transaction.kind() != TransactionStatement.Kind.BEGIN)
+          return transaction(TransactionStatement.Kind.ROLLBACK, state);
+        throw new PostgreSQLEvaluationException("25P02",
+            "current transaction is aborted, commands ignored until end of transaction block");
+      }
+      if (readOnly && (statement instanceof WriteStatement || statement instanceof TransactionStatement))
+        throw new PostgreSQLEvaluationException("25006", "cannot execute " + statementName(statement)
+            + " in a read-only query: run it with command (" + statement.position() + ")");
+      if (statement instanceof TransactionStatement transaction)
+        return transaction(transaction.kind(), state);
+      if (statement instanceof ExplainWriteStatement explain)
+        return explain(new WritePlanner(database, parameters).plan(explain.statement()).steps());
+      if (statement instanceof WriteStatement write)
+        return new WritePlanner(database, parameters).plan(write).execute(database);
+      final SelectPlanner planner = new SelectPlanner(database, parameters);
+      if (statement instanceof ExplainStatement explain) {
+        final SelectPlan explained = planner.plan(explain.select());
+        return explain(explained.steps(), explained.warnings());
+      }
+      final SelectPlan plan = planner.plan((SelectStatement) statement);
+      // a join that no edge, link or index supports: one warning in the log for each distinct statement (fork issue #9)
+      if (!plan.warnings().isEmpty() && database.getConfiguration().getValueAsBoolean(GlobalConfiguration.POSTGRESQL_JOIN_WARNING))
+        JoinWarnings.shared().warn(database.getName(), AstPrinter.fingerprint(statement), plan.warnings());
+      return plan.execute(database);
+    } catch (final RuntimeException e) {
+      if (state.open && !state.failed && database.isTransactionActive())
+        state.failed = true;
+      throw e;
+    }
+  }
+
+  /**
+   * {@code BEGIN} opens the transaction of the database, {@code COMMIT} commits it and {@code ROLLBACK} rolls it back; the
+   * answer has no column and no row. As in PostgreSQL, a {@code BEGIN} inside a transaction, and a {@code COMMIT} or a
+   * {@code ROLLBACK} with none, change nothing and are no error. A commit that the engine refuses because another transaction
+   * changed a record first is SQLSTATE {@code 40001} (serialization_failure), which a client answers by running the block
+   * again; the transaction is rolled back and the block is over.
+   */
+  private ResultSet transaction(final TransactionStatement.Kind kind, final Block state) {
+    switch (kind) {
+    case BEGIN -> {
+      if (!database.isTransactionActive()) {
+        database.begin();
+        state.open = true;
+      }
+      state.failed = false;
+    }
+    case COMMIT -> {
+      state.open = false;
+      state.failed = false;
+      if (database.isTransactionActive()) {
+        try {
+          database.commit();
+        } catch (final RuntimeException e) {
+          if (database.isTransactionActive()) {
+            try {
+              database.rollback();
+            } catch (final RuntimeException suppressed) {
+              e.addSuppressed(suppressed);
+            }
+          }
+          throw WriteErrors.translate(e);
+        }
+      }
+    }
+    case ROLLBACK -> {
+      state.open = false;
+      state.failed = false;
+      if (database.isTransactionActive())
+        database.rollback();
+    }
+    }
+    return new PostgreSQLResultSet(List.of(), new PostgreSQLResultSet.Plan(List.of(kind.name()))).withAffectedRows(0);
   }
 
   private static String statementName(final Statement statement) {

@@ -38,11 +38,12 @@ import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
  * <tr><td>{@code ValidationException} ENCODING</td><td>{@code 22021} character_not_in_repertoire</td></tr>
  * </table>
  */
-final class WriteErrors {
+public final class WriteErrors {
   private WriteErrors() {
   }
 
-  static RuntimeException translate(final RuntimeException error) {
+  /** @return the exception a client sees for an exception of the engine, see the class comment */
+  public static RuntimeException translate(final RuntimeException error) {
     if (error.getClass().getName().startsWith("com.arcadedb.query.postgresql."))
       return error;
     if (error instanceof DuplicatedKeyException duplicate)

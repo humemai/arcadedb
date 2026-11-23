@@ -128,12 +128,6 @@ class PostgreSQLQueryEngineTest extends TestHelper {
     assertThat(engine().analyze("EXPLAIN DELETE FROM person").isIdempotent()).isTrue();
   }
 
-  @Test
-  void aTransactionStatementIsRefusedUntilItsStageHasLanded() {
-    assertThatThrownBy(() -> database.command("postgresql", "BEGIN")).isInstanceOf(PostgreSQLFeatureNotSupportedException.class)
-        .hasMessageContaining("BEGIN is not supported by the postgresql language yet");
-  }
-
   // the S0 placeholder that answered SELECT 1 and refused every other SELECT is gone: the planner answers them all
   @Test
   void anyOtherSelectIsAnsweredByThePlanner() {
