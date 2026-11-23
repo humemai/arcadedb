@@ -185,7 +185,7 @@ class WritePlanTest extends TestHelper {
   void aPropertyDefaultNotNullAndMandatoryAreHonoured() {
     final DocumentType item = database.getSchema().createDocumentType("item");
     item.createProperty("sku", Type.STRING).setMandatory(true);
-    item.createProperty("label", Type.STRING).setNotNull(true).setDefaultValue("none");
+    item.createProperty("label", Type.STRING).setNotNull(true).setDefaultValue("'none'");
     item.createProperty("qty", Type.INTEGER).setDefaultValue("7");
     item.createProperty("note", Type.STRING);
 
@@ -279,6 +279,14 @@ class WritePlanTest extends TestHelper {
     }
     assertThat(query("EXPLAIN DELETE FROM person WHERE pid = 1").get(0).<String>getProperty("QUERY PLAN"))
         .contains("the edges of a deleted vertex go with it");
+  }
+
+  @Test
+  void anEdgeTableIsRefusedUntilItsStageHasLanded() {
+    assertState(() -> command("DELETE FROM works_at"), "0A000");
+    assertState(() -> command("INSERT INTO works_at (source_id, target_id) VALUES ('#1:0', '#1:1')"), "0A000");
+    assertState(() -> command("UPDATE works_at SET since = 1"), "0A000");
+    assertThat(value("SELECT count(*) FROM works_at")).isEqualTo(5L);
   }
 
   // ---- the access path ----

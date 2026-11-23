@@ -129,12 +129,9 @@ class PostgreSQLQueryEngineTest extends TestHelper {
   }
 
   @Test
-  void aTransactionStatementAndAnEdgeWriteAreRefusedUntilTheirStageHasLanded() {
+  void aTransactionStatementIsRefusedUntilItsStageHasLanded() {
     assertThatThrownBy(() -> database.command("postgresql", "BEGIN")).isInstanceOf(PostgreSQLFeatureNotSupportedException.class)
         .hasMessageContaining("BEGIN is not supported by the postgresql language yet");
-    assertThatThrownBy(() -> database.command("postgresql", "DELETE FROM works_at"))
-        .isInstanceOfSatisfying(PostgreSQLFeatureNotSupportedException.class, e -> assertThat(e.getSqlState()).isEqualTo("0A000"))
-        .hasMessageContaining("edge table works_at is not supported yet");
   }
 
   // the S0 placeholder that answered SELECT 1 and refused every other SELECT is gone: the planner answers them all
