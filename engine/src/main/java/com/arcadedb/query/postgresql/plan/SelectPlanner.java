@@ -66,7 +66,7 @@ public class SelectPlanner {
   private final long               joinMemoryCap;
 
   public SelectPlanner(final Database database, final Parameters parameters) {
-    this(database, parameters, BuildMemory.DEFAULT_CAP_BYTES);
+    this(database, parameters, BuildMemory.configuredCapBytes());
   }
 
   /**
