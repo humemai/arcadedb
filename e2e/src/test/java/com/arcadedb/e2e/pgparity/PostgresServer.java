@@ -65,7 +65,10 @@ final class PostgresServer implements AutoCloseable {
   static PostgresServer start() throws Exception {
     final GenericContainer<?> container = new GenericContainer<>(IMAGE)
         .withExposedPorts(5432)
-        .withEnv(Map.of("POSTGRES_PASSWORD", PASSWORD, "POSTGRES_DB", "parity"))
+        // The engine orders and compares text by code point (the byte order of UTF-8), which is the C collation of PostgreSQL, so the
+        // server the engine is compared with runs with C too. The C locale makes initdb pick SQL_ASCII unless the encoding is given.
+        .withEnv(Map.of("POSTGRES_PASSWORD", PASSWORD, "POSTGRES_DB", "parity", "POSTGRES_INITDB_ARGS",
+            "--locale=C --encoding=UTF8"))
         .withCommand("postgres", "-c", "fsync=off")
         .withStartupTimeout(Duration.ofSeconds(120))
         // the image logs this twice: once for the temporary server of the init scripts, once for the real one
@@ -96,13 +99,23 @@ final class PostgresServer implements AutoCloseable {
     return singleString("SELECT version()");
   }
 
-  /** The collation of the database, which decides how text sorts and compares. {@code unknown} when it cannot be read. */
+  /**
+   * The collation of the database, which decides how text sorts and compares, read back with {@code SHOW lc_collate} and
+   * {@code SHOW lc_ctype}: {@code C} when both are C, else both values. {@code unknown} when it cannot be read.
+   */
   String collation() {
     try {
-      return singleString("SELECT datcollate FROM pg_database WHERE datname = current_database()");
+      final String collate = singleString("SHOW lc_collate");
+      final String ctype = singleString("SHOW lc_ctype");
+      return collate.equals(ctype) ? collate : "lc_collate=" + collate + " lc_ctype=" + ctype;
     } catch (final SQLException e) {
       return "unknown";
     }
+  }
+
+  /** The encoding of the database ({@code SHOW server_encoding}), {@code UTF8} for a server started by {@link #start()}. */
+  String encoding() throws SQLException {
+    return singleString("SHOW server_encoding");
   }
 
   private String singleString(final String sql) throws SQLException {

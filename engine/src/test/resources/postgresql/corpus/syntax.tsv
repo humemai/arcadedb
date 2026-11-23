@@ -40,6 +40,7 @@ st-where-not-like	in	SELECT name FROM person WHERE name NOT LIKE '%d%' ORDER BY 
 st-where-text-compare	in	SELECT name FROM person WHERE name < 'C' ORDER BY pid	ok
 st-where-equals-null	in	SELECT name FROM person WHERE age = NULL ORDER BY pid	ok
 st-text-compare-case	in	SELECT 'a' < 'B' AS a_before_b, 'a' = 'A' AS same_case, 'Z' < 'a' AS z_before_a	ok
+st-text-code-points	in	SELECT 'a-b' < 'ab' AS dash_before_letter, 'B' < 'a' AS upper_before_lower, ' ' < '_' AS space_before_underscore, 'z' < 'é' AS accent_after_z	
 st-null-comparisons	in	SELECT NULL = NULL AS eq, 1 = NULL AS one_eq, NULL IS NULL AS is_null	ok
 st-three-valued-logic	in	SELECT NULL::boolean AND false AS a, NULL::boolean OR true AS b, NULL::boolean AND true AS c, NOT NULL::boolean AS d	ok
 st-boolean-column	in	SELECT name, age > 30 AS over_30 FROM person ORDER BY pid	ok

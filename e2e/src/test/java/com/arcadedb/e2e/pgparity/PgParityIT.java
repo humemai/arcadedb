@@ -102,6 +102,10 @@ class PgParityIT {
     REPORT.add("collation: " + pg.collation());
     REPORT.add("regenerate: " + regenerate);
     System.out.println("pgparity: " + version);
+    // text order and comparison in the corpus are code point order: a server in another collation would write another corpus
+    assertEquals("C", pg.collation(), "the server must run with the C collation");
+    assertEquals("UTF8", pg.encoding(), "the server must run with the UTF8 encoding");
+    REPORT.add("encoding: " + pg.encoding());
 
     pg.load(Files.readString(schema, StandardCharsets.UTF_8));
     arcade = new ArcadeSide();
@@ -366,5 +370,6 @@ class PgParityIT {
   private static void stamp(final CorpusFile file) throws Exception {
     file.setHeaderValue("server", pg.version());
     file.setHeaderValue("collation", pg.collation());
+    file.setHeaderValue("encoding", pg.encoding());
   }
 }

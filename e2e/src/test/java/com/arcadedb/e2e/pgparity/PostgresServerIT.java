@@ -68,6 +68,17 @@ class PostgresServerIT {
   }
 
   @Test
+  void textIsOrderedByCodePoint() throws Exception {
+    assertEquals("C", pg.collation());
+    assertEquals("UTF8", pg.encoding());
+    // code point order: an upper case letter before a lower case one, punctuation by its code, a letter with an accent after z
+    final Outcome outcome = pg.run(
+        "SELECT 'a' < 'B' AS lower_first, 'B' < 'a' AS upper_first, 'a-b' < 'ab' AS dash_first, 'z' < '\u00e9' AS accent_last");
+    assertFalse(outcome.isRefusal(), outcome.describe());
+    assertEquals(List.of(Boolean.FALSE, Boolean.TRUE, Boolean.TRUE, Boolean.TRUE), outcome.table.rows.get(0));
+  }
+
+  @Test
   void everyKindOfValueIsRead() {
     final Outcome outcome = pg.run("SELECT n, label, price, ratio, day, tags, extra FROM tiny ORDER BY n");
     assertFalse(outcome.isRefusal(), outcome.describe());
