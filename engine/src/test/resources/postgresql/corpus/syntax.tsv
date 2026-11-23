@@ -72,7 +72,7 @@ with	ok	inside	-	WITH x AS (SELECT 1) SELECT * FROM x	written for the parser	-
 union	ok	inside	-	SELECT 1 UNION SELECT 2	written for the parser	-
 values	ok	outside	-	VALUES (1), (2)	written for the parser	-
 subquery-from	ok	inside	-	SELECT * FROM (SELECT 1) s	written for the parser	-
-subquery-in	ok	outside	-	SELECT name FROM person WHERE pid IN (SELECT pid FROM orders)	written for the parser	-
+subquery-in	ok	inside	-	SELECT name FROM person WHERE pid IN (SELECT pid FROM orders)	written for the parser	-
 exists	ok	outside	-	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid)	written for the parser	-
 window	ok	outside	-	SELECT name, row_number() OVER (ORDER BY name) FROM person	written for the parser	-
 distinct-on	ok	outside	-	SELECT DISTINCT ON (city) city, name FROM person	written for the parser	-
@@ -1564,3 +1564,9 @@ c1-with-insert	ok	outside	-	WITH a AS (INSERT INTO t VALUES (1) RETURNING x) SEL
 c1-multiple-order-by	syntax-error	unknown	-	(SELECT 1 ORDER BY 1) ORDER BY 1	written for the parser	42601
 c1-union-missing-operand	syntax-error	unknown	-	SELECT 1 UNION	written for the parser	42601
 c1-with-missing-body	syntax-error	unknown	-	WITH a AS (SELECT 1)	written for the parser	42601
+c2-in-subquery	ok	inside	-	SELECT a FROM t WHERE a IN (SELECT b FROM u)	written for the parser	42P01
+c2-not-in-subquery	ok	inside	-	SELECT a FROM t WHERE a NOT IN (SELECT b FROM u UNION SELECT c FROM v)	written for the parser	42P01
+c2-in-subquery-parenthesised	ok	inside	-	SELECT a FROM t WHERE a IN ((SELECT b FROM u))	written for the parser	42P01
+c2-in-subquery-with	ok	inside	-	SELECT a FROM t WHERE a IN (WITH x AS (SELECT 1) SELECT * FROM x)	written for the parser	42P01
+c2-in-values	ok	outside	-	SELECT a FROM t WHERE a IN (VALUES (1), (2))	written for the parser	42P01
+c2-in-subquery-missing-paren	syntax-error	unknown	-	SELECT a FROM t WHERE a IN (SELECT b FROM u	written for the parser	42601

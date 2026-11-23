@@ -431,6 +431,9 @@ final class AstBuilder {
         values.add(expression(value));
       return new Expression.InList(position(e.getStart()), expression(e.aExpr()), values, has(e, PostgreSQLParser.NOT));
     }
+    if (context instanceof InSubqueryExprContext e)
+      return new Expression.InSubquery(position(e.getStart()), expression(e.aExpr()), query(e.selectStmt()),
+          has(e, PostgreSQLParser.NOT));
     if (context instanceof BetweenExprContext e)
       return new Expression.Between(position(e.getStart()), expression(e.aExpr(0)), bExpression(e.low), expression(e.high),
           has(e, PostgreSQLParser.NOT));

@@ -428,7 +428,7 @@ class StatementParserTest {
         new String[] { "WITH x AS (SELECT 1) DELETE FROM t", "A WITH clause on INSERT, UPDATE, DELETE or MERGE is not supported" },
         new String[] { "SELECT * FROM generate_series(1, 3)", "is not supported" },
         new String[] { "SELECT * FROM a, LATERAL (SELECT 1) s", "LATERAL" },
-        new String[] { "SELECT a FROM t WHERE a IN (SELECT 1)", "A subquery is not supported by the postgresql language (line 1, column 28)" },
+        new String[] { "SELECT a FROM t WHERE a IN (VALUES (1))", "VALUES is not supported by the postgresql language (line 1, column 29)" },
         new String[] { "SELECT (SELECT 1)", "A subquery is not supported by the postgresql language (line 1, column 8)" },
         new String[] { "SELECT EXISTS (SELECT 1)", "EXISTS is not supported" },
         new String[] { "SELECT ARRAY[1, 2]", "ARRAY is not supported" },

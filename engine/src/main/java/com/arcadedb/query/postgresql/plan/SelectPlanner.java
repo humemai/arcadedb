@@ -42,6 +42,8 @@ import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
+import com.arcadedb.query.postgresql.eval.Subquery;
+import com.arcadedb.query.postgresql.eval.SubqueryPlanner;
 import com.arcadedb.query.postgresql.eval.VectorDistance;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.plan.infoschema.InformationSchema;
@@ -139,6 +141,11 @@ public class SelectPlanner {
       }
 
       @Override
+      public SubqueryPlanner subqueries() {
+        return subqueryPlanner();
+      }
+
+      @Override
       public RelationSource derived(final TableReference.Subquery reference) {
         return planDerived(reference);
       }
@@ -219,7 +226,7 @@ public class SelectPlanner {
       source = joined.source();
     } else
       source = planFrom(select.from());
-    final RelationScope scope = new RelationScope(source.columns(), catalog);
+    final RelationScope scope = new RelationScope(source.columns(), catalog, subqueryPlanner());
     final ExpressionCompiler compiler = new ExpressionCompiler(scope, parameters);
 
     Evaluable where = null;
@@ -244,7 +251,7 @@ public class SelectPlanner {
       final List<Evaluable> groupEvaluables = new ArrayList<>();
       for (final Expression expression : groupAsts)
         groupEvaluables.add(compiler.compile(expression));
-      groupingScope = new GroupingScope(groupAsts, groupEvaluables, compiler);
+      groupingScope = new GroupingScope(groupAsts, groupEvaluables, compiler, subqueryPlanner());
       outputCompiler = new ExpressionCompiler(groupingScope, parameters);
     }
 
@@ -362,6 +369,37 @@ public class SelectPlanner {
   }
 
   // ---- queries inside queries ----
+
+  /**
+   * What the expressions of this {@code SELECT} ask for a subquery: it is planned with the common table expressions that are visible
+   * here, run once when the first row needs it, and its rows are kept under the memory cap of the joins (SQLSTATE {@code 53200}).
+   */
+  private SubqueryPlanner subqueryPlanner() {
+    return query -> {
+      final QueryPlan plan = planQuery(query, false);
+      final MaterializedSource.Materialization kept = new MaterializedSource.Materialization(plan, joinMemoryCap, "a subquery");
+      final List<PgType> types = plan.outputTypes();
+      final List<String> typeNames = new ArrayList<>();
+      for (final PostgreSQLResultSet.Column column : plan.columns())
+        typeNames.add(column.typeName());
+      return new Subquery() {
+        @Override
+        public List<PgType> types() {
+          return types;
+        }
+
+        @Override
+        public List<String> typeNames() {
+          return typeNames;
+        }
+
+        @Override
+        public List<Object[]> rows() {
+          return kept.rows();
+        }
+      };
+    };
+  }
 
   /** The constants of {@code LIMIT} and {@code OFFSET}: no column is in scope. */
   private ExpressionCompiler constants() {
@@ -586,13 +624,21 @@ public class SelectPlanner {
     private final List<Expression>                groupAsts;
     private final List<Evaluable>                 groupEvaluables;
     private final ExpressionCompiler              inputCompiler;
+    private final SubqueryPlanner                 subqueries;
     private final List<SelectPlan.AggregateSpec>  specs = new ArrayList<>();
     private final List<Expression.FunctionCall>   calls = new ArrayList<>();
 
-    GroupingScope(final List<Expression> groupAsts, final List<Evaluable> groupEvaluables, final ExpressionCompiler inputCompiler) {
+    GroupingScope(final List<Expression> groupAsts, final List<Evaluable> groupEvaluables, final ExpressionCompiler inputCompiler,
+        final SubqueryPlanner subqueries) {
       this.groupAsts = groupAsts;
       this.groupEvaluables = groupEvaluables;
       this.inputCompiler = inputCompiler;
+      this.subqueries = subqueries;
+    }
+
+    @Override
+    public SubqueryPlanner subqueries() {
+      return subqueries;
     }
 
     SelectPlan.GroupStage stage() {

@@ -33,6 +33,7 @@ import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.Numbers;
 import com.arcadedb.query.postgresql.eval.Parameters;
+import com.arcadedb.query.postgresql.eval.SubqueryPlanner;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.plan.RelationScope;
 import com.arcadedb.query.postgresql.plan.RelationSource;
@@ -102,6 +103,9 @@ public final class JoinPlanner {
   public interface Tables {
     /** The source of one table of the {@code FROM} clause, read by a scan. */
     RelationSource table(TableReference.Table reference);
+
+    /** Plans the subqueries of the expressions of the join conditions and of the terms placed below the joins. */
+    SubqueryPlanner subqueries();
 
     /** The source of a subquery in the {@code FROM} clause: its rows, computed once. */
     RelationSource derived(TableReference.Subquery reference);
@@ -279,7 +283,7 @@ public final class JoinPlanner {
   // ---- the tree ----
 
   private RelationScope scope(final Node node) {
-    return new RelationScope(node.fields(), catalog);
+    return new RelationScope(node.fields(), catalog, tables.subqueries());
   }
 
   private ExpressionCompiler compiler(final Node node) {

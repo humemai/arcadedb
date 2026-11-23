@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
+import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.TypeName;
 
@@ -28,8 +29,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -68,6 +71,11 @@ public final class ExpressionCompiler {
     default Evaluable intercept(final Expression expression, final ExpressionCompiler compiler) {
       return null;
     }
+
+    /** Plans a subquery of an expression; {@code null} where the clause has no subqueries. */
+    default SubqueryPlanner subqueries() {
+      return null;
+    }
   }
 
   private record Unified(PgType type, Evaluable left, Evaluable right) {
@@ -99,6 +107,7 @@ public final class ExpressionCompiler {
       case Expression.BinaryOp e -> binary(e);
       case Expression.IsNull e -> isNull(e);
       case Expression.InList e -> inList(e);
+      case Expression.InSubquery e -> inSubquery(e);
       case Expression.Between e -> between(e);
       case Expression.Like e -> like(e);
       case Expression.Case e -> caseExpression(e);
@@ -165,6 +174,7 @@ public final class ExpressionCompiler {
       out.add(e.operand());
       out.addAll(e.values());
     }
+    case Expression.InSubquery e -> out.add(e.operand());
     case Expression.Between e -> {
       out.add(e.operand());
       out.add(e.low());
@@ -609,6 +619,105 @@ public final class ExpressionCompiler {
   }
 
   /** {@code x IN (a, b)} is {@code x = a OR x = b}, with the three-valued logic of those operators. */
+  private Subquery planSubquery(final com.arcadedb.query.postgresql.ast.Statement query) {
+    final SubqueryPlanner planner = scope.subqueries();
+    if (planner == null)
+      throw new PostgreSQLFeatureNotSupportedException("A subquery is not supported in this clause");
+    return planner.plan(query);
+  }
+
+  /**
+   * {@code operand [NOT] IN (subquery)}. The subquery is run once, on the first row. The answer is the one of the list form:
+   * true when a row is equal, else {@code NULL} when the operand or a row is {@code NULL}, else false; an empty subquery gives false
+   * even for a {@code NULL} operand. {@code NOT IN} is the negation, so a {@code NULL} row in the subquery makes it {@code NULL}
+   * for every operand that has no equal row.
+   */
+  private Evaluable inSubquery(final Expression.InSubquery e) {
+    final Evaluable operand = resolveOutput(compile(e.operand()));
+    final Subquery subquery = planSubquery(e.query());
+    if (subquery.types().size() != 1)
+      throw new PostgreSQLEvaluationException("42601", "subquery has too many columns");
+    final PgType innerType = subquery.types().get(0);
+    final boolean negated = e.negated();
+
+    // the comparison of the operand with a row, typed as PostgreSQL types "operand = value"
+    final Evaluable equal = comparison(Expression.BinaryOperator.EQUAL, new Evaluable.Slot(operand.type(), operand.typeName(), 0),
+        new Evaluable.Slot(innerType, subquery.typeNames().get(0), 1));
+
+    final Function<Object, Object> key = hashKey(operand.type(), innerType);
+    if (key != null) {
+      final InSet set = new InSet(subquery, key);
+      return new Evaluable.Node(PgType.BOOL, row -> {
+        final Object value = operand.eval(row);
+        set.load();
+        if (set.empty)
+          return negated;
+        if (value == null)
+          return null;
+        if (set.keys.contains(key.apply(value)))
+          return !negated;
+        return set.hasNull ? null : (Object) negated;
+      });
+    }
+
+    return new Evaluable.Node(PgType.BOOL, row -> {
+      final Object value = operand.eval(row);
+      final List<Object[]> rows = subquery.rows();
+      if (rows.isEmpty())
+        return negated;
+      boolean unknown = false;
+      final Object[] pair = new Object[] { value, null };
+      for (final Object[] inner : rows) {
+        pair[1] = inner[0];
+        final Object result = equal.eval(pair);
+        if (Boolean.TRUE.equals(result))
+          return !negated;
+        if (result == null)
+          unknown = true;
+      }
+      return unknown ? null : (Object) negated;
+    });
+  }
+
+  /** The key under which two values of these types that are equal are the same, or {@code null} when equality needs a comparison. */
+  private static Function<Object, Object> hashKey(final PgType left, final PgType right) {
+    if (left.isInteger() && right.isInteger())
+      return value -> ((Number) value).longValue();
+    if (left.isString() && right.isString())
+      return value -> value;
+    if (left == right && (left == PgType.DATE || left == PgType.TIMESTAMP || left == PgType.BOOL))
+      return value -> value;
+    return null;
+  }
+
+  /** The rows of a subquery as a hash set of keys, loaded on the first use. */
+  private static final class InSet {
+    private final Subquery                subquery;
+    private final Function<Object, Object> key;
+    private Set<Object>                    keys;
+    private boolean                        hasNull;
+    private boolean                        empty;
+
+    InSet(final Subquery subquery, final Function<Object, Object> key) {
+      this.subquery = subquery;
+      this.key = key;
+    }
+
+    synchronized void load() {
+      if (keys != null)
+        return;
+      final Set<Object> loaded = new HashSet<>();
+      final List<Object[]> rows = subquery.rows();
+      empty = rows.isEmpty();
+      for (final Object[] row : rows)
+        if (row[0] == null)
+          hasNull = true;
+        else
+          loaded.add(key.apply(row[0]));
+      keys = loaded;
+    }
+  }
+
   private Evaluable inList(final Expression.InList e) {
     final Evaluable operand = compile(e.operand());
     final List<Evaluable> comparisons = new ArrayList<>();

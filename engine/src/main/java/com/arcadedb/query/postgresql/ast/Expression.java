@@ -216,6 +216,21 @@ public sealed interface Expression extends Node {
   }
 
   /**
+   * {@code a_expr [NOT] IN (select)}: true when the operand equals a row of the subquery, with the three-valued logic of
+   * PostgreSQL: {@code NULL} when no row is equal and a comparison was {@code NULL}, false for an empty subquery.
+   *
+   * @param query   a {@link SelectStatement}, a {@link SetOperationStatement} or a {@link WithStatement} that has one column
+   * @param negated true for {@code NOT IN}
+   */
+  record InSubquery(SourcePosition position, Expression operand, Statement query, boolean negated) implements Expression {
+    public InSubquery {
+      Objects.requireNonNull(position, "position");
+      Objects.requireNonNull(operand, "operand");
+      Objects.requireNonNull(query, "query");
+    }
+  }
+
+  /**
    * {@code a_expr [NOT] BETWEEN [ASYMMETRIC] b_expr AND a_expr}. {@code BETWEEN SYMMETRIC} is not in the subset.
    *
    * @param negated true for {@code NOT BETWEEN}

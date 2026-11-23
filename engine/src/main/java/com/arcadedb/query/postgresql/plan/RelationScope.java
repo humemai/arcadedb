@@ -28,6 +28,7 @@ import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.query.postgresql.eval.SubqueryPlanner;
 import com.arcadedb.query.postgresql.plan.infoschema.InformationSchema;
 
 import java.util.ArrayList;
@@ -51,10 +52,24 @@ import java.util.List;
 public final class RelationScope implements ExpressionCompiler.Scope {
   private final List<RelationSource.Field> fields;
   private final RelationalCatalog          catalog;
+  private final SubqueryPlanner            subqueries;
 
   public RelationScope(final List<RelationSource.Field> fields, final RelationalCatalog catalog) {
+    this(fields, catalog, null);
+  }
+
+  /**
+   * @param subqueries plans the subqueries of the expressions of this scope, {@code null} where the clause has none
+   */
+  public RelationScope(final List<RelationSource.Field> fields, final RelationalCatalog catalog, final SubqueryPlanner subqueries) {
     this.fields = List.copyOf(fields);
     this.catalog = catalog;
+    this.subqueries = subqueries;
+  }
+
+  @Override
+  public SubqueryPlanner subqueries() {
+    return subqueries;
   }
 
   public List<RelationSource.Field> fields() {
