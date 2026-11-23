@@ -60,7 +60,8 @@ final class PostgresServer implements AutoCloseable {
   private final GenericContainer<?> container;
   private final Connection          connection;
   /** The parse step has a connection of its own, so that a problem of the driver with an odd statement cannot upset the answers. */
-  private       Connection          parseConnection;
+  private final ParseSession        parseSession;
+  private final List<ParseSession>  extraSessions = new ArrayList<>();
   private final String              url;
   /** The message of the server when {@code SHOW lc_collate} was refused, else {@code null}. */
   String                            showFailure;
@@ -70,7 +71,7 @@ final class PostgresServer implements AutoCloseable {
     this.container = container;
     this.url = url;
     this.connection = connection;
-    this.parseConnection = parseConnection;
+    this.parseSession = new ParseSession(url, parseConnection);
   }
 
   static PostgresServer start() throws Exception {
@@ -184,31 +185,75 @@ final class PostgresServer implements AutoCloseable {
    * type cannot be determined). The driver sends the statement as a Parse and a Describe message and no Execute.
    */
   String parseOutcome(final String sql) {
-    // The driver counts the parameters of a statement by its ? markers and fails on the $1 of the protocol, so each $n is
-    // sent as ?: the driver turns it back into a numbered parameter, and the server parses the same statement
-    final String text = sql.replaceAll("\\$(\\d+)", "?");
-    try (final PreparedStatement statement = parseConnection.prepareStatement(text)) {
-      statement.getMetaData();
-      return "ok";
-    } catch (final RuntimeException e) {
-      // the driver is in an unknown state after this: a connection of its own for the next statement
+    return parseSession.parseOutcome(sql);
+  }
+
+  /**
+   * A new database of this server named {@code name}, with {@code script} (a schema, no rows) run in it, and a parse session on it.
+   * The statements of a corpus that is written against another schema than the {@code small} fixture are parsed there, so that the
+   * server binds their names. The session is closed with the server.
+   */
+  ParseSession createDatabase(final String name, final String script) throws SQLException {
+    try (final Statement statement = connection.createStatement()) {
+      statement.execute("CREATE DATABASE " + name);
+    }
+    final String databaseUrl = url.substring(0, url.lastIndexOf('/') + 1) + name;
+    final Connection loading = DriverManager.getConnection(databaseUrl, "postgres", PASSWORD);
+    loading.setAutoCommit(true);
+    try (final Statement statement = loading.createStatement()) {
+      statement.execute(script);
+    }
+    final ParseSession session = new ParseSession(databaseUrl, loading);
+    extraSessions.add(session);
+    return session;
+  }
+
+  /** The parse step on one connection, which is replaced when the driver fails on a statement. */
+  static final class ParseSession {
+    private final String url;
+    private       Connection connection;
+
+    private ParseSession(final String url, final Connection connection) {
+      this.url = url;
+      this.connection = connection;
+    }
+
+    /** See {@link PostgresServer#parseOutcome(String)}: the same step, on the database of this session. */
+    String parseOutcome(final String sql) {
+      // The driver counts the parameters of a statement by its ? markers and fails on the $1 of the protocol, so each $n is
+      // sent as ?: the driver turns it back into a numbered parameter, and the server parses the same statement
+      final String text = sql.replaceAll("\\$(\\d+)", "?");
+      try (final PreparedStatement statement = connection.prepareStatement(text)) {
+        statement.getMetaData();
+        return "ok";
+      } catch (final RuntimeException e) {
+        // the driver is in an unknown state after this: a connection of its own for the next statement
+        try {
+          connection.close();
+        } catch (final SQLException ignored) {
+          // replaced below
+        }
+        try {
+          connection = DriverManager.getConnection(url, "postgres", PASSWORD);
+          connection.setAutoCommit(true);
+        } catch (final SQLException reconnect) {
+          throw new IllegalStateException("Cannot reconnect after a driver failure on: " + sql, reconnect);
+        }
+        throw new IllegalStateException("The driver failed on the statement: " + sql + ": " + e, e);
+      } catch (final SQLException e) {
+        final String state = e.getSQLState();
+        if (state == null)
+          throw new IllegalStateException("The connection failed on: " + sql, e);
+        return "42601".equals(state) ? "syntax-error 42601" : "error " + state;
+      }
+    }
+
+    void close() {
       try {
-        parseConnection.close();
+        connection.close();
       } catch (final SQLException ignored) {
-        // replaced below
+        // the container goes away anyway
       }
-      try {
-        parseConnection = DriverManager.getConnection(url, "postgres", PASSWORD);
-        parseConnection.setAutoCommit(true);
-      } catch (final SQLException reconnect) {
-        throw new IllegalStateException("Cannot reconnect after a driver failure on: " + sql, reconnect);
-      }
-      throw new IllegalStateException("The driver failed on the statement: " + sql + ": " + e, e);
-    } catch (final SQLException e) {
-      final String state = e.getSQLState();
-      if (state == null)
-        throw new IllegalStateException("The connection failed on: " + sql, e);
-      return "42601".equals(state) ? "syntax-error 42601" : "error " + state;
     }
   }
 
@@ -254,12 +299,13 @@ final class PostgresServer implements AutoCloseable {
 
   @Override
   public void close() {
-    for (final Connection each : List.of(connection, parseConnection)) {
-      try {
-        each.close();
-      } catch (final SQLException ignored) {
-        // the container goes away anyway
-      }
+    for (final ParseSession each : extraSessions)
+      each.close();
+    parseSession.close();
+    try {
+      connection.close();
+    } catch (final SQLException ignored) {
+      // the container goes away anyway
     }
     container.stop();
   }

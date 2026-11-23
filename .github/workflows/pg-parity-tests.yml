@@ -135,6 +135,7 @@ jobs:
             engine/src/test/resources/postgresql/corpus/syntax.tsv
             engine/src/test/resources/postgresql/corpus/answers.tsv
             engine/src/test/resources/postgresql/corpus/tpch.tsv
+            engine/src/test/resources/postgresql/corpus/agent-sql.tsv
             e2e/target/pgparity/report.txt
             e2e/target/pgparity/report-tpch.txt
           if-no-files-found: error

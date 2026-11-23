@@ -28,6 +28,7 @@ import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.query.postgresql.plan.infoschema.InformationSchema;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -65,13 +66,19 @@ public final class RelationScope implements ExpressionCompiler.Scope {
     final List<Name> qualifier = reference.qualifier();
     Name relation = null;
     if (qualifier.size() == 2) {
-      catalog.requireSchema(new Identifier(qualifier.get(0).value(), qualifier.get(0).quoted()));
+      requireSchema(qualifier.get(0));
       relation = qualifier.get(1);
     } else if (qualifier.size() == 1)
       relation = qualifier.get(0);
     final int index = resolve(relation, reference.column());
     final RelationSource.Field field = fields.get(index);
     return new Evaluable.Slot(field.type(), field.typeName(), index);
+  }
+
+  /** The schema part of a qualified name: {@code information_schema} (its views are relations of the scope) or a schema of the catalog. */
+  private void requireSchema(final Name schema) {
+    if (!InformationSchema.isSchema(schema))
+      catalog.requireSchema(new Identifier(schema.value(), schema.quoted()));
   }
 
   private int resolve(final Name relation, final Name column) {
@@ -126,7 +133,7 @@ public final class RelationScope implements ExpressionCompiler.Scope {
     Name relation = null;
     if (!qualifier.isEmpty()) {
       if (qualifier.size() == 2)
-        catalog.requireSchema(new Identifier(qualifier.get(0).value(), qualifier.get(0).quoted()));
+        requireSchema(qualifier.get(0));
       relation = qualifier.get(qualifier.size() - 1);
       if (!hasRelation(relation))
         throw PostgreSQLReferenceException.missingFromEntry(relation.value());

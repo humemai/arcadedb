@@ -34,6 +34,8 @@ import com.arcadedb.schema.Type;
  * {@code ORDER BY} need.</li>
  * <li>{@code LINK} is {@code text}, not {@code varchar}: the value is the record id as text, the same kind of value as the
  * {@code id} column.</li>
+ * <li>{@code ARRAY_OF_FLOATS} is {@code vector} (pgvector's type, taken by the distance operators {@code <->}, {@code <=>} and
+ * {@code <#>}), not {@code float4[]}, which is what the wire module announces for it today ({@code ColumnTypeWireParityTest}).</li>
  * </ul>
  * A declared {@code LIST OF <t>} is typed from {@code <t>} (a scalar list is an array), an undeclared {@code LIST} is
  * {@code text[]}.
@@ -59,7 +61,9 @@ public enum ColumnType {
   FLOAT8_ARRAY("float8[]", FLOAT8),
   NUMERIC_ARRAY("numeric[]", NUMERIC),
   BYTEA_ARRAY("bytea[]", BYTEA),
-  TEXT_ARRAY("text[]", TEXT);
+  TEXT_ARRAY("text[]", TEXT),
+  /** An {@code ARRAY_OF_FLOATS} property: a pgvector {@code vector}, a {@code float[]} of fixed length per column. */
+  VECTOR("vector");
 
   private final String     typeName;
   private final ColumnType elementType;
@@ -121,7 +125,7 @@ public enum ColumnType {
       case LIST -> TEXT_ARRAY;
       case ARRAY_OF_SHORTS, ARRAY_OF_INTEGERS -> INT4_ARRAY;
       case ARRAY_OF_LONGS -> INT8_ARRAY;
-      case ARRAY_OF_FLOATS -> FLOAT4_ARRAY;
+      case ARRAY_OF_FLOATS -> VECTOR;
       case ARRAY_OF_DOUBLES -> FLOAT8_ARRAY;
       case MAP, EMBEDDED -> JSONB;
       case LINK -> TEXT;

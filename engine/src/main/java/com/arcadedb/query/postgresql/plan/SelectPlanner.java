@@ -38,7 +38,9 @@ import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
+import com.arcadedb.query.postgresql.eval.VectorDistance;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.query.postgresql.plan.infoschema.InformationSchema;
 import com.arcadedb.query.postgresql.plan.join.BuildMemory;
 import com.arcadedb.query.postgresql.plan.join.JoinPlanner;
 
@@ -90,7 +92,7 @@ public class SelectPlanner {
     if (from.isEmpty())
       return RelationSource.singleRow();
     if (from.size() == 1 && from.get(0) instanceof TableReference.Table table)
-      return planTable(table);
+      return planRelation(table);
     throw new IllegalArgumentException("A FROM clause with a join is planned by the JoinPlanner");
   }
 
@@ -102,8 +104,8 @@ public class SelectPlanner {
   private JoinPlanner.Tables joinTables() {
     return new JoinPlanner.Tables() {
       @Override
-      public TableSource table(final TableReference.Table reference) {
-        return planTable(reference);
+      public RelationSource table(final TableReference.Table reference) {
+        return planRelation(reference);
       }
 
       @Override
@@ -111,6 +113,16 @@ public class SelectPlanner {
         return chooseAccessPath(table, terms, compiler);
       }
     };
+  }
+
+  /**
+   * The source of one name of the {@code FROM} clause: a view of {@code information_schema}, which is answered before the tables
+   * of the catalog, or else a table ({@link #planTable}). Every leaf of a join goes through here, so that the views can be joined
+   * to tables and to each other.
+   */
+  protected RelationSource planRelation(final TableReference.Table reference) {
+    final RelationSource view = InformationSchema.resolve(reference, catalog);
+    return view != null ? view : planTable(reference);
   }
 
   /** The rows of one table of the {@code FROM} clause, read by a scan until the {@code WHERE} clause picks an index. */
@@ -230,6 +242,22 @@ public class SelectPlanner {
     final Evaluable limit = countOf(select.limit(), "LIMIT", constants);
     final Evaluable offset = countOf(select.offset(), "OFFSET", constants);
 
+    // ORDER BY <distance> LIMIT k: an index search when an LSM_VECTOR index of the metric exists, else the exact scan and sort
+    String exactReason = null;
+    final VectorDistance nearest = nearestNeighbourKey(select, grouping, sortKeys, outputs, extras);
+    if (nearest != null) {
+      if (where != null)
+        exactReason = "a WHERE clause is an exact scan";
+      else if (source instanceof TableSource tableSource) {
+        final VectorSearchSource.Choice choice = VectorSearchSource.choose(database, tableSource, nearest, limit, offset);
+        if (choice.source() != null)
+          source = choice.source();
+        else
+          exactReason = choice.reason();
+      } else
+        exactReason = "the statement does not read one table";
+    }
+
     if (groupingScope != null)
       group = groupingScope.stage();
 
@@ -239,6 +267,8 @@ public class SelectPlanner {
 
     final List<String> steps = new ArrayList<>();
     steps.addAll(source.describeTree());
+    if (exactReason != null)
+      steps.add("SCAN + SORT exact distance (" + exactReason + ")");
     if (where != null)
       steps.add("FILTER WHERE");
     if (group != null)
@@ -257,6 +287,22 @@ public class SelectPlanner {
 
     return new SelectPlan(source, where, group, having, outputs.toArray(new Evaluable[0]), extras.toArray(new Evaluable[0]), columns,
         select.distinct(), sortKeys, limit, offset, steps);
+  }
+
+  /**
+   * The distance of a statement that orders by exactly one pgvector distance, ascending, {@code null} for any other statement.
+   * Only the shape is tested here; {@link VectorSearchSource#choose} decides whether an index can answer it.
+   */
+  private static VectorDistance nearestNeighbourKey(final SelectStatement select, final boolean grouping,
+      final List<SelectPlan.SortKey> sortKeys, final List<Evaluable> outputs, final List<Evaluable> extras) {
+    if (sortKeys.size() != 1 || select.orderBy().size() != 1 || grouping || select.distinct())
+      return null;
+    final SortItem item = select.orderBy().get(0);
+    if (item.direction() == SortItem.Direction.DESC || item.nulls() == SortItem.Nulls.FIRST)
+      return null;
+    final int position = sortKeys.get(0).position();
+    final Evaluable key = position < outputs.size() ? outputs.get(position) : extras.get(position - outputs.size());
+    return key instanceof VectorDistance distance ? distance : null;
   }
 
   // ---- access path ----

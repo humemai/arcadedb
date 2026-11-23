@@ -45,12 +45,13 @@ import java.util.Locale;
  *
  * SQL {@code NULL} is the Java {@code null} for every type. {@link #UNKNOWN} is the type of a string literal and of a bare
  * {@code NULL} before the context decides (PostgreSQL's {@code unknown}); {@link #JSONB}, {@link #BYTEA} and {@link #ARRAY} are
- * read from a record and handed to the client unchanged: no operator takes them.
+ * read from a record and handed to the client unchanged: no operator takes them. {@link #VECTOR} is the pgvector type of a
+ * {@code float[]} (an {@code ARRAY_OF_FLOATS} property): only the distance operators ({@link VectorDistance}) take it.
  */
 public enum PgType {
   UNKNOWN("unknown"), BOOL("bool"), INT2("int2"), INT4("int4"), INT8("int8"), NUMERIC("numeric"), FLOAT4("float4"),
   FLOAT8("float8"), TEXT("text"), VARCHAR("varchar"), DATE("date"), TIMESTAMP("timestamp"), JSONB("jsonb"), BYTEA("bytea"),
-  ARRAY("array"), INTERVAL("interval");
+  ARRAY("array"), VECTOR("vector"), INTERVAL("interval");
 
   private final String typeName;
 
@@ -121,6 +122,7 @@ public enum PgType {
       case TEXT -> TEXT;
       case BYTEA -> BYTEA;
       case JSONB -> JSONB;
+      case VECTOR -> VECTOR;
       default -> ARRAY;
     };
   }
@@ -149,6 +151,8 @@ public enum PgType {
       return FLOAT8;
     if (value instanceof CharSequence || value instanceof Character)
       return TEXT;
+    if (value instanceof float[])
+      return VECTOR;
     if (value instanceof java.sql.Date || value instanceof LocalDate)
       return DATE;
     if (value instanceof LocalDateTime || value instanceof java.util.Date)
@@ -178,6 +182,7 @@ public enum PgType {
       case "varchar" -> VARCHAR;
       case "date" -> DATE;
       case "timestamp" -> TIMESTAMP;
+      case "vector" -> VECTOR;
       case "interval" -> INTERVAL;
       default -> null;
     };
