@@ -604,7 +604,7 @@ SHARE: 'share';
 SHOW: 'show';
 SIMILAR: 'similar';
 SIMPLE: 'simple';
-SKIP: 'skip';
+SKIP_KW: 'skip';
 SMALLINT: 'smallint';
 SNAPSHOT: 'snapshot';
 SOME: 'some';
