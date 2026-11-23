@@ -30,10 +30,11 @@ import java.util.Objects;
  * gives {@code int8}; {@code REAL} gives {@code float4}; {@code DOUBLE PRECISION} gives {@code float8}; {@code FLOAT(p)} gives
  * {@code float4} for p up to 24 and {@code float8} above, and plain {@code FLOAT} gives {@code float8}; {@code DECIMAL},
  * {@code DEC} and {@code NUMERIC} give {@code numeric}; {@code BOOLEAN} gives {@code bool}; {@code CHAR} and
- * {@code CHARACTER} give {@code bpchar}; {@code VARCHAR} and {@code CHARACTER VARYING} give {@code varchar};
- * {@code TIMESTAMP [WITH TIME ZONE]} gives {@code timestamptz} and {@code TIMESTAMP WITHOUT TIME ZONE} gives {@code timestamp};
- * {@code TIME [WITH TIME ZONE]} gives {@code timetz} and {@code TIME WITHOUT TIME ZONE} gives {@code time}. Any other name
- * stays as written, possibly qualified ({@code pg_catalog.int4} is the two parts).
+ * {@code CHARACTER} give {@code bpchar} (with the modifier 1 when no length is written, as {@code character(1)});
+ * {@code VARCHAR} and {@code CHARACTER VARYING} give {@code varchar};
+ * {@code TIMESTAMP WITH TIME ZONE} gives {@code timestamptz}, and {@code TIMESTAMP} and {@code TIMESTAMP WITHOUT TIME ZONE} give
+ * {@code timestamp}; {@code TIME WITH TIME ZONE} gives {@code timetz}, and {@code TIME} and {@code TIME WITHOUT TIME ZONE} give
+ * {@code time}. Any other name stays as written, possibly qualified ({@code pg_catalog.int4} is the two parts).
  *
  * @param position        where the type name starts
  * @param name            the parts of the name, one for a normalised or unqualified name, never empty; a quoted part keeps its

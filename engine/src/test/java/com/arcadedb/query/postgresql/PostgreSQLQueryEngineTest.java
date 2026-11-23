@@ -83,12 +83,19 @@ class PostgreSQLQueryEngineTest extends TestHelper {
 
   @ParameterizedTest
   @ValueSource(strings = { "INSERT INTO person VALUES (1)", "update person set age = 1", "DELETE FROM person",
-      "CREATE TABLE t (a int)", "DROP TABLE person", "WITH x AS (SELECT 1) SELECT * FROM x", "SELECTX 1", "SELECT1",
-      "(SELECT 1)", "{sql}SELECT 1", "", "   " })
+      "CREATE TABLE t (a int)", "DROP TABLE person", "WITH x AS (SELECT 1) SELECT * FROM x", "(SELECT 1)", "", "   " })
   void analyzeRefusesEverythingButASelectWithFeatureNotSupported(final String statement) {
     assertThatThrownBy(() -> engine().analyze(statement)).as(statement)
         .isInstanceOfSatisfying(PostgreSQLFeatureNotSupportedException.class,
             e -> assertThat(e.getSqlState()).isEqualTo("0A000"));
+  }
+
+  // since the grammar exists these are what PostgreSQL says of them, a syntax error, and no longer a refusal of the statement kind
+  @ParameterizedTest
+  @ValueSource(strings = { "SELECTX 1", "SELECT1", "{sql}SELECT 1" })
+  void analyzeAnswersTextThatIsNotPostgreSQLWithASyntaxError(final String statement) {
+    assertThatThrownBy(() -> engine().analyze(statement)).as(statement)
+        .isInstanceOfSatisfying(PostgreSQLSyntaxException.class, e -> assertThat(e.getSqlState()).isEqualTo("42601"));
   }
 
   @Test
