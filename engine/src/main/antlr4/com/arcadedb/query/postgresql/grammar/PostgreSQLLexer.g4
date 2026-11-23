@@ -54,7 +54,8 @@ import org.antlr.v4.runtime.Token;
 
 @members {
   /**
-   * Dollar-quoted strings ($$text$$ and $tag$text$tag$) end at a tag equal to the opening tag, which a lexer rule cannot say,
+   * Dollar-quoted strings (a dollar sign, an optional tag, a dollar sign, the text, and the same tag again) end at a tag equal to
+   * the opening tag, which a lexer rule cannot say,
    * so they are read here at the start of a token. Whitespace and comments go to the hidden channel and not to skip, so the
    * lexer returns to this method after each of them.
    */
