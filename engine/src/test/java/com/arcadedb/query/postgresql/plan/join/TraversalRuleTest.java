@@ -264,6 +264,17 @@ class TraversalRuleTest extends TestHelper {
         "ONLY works_at does not").containsExactly(row("Ann", 2019), row("Ben", 2020), row("Ann", 2022));
   }
 
+  @Test
+  void aViewOfInformationSchemaIsNeverTheStartOfAWalkNorTheEndOfAnEdge() {
+    // a view has no keys, links or edges behind its columns: its join is a plain equality, and the planner must not look for them
+    final String start = "SELECT count(*) FROM information_schema.tables t JOIN works_at w ON w.source_id = t.table_name";
+    assertThat(plan(start)).doesNotContain("TRAVERSE");
+    assertThat(rows(start)).containsExactly(row(0L));
+    final String end = "SELECT count(*) FROM information_schema.tables t JOIN person p ON t.table_name = p.id";
+    assertThat(plan(end)).doesNotContain("TRAVERSE");
+    assertThat(rows(end)).containsExactly(row(0L));
+  }
+
   // ---- the differential test ----
 
   @Test
