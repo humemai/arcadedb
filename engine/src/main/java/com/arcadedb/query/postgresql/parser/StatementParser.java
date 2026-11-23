@@ -64,7 +64,8 @@ public final class StatementParser {
     lexer.removeErrorListeners();
     lexer.addErrorListener(errors);
 
-    final PostgreSQLParser parser = new PostgreSQLParser(new CommonTokenStream(lexer));
+    final CommonTokenStream stream = new CommonTokenStream(lexer);
+    final PostgreSQLParser parser = new PostgreSQLParser(stream);
     parser.removeErrorListeners();
     final UnsupportedCollector collector = new UnsupportedCollector(parser.getRuleNames());
     errors.collector = collector;
@@ -72,6 +73,9 @@ public final class StatementParser {
     parser.addErrorListener(errors);
 
     final PostgreSQLParser.RootContext root = parser.root();
+
+    // what PostgreSQL rejects after it has read the text is a syntax error too, and comes before a construct it does not support
+    StatementChecks.run(root, stream);
 
     // the text is PostgreSQL syntax; if a construct outside the subset came in it, say so
     if (collector.first != null)
@@ -126,6 +130,15 @@ public final class StatementParser {
     @Override
     public void syntaxError(final Recognizer<?, ?> recognizer, final Object offendingSymbol, final int line,
         final int charPositionInLine, final String message, final RecognitionException exception) {
+      // UESCAPE has to be followed by a string, whatever the construct around it
+      if (offendingSymbol instanceof Token offending && recognizer instanceof PostgreSQLParser parser) {
+        int index = offending.getTokenIndex() - 1;
+        while (index > 0 && parser.getTokenStream().get(index).getChannel() != Token.DEFAULT_CHANNEL)
+          --index;
+        if (index >= 0 && parser.getTokenStream().get(index).getType() == PostgreSQLLexer.UESCAPE)
+          throw Diagnostics.syntaxError("UESCAPE must be followed by a simple string literal", offending);
+      }
+
       // a construct outside the subset that was read before the error is what PostgreSQL would have accepted
       if (collector != null && collector.first != null)
         throw Diagnostics.refusal(collector.firstName, collector.first);
