@@ -29,7 +29,25 @@ import java.util.stream.Collectors;
  * is read as that name.
  */
 public final class AstPrinter {
+  /** True while a fingerprint is printed: every number and text literal is then written as {@code ?}. */
+  private static final ThreadLocal<Boolean> MASK_LITERALS = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
   private AstPrinter() {
+  }
+
+  /**
+   * The statement as text with every number and text literal replaced by {@code ?}, in the form {@link #print(Statement)} writes
+   * it, so two statements that differ in whitespace, comments, the case of keywords or the values of their literals have one
+   * fingerprint. It is the key of the once-per-statement warning, and it holds no value of the data. {@code NULL},
+   * {@code TRUE}, {@code FALSE} and parameter references ({@code $1}) are kept.
+   */
+  public static String fingerprint(final Statement statement) {
+    MASK_LITERALS.set(Boolean.TRUE);
+    try {
+      return print(statement);
+    } finally {
+      MASK_LITERALS.remove();
+    }
   }
 
   public static String print(final Statement statement) {
@@ -116,10 +134,11 @@ public final class AstPrinter {
 
   public static String print(final Expression expression) {
     return switch (expression) {
-      case Expression.IntegerLiteral literal ->
-          literal.value().signum() < 0 ? "(" + literal.value() + ")" : literal.value().toString();
-      case Expression.DecimalLiteral literal -> decimal(literal.value());
-      case Expression.StringLiteral literal -> "'" + literal.value().replace("'", "''") + "'";
+      case Expression.IntegerLiteral literal -> MASK_LITERALS.get() ? "?"
+          : literal.value().signum() < 0 ? "(" + literal.value() + ")" : literal.value().toString();
+      case Expression.DecimalLiteral literal -> MASK_LITERALS.get() ? "?" : decimal(literal.value());
+      case Expression.StringLiteral literal ->
+          MASK_LITERALS.get() ? "?" : "'" + literal.value().replace("'", "''") + "'";
       case Expression.BooleanLiteral literal -> literal.value() ? "TRUE" : "FALSE";
       case Expression.NullLiteral ignored -> "NULL";
       case Expression.ParameterRef parameter -> "$" + parameter.index();

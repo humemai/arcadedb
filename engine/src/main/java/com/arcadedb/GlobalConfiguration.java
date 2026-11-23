@@ -3554,6 +3554,14 @@ public enum GlobalConfiguration {
       only the cost and the plan differ. Set to false to plan every such join as a plain equality join, which is the control of \
       a measurement. Default is true""", Boolean.class, true),
 
+  POSTGRESQL_JOIN_WARNING("arcadedb.postgresql.joinWarning", SCOPE.DATABASE, """
+      Writes one WARNING to the log, the first time a statement of the postgresql query language joins two tables that no edge, \
+      LINK or index supports: such a join usually means that a relationship is missing from the model. A statement is its \
+      parsed text with the literals replaced by a placeholder, so the same query run many times logs once; at most 10000 \
+      statements are remembered, the one used longest ago is forgotten first. The join still runs and the rows are the same. \
+      The plan of EXPLAIN lists the same sentence whatever this setting is. Set to false to log nothing. Default is true""",
+      Boolean.class, true),
+
   // BOLT (Neo4j)
   BOLT_PORT("arcadedb.bolt.port", SCOPE.SERVER,
       "TCP/IP port number used for incoming connections for BOLT plugin. Default is 7687", Integer.class, 7687),
