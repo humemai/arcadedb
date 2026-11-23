@@ -109,6 +109,7 @@ jobs:
           path: |
             engine/src/test/resources/postgresql/corpus/syntax.tsv
             engine/src/test/resources/postgresql/corpus/answers.tsv
+            engine/src/test/resources/postgresql/corpus/agent-sql.tsv
             e2e/target/pgparity/report.txt
           if-no-files-found: error
           retention-days: 7
