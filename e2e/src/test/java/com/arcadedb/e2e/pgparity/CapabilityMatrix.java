@@ -120,6 +120,10 @@ final class CapabilityMatrix {
     String    ownDetail       = "";
     /** ArcadeDB SQL answered rows where PostgreSQL refuses the statement. */
     boolean   permissive;
+    /** Both refuse the statement, but ArcadeDB SQL only because the construct is a syntax error for it, not for the reason PostgreSQL has. */
+    boolean   refusedBySyntax;
+    /** ArcadeDB SQL is SAME and both answers hold no row: the weakest kind of SAME. */
+    boolean   emptyBoth;
     /** The comparison left out the server's {@code id}, {@code source_id} or {@code target_id} column of a {@code SELECT *}. */
     boolean   modelColumnsIgnored;
   }
@@ -171,6 +175,7 @@ final class CapabilityMatrix {
       e.ownException = describeError(own.error());
       if (pg.isRefusal()) {
         e.own = Own.SAME;
+        e.refusedBySyntax = SYNTAX.equals(errorClass(own.error()));
         e.ownDetail = "both refuse: PostgreSQL " + pg.sqlState + ", ArcadeDB SQL " + e.ownException;
       } else {
         e.own = Own.ERROR;
@@ -189,6 +194,7 @@ final class CapabilityMatrix {
     e.modelColumnsIgnored = comparison.modelColumnsIgnored();
     if (comparison.difference() == null) {
       e.own = Own.SAME;
+      e.emptyBoth = pg.table.rows.isEmpty();
       return e;
     }
     final Set<String> named = modelNames(masked);
@@ -558,19 +564,32 @@ final class CapabilityMatrix {
       out.append('\n');
     }
 
-    // the same under a reading of SELECT *, and the permissive answers
+    // what a SAME can hide, and the permissive answers
     final List<String> ignored = new ArrayList<>();
     final List<String> permissive = new ArrayList<>();
+    final List<String> empty = new ArrayList<>();
+    final List<String> refusedBySyntax = new ArrayList<>();
+    final List<String> refusedOtherwise = new ArrayList<>();
     for (final Entry e : view) {
       if (e.modelColumnsIgnored && e.own == Own.SAME)
         ignored.add(e.id);
       if (e.permissive)
         permissive.add(e.id);
+      if (e.emptyBoth)
+        empty.add(e.id);
+      if (!e.pgAnswers && e.own == Own.SAME)
+        (e.refusedBySyntax ? refusedBySyntax : refusedOtherwise).add(e.id);
     }
     out.append("Counted SAME after leaving out the `id`, `source_id` or `target_id` column of PostgreSQL's `SELECT *`: ")
         .append(ignored.size()).append(ignored.isEmpty() ? "" : " " + ignored).append("\n\n");
+    out.append("Counted SAME with no row on both sides, the weakest kind of SAME: ").append(empty.size())
+        .append(empty.isEmpty() ? "" : " " + empty).append("\n\n");
     out.append("Of the DIFFERENT, answered where PostgreSQL refuses the statement: ").append(permissive.size())
         .append(permissive.isEmpty() ? "" : " " + permissive).append("\n\n");
+    out.append("Of the SAME where PostgreSQL refuses the statement, ArcadeDB SQL refuses it with an exception of its own: ")
+        .append(refusedOtherwise.size()).append(refusedOtherwise.isEmpty() ? "" : " " + refusedOtherwise)
+        .append("; only because the construct is a syntax error for ArcadeDB SQL: ").append(refusedBySyntax.size())
+        .append(refusedBySyntax.isEmpty() ? "" : " " + refusedBySyntax).append("\n\n");
 
     // the postgresql language, anything but SAME
     final List<Entry> notSame = new ArrayList<>();
@@ -693,7 +712,12 @@ final class CapabilityMatrix {
     final Corpus.AnswerCase err = answerCase("err-unknown-column", "multiset", "SELECT nosuch FROM person");
     final Outcome refused = Outcome.refused("42703", "column does not exist");
     e = classify(err, refused, Outcome.refused("42703", "x"), new ArcadeSide.NativeRun(null, new IllegalStateException("boom")));
-    check(failures, "both refuse is SAME", e.own == Own.SAME && e.prototype == Prototype.SAME && !e.pgAnswers && e.ownClass == null);
+    check(failures, "both refuse is SAME", e.own == Own.SAME && e.prototype == Prototype.SAME && !e.pgAnswers && e.ownClass == null
+        && !e.refusedBySyntax);
+    e = classify(err, refused, Outcome.refused("42703", "x"), new ArcadeSide.NativeRun(null, new CommandSQLParsingException("Syntax error")));
+    check(failures, "both refuse, ArcadeDB SQL by a syntax error", e.own == Own.SAME && e.refusedBySyntax);
+    e = classify(names, Outcome.answer(table(name)), Outcome.answer(table(name)), new ArcadeSide.NativeRun(table(name), null));
+    check(failures, "SAME with no row on both sides", e.own == Own.SAME && e.emptyBoth);
     e = classify(err, refused, Outcome.refused("0A000", "x"), new ArcadeSide.NativeRun(table(List.of("nosuch"), (Object) null), null));
     check(failures, "answers where PostgreSQL refuses is DIFFERENT", e.own == Own.DIFFERENT && e.permissive && e.prototype == Prototype.ERROR);
     final Corpus.AnswerCase id = answerCase("st-person-id", "ordered", "SELECT id, pid FROM person ORDER BY pid");
