@@ -65,7 +65,7 @@ final class Diagnostics {
       Map.entry("unsupportedAggregateOrder", "ORDER BY inside a function call"),
       Map.entry("unsupportedNamedArg", "A named argument"),
       Map.entry("unsupportedVariadic", "VARIADIC"),
-      Map.entry("unsupportedSimilar", "SUBSTRING with SIMILAR"),
+      Map.entry("unsupportedSimilarEscape", "SUBSTRING with SIMILAR"),
       Map.entry("unsupportedBitString", "A bit string constant"),
       Map.entry("unsupportedUnicodeString", "A Unicode escape string"),
       Map.entry("unsupportedSetof", "SETOF"));

@@ -140,8 +140,8 @@ class StatementParserTest {
     // left can start a function call, so the statement fails at the word after it, as in PostgreSQL
     assertThatThrownBy(() -> StatementParser.parse("SELECT left FROM t")).isInstanceOf(PostgreSQLSyntaxException.class)
         .hasMessageContaining("syntax error at or near \"FROM\" (line 1, column 13)");
-    assertThatThrownBy(() -> StatementParser.parse("SELECT 1 select")).isInstanceOf(PostgreSQLSyntaxException.class)
-        .hasMessageContaining("at or near \"select\"");
+    assertThatThrownBy(() -> StatementParser.parse("SELECT 1 FROM t x y")).isInstanceOf(PostgreSQLSyntaxException.class)
+        .hasMessageContaining("at or near \"y\"");
     assertThat(print("SELECT left('abc', 2), right('abc', 1)")).isEqualTo("SELECT left('abc', 2), right('abc', 1)");
   }
 

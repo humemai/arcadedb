@@ -231,7 +231,7 @@ unsupportedGroupByQuantifier
   ;
 
 unsupportedGroupingSet
-  : (ROLLUP | CUBE) LPAREN
+  : (ROLLUP | CUBE) LPAREN exprList RPAREN
   | GROUPING SETS
   | LPAREN RPAREN
   ;
@@ -309,6 +309,7 @@ aExpr
   | aExpr NOT? BETWEEN unsupportedSymmetric low=bExpr AND high=aExpr          # unsupportedBetweenExpr
   | aExpr NOT? LIKE pattern=aExpr ESCAPE escape=aExpr                         # likeEscapeExpr
   | aExpr NOT? LIKE pattern=aExpr                                             # likeExpr
+  | l=aExpr unsupportedPatternOperator pattern=aExpr ESCAPE escape=aExpr    # unsupportedPatternEscapeExpr
   | l=aExpr unsupportedPatternOperator r=aExpr                                # unsupportedPatternExpr
   | aExpr unsupportedQuantifiedComparison                                     # unsupportedQuantifiedExpr
   | l=aExpr op=(LT | GT | EQ | LE | GE | NE) r=aExpr                          # comparisonExpr
@@ -488,11 +489,11 @@ substrList
   | a=aExpr FOR c=aExpr FROM b=aExpr     # substrForFrom
   | a=aExpr FROM b=aExpr                 # substrFrom
   | a=aExpr FOR c=aExpr                  # substrFor
-  | aExpr unsupportedSimilar             # substrSimilar
+  | aExpr unsupportedSimilarEscape       # substrSimilar
   ;
 
-unsupportedSimilar
-  : SIMILAR
+unsupportedSimilarEscape
+  : SIMILAR aExpr ESCAPE aExpr
   ;
 
 trimList
