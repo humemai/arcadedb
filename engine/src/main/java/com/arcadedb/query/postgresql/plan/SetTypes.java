@@ -30,8 +30,8 @@ import java.time.LocalDate;
  * operand to it: {@code select_common_type} of PostgreSQL for two inputs. Two inputs of one type keep it. A column that is only a
  * string literal or {@code NULL} (type {@code unknown}) takes the type of the other operand, and is {@code text} when both are.
  * Numbers go to the one that is farther along {@code smallint}, {@code integer}, {@code bigint}, {@code numeric}, {@code real},
- * {@code double precision}, strings to {@code text}, a date and a timestamp to the timestamp. Any other pair is SQLSTATE
- * {@code 42804}.
+ * {@code double precision}, a date and a timestamp to the timestamp. Two string types (varchar and text convert to each other
+ * implicitly) keep the type of the first, the left operand. Any other pair is SQLSTATE {@code 42804}.
  */
 public final class SetTypes {
   private SetTypes() {
@@ -47,7 +47,7 @@ public final class SetTypes {
     if (left.isNumber() && right.isNumber())
       return rank(right) > rank(left) ? right : left;
     if (left.isString() && right.isString())
-      return PgType.TEXT;
+      return left;
     if (left.isDateTime() && right.isDateTime())
       return PgType.TIMESTAMP;
     throw PostgreSQLEvaluationException.mismatch(

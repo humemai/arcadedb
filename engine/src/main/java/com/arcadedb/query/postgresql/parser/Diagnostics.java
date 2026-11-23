@@ -56,6 +56,7 @@ final class Diagnostics {
       Map.entry("unsupportedColumnAliases", "A column alias list"),
       Map.entry("unsupportedTableRef", "A subquery, a table function or LATERAL in FROM"),
       Map.entry("unsupportedRecursive", "WITH RECURSIVE"),
+      Map.entry("unsupportedWithWrite", "A WITH clause on INSERT, UPDATE, DELETE or MERGE"),
       Map.entry("unsupportedCteBody", "A data-modifying statement in WITH"),
       Map.entry("unsupportedCteClause", "SEARCH and CYCLE in WITH"),
       Map.entry("unsupportedInSubquery", "A subquery"),
