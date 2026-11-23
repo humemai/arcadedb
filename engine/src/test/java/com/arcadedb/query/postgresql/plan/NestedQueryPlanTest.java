@@ -95,7 +95,9 @@ class NestedQueryPlanTest extends TestHelper {
     assertThat(types("SELECT pid AS a FROM person UNION ALL SELECT total FROM orders")).containsExactly("a:numeric");
     assertThat(types("SELECT 1 AS a, NULL AS b UNION ALL SELECT 2, 'x'")).containsExactly("a:int4", "b:text");
     assertThat(types("SELECT 1 AS a UNION SELECT '2'")).containsExactly("a:int4");
-    assertThat(types("SELECT name FROM person UNION SELECT 'z'::text")).containsExactly("name:text");
+    // varchar and text convert to each other implicitly, so the type of the left operand stays
+    assertThat(types("SELECT name FROM person UNION SELECT 'z'::text")).containsExactly("name:varchar");
+    assertThat(types("SELECT 'z'::text AS name UNION SELECT name FROM person")).containsExactly("name:text");
     assertThat(types("SELECT name FROM person UNION SELECT name FROM company")).containsExactly("name:varchar");
     assertThat(types("SELECT placed AS d FROM orders UNION ALL SELECT '2026-01-01'::timestamp")).containsExactly("d:timestamp");
   }
@@ -131,12 +133,12 @@ class NestedQueryPlanTest extends TestHelper {
 
   @Test
   void aWithClauseIsPlannedInOrderAndRead() {
-    final List<List<Object>> rows = new ArrayList<>();
+    final List<Integer> pids = new ArrayList<>();
     try (final ResultSet resultSet = database.query("postgresql",
         "WITH a AS (SELECT pid FROM person), b AS (SELECT pid FROM a WHERE pid > 3) SELECT pid FROM b ORDER BY pid")) {
       while (resultSet.hasNext())
-        rows.add(List.of(resultSet.next().getProperty("pid")));
+        pids.add(resultSet.next().<Integer>getProperty("pid"));
     }
-    assertThat(rows).containsExactly(List.of(4), List.of(5));
+    assertThat(pids).containsExactly(4, 5);
   }
 }
