@@ -202,7 +202,7 @@ class PgParityIT {
       else {
         final String difference = ResultComparator.compare(answer(server), answer(engine), true, Values.DEFAULT_TOLERANCE);
         if (difference != null)
-          failures.add(pair[0] + ": " + difference);
+          failures.add(pair[0] + ": " + difference + "\n  server rows: " + server.table.rows + "\n  engine rows: " + engine.table.rows);
       }
     }
     assertTrue(failures.isEmpty(), "the two builds of the small fixture differ:\n" + String.join("\n", failures));
