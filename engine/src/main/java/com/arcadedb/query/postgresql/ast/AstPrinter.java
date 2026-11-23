@@ -56,6 +56,8 @@ public final class AstPrinter {
       case ExplainStatement explain -> "EXPLAIN " + print(explain.select());
       case ExplainWriteStatement explain -> "EXPLAIN " + print(explain.statement());
       case SelectStatement select -> print(select);
+      case SetOperationStatement setOperation -> print(setOperation);
+      case WithStatement with -> print(with);
       case InsertStatement insert -> print(insert);
       case UpdateStatement update -> print(update);
       case DeleteStatement delete -> print(delete);
@@ -124,6 +126,35 @@ public final class AstPrinter {
     return text.toString();
   }
 
+  /** Every operand is in parentheses, so the grouping of the tree is the grouping of the text. */
+  private static String print(final SetOperationStatement setOperation) {
+    final StringBuilder text = new StringBuilder("(").append(print(setOperation.left())).append(") ")
+        .append(setOperation.kind()).append(setOperation.all() ? " ALL" : "").append(" (").append(print(setOperation.right()))
+        .append(')');
+    if (!setOperation.orderBy().isEmpty())
+      text.append(" ORDER BY ").append(setOperation.orderBy().stream().map(AstPrinter::print).collect(Collectors.joining(", ")));
+    if (setOperation.limit() != null)
+      text.append(" LIMIT ").append(print(setOperation.limit()));
+    if (setOperation.offset() != null)
+      text.append(" OFFSET ").append(print(setOperation.offset()));
+    return text.toString();
+  }
+
+  private static String print(final WithStatement with) {
+    final StringBuilder text = new StringBuilder("WITH ");
+    for (int i = 0; i < with.ctes().size(); i++) {
+      final WithStatement.Cte cte = with.ctes().get(i);
+      if (i > 0)
+        text.append(", ");
+      text.append(print(cte.name()));
+      if (!cte.columns().isEmpty())
+        text.append(" (").append(cte.columns().stream().map(AstPrinter::print).collect(Collectors.joining(", "))).append(')');
+      text.append(" AS (").append(print(cte.query())).append(')');
+    }
+    // the body is a query of its own: in parentheses it is read back whatever it holds
+    return text.append(" (").append(print(with.body())).append(')').toString();
+  }
+
   private static String print(final SelectItem item) {
     return switch (item) {
       case SelectItem.Projection projection ->
@@ -138,6 +169,10 @@ public final class AstPrinter {
       case TableReference.Table table -> (table.only() ? "ONLY " : "")
           + table.name().stream().map(AstPrinter::print).collect(Collectors.joining("."))
           + (table.alias() == null ? "" : " AS " + print(table.alias()));
+      case TableReference.Subquery subquery -> "(" + print(subquery.query()) + ")"
+          + (subquery.alias() == null ? "" : " AS " + print(subquery.alias()))
+          + (subquery.columns().isEmpty() ? "" : " (" + subquery.columns().stream().map(AstPrinter::print)
+          .collect(Collectors.joining(", ")) + ")");
       case TableReference.Join join -> print(join.left()) + (join.type() == TableReference.JoinType.LEFT ? " LEFT JOIN " : " INNER JOIN ")
           // a join on the right has to be in parentheses to keep its shape: joins group to the left
           + (join.right() instanceof TableReference.Join ? "(" + print(join.right()) + ")" : print(join.right())) + " ON "

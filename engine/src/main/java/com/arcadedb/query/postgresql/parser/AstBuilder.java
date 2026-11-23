@@ -31,6 +31,7 @@ import com.arcadedb.query.postgresql.ast.InsertStatement;
 import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.SelectItem;
 import com.arcadedb.query.postgresql.ast.SelectStatement;
+import com.arcadedb.query.postgresql.ast.SetOperationStatement;
 import com.arcadedb.query.postgresql.ast.SortItem;
 import com.arcadedb.query.postgresql.ast.SourcePosition;
 import com.arcadedb.query.postgresql.ast.Statement;
@@ -38,6 +39,7 @@ import com.arcadedb.query.postgresql.ast.TableReference;
 import com.arcadedb.query.postgresql.ast.TransactionStatement;
 import com.arcadedb.query.postgresql.ast.TypeName;
 import com.arcadedb.query.postgresql.ast.UpdateStatement;
+import com.arcadedb.query.postgresql.ast.WithStatement;
 import com.arcadedb.query.postgresql.ast.WriteStatement;
 import com.arcadedb.query.postgresql.ast.WriteValue;
 import com.arcadedb.query.postgresql.grammar.PostgreSQLParser;
@@ -65,7 +67,7 @@ final class AstBuilder {
   Statement build(final RootContext root) {
     final StmtContext stmt = root.stmt();
     if (stmt instanceof SelectCommandContext command)
-      return select(command.selectStmt());
+      return query(command.selectStmt());
     if (stmt instanceof InsertCommandContext command)
       return insert(command.insertStmt());
     if (stmt instanceof UpdateCommandContext command)
@@ -78,7 +80,7 @@ final class AstBuilder {
       final ExplainStmtContext explain = command.explainStmt();
       if (explain.writeStmt() != null)
         return new ExplainWriteStatement(position(command.getStart()), write(explain.writeStmt()));
-      return new ExplainStatement(position(command.getStart()), select(explain.selectStmt()));
+      return new ExplainStatement(position(command.getStart()), query(explain.selectStmt()));
     }
     if (stmt instanceof EmptyCommandContext)
       return new EmptyStatement(position(stmt.getStart()));
@@ -111,7 +113,10 @@ final class AstBuilder {
         for (final InsertColumnContext column : rest.columns.items)
           columns.add(name(column.colId()));
       if (rest.source instanceof InsertFromSelectContext query) {
-        source = new InsertStatement.Query(position(query.getStart()), select(query.selectStmt()));
+        // INSERT ... SELECT reads one SELECT; a set operation or a WITH in the source is outside the subset
+        if (!(query(query.selectStmt()) instanceof SelectStatement select))
+          throw Diagnostics.notSupported("A set operation or a WITH in the source of an INSERT", query.getStart());
+        source = new InsertStatement.Query(position(query.getStart()), select);
       } else if (rest.source instanceof InsertFromValuesContext values) {
         final List<List<WriteValue>> rows = new ArrayList<>();
         for (final ValuesRowContext row : values.valuesClause().rows) {
@@ -197,10 +202,109 @@ final class AstBuilder {
 
   // ------------------------------------------------------------------------------------------------------ SELECT
 
-  private SelectStatement select(final SelectStmtContext context) {
+  /**
+   * A query: {@code select_no_parens} of {@code gram.y}. The {@code ORDER BY}, {@code OFFSET} and {@code LIMIT} that follow the
+   * select clause belong to the whole of it: to a single {@code SELECT} (a node of its own), or to a set operation. A parenthesised
+   * query that already has its own order or limit cannot get a second one, as in PostgreSQL.
+   */
+  private Statement query(final SelectStmtContext context) {
     if (context == null)
       throw new IllegalStateException("EXPLAIN without a SELECT should have been refused");
 
+    final List<SortItem> orderBy = new ArrayList<>();
+    if (context.sortClause() != null)
+      for (final SortByContext item : context.sortClause().items)
+        orderBy.add(sortItem((SortKeyContext) item));
+
+    Expression limit = null;
+    Expression offset = null;
+    final SelectLimitContext selectLimit = context.selectLimit();
+    if (selectLimit != null) {
+      if (selectLimit.limitClause() != null && selectLimit.limitClause().aExpr() != null)
+        limit = expression(selectLimit.limitClause().aExpr());
+      final OffsetClauseContext offsetClause = selectLimit.offsetClause();
+      if (offsetClause != null) {
+        if (offsetClause.aExpr() != null)
+          offset = expression(offsetClause.aExpr());
+        else
+          offset = fetchFirstValue(offsetClause.fetchFirstValue());
+      }
+    }
+
+    final Statement body = withOrderAndLimit(queryExpression(context.queryExpr()), orderBy, limit, offset, context.getStart());
+    final WithClauseContext with = context.withClause();
+    if (with == null)
+      return body;
+    final List<WithStatement.Cte> ctes = new ArrayList<>();
+    for (final CommonTableExprContext cte : with.items) {
+      final List<Name> columns = new ArrayList<>();
+      if (cte.columns != null)
+        for (final ColIdContext column : cte.columns.names)
+          columns.add(name(column));
+      ctes.add(new WithStatement.Cte(name(cte.name), columns, query(cte.body)));
+    }
+    return new WithStatement(position(with.getStart()), ctes, body);
+  }
+
+  private Statement queryExpression(final QueryExprContext context) {
+    if (context instanceof PrimaryQueryContext primary)
+      return queryPrimary(primary.queryPrimary());
+    if (context instanceof IntersectQueryContext intersect)
+      return new SetOperationStatement(position(intersect.getStart()), SetOperationStatement.Kind.INTERSECT,
+          intersect.setQuantifier() != null && has(intersect.setQuantifier(), PostgreSQLParser.ALL), queryExpression(intersect.l),
+          queryExpression(intersect.r), List.of(), null, null);
+    final UnionQueryContext union = (UnionQueryContext) context;
+    return new SetOperationStatement(position(union.getStart()),
+        union.op.getType() == PostgreSQLParser.UNION ? SetOperationStatement.Kind.UNION : SetOperationStatement.Kind.EXCEPT,
+        union.setQuantifier() != null && has(union.setQuantifier(), PostgreSQLParser.ALL), queryExpression(union.l),
+        queryExpression(union.r), List.of(), null, null);
+  }
+
+  private Statement queryPrimary(final QueryPrimaryContext context) {
+    if (context instanceof SimpleQueryContext simple)
+      return simpleSelect(simple.simpleSelect());
+    if (context instanceof ParenQueryContext paren)
+      return query(paren.selectStmt());
+    throw new IllegalStateException("A query the parser did not refuse has no tree: " + context.getText());
+  }
+
+  /** The order, the offset and the limit of a select clause, which must not have its own. */
+  private static Statement withOrderAndLimit(final Statement body, final List<SortItem> orderBy, final Expression limit,
+      final Expression offset, final Token start) {
+    if (orderBy.isEmpty() && limit == null && offset == null)
+      return body;
+    return switch (body) {
+      case SelectStatement select -> {
+        checkNotYetGiven(!select.orderBy().isEmpty() && !orderBy.isEmpty(), select.limit() != null && limit != null,
+            select.offset() != null && offset != null, start);
+        yield new SelectStatement(select.position(), select.distinct(), select.items(), select.from(), select.where(),
+            select.groupBy(), select.having(), orderBy.isEmpty() ? select.orderBy() : orderBy,
+            limit == null ? select.limit() : limit, offset == null ? select.offset() : offset);
+      }
+      case SetOperationStatement set -> {
+        checkNotYetGiven(!set.orderBy().isEmpty() && !orderBy.isEmpty(), set.limit() != null && limit != null,
+            set.offset() != null && offset != null, start);
+        yield new SetOperationStatement(set.position(), set.kind(), set.all(), set.left(), set.right(),
+            orderBy.isEmpty() ? set.orderBy() : orderBy, limit == null ? set.limit() : limit,
+            offset == null ? set.offset() : offset);
+      }
+      case WithStatement with -> new WithStatement(with.position(), with.ctes(),
+          withOrderAndLimit(with.body(), orderBy, limit, offset, start));
+      default -> throw new IllegalStateException("Not a query: " + body);
+    };
+  }
+
+  private static void checkNotYetGiven(final boolean order, final boolean limit, final boolean offset, final Token start) {
+    if (order)
+      throw Diagnostics.syntaxError("multiple ORDER BY clauses not allowed", start);
+    if (limit)
+      throw Diagnostics.syntaxError("multiple LIMIT clauses not allowed", start);
+    if (offset)
+      throw Diagnostics.syntaxError("multiple OFFSET clauses not allowed", start);
+  }
+
+  /** One {@code SELECT} without its {@code ORDER BY}, {@code OFFSET} and {@code LIMIT}: {@code simple_select} of {@code gram.y}. */
+  private SelectStatement simpleSelect(final SimpleSelectContext context) {
     final Token start = context.getStart();
     if (context.targetList() == null)
       throw Diagnostics.notSupported("A select list with no item", start);
@@ -225,27 +329,7 @@ final class AstBuilder {
 
     final Expression having = context.havingClause() == null ? null : expression(context.havingClause().aExpr());
 
-    final List<SortItem> orderBy = new ArrayList<>();
-    if (context.sortClause() != null)
-      for (final SortByContext item : context.sortClause().items)
-        orderBy.add(sortItem((SortKeyContext) item));
-
-    Expression limit = null;
-    Expression offset = null;
-    final SelectLimitContext selectLimit = context.selectLimit();
-    if (selectLimit != null) {
-      if (selectLimit.limitClause() != null && selectLimit.limitClause().aExpr() != null)
-        limit = expression(selectLimit.limitClause().aExpr());
-      final OffsetClauseContext offsetClause = selectLimit.offsetClause();
-      if (offsetClause != null) {
-        if (offsetClause.aExpr() != null)
-          offset = expression(offsetClause.aExpr());
-        else
-          offset = fetchFirstValue(offsetClause.fetchFirstValue());
-      }
-    }
-
-    return new SelectStatement(position(start), distinct, items, from, where, groupBy, having, orderBy, limit, offset);
+    return new SelectStatement(position(start), distinct, items, from, where, groupBy, having, List.of(), null, null);
   }
 
   private SelectItem selectItem(final TargetElContext context) {
@@ -304,6 +388,15 @@ final class AstBuilder {
       final TableReference.JoinType type = join.joinKind() != null && has(join.joinKind(), PostgreSQLParser.LEFT)
           ? TableReference.JoinType.LEFT : TableReference.JoinType.INNER;
       return new TableReference.Join(position(context.getStart()), left, type, right, expression(join.joinQual().aExpr()));
+    }
+    if (context instanceof DerivedRefContext derived) {
+      final DerivedAliasContext alias = derived.derivedAlias();
+      final List<Name> columns = new ArrayList<>();
+      if (alias != null && alias.columns != null)
+        for (final ColIdContext column : alias.columns.names)
+          columns.add(name(column));
+      return new TableReference.Subquery(position(context.getStart()), query(derived.selectStmt()),
+          alias == null ? null : name(alias.alias), columns);
     }
     if (context instanceof ParenRefContext paren) {
       final TableReference inner = tableReference(paren.tableRef());

@@ -103,6 +103,9 @@ public final class JoinPlanner {
     /** The source of one table of the {@code FROM} clause, read by a scan. */
     RelationSource table(TableReference.Table reference);
 
+    /** The source of a subquery in the {@code FROM} clause: its rows, computed once. */
+    RelationSource derived(TableReference.Subquery reference);
+
     /** The table read through the best access path that the terms (single table conditions) offer, as the single-table plan. */
     TableSource narrow(TableSource table, List<Expression> terms, ExpressionCompiler compiler);
   }
@@ -284,6 +287,10 @@ public final class JoinPlanner {
   }
 
   private Node analyze(final TableReference reference) {
+    if (reference instanceof TableReference.Subquery subquery) {
+      final RelationSource source = tables.derived(subquery);
+      return new Leaf(source, source.columns().get(0).relation());
+    }
     if (reference instanceof TableReference.Table table) {
       final RelationSource source = tables.table(table);
       final String name = source instanceof TableSource tableSource ? tableSource.table().name() : source.columns().get(0).relation();

@@ -25,9 +25,9 @@ import java.util.Objects;
  * VERBOSE}, the parenthesised option list, and an {@code EXPLAIN} of a statement that is not a {@code SELECT} are refused with
  * SQLSTATE 0A000.
  *
- * @param select the explained query
+ * @param select the explained query: a {@link SelectStatement}, a {@link SetOperationStatement} or a {@link WithStatement}
  */
-public record ExplainStatement(SourcePosition position, SelectStatement select) implements Statement {
+public record ExplainStatement(SourcePosition position, Statement select) implements Statement {
   public ExplainStatement {
     Objects.requireNonNull(position, "position");
     Objects.requireNonNull(select, "select");

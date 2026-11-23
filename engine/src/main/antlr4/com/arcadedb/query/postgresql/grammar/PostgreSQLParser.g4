@@ -83,13 +83,12 @@ unsupportedExplainOption
   | LPAREN
   ;
 
-// the first words of every other statement of PostgreSQL, WITH, VALUES, TABLE and a parenthesised query
+// the first words of every other statement of PostgreSQL (WITH, VALUES, TABLE and a parenthesised query start a selectStmt)
 unsupportedStatement
   : ALTER | ANALYSE | ANALYZE | CALL | CHECKPOINT | CLOSE | CLUSTER | COMMENT | COPY | CREATE
   | DEALLOCATE | DECLARE | DISCARD | DO | DROP | EXECUTE | FETCH | GRANT | IMPORT | LISTEN | LOAD
   | LOCK | MERGE | MOVE | NOTIFY | PREPARE | REASSIGN | REFRESH | REINDEX | RELEASE | RESET | REVOKE | SAVEPOINT
-  | SECURITY | SET | SHOW | TRUNCATE | UNLISTEN | VACUUM | VALUES | WITH | TABLE
-  | LPAREN+ (SELECT | WITH | VALUES | TABLE)
+  | SECURITY | SET | SHOW | TRUNCATE | UNLISTEN | VACUUM
   ;
 
 // ============================================================================
@@ -118,9 +117,9 @@ insertColumn
   ;
 
 insertSource
-  : selectStmt                         # insertFromSelect
+  : unsupportedInsertSource skipRest   # insertUnsupported
   | valuesClause                       # insertFromValues
-  | unsupportedInsertSource skipRest   # insertUnsupported
+  | {_input.LA(1) != VALUES}? selectStmt   # insertFromSelect
   ;
 
 unsupportedInsertSource
@@ -225,9 +224,74 @@ unsupportedTransactionStmt
 // ============================================================================
 
 selectStmt
+  : withClause? queryExpr sortClause? (unsupportedLockingClause skipRest)? selectLimit? (unsupportedLockingClause skipRest)?
+  | withClause unsupportedWithWrite skipRest
+  ;
+
+// WITH x AS (...) INSERT, UPDATE, DELETE or MERGE: the statement is not a query
+unsupportedWithWrite
+  : INSERT | UPDATE | DELETE | MERGE
+  ;
+
+// WITH RECURSIVE is refused: the first alternative takes the rest of the statement
+withClause
+  : WITH unsupportedRecursive skipRest
+  | WITH items+=commonTableExpr (COMMA items+=commonTableExpr)*
+  ;
+
+unsupportedRecursive
+  : RECURSIVE
+  ;
+
+commonTableExpr
+  : name=colId columns=cteColumnList? AS cteMaterialized? LPAREN body=selectStmt RPAREN (unsupportedCteClause skipRest)?
+  | name=colId columns=cteColumnList? AS cteMaterialized? LPAREN unsupportedCteBody skipRest
+  ;
+
+cteColumnList
+  : LPAREN names+=colId (COMMA names+=colId)* RPAREN
+  ;
+
+// AS MATERIALIZED and AS NOT MATERIALIZED only steer the plan of PostgreSQL: the rows are the same
+cteMaterialized
+  : MATERIALIZED
+  | NOT MATERIALIZED
+  ;
+
+unsupportedCteBody
+  : INSERT | UPDATE | DELETE | MERGE
+  ;
+
+unsupportedCteClause
+  : SEARCH | CYCLE
+  ;
+
+// select_clause of gram.y: INTERSECT binds tighter than UNION and EXCEPT, which group to the left
+queryExpr
+  : l=queryExpr INTERSECT setQuantifier? r=queryExpr                 # intersectQuery
+  | l=queryExpr op=(UNION | EXCEPT) setQuantifier? r=queryExpr       # unionQuery
+  | queryPrimary                                                     # primaryQuery
+  ;
+
+setQuantifier
+  : ALL
+  | DISTINCT
+  ;
+
+queryPrimary
+  : simpleSelect                         # simpleQuery
+  | LPAREN selectStmt RPAREN             # parenQuery
+  | unsupportedQueryForm skipRest        # unsupportedQuery
+  ;
+
+unsupportedQueryForm
+  : VALUES
+  | TABLE
+  ;
+
+simpleSelect
   : SELECT selectQuantifier? targetList? (unsupportedInto skipRest)? fromClause? whereClause? groupClause? havingClause?
-    (unsupportedWindowClause skipRest)? (unsupportedSetOperation skipRest)? sortClause?
-    (unsupportedLockingClause skipRest)? selectLimit? (unsupportedLockingClause skipRest)?
+    (unsupportedWindowClause skipRest)?
   ;
 
 selectQuantifier
@@ -245,12 +309,6 @@ unsupportedInto
 
 unsupportedWindowClause
   : WINDOW
-  ;
-
-unsupportedSetOperation
-  : UNION
-  | INTERSECT
-  | EXCEPT
   ;
 
 unsupportedLockingClause
@@ -283,6 +341,7 @@ tableRef
   : relationExpr aliasClause? unsupportedTablesample?     # tableNameRef
   | tableRef joinKind? JOIN tableRef joinQual             # joinRef
   | tableRef unsupportedJoinKind JOIN tableRef joinQual?  # unsupportedJoinRef
+  | LPAREN selectStmt RPAREN derivedAlias?                # derivedRef
   | LPAREN tableRef RPAREN                                # parenRef
   | LPAREN tableRef RPAREN unsupportedJoinAlias           # unsupportedParenAliasRef
   | unsupportedTableRef unsupportedTableAlias?            # unsupportedRef
@@ -338,6 +397,11 @@ qualifiedName
 
 attrName
   : colLabel
+  ;
+
+// the alias of a subquery in FROM, with the list of its column names
+derivedAlias
+  : AS? alias=colId columns=cteColumnList?
   ;
 
 aliasClause

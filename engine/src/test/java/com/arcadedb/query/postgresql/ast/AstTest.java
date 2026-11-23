@@ -150,6 +150,8 @@ class AstTest {
     final Statement statement = new EmptyStatement(P1);
     final String statementKind = switch (statement) {
       case SelectStatement s -> "select";
+      case SetOperationStatement s -> "set operation";
+      case WithStatement s -> "with";
       case ExplainStatement s -> "explain";
       case EmptyStatement s -> "empty";
       case ExplainWriteStatement s -> "explain-write";
@@ -162,6 +164,7 @@ class AstTest {
     final String tableKind = switch (table) {
       case TableReference.Table t -> "table";
       case TableReference.Join j -> "join";
+      case TableReference.Subquery q -> "subquery";
     };
     assertThat(tableKind).isEqualTo("table");
 

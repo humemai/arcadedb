@@ -47,8 +47,10 @@ public final class BuildMemory {
 
   private static final long ROW_OVERHEAD = 16 + 64;
 
-  private final long cap;
-  private long       used;
+  private final long   cap;
+  private final String holder;
+  private final String hint;
+  private long         used;
 
   /**
    * The cap of a planner made without one: {@link #DEFAULT_CAP_BYTES}, or the number of MiB in the JVM property
@@ -69,8 +71,22 @@ public final class BuildMemory {
     throw new IllegalArgumentException("The JVM property " + CAP_PROPERTY + " is " + value + ": a positive number of MiB is expected");
   }
 
+  /** The cap of one join. */
   public BuildMemory(final long capBytes) {
+    this(capBytes, "a join", "the join does not spill to disk; narrow the smaller side with a WHERE condition on its own columns, "
+        + "or join on a column that has an index");
+  }
+
+  /**
+   * The cap of any other step that keeps rows: a derived table, a common table expression or a set operation.
+   *
+   * @param holder what holds the rows, for the message: {@code a derived table}
+   * @param hint   what to do about it, for the message
+   */
+  public BuildMemory(final long capBytes, final String holder, final String hint) {
     this.cap = capBytes;
+    this.holder = holder;
+    this.hint = hint;
   }
 
   public long cap() {
@@ -90,8 +106,7 @@ public final class BuildMemory {
     used += sizeOf(row);
     if (used > cap)
       throw new PostgreSQLEvaluationException("53200",
-          "out of memory: a join holds more than " + cap + " bytes of rows in memory (estimated). Hint: the join does not spill to disk; "
-              + "narrow the smaller side with a WHERE condition on its own columns, or join on a column that has an index");
+          "out of memory: " + holder + " holds more than " + cap + " bytes of rows in memory (estimated). Hint: " + hint);
   }
 
   /** The estimated size in bytes of one row, with the share of the hash table entry that holds it. */

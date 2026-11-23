@@ -411,10 +411,12 @@ class StatementParserTest {
         new String[] { "CREATE TABLE t (a int)", "CREATE is not supported" },
         new String[] { "DROP TABLE t", "DROP is not supported" },
         new String[] { "SET search_path = x", "SET is not supported" },
-        new String[] { "WITH x AS (SELECT 1) SELECT * FROM x", "WITH is not supported by the postgresql language (line 1, column 1)" },
+        new String[] { "WITH RECURSIVE x AS (SELECT 1) SELECT * FROM x", "WITH RECURSIVE is not supported by the postgresql language (line 1, column 6)" },
+        new String[] { "WITH x AS (INSERT INTO t VALUES (1) RETURNING a) SELECT * FROM x", "A data-modifying statement in WITH is not supported" },
         new String[] { "VALUES (1)", "VALUES is not supported" },
         new String[] { "TABLE t", "TABLE is not supported" },
-        new String[] { "(SELECT 1)", "A parenthesised query is not supported by the postgresql language (line 1, column 1)" },
+        new String[] { "(VALUES (1))", "VALUES is not supported by the postgresql language (line 1, column 2)" },
+        new String[] { "SELECT 1 UNION VALUES (2)", "VALUES is not supported by the postgresql language (line 1, column 16)" },
         new String[] { "EXPLAIN ANALYZE SELECT 1", "EXPLAIN with an option is not supported by the postgresql language (line 1, column 9)" },
         new String[] { "EXPLAIN CREATE TABLE t (a int)", "CREATE is not supported" },
         new String[] { "SELECT * FROM a RIGHT JOIN b ON a.x = b.x", "RIGHT JOIN is not supported by the postgresql language (line 1, column 17)" },
@@ -422,7 +424,8 @@ class StatementParserTest {
         new String[] { "SELECT * FROM a CROSS JOIN b", "CROSS JOIN is not supported" },
         new String[] { "SELECT * FROM a NATURAL JOIN b", "NATURAL JOIN is not supported" },
         new String[] { "SELECT * FROM a JOIN b USING (x)", "JOIN with USING is not supported" },
-        new String[] { "SELECT * FROM (SELECT 1) s", "A subquery, a table function or LATERAL in FROM is not supported by the postgresql language (line 1, column 15)" },
+        new String[] { "SELECT * FROM (VALUES (1)) s", "VALUES is not supported by the postgresql language (line 1, column 16)" },
+        new String[] { "WITH x AS (SELECT 1) DELETE FROM t", "A WITH clause on INSERT, UPDATE, DELETE or MERGE is not supported" },
         new String[] { "SELECT * FROM generate_series(1, 3)", "is not supported" },
         new String[] { "SELECT * FROM a, LATERAL (SELECT 1) s", "LATERAL" },
         new String[] { "SELECT a FROM t WHERE a IN (SELECT 1)", "A subquery is not supported by the postgresql language (line 1, column 28)" },
@@ -433,8 +436,6 @@ class StatementParserTest {
         new String[] { "SELECT (1, 2)", "A row constructor is not supported" },
         new String[] { "SELECT count(*) OVER () FROM t", "OVER is not supported by the postgresql language (line 1, column 17)" },
         new String[] { "SELECT count(*) FILTER (WHERE a) FROM t", "FILTER is not supported" },
-        new String[] { "SELECT 1 UNION SELECT 2", "UNION is not supported by the postgresql language (line 1, column 10)" },
-        new String[] { "SELECT 1 INTERSECT SELECT 2", "INTERSECT is not supported" },
         new String[] { "SELECT DISTINCT ON (a) a FROM t", "DISTINCT ON is not supported by the postgresql language (line 1, column 17)" },
         new String[] { "SELECT 1 INTO t", "SELECT INTO is not supported" },
         new String[] { "SELECT 1 FROM t WINDOW w AS ()", "A WINDOW clause is not supported" },
@@ -474,7 +475,7 @@ class StatementParserTest {
   @Test
   void aStatementOutsideTheLanguageIsToldHowToRunIt() {
     assertThatThrownBy(() -> StatementParser.parse("CREATE TABLE a (x int)")).hasMessageContaining("{sql}");
-    assertThatThrownBy(() -> StatementParser.parse("WITH x AS (SELECT 1) SELECT 1")).hasMessageNotContaining("{sql}");
+    assertThatThrownBy(() -> StatementParser.parse("WITH RECURSIVE x AS (SELECT 1) SELECT 1")).hasMessageNotContaining("{sql}");
   }
 
   @Test
@@ -483,7 +484,7 @@ class StatementParserTest {
     assertThatThrownBy(() -> StatementParser.parse("SELECT 1 + FROM (SELECT 2) s")).isInstanceOf(PostgreSQLSyntaxException.class)
         .hasMessageContaining("\"FROM\" (line 1, column 12)");
     // a subquery before an error is a construct PostgreSQL accepts, and the grammar does not read beyond it
-    assertThatThrownBy(() -> StatementParser.parse("SELECT * FROM (SELECT 1) s WHERE"))
+    assertThatThrownBy(() -> StatementParser.parse("SELECT * FROM generate_series(1, 3) s WHERE"))
         .isInstanceOf(PostgreSQLFeatureNotSupportedException.class).hasMessageContaining("(line 1, column 15)");
   }
 
@@ -550,7 +551,6 @@ class StatementParserTest {
   @ValueSource(strings = {
       "SELECT U&'d\\0061t'", "SELECT U&'d!0061t' UESCAPE '!'", "SELECT 1 AS U&\"\\\" UESCAPE '!'",
       "SELECT * FROM (a JOIN b USING (i)) AS x WHERE a.t = 1", "SELECT * FROM (a JOIN b USING (i) AS x) AS xx WHERE x.i = 1",
-      "SELECT * FROM a LEFT JOIN (b JOIN (SELECT 123 AS x) ss ON b.q = x) ON a.q = b.q ORDER BY 1, 2",
       "SELECT * FROM (t1 a (x, y, z) CROSS JOIN t2 b (d, e)) AS tx (i, j, k, l, m)",
       "SELECT t1.q2, count(t2.*) FROM t1 LEFT JOIN (SELECT * FROM t3 OFFSET 0) t2 ON (t1.q2 = t2.q1) GROUP BY t1.q2",
       "SELECT 1 FROM (unnest(ARRAY[1, (SELECT 2)]) AS u(b) RIGHT JOIN (VALUES (1)) AS v(b) USING (b) FULL JOIN t i8 ON true) AS j, length(j::text) f",

@@ -29,7 +29,6 @@ import com.arcadedb.query.postgresql.ast.EmptyStatement;
 import com.arcadedb.query.postgresql.ast.ExplainStatement;
 import com.arcadedb.query.postgresql.ast.ExplainWriteStatement;
 import com.arcadedb.query.postgresql.ast.InsertStatement;
-import com.arcadedb.query.postgresql.ast.SelectStatement;
 import com.arcadedb.query.postgresql.ast.Statement;
 import com.arcadedb.query.postgresql.ast.TransactionStatement;
 import com.arcadedb.query.postgresql.ast.UpdateStatement;
@@ -38,7 +37,7 @@ import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.parser.StatementParser;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
-import com.arcadedb.query.postgresql.plan.SelectPlan;
+import com.arcadedb.query.postgresql.plan.QueryPlan;
 import com.arcadedb.query.postgresql.plan.SelectPlanner;
 import com.arcadedb.query.postgresql.plan.WriteErrors;
 import com.arcadedb.query.postgresql.plan.WritePlanner;
@@ -63,7 +62,7 @@ import java.util.Set;
  * <li>the planner ({@link SelectPlanner}): names are bound through the {@link com.arcadedb.query.postgresql.catalog.RelationalCatalog}
  * ({@code 42703}, {@code 42P01}, {@code 42702}), every expression is typed by the evaluator with PostgreSQL's rules
  * ({@code 42883}, {@code 42804}, {@code 22P02}) and the access path of the table is chosen;</li>
- * <li>the execution of the plan ({@link SelectPlan#execute}): the answer is a {@link PostgreSQLResultSet}, whose columns carry
+ * <li>the execution of the plan ({@link QueryPlan#execute}): the answer is a {@link PostgreSQLResultSet}, whose columns carry
  * the PostgreSQL names and type names, and whose execution plan says how the table was read.</li>
  * </ol>
  * Parameters are {@code $1}, {@code $2} and so on: {@code db.query("postgresql", sql, a, b)} binds {@code $1} to {@code a}; a map
@@ -227,10 +226,10 @@ public class PostgreSQLQueryEngine implements QueryEngine {
         return new WritePlanner(database, parameters).plan(write).execute(database);
       final SelectPlanner planner = new SelectPlanner(database, parameters);
       if (statement instanceof ExplainStatement explain) {
-        final SelectPlan explained = planner.plan(explain.select());
+        final QueryPlan explained = planner.planQuery(explain.select());
         return explain(explained.steps(), explained.warnings());
       }
-      final SelectPlan plan = planner.plan((SelectStatement) statement);
+      final QueryPlan plan = planner.planQuery(statement);
       // a join that no edge, link or index supports: one warning in the log for each distinct statement (fork issue #9)
       if (!plan.warnings().isEmpty() && database.getConfiguration().getValueAsBoolean(GlobalConfiguration.POSTGRESQL_JOIN_WARNING))
         JoinWarnings.shared().warn(database.getName(), AstPrinter.fingerprint(statement), plan.warnings());

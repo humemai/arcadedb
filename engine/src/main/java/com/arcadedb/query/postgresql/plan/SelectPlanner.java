@@ -22,12 +22,16 @@ import com.arcadedb.database.Database;
 import com.arcadedb.query.postgresql.PostgreSQLAmbiguousIdentifierException;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.PostgreSQLReferenceException;
+import com.arcadedb.query.postgresql.PostgreSQLSyntaxException;
 import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.SelectItem;
 import com.arcadedb.query.postgresql.ast.SelectStatement;
+import com.arcadedb.query.postgresql.ast.SetOperationStatement;
 import com.arcadedb.query.postgresql.ast.SortItem;
+import com.arcadedb.query.postgresql.ast.Statement;
 import com.arcadedb.query.postgresql.ast.TableReference;
+import com.arcadedb.query.postgresql.ast.WithStatement;
 import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.Identifier;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
@@ -46,8 +50,12 @@ import com.arcadedb.query.postgresql.plan.join.JoinPlanner;
 import com.arcadedb.query.postgresql.plan.join.JoinWarnings;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Turns a {@code SELECT} of the subset into a {@link SelectPlan}: binds the names, types every expression with the evaluator,
@@ -61,12 +69,25 @@ import java.util.Locale;
  * <p><b>Joins (S5).</b> A {@code FROM} clause with a join or with several items is planned by the
  * {@link JoinPlanner}, which gets the {@code WHERE} clause as well because it moves the terms of it below the joins: it hands
  * back one {@link RelationSource} and the terms that stay above. Everything after that works on the columns of that source.
+ *
+ * <p><b>Queries inside queries.</b> A derived table (a subquery in {@code FROM}) and a common table expression ({@code WITH}) are
+ * planned by this class too, and read as a {@link MaterializedSource}: the answer of the inner query, computed once and kept in
+ * memory under the same cap as a join. A set operation ({@code UNION}, {@code INTERSECT}, {@code EXCEPT}) is a
+ * {@link SetOperationPlan} over two such plans. {@link #planQuery} is the entry for every shape of query.
  */
 public class SelectPlanner {
   private final Database           database;
   private final RelationalCatalog  catalog;
   private final Parameters         parameters;
   private final long               joinMemoryCap;
+  /** The common table expressions that are visible here, by name; a query that has a {@code WITH} gets a planner of its own. */
+  private final Map<String, Cte>   ctes;
+  private       int                unnamedSubqueries;
+
+  /** A common table expression of a {@code WITH}: its kept rows, and the names and types its readers see. */
+  private record Cte(Name name, MaterializedSource.Materialization rows, List<String> names, List<PgType> types,
+                     List<String> typeNames) {
+  }
 
   public SelectPlanner(final Database database, final Parameters parameters) {
     this(database, parameters, BuildMemory.configuredCapBytes());
@@ -76,10 +97,16 @@ public class SelectPlanner {
    * @param joinMemoryCap the bytes of rows that one join may keep in memory before it stops with SQLSTATE {@code 53200}
    */
   public SelectPlanner(final Database database, final Parameters parameters, final long joinMemoryCap) {
+    this(database, RelationalCatalog.of(database), parameters, joinMemoryCap, Map.of());
+  }
+
+  private SelectPlanner(final Database database, final RelationalCatalog catalog, final Parameters parameters,
+      final long joinMemoryCap, final Map<String, Cte> ctes) {
     this.database = database;
-    this.catalog = RelationalCatalog.of(database);
+    this.catalog = catalog;
     this.parameters = parameters;
     this.joinMemoryCap = joinMemoryCap;
+    this.ctes = ctes;
   }
 
   public RelationalCatalog catalog() {
@@ -94,6 +121,8 @@ public class SelectPlanner {
       return RelationSource.singleRow();
     if (from.size() == 1 && from.get(0) instanceof TableReference.Table table)
       return planRelation(table);
+    if (from.size() == 1 && from.get(0) instanceof TableReference.Subquery subquery)
+      return planDerived(subquery);
     throw new IllegalArgumentException("A FROM clause with a join is planned by the JoinPlanner");
   }
 
@@ -110,6 +139,11 @@ public class SelectPlanner {
       }
 
       @Override
+      public RelationSource derived(final TableReference.Subquery reference) {
+        return planDerived(reference);
+      }
+
+      @Override
       public TableSource narrow(final TableSource table, final List<Expression> terms, final ExpressionCompiler compiler) {
         return chooseAccessPath(table, terms, compiler);
       }
@@ -122,6 +156,12 @@ public class SelectPlanner {
    * to tables and to each other.
    */
   protected RelationSource planRelation(final TableReference.Table reference) {
+    // a name that a WITH defines hides a table of that name
+    if (reference.name().size() == 1) {
+      final Cte cte = ctes.get(reference.name().get(0).value());
+      if (cte != null)
+        return cteSource(cte, reference.alias() != null ? reference.alias().value() : cte.name().value());
+    }
     final RelationSource view = InformationSchema.resolve(reference, catalog);
     return view != null ? view : planTable(reference);
   }
@@ -141,7 +181,33 @@ public class SelectPlanner {
 
   // ---- the plan ----
 
+  /**
+   * The plan of a query of any shape: a {@code SELECT}, a set operation, or either with a {@code WITH}.
+   *
+   * @param statement a {@link SelectStatement}, a {@link SetOperationStatement} or a {@link WithStatement}
+   */
+  public QueryPlan planQuery(final Statement statement) {
+    return planQuery(statement, false);
+  }
+
+  /**
+   * @param operand true for an operand of a set operation: a column that is only a string literal or {@code NULL} then keeps the
+   *                type {@code unknown}, which the set operation resolves together with the other operand
+   */
+  private QueryPlan planQuery(final Statement statement, final boolean operand) {
+    return switch (statement) {
+      case SelectStatement select -> plan(select, operand);
+      case SetOperationStatement set -> planSetOperation(set);
+      case WithStatement with -> planWith(with, operand);
+      default -> throw new IllegalArgumentException("Not a query: " + statement);
+    };
+  }
+
   public SelectPlan plan(final SelectStatement select) {
+    return plan(select, false);
+  }
+
+  private SelectPlan plan(final SelectStatement select, final boolean keepUnknown) {
     // PostgreSQL takes the terms that every branch of an OR has in common out of it before it plans (prepqual.c)
     final Expression whereClause = OrFactoring.factor(select.where());
     final boolean grouping = !select.groupBy().isEmpty() || select.having() != null || hasAggregate(select);
@@ -194,7 +260,8 @@ public class SelectPlanner {
           asts.add(reference);
         }
       } else if (item instanceof SelectItem.Projection projection) {
-        final Evaluable output = outputCompiler.resolveOutput(outputCompiler.compile(projection.expression()));
+        final Evaluable compiled = outputCompiler.compile(projection.expression());
+        final Evaluable output = keepUnknown ? compiled : outputCompiler.resolveOutput(compiled);
         if (output.type() == PgType.INTERVAL)
           throw new PostgreSQLFeatureNotSupportedException(
               "A result column of type interval is not supported: an interval is read only as an operand of date arithmetic");
@@ -292,6 +359,121 @@ public class SelectPlanner {
 
     return new SelectPlan(source, where, group, having, outputs.toArray(new Evaluable[0]), extras.toArray(new Evaluable[0]), columns,
         select.distinct(), sortKeys, limit, offset, steps, warnings);
+  }
+
+  // ---- queries inside queries ----
+
+  /** The constants of {@code LIMIT} and {@code OFFSET}: no column is in scope. */
+  private ExpressionCompiler constants() {
+    return new ExpressionCompiler(reference -> {
+      throw PostgreSQLReferenceException.invalidReference("argument of LIMIT or OFFSET must not contain variables");
+    }, parameters);
+  }
+
+  /** {@code WITH}: each name is planned in order, and the ones after it can read it; the body reads all of them. */
+  private QueryPlan planWith(final WithStatement with, final boolean operand) {
+    final Map<String, Cte> scope = new HashMap<>(ctes);
+    final SelectPlanner scoped = new SelectPlanner(database, catalog, parameters, joinMemoryCap, scope);
+    final Set<String> defined = new HashSet<>();
+    for (final WithStatement.Cte definition : with.ctes()) {
+      final String name = definition.name().value();
+      if (!defined.add(name))
+        throw PostgreSQLReferenceException.duplicateAlias(name);
+      final QueryPlan plan = scoped.planQuery(definition.query(), false);
+      final List<String> names = columnNames(plan, definition.columns(), "WITH query \"" + name + "\"");
+      final List<String> typeNames = new ArrayList<>();
+      for (final PostgreSQLResultSet.Column column : plan.columns())
+        typeNames.add(column.typeName());
+      scope.put(name, new Cte(definition.name(), new MaterializedSource.Materialization(plan, joinMemoryCap,
+          "a common table expression"), names, plan.outputTypes(), typeNames));
+    }
+    return scoped.planQuery(with.body(), operand);
+  }
+
+  /** The names a reader sees: the ones of the select list, the first ones replaced by a list of names when there is one. */
+  private static List<String> columnNames(final QueryPlan plan, final List<Name> given, final String what) {
+    final int available = plan.columns().size();
+    if (given.size() > available)
+      throw new PostgreSQLEvaluationException("42P10",
+          what + " has " + available + " columns available but " + given.size() + " columns specified");
+    final List<String> names = new ArrayList<>(available);
+    for (int i = 0; i < available; i++)
+      names.add(i < given.size() ? given.get(i).value() : plan.columns().get(i).name());
+    return names;
+  }
+
+  private static MaterializedSource cteSource(final Cte cte, final String relation) {
+    final List<RelationSource.Field> fields = new ArrayList<>();
+    for (int i = 0; i < cte.names().size(); i++)
+      fields.add(new RelationSource.Field(relation, cte.names().get(i), cte.types().get(i), cte.typeNames().get(i)));
+    final String name = cte.name().value();
+    return new MaterializedSource(cte.rows(), fields, "SCAN CTE " + name + (relation.equals(name) ? "" : " AS " + relation));
+  }
+
+  /** A subquery in {@code FROM}: its answer is read once, and its columns carry the alias as their relation. */
+  private RelationSource planDerived(final TableReference.Subquery reference) {
+    final QueryPlan plan = planQuery(reference.query(), false);
+    final String relation;
+    if (reference.alias() != null)
+      relation = reference.alias().value();
+    else
+      // PostgreSQL 16 and later name a subquery without an alias, so that two of them can stand in one FROM clause
+      relation = unnamedSubqueries++ == 0 ? "unnamed_subquery" : "unnamed_subquery_" + (unnamedSubqueries - 1);
+    final List<String> names = columnNames(plan, reference.columns(), "table \"" + relation + "\"");
+    final List<RelationSource.Field> fields = new ArrayList<>();
+    for (int i = 0; i < names.size(); i++)
+      fields.add(new RelationSource.Field(relation, names.get(i), plan.outputTypes().get(i), plan.columns().get(i).typeName()));
+    return new MaterializedSource(new MaterializedSource.Materialization(plan, joinMemoryCap, "a derived table"), fields,
+        "SCAN SUBQUERY " + relation);
+  }
+
+  /**
+   * {@code UNION}, {@code INTERSECT} and {@code EXCEPT}: both operands are planned first, then each result column gets the type
+   * PostgreSQL resolves for its two inputs ({@link SetTypes}). {@code ORDER BY} of the whole names an output column, by name or
+   * by position: an expression is refused, as PostgreSQL does.
+   */
+  private QueryPlan planSetOperation(final SetOperationStatement set) {
+    final QueryPlan left = planQuery(set.left(), true);
+    final QueryPlan right = planQuery(set.right(), true);
+    final String operation = set.kind().name();
+    if (left.columns().size() != right.columns().size())
+      throw new PostgreSQLSyntaxException("each " + operation + " query must have the same number of columns");
+
+    final List<PgType> types = new ArrayList<>();
+    final List<String> names = new ArrayList<>();
+    final List<PostgreSQLResultSet.Column> columns = new ArrayList<>();
+    for (int i = 0; i < left.columns().size(); i++) {
+      final PgType leftType = left.outputTypes().get(i);
+      final PgType rightType = right.outputTypes().get(i);
+      final PgType type = SetTypes.resolve(leftType, rightType, operation);
+      final String typeName = leftType == type ? left.columns().get(i).typeName()
+          : rightType == type ? right.columns().get(i).typeName() : type.typeName();
+      types.add(type);
+      names.add(left.columns().get(i).name());
+      columns.add(new PostgreSQLResultSet.Column(left.columns().get(i).name(), typeName));
+    }
+
+    final List<SelectPlan.SortKey> sortKeys = new ArrayList<>();
+    for (final SortItem item : set.orderBy()) {
+      final int position = outputIndex(item.expression(), names);
+      if (position < 0) {
+        if (item.expression() instanceof Expression.ColumnRef reference)
+          throw PostgreSQLReferenceException.undefinedColumn(reference.column().value());
+        throw new PostgreSQLFeatureNotSupportedException("invalid " + operation + " ORDER BY clause: only result column names "
+            + "and positions can be used, not expressions or functions");
+      }
+      if (!Comparison.isComparable(types.get(position)))
+        throw new PostgreSQLFeatureNotSupportedException(
+            "ORDER BY a value of type " + types.get(position).displayName() + " is not supported");
+      final Boolean nullsFirst = item.nulls() == SortItem.Nulls.FIRST ? Boolean.TRUE
+          : item.nulls() == SortItem.Nulls.LAST ? Boolean.FALSE : null;
+      sortKeys.add(new SelectPlan.SortKey(position,
+          Comparison.ordering(types.get(position), item.direction() == SortItem.Direction.DESC, nullsFirst)));
+    }
+
+    final ExpressionCompiler constants = constants();
+    return new SetOperationPlan(set.kind(), set.all(), left, right, types, columns, sortKeys,
+        countOf(set.limit(), "LIMIT", constants), countOf(set.offset(), "OFFSET", constants), joinMemoryCap);
   }
 
   /**
