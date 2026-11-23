@@ -41,6 +41,10 @@ public final class Corpus {
   public static final String RESOURCE_DIRECTORY = "/postgresql/corpus/";
   public static final String SYNTAX_FILE        = "syntax.tsv";
   public static final String ANSWERS_FILE       = "answers.tsv";
+  /** The statements that language models wrote (fork issue #7): the columns of {@code syntax.tsv}, then model, group and duckdb. */
+  public static final String AGENT_SQL_FILE     = "agent-sql.tsv";
+  /** The schema the server needs to bind the names of {@link #AGENT_SQL_FILE}; the harness loads it into a database of its own. */
+  public static final String AGENT_SQL_SCHEMA   = "agent-sql-schema.sql";
 
   /** The value of {@code pg18} and of {@code expected} before the generator has asked a server: add a case with it. */
   public static final String PENDING_SERVER = "pending-server";
