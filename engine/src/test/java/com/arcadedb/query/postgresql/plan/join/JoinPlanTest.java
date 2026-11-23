@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.plan.join;
 
+import com.arcadedb.GlobalConfiguration;
 import com.arcadedb.TestHelper;
 import com.arcadedb.query.postgresql.PostgreSQLCatalogException;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
@@ -295,11 +296,16 @@ class JoinPlanTest extends TestHelper {
   }
 
   @Test
-  void anEdgeTableJoinsAsAPlainEqualityOnItsEndpointColumns() {
+  void anEdgeEndJoinedToAnIdIsReadByRecordIdAndWithTheRuleOffIsAPlainEquality() {
     final String sql = "SELECT count(*) FROM works_at w JOIN person p ON w.source_id = p.id";
     assertThat(count(sql)).isEqualTo(5);
-    // no traversal yet (fork issue #8): the join is the equality of two columns, read by record id for each edge
+    // the far end of an edge row is read by record id for each edge; with the traversal rule off (fork issue #8) the join is the
+    // plain equality of two columns, and the rows are the same
+    assertThat(plan(sql)).contains("supported by edge:").contains("TRAVERSE TO p");
+    database.getConfiguration().setValue(GlobalConfiguration.POSTGRESQL_TRAVERSAL_RULE, false);
     assertThat(plan(sql)).contains("supported by edge:").doesNotContain("TRAVERSE");
+    assertThat(count(sql)).isEqualTo(5);
+    database.getConfiguration().setValue(GlobalConfiguration.POSTGRESQL_TRAVERSAL_RULE, true);
     final SelectPlan select = planned(sql, BuildMemory.DEFAULT_CAP_BYTES);
     assertThat(select.source()).isInstanceOf(JoinSource.class);
     assertThat(((JoinSource) select.source()).support().kind()).isEqualTo(JoinSupport.Kind.EDGE);

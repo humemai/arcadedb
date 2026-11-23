@@ -111,11 +111,25 @@ public final class PostgreSQLResultSet extends InternalResultSet {
   }
 
   private final List<Column> columns;
+  private final List<String> warnings;
   private       long         affectedRows = -1;
 
   public PostgreSQLResultSet(final List<Column> columns, final Plan plan) {
+    this(columns, plan, List.of());
+  }
+
+  public PostgreSQLResultSet(final List<Column> columns, final Plan plan, final List<String> warnings) {
     this.columns = List.copyOf(columns);
+    this.warnings = List.copyOf(warnings);
     setPlan(plan);
+  }
+
+  /**
+   * The warnings of the statement: one sentence for each join that no edge, link or index supports (fork issue #9), the same
+   * sentences that the plan lists as {@code WARNING} lines. Empty for a statement that has none.
+   */
+  public List<String> warnings() {
+    return warnings;
   }
 
   /**

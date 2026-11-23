@@ -71,10 +71,12 @@ public final class SelectPlan {
   private final Evaluable      limit;
   private final Evaluable      offset;
   private final List<String>   steps;
+  private final List<String>   warnings;
 
   SelectPlan(final RelationSource source, final Evaluable where, final GroupStage group, final Evaluable having,
       final Evaluable[] outputs, final Evaluable[] extras, final List<PostgreSQLResultSet.Column> columns, final boolean distinct,
-      final List<SortKey> sortKeys, final Evaluable limit, final Evaluable offset, final List<String> steps) {
+      final List<SortKey> sortKeys, final Evaluable limit, final Evaluable offset, final List<String> steps,
+      final List<String> warnings) {
     this.source = source;
     this.where = where;
     this.group = group;
@@ -87,11 +89,20 @@ public final class SelectPlan {
     this.limit = limit;
     this.offset = offset;
     this.steps = List.copyOf(steps);
+    this.warnings = List.copyOf(warnings);
   }
 
   /** The lines of the plan, the way the source reads first. */
   public List<String> steps() {
     return steps;
+  }
+
+  /**
+   * The warnings of the plan (fork issue #9): one sentence for each join that no edge, link or index supports. The plan lists
+   * each as a {@code WARNING} line at its end; the engine writes them to the log once per statement.
+   */
+  public List<String> warnings() {
+    return warnings;
   }
 
   public List<PostgreSQLResultSet.Column> columns() {
@@ -144,7 +155,7 @@ public final class SelectPlan {
     final int to = limitValue == null || limitValue >= rows.size() - from ? rows.size() : from + (int) (long) limitValue;
 
     final List<String> keys = PostgreSQLResultSet.uniqueKeys(columns);
-    final PostgreSQLResultSet result = new PostgreSQLResultSet(columns, new PostgreSQLResultSet.Plan(steps));
+    final PostgreSQLResultSet result = new PostgreSQLResultSet(columns, new PostgreSQLResultSet.Plan(steps), warnings);
     for (int r = from; r < to; r++) {
       final ResultInternal row = new ResultInternal(database);
       for (int i = 0; i < outputs.length; i++)

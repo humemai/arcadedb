@@ -19,9 +19,11 @@
 package com.arcadedb.query.postgresql;
 
 import com.arcadedb.ContextConfiguration;
+import com.arcadedb.GlobalConfiguration;
 import com.arcadedb.database.DatabaseInternal;
 import com.arcadedb.query.OperationType;
 import com.arcadedb.query.QueryEngine;
+import com.arcadedb.query.postgresql.ast.AstPrinter;
 import com.arcadedb.query.postgresql.ast.DeleteStatement;
 import com.arcadedb.query.postgresql.ast.EmptyStatement;
 import com.arcadedb.query.postgresql.ast.ExplainStatement;
@@ -39,6 +41,7 @@ import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.postgresql.plan.SelectPlan;
 import com.arcadedb.query.postgresql.plan.SelectPlanner;
 import com.arcadedb.query.postgresql.plan.WritePlanner;
+import com.arcadedb.query.postgresql.plan.join.JoinWarnings;
 import com.arcadedb.query.sql.executor.ResultInternal;
 import com.arcadedb.query.sql.executor.ResultSet;
 import com.arcadedb.utility.CollectionUtils;
@@ -193,9 +196,15 @@ public class PostgreSQLQueryEngine implements QueryEngine {
     if (statement instanceof WriteStatement write)
       return new WritePlanner(database, parameters).plan(write).execute(database);
     final SelectPlanner planner = new SelectPlanner(database, parameters);
-    if (statement instanceof ExplainStatement explain)
-      return explain(planner.plan(explain.select()).steps());
-    return planner.plan((SelectStatement) statement).execute(database);
+    if (statement instanceof ExplainStatement explain) {
+      final SelectPlan explained = planner.plan(explain.select());
+      return explain(explained.steps(), explained.warnings());
+    }
+    final SelectPlan plan = planner.plan((SelectStatement) statement);
+    // a join that no edge, link or index supports: one warning in the log for each distinct statement (fork issue #9)
+    if (!plan.warnings().isEmpty() && database.getConfiguration().getValueAsBoolean(GlobalConfiguration.POSTGRESQL_JOIN_WARNING))
+      JoinWarnings.shared().warn(database.getName(), AstPrinter.fingerprint(statement), plan.warnings());
+    return plan.execute(database);
   }
 
   private static String statementName(final Statement statement) {
@@ -209,10 +218,14 @@ public class PostgreSQLQueryEngine implements QueryEngine {
     };
   }
 
-  /** {@code EXPLAIN}: the plan, one line per row, and nothing is read or written. */
   private PostgreSQLResultSet explain(final List<String> steps) {
+    return explain(steps, List.of());
+  }
+
+  /** {@code EXPLAIN}: the plan, one line per row, and nothing is read or written. */
+  private PostgreSQLResultSet explain(final List<String> steps, final List<String> warnings) {
     final List<PostgreSQLResultSet.Column> columns = List.of(new PostgreSQLResultSet.Column(PLAN_COLUMN, "text"));
-    final PostgreSQLResultSet result = new PostgreSQLResultSet(columns, new PostgreSQLResultSet.Plan(steps));
+    final PostgreSQLResultSet result = new PostgreSQLResultSet(columns, new PostgreSQLResultSet.Plan(steps), warnings);
     for (final String line : steps) {
       final ResultInternal row = new ResultInternal(database);
       row.setProperty(PLAN_COLUMN, line);
