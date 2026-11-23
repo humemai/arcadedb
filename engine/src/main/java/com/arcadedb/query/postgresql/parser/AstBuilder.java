@@ -385,8 +385,8 @@ final class AstBuilder {
       return catalogFunction(e.getStart(), "substring", arguments);
     }
     if (context instanceof TrimExprContext e) {
-      final String function = e.mode == null || e.mode.getType() == PostgreSQLParser.BOTH ? "btrim"
-          : e.mode.getType() == PostgreSQLParser.LEADING ? "ltrim" : "rtrim";
+      final String function = e.kind == null || e.kind.getType() == PostgreSQLParser.BOTH ? "btrim"
+          : e.kind.getType() == PostgreSQLParser.LEADING ? "ltrim" : "rtrim";
       // trim(chars FROM string) is btrim(string, chars): the string list first, then the characters
       final List<Expression> arguments = new ArrayList<>(expressions(e.trimList().src));
       if (e.trimList().chars != null)

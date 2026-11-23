@@ -380,7 +380,7 @@ cExpr
   | POSITION LPAREN l=bExpr IN r=bExpr RPAREN                                  # positionExpr
   | SUBSTRING LPAREN substrList RPAREN                                         # substringFromExpr
   | SUBSTRING LPAREN funcArgList? RPAREN                                       # substringCallExpr
-  | TRIM LPAREN mode=(BOTH | LEADING | TRAILING)? trimList RPAREN              # trimExpr
+  | TRIM LPAREN kind=(BOTH | LEADING | TRAILING)? trimList RPAREN              # trimExpr
   | unsupportedPrimary                                                         # unsupportedPrimaryExpr
   ;
 
