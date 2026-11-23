@@ -54,12 +54,15 @@ final class PostgresServer implements AutoCloseable {
   private final GenericContainer<?> container;
   private final Connection          connection;
   /** The parse step has a connection of its own, so that a problem of the driver with an odd statement cannot upset the answers. */
-  private final Connection          parseConnection;
+  private       Connection          parseConnection;
+  private final String              url;
   /** The message of the server when {@code SHOW lc_collate} was refused, else {@code null}. */
   String                            showFailure;
 
-  private PostgresServer(final GenericContainer<?> container, final Connection connection, final Connection parseConnection) {
+  private PostgresServer(final GenericContainer<?> container, final String url, final Connection connection,
+      final Connection parseConnection) {
     this.container = container;
+    this.url = url;
     this.connection = connection;
     this.parseConnection = parseConnection;
   }
@@ -86,7 +89,7 @@ final class PostgresServer implements AutoCloseable {
         connection.setAutoCommit(true);
         final Connection parseConnection = DriverManager.getConnection(url, "postgres", PASSWORD);
         parseConnection.setAutoCommit(true);
-        return new PostgresServer(container, connection, parseConnection);
+        return new PostgresServer(container, url, connection, parseConnection);
       } catch (final SQLException e) {
         last = e;
         Thread.sleep(1000);
@@ -172,7 +175,19 @@ final class PostgresServer implements AutoCloseable {
       statement.getMetaData();
       return "ok";
     } catch (final RuntimeException e) {
-      throw new IllegalStateException("The driver failed on the statement: " + sql, e);
+      // the driver is in an unknown state after this: a connection of its own for the next statement
+      try {
+        parseConnection.close();
+      } catch (final SQLException ignored) {
+        // replaced below
+      }
+      try {
+        parseConnection = DriverManager.getConnection(url, "postgres", PASSWORD);
+        parseConnection.setAutoCommit(true);
+      } catch (final SQLException reconnect) {
+        throw new IllegalStateException("Cannot reconnect after a driver failure on: " + sql, reconnect);
+      }
+      throw new IllegalStateException("The driver failed on the statement: " + sql + ": " + e, e);
     } catch (final SQLException e) {
       final String state = e.getSQLState();
       if (state == null)

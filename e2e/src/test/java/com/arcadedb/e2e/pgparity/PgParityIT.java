@@ -242,9 +242,10 @@ class PgParityIT {
   }
 
   /**
-   * The accept and reject corpus: the server only parses each statement. Regenerate writes the outcomes; otherwise the outcomes
-   * in the file must still be what the server says. The engine's answer is reported for information: the parser tests of the
-   * engine (fork issue #3) enforce the differential.
+   * The accept and reject corpus: the server parses and describes each statement and never runs it. Regenerate writes the
+   * {@code pg18} and {@code detail} columns of every entry (and reports where the server disagrees with the value that was there
+   * before, which is a finding); otherwise the columns in the file must still be what the server says. The parser tests of the
+   * engine (fork issue #3, {@code SyntaxCorpusTest}) enforce the differential against the parser.
    */
   @Test
   @Order(4)
@@ -252,35 +253,32 @@ class PgParityIT {
     final Path path = corpusFile(Corpus.SYNTAX_FILE);
     final CorpusFile file = CorpusFile.read(path);
     final List<String> failures = new ArrayList<>();
-    int agree = 0;
-    int disagree = 0;
+    int changed = 0;
     for (final String[] row : file.rows) {
       final Corpus.SyntaxCase c = new Corpus.SyntaxCase(row);
-      final String outcome = pg.parseOutcome(c.statement());
-      if (regenerate)
-        row[Corpus.SyntaxCase.EXPECTED] = outcome;
-      else if (c.expected().isEmpty())
+      final String[] server;
+      try {
+        server = syntaxOutcome(pg.parseOutcome(c.statement()));
+      } catch (final IllegalStateException driverFailure) {
+        failures.add(c.id() + ": " + driverFailure.getMessage());
+        continue;
+      }
+      if (regenerate) {
+        if (c.hasOutcome() && !c.pg18().equals(server[0])) {
+          ++changed;
+          line("syntax-changed", c.id(), "the corpus said " + c.pg18() + ", the server says " + server[0] + " " + server[1]);
+        }
+        row[Corpus.SyntaxCase.PG18] = server[0];
+        row[Corpus.SyntaxCase.DETAIL] = server[1];
+      } else if (!c.hasOutcome())
         failures.add(c.id() + ": the corpus has no outcome, run the generator");
-      else if (!c.expected().equals(outcome))
-        failures.add(c.id() + ": the corpus says '" + c.expected() + "', the server now says '" + outcome + "'");
-
-      final Outcome engine = arcade.run(LANGUAGE, c.statement());
-      final String state = engine.isRefusal() ? engine.sqlState : "accepted";
-      final boolean agrees;
-      if ("syntax-error 42601".equals(outcome))
-        agrees = "42601".equals(state);
-      else if (c.inside())
-        agrees = !"0A000".equals(state) && !"42601".equals(state);
-      else
-        agrees = "0A000".equals(state);
-      if (agrees)
-        ++agree;
-      else
-        ++disagree;
-      line("syntax", c.id(), "server " + outcome + ", engine " + state + (agrees ? ", agrees" : ", pending"));
+      else if (!c.pg18().equals(server[0]) || !c.detail().equals(server[1]))
+        failures.add(c.id() + ": the corpus says " + c.pg18() + " " + c.detail() + ", the server now says " + server[0] + " "
+            + server[1]);
     }
-    REPORT.add("syntax: " + file.rows.size() + " statements, the engine agrees with the differential on " + agree + ", not yet on "
-        + disagree);
+    final String summary = "syntax: " + file.rows.size() + " statements, " + changed + " whose pg18 the server changed";
+    REPORT.add(summary);
+    System.out.println("pgparity: " + summary);
 
     // the server only parsed them: the data must be untouched
     final Outcome people = pg.run("SELECT count(*) FROM person");
@@ -291,6 +289,21 @@ class PgParityIT {
       file.write(path);
     }
     assertTrue(failures.isEmpty(), String.join("\n", failures));
+  }
+
+  /**
+   * The server's parse outcome ({@code ok}, {@code syntax-error 42601}, {@code error <SQLSTATE>}) as the two columns of
+   * {@code syntax.tsv}: {@code pg18} ({@code ok}, {@code syntax-error}, {@code feature-not-supported}) and {@code detail} (the
+   * SQLSTATE, {@code -} when the server accepted the statement). A later stage that refused a parsed statement (an unknown
+   * table) is still {@code ok}, with its SQLSTATE as the detail.
+   */
+  static String[] syntaxOutcome(final String parseOutcome) {
+    if ("ok".equals(parseOutcome))
+      return new String[] { "ok", "-" };
+    if ("syntax-error 42601".equals(parseOutcome))
+      return new String[] { "syntax-error", "42601" };
+    final String state = parseOutcome.substring("error ".length());
+    return new String[] { "0A000".equals(state) ? "feature-not-supported" : "ok", state };
   }
 
   /**
@@ -319,7 +332,7 @@ class PgParityIT {
 
       if (regenerate)
         row[Corpus.AnswerCase.EXPECTED] = server.toJson();
-      else if (c.expected().isEmpty())
+      else if (!c.hasOutcome())
         corpusFailures.add(c.id() + ": the corpus has no outcome, run the generator");
       else {
         final String drift = ResultComparator.compare(Outcome.fromJson(c.expected()), server, c.ordered(), c.tolerance());

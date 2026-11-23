@@ -26,9 +26,10 @@ import java.util.List;
  * The two corpus files of the PostgreSQL-style SQL prototype, in {@code engine/src/test/resources/postgresql/corpus/}, and the
  * views of their rows. Their columns are written at the top of each file.
  * <ul>
- *   <li>{@code syntax.tsv}: {@code id}, {@code scope}, {@code statement}, {@code expected}. The accept and reject differential
- *   of the grammar (fork issue #3): the real server only parses each statement, and {@code expected} is {@code ok},
- *   {@code syntax-error 42601} or {@code error <SQLSTATE>} (the statement parsed and a later stage refused it).</li>
+ *   <li>{@code syntax.tsv}: {@code id}, {@code pg18}, {@code subset}, {@code gap}, {@code statement}, {@code source},
+ *   {@code detail}. The accept and reject differential of the grammar (fork issue #3): the real server only parses and describes
+ *   each statement, and {@code pg18} is {@code ok}, {@code syntax-error} or {@code feature-not-supported} with the SQLSTATE of
+ *   the server in {@code detail} (an {@code ok} with {@code 42P01} parsed and was refused by a later stage).</li>
  *   <li>{@code answers.tsv}: {@code id}, {@code order}, {@code tol}, {@code status}, {@code statement}, {@code expected}. The
  *   answer parity of fork issue #2: the real server runs each statement on the {@code small} fixture, and {@code expected} is
  *   the JSON of its {@link Outcome}.</li>
@@ -40,6 +41,9 @@ public final class Corpus {
   public static final String RESOURCE_DIRECTORY = "/postgresql/corpus/";
   public static final String SYNTAX_FILE        = "syntax.tsv";
   public static final String ANSWERS_FILE       = "answers.tsv";
+
+  /** The value of {@code pg18} and of {@code expected} before the generator has asked a server: add a case with it. */
+  public static final String PENDING_SERVER = "pending-server";
 
   /** The prefix of the id of an answer case that the server must refuse: its {@code expected} is a SQLSTATE. */
   public static final String ERROR_PREFIX = "err-";
@@ -70,14 +74,15 @@ public final class Corpus {
   }
 
   /**
-   * A statement of the accept and reject differential. {@code scope} is {@code in} when the statement lies inside the subset
-   * of the grammar and {@code out} when it does not. With the server's outcome the engine must: parse a statement the server
-   * parsed ({@code ok} or {@code error ...}) and that is {@code in}; refuse a statement the server parsed and that is
-   * {@code out} with SQLSTATE {@code 0A000}; refuse a statement the server rejected as {@code syntax-error 42601} with
-   * {@code 42601}, whatever its scope.
+   * A statement of the accept and reject differential. {@code subset} is {@code inside} when the statement lies inside the
+   * subset of the grammar, {@code outside} when it does not and {@code unknown} when only the server's answer is checked. With
+   * {@code pg18} read from the server the engine must: parse a statement that is {@code inside} and that the server did not
+   * reject as a syntax error; refuse a statement that is {@code outside} with SQLSTATE {@code 0A000}; refuse a statement the
+   * server rejected as {@code syntax-error} with {@code 42601}, and one it called {@code feature-not-supported} with
+   * {@code 0A000}. A {@code gap} other than {@code -} is a known disagreement of the parser.
    */
   public static final class SyntaxCase {
-    public static final int ID = 0, SCOPE = 1, STATEMENT = 2, EXPECTED = 3;
+    public static final int ID = 0, PG18 = 1, SUBSET = 2, GAP = 3, STATEMENT = 4, SOURCE = 5, DETAIL = 6;
 
     public final String[] row;
 
@@ -89,26 +94,47 @@ public final class Corpus {
       return row[ID];
     }
 
+    public String pg18() {
+      return row[PG18];
+    }
+
+    public String subset() {
+      return row[SUBSET];
+    }
+
     public boolean inside() {
-      return "in".equals(row[SCOPE]);
+      return "inside".equals(row[SUBSET]);
+    }
+
+    public boolean outside() {
+      return "outside".equals(row[SUBSET]);
+    }
+
+    /** @return {@code -} when the parser agrees with the entry, else the reason it does not */
+    public String gap() {
+      return row[GAP];
+    }
+
+    public boolean isGap() {
+      return !"-".equals(row[GAP]);
     }
 
     public String statement() {
       return CorpusFile.unescape(row[STATEMENT]);
     }
 
-    /** {@code ""} when the generator has not run on this case yet. */
-    public String expected() {
-      return row[EXPECTED];
+    public String source() {
+      return row[SOURCE];
     }
 
-    public boolean syntaxError() {
-      return expected().startsWith("syntax-error");
+    /** The SQLSTATE the server answered, {@code -} when it accepted the statement without an error. */
+    public String detail() {
+      return row[DETAIL];
     }
 
-    /** Whether the server parsed the statement: it accepted it or refused it at a later stage than the parser. */
-    public boolean parsed() {
-      return "ok".equals(expected()) || expected().startsWith("error ");
+    /** Whether a server has been asked: {@code pg18} is anything but {@code pending-server}. */
+    public boolean hasOutcome() {
+      return !PENDING_SERVER.equals(row[PG18]);
     }
   }
 
@@ -148,9 +174,14 @@ public final class Corpus {
       return CorpusFile.unescape(row[STATEMENT]);
     }
 
-    /** {@code ""} when the generator has not run on this case yet. */
+    /** {@code pending-server} (or empty) when the generator has not run on this case yet. */
     public String expected() {
       return row[EXPECTED];
+    }
+
+    /** Whether a server has been asked. */
+    public boolean hasOutcome() {
+      return !row[EXPECTED].isEmpty() && !PENDING_SERVER.equals(row[EXPECTED]);
     }
 
     /** Whether the server must refuse the statement (an {@code err-} case). */

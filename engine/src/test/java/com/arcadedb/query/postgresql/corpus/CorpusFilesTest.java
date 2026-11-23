@@ -35,24 +35,40 @@ import static org.assertj.core.api.Assertions.assertThat;
  * real server says is the job of the harness ({@code PgParityIT} in the {@code e2e} module).
  */
 class CorpusFilesTest {
-  private static final Pattern ID           = Pattern.compile("[a-z0-9]+(-[a-z0-9]+)*");
-  private static final Pattern SQLSTATE     = Pattern.compile("[0-9A-Z]{5}");
-  private static final Pattern SYNTAX_FORMS = Pattern.compile("ok|syntax-error 42601|error [0-9A-Z]{5}");
+  private static final Pattern ID        = Pattern.compile("[a-z0-9]+(-[a-z0-9]+)*");
+  /** A name, or the test of PostgreSQL and the line of a statement taken from it: select:93. */
+  private static final Pattern SYNTAX_ID = Pattern.compile("[a-z0-9_]+([-:][a-z0-9_]+)*");
+  private static final Pattern SQLSTATE  = Pattern.compile("[0-9A-Z]{5}");
 
   @Test
   void syntaxFileIsWellFormed() throws IOException {
     final CorpusFile file = Corpus.readSyntax();
-    assertThat(file.columns).containsExactly("id", "scope", "statement", "expected");
+    assertThat(file.columns).containsExactly("id", "pg18", "subset", "gap", "statement", "source", "detail");
     assertThat(file.rows).isNotEmpty();
+    // after a run of the generator every entry has been asked of a server and the two columns agree with each other
+    final boolean generated = file.headerValue("server") != null;
 
     final Set<String> ids = new HashSet<>();
+    final Set<String> statements = new HashSet<>();
     for (final Corpus.SyntaxCase c : Corpus.syntaxCases(file)) {
-      assertThat(c.id()).as("id of %s", c.statement()).matches(ID);
+      assertThat(c.id()).as("id of %s", c.statement()).matches(SYNTAX_ID);
       assertThat(ids.add(c.id())).as("unique id %s", c.id()).isTrue();
-      assertThat(c.row[Corpus.SyntaxCase.SCOPE]).as("scope of %s", c.id()).isIn("in", "out");
+      assertThat(statements.add(c.statement())).as("unique statement of %s", c.id()).isTrue();
+      assertThat(c.pg18()).as("pg18 of %s", c.id()).isIn("ok", "syntax-error", "feature-not-supported", Corpus.PENDING_SERVER);
+      assertThat(c.subset()).as("subset of %s", c.id()).isIn("inside", "outside", "unknown");
+      assertThat(c.gap()).as("gap of %s", c.id()).isNotEmpty();
+      assertThat(c.source()).as("source of %s", c.id()).isNotEmpty();
       assertThat(c.statement()).as("statement of %s", c.id()).isNotEmpty();
-      if (!c.expected().isEmpty())
-        assertThat(c.expected()).as("expected of %s", c.id()).matches(SYNTAX_FORMS);
+      assertThat(c.detail()).as("detail of %s", c.id()).satisfiesAnyOf(d -> assertThat(d).isEqualTo("-"),
+          d -> assertThat(d).matches(SQLSTATE));
+      if (!generated)
+        continue;
+      assertThat(c.hasOutcome()).as("%s has an outcome from the server", c.id()).isTrue();
+      switch (c.pg18()) {
+      case "syntax-error" -> assertThat(c.detail()).as("detail of %s", c.id()).isEqualTo("42601");
+      case "feature-not-supported" -> assertThat(c.detail()).as("detail of %s", c.id()).isEqualTo("0A000");
+      default -> assertThat(c.detail()).as("detail of %s", c.id()).isNotIn("42601", "0A000");
+      }
     }
   }
 
@@ -71,7 +87,7 @@ class CorpusFilesTest {
       assertThat(c.tolerance()).as("tolerance of %s", c.id()).isPositive();
       assertThat(c.statement()).as("statement of %s", c.id()).isNotEmpty();
 
-      if (c.expected().isEmpty())
+      if (!c.hasOutcome())
         continue;
       final Outcome outcome = Outcome.fromJson(c.expected());
       assertThat(outcome.isRefusal()).as("%s: a refusal exactly for an err- id", c.id()).isEqualTo(c.expectsRefusal());
@@ -91,13 +107,20 @@ class CorpusFilesTest {
 
   @Test
   void aFilledFileNamesTheServerThatProducedIt() throws IOException {
-    for (final CorpusFile file : List.of(Corpus.readSyntax(), Corpus.readAnswers())) {
-      boolean filled = false;
-      for (final String[] row : file.rows)
-        if (!row[row.length - 1].isEmpty())
-          filled = true;
-      if (filled)
+    final CorpusFile syntax = Corpus.readSyntax();
+    final CorpusFile answers = Corpus.readAnswers();
+    boolean filled = false;
+    for (final Corpus.SyntaxCase c : Corpus.syntaxCases(syntax))
+      if (c.hasOutcome() && "s3".equals(c.source()))
+        filled = true;
+    for (final Corpus.AnswerCase c : Corpus.answerCases(answers))
+      if (c.hasOutcome())
+        filled = true;
+    if (filled)
+      for (final CorpusFile file : List.of(syntax, answers)) {
         assertThat(file.headerValue("server")).as("server line of %s", file.name).startsWith("PostgreSQL 18");
-    }
+        assertThat(file.headerValue("collation")).as("collation line of %s", file.name).isEqualTo("C");
+        assertThat(file.headerValue("encoding")).as("encoding line of %s", file.name).isEqualTo("UTF8");
+      }
   }
 }
