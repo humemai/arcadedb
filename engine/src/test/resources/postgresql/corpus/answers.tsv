@@ -180,69 +180,69 @@ err-information-schema-unknown-view	multiset	-	ok	SELECT * FROM information_sche
 err-information-schema-unknown-column	multiset	-	ok	SELECT nosuch FROM information_schema.tables	{"error":"42703"}
 is-qualified-column	ordered	-	ok	SELECT information_schema.tables.table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE 'w%' ORDER BY information_schema.tables.table_name	{"columns":["table_name"],"types":["name"],"rows":[["works_at"]]}
 err-information-schema-alias-hides-name	multiset	-	ok	SELECT information_schema.tables.table_name FROM information_schema.tables t	{"error":"42P01"}
-c1-derived-basic	ordered	-	ok	SELECT t.name, t.age FROM (SELECT name, age FROM person WHERE age > 30) t ORDER BY t.name	pending-server
-c1-derived-aggregate	ordered	-	ok	SELECT city, n FROM (SELECT city, count(*) AS n FROM person GROUP BY city) c WHERE n > 1 ORDER BY city	pending-server
-c1-derived-join	ordered	-	ok	SELECT p.name, o.total FROM person p JOIN (SELECT pid, sum(total) AS total FROM orders GROUP BY pid) o ON o.pid = p.pid ORDER BY p.name	pending-server
-c1-derived-left-join	ordered	-	ok	SELECT p.name, o.n FROM person p LEFT JOIN (SELECT pid, count(*) AS n FROM orders GROUP BY pid) o ON o.pid = p.pid ORDER BY p.name	pending-server
-c1-derived-column-list	ordered	-	ok	SELECT x, y FROM (SELECT name, age FROM person) AS t (x, y) WHERE y IS NOT NULL ORDER BY x	pending-server
-c1-derived-star	ordered	-	ok	SELECT * FROM (SELECT pid, name FROM person) p ORDER BY pid	pending-server
-c1-derived-nested	multiset	-	ok	SELECT count(*) FROM (SELECT * FROM (SELECT pid FROM person) a) b	pending-server
-c1-derived-unaliased	multiset	-	ok	SELECT count(*) FROM (SELECT 1)	pending-server
-c1-derived-where-below-join	ordered	-	ok	SELECT p.name FROM person p JOIN (SELECT pid FROM orders) o ON o.pid = p.pid WHERE o.pid = 4 ORDER BY p.name	pending-server
-c1-derived-string-literal-column	ordered	-	ok	SELECT k FROM (SELECT 'a' AS k UNION ALL SELECT 'b') t ORDER BY k	pending-server
-err-c1-derived-column-list-too-long	multiset	-	ok	SELECT * FROM (SELECT 1) AS t (a, b)	pending-server
-err-c1-derived-ambiguous-column	multiset	-	ok	SELECT pid FROM (SELECT pid FROM person) a JOIN (SELECT pid FROM orders) b ON a.pid = b.pid	pending-server
-err-c1-derived-column-not-in-subquery	multiset	-	ok	SELECT t.name FROM (SELECT pid FROM person) t	pending-server
-err-c1-derived-duplicate-alias	multiset	-	ok	SELECT 1 FROM (SELECT 1) t, (SELECT 2) t	pending-server
-c1-union-all	ordered	-	ok	SELECT name FROM person WHERE city = 'Delft' UNION ALL SELECT name FROM company ORDER BY name	pending-server
-c1-union-distinct	ordered	-	ok	SELECT city FROM person UNION SELECT city FROM person WHERE age > 40 ORDER BY city	pending-server
-c1-union-explicit-distinct	ordered	-	ok	SELECT city FROM person UNION DISTINCT SELECT 'Delft' ORDER BY city	pending-server
-c1-union-int-and-numeric	ordered	-	ok	SELECT pid FROM person UNION ALL SELECT total FROM orders ORDER BY 1	pending-server
-c1-union-int-and-bigint	ordered	-	ok	SELECT 1 AS a UNION SELECT 2::int8 ORDER BY a	pending-server
-c1-union-int-and-float	ordered	-	ok	SELECT pid AS a FROM person WHERE pid < 3 UNION SELECT 2.5::float8 ORDER BY a	pending-server
-c1-union-null-and-text-literal	ordered	-	ok	SELECT 1 AS a, NULL AS b UNION ALL SELECT 2, 'x' ORDER BY a	pending-server
-c1-union-text-literals	ordered	-	ok	SELECT 'a' AS k UNION SELECT 'b' ORDER BY k	pending-server
-c1-union-literal-takes-integer	ordered	-	ok	SELECT 1 AS a UNION SELECT '2' ORDER BY a	pending-server
-c1-union-varchar-and-text	ordered	-	ok	SELECT name FROM person WHERE pid < 3 UNION SELECT 'z'::text ORDER BY 1	pending-server
-c1-union-date-and-timestamp	ordered	-	ok	SELECT placed FROM orders WHERE oid = 100 UNION ALL SELECT '2026-01-01'::timestamp ORDER BY 1	pending-server
-c1-union-nulls-are-equal	ordered	-	ok	SELECT pid FROM orders UNION SELECT NULL::int4 ORDER BY 1	pending-server
-c1-intersect	ordered	-	ok	SELECT pid FROM person INTERSECT SELECT pid FROM orders ORDER BY pid	pending-server
-c1-intersect-all	ordered	-	ok	SELECT pid FROM orders INTERSECT ALL SELECT pid FROM person WHERE pid < 3 ORDER BY pid	pending-server
-c1-except	ordered	-	ok	SELECT pid FROM person EXCEPT SELECT pid FROM orders ORDER BY pid	pending-server
-c1-except-all	ordered	-	ok	SELECT pid FROM orders EXCEPT ALL SELECT pid FROM person WHERE pid < 3 ORDER BY pid	pending-server
-c1-set-intersect-binds-tighter	ordered	-	ok	SELECT 1 AS a UNION SELECT 2 INTERSECT SELECT 2 ORDER BY a	pending-server
-c1-set-except-groups-left	ordered	-	ok	SELECT 1 AS a UNION SELECT 2 EXCEPT SELECT 2 ORDER BY a	pending-server
-c1-set-parenthesised-operands	ordered	-	ok	(SELECT pid FROM person ORDER BY pid LIMIT 2) UNION ALL (SELECT pid FROM person ORDER BY pid DESC LIMIT 2) ORDER BY pid	pending-server
-c1-set-order-limit-offset-of-the-whole	ordered	-	ok	SELECT name FROM person UNION ALL SELECT name FROM company ORDER BY name DESC LIMIT 3 OFFSET 1	pending-server
-c1-set-order-by-position	ordered	-	ok	SELECT name, age FROM person UNION ALL SELECT name, NULL FROM company ORDER BY 1	pending-server
-c1-set-names-of-the-left-operand	ordered	-	ok	SELECT pid AS a FROM person UNION ALL SELECT oid AS b FROM orders ORDER BY a	pending-server
-c1-set-three-operands	ordered	-	ok	SELECT pid FROM person UNION SELECT oid FROM orders UNION SELECT cid FROM company ORDER BY pid	pending-server
-c1-set-in-derived-table	multiset	-	ok	SELECT count(*) FROM (SELECT pid FROM person UNION SELECT pid FROM orders) t	pending-server
-c1-set-in-join	ordered	-	ok	SELECT p.name FROM person p JOIN (SELECT pid FROM orders UNION SELECT 5) o ON o.pid = p.pid ORDER BY p.name	pending-server
-c1-set-order-limit-inside-parentheses-outside-too	ordered	-	ok	(SELECT pid FROM person) ORDER BY pid DESC LIMIT 2	pending-server
-err-c1-union-column-count	multiset	-	ok	SELECT 1, 2 UNION SELECT 3	pending-server
-err-c1-union-types	multiset	-	ok	SELECT name FROM person UNION SELECT pid FROM person	pending-server
-err-c1-union-literal-not-a-number	multiset	-	ok	SELECT 1 UNION SELECT 'a'	pending-server
-err-c1-union-order-by-expression	multiset	-	ok	SELECT pid FROM person UNION SELECT oid FROM orders ORDER BY pid + 1	pending-server
-err-c1-union-order-by-unknown-column	multiset	-	ok	SELECT pid FROM person UNION SELECT oid FROM orders ORDER BY nosuch	pending-server
-err-c1-multiple-order-by	multiset	-	ok	(SELECT pid FROM person ORDER BY pid) ORDER BY pid	pending-server
-c1-with-basic	ordered	-	ok	WITH d AS (SELECT name, age FROM person WHERE city = 'Delft') SELECT * FROM d ORDER BY name	pending-server
-c1-with-read-twice	multiset	-	ok	WITH d AS (SELECT pid FROM person WHERE age > 30) SELECT count(*) FROM d a JOIN d b ON a.pid = b.pid	pending-server
-c1-with-chain	ordered	-	ok	WITH a AS (SELECT pid FROM person), b AS (SELECT pid FROM a WHERE pid > 2) SELECT * FROM b ORDER BY pid	pending-server
-c1-with-column-list	ordered	-	ok	WITH t (x, y) AS (SELECT name, age FROM person) SELECT x, y FROM t WHERE y > 40 ORDER BY x	pending-server
-c1-with-column-list-shorter	ordered	-	ok	WITH t (x) AS (SELECT name, age FROM person) SELECT x, age FROM t WHERE age > 40 ORDER BY x	pending-server
-c1-with-set-operation	multiset	-	ok	WITH ids AS (SELECT pid FROM person UNION SELECT pid FROM orders) SELECT count(*) FROM ids	pending-server
-c1-with-inside-derived-table	multiset	-	ok	SELECT count(*) FROM (WITH d AS (SELECT 1 AS x) SELECT x FROM d) t	pending-server
-c1-with-hides-table	multiset	-	ok	WITH person AS (SELECT 1 AS pid) SELECT pid FROM person	pending-server
-c1-with-body-is-set-operation	ordered	-	ok	WITH d AS (SELECT pid FROM person) SELECT pid FROM d WHERE pid < 2 UNION ALL SELECT pid FROM d WHERE pid > 4 ORDER BY pid	pending-server
-c1-with-joined-to-table	ordered	-	ok	WITH big AS (SELECT oid, pid FROM orders WHERE total > 9) SELECT p.name, big.oid FROM big JOIN person p ON p.pid = big.pid ORDER BY big.oid	pending-server
-c1-with-materialized	multiset	-	ok	WITH t AS MATERIALIZED (SELECT 1 AS x) SELECT x FROM t	pending-server
-c1-with-unused	multiset	-	ok	WITH t AS (SELECT 1 AS x) SELECT 2	pending-server
-c1-with-alias-of-cte	ordered	-	ok	WITH t AS (SELECT pid, name FROM person) SELECT u.name FROM t AS u WHERE u.pid = 3	pending-server
-err-c1-with-column-list-too-long	multiset	-	ok	WITH t (a, b) AS (SELECT 1) SELECT * FROM t	pending-server
-err-c1-with-duplicate-name	multiset	-	ok	WITH t AS (SELECT 1), t AS (SELECT 2) SELECT * FROM t	pending-server
-err-c1-with-reads-itself	multiset	-	ok	WITH t AS (SELECT * FROM t) SELECT * FROM t	pending-server
-err-c1-with-name-out-of-scope	multiset	-	ok	SELECT * FROM (WITH t AS (SELECT 1) SELECT 1) a, t	pending-server
+c1-derived-basic	ordered	-	ok	SELECT t.name, t.age FROM (SELECT name, age FROM person WHERE age > 30) t ORDER BY t.name	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Ada",36],["Bo",41],["Ed",52]]}
+c1-derived-aggregate	ordered	-	ok	SELECT city, n FROM (SELECT city, count(*) AS n FROM person GROUP BY city) c WHERE n > 1 ORDER BY city	{"columns":["city","n"],"types":["varchar","int8"],"rows":[["Delft",2],["Leiden",2]]}
+c1-derived-join	ordered	-	ok	SELECT p.name, o.total FROM person p JOIN (SELECT pid, sum(total) AS total FROM orders GROUP BY pid) o ON o.pid = p.pid ORDER BY p.name	{"columns":["name","total"],"types":["varchar","numeric"],"rows":[["Ada",35.50],["Bo",99.99],["Di",12.25]]}
+c1-derived-left-join	ordered	-	ok	SELECT p.name, o.n FROM person p LEFT JOIN (SELECT pid, count(*) AS n FROM orders GROUP BY pid) o ON o.pid = p.pid ORDER BY p.name	{"columns":["name","n"],"types":["varchar","int8"],"rows":[["Ada",2],["Bo",1],["Cy",null],["Di",2],["Ed",null]]}
+c1-derived-column-list	ordered	-	ok	SELECT x, y FROM (SELECT name, age FROM person) AS t (x, y) WHERE y IS NOT NULL ORDER BY x	{"columns":["x","y"],"types":["varchar","int4"],"rows":[["Ada",36],["Bo",41],["Di",29],["Ed",52]]}
+c1-derived-star	ordered	-	ok	SELECT * FROM (SELECT pid, name FROM person) p ORDER BY pid	{"columns":["pid","name"],"types":["int4","varchar"],"rows":[[1,"Ada"],[2,"Bo"],[3,"Cy"],[4,"Di"],[5,"Ed"]]}
+c1-derived-nested	multiset	-	ok	SELECT count(*) FROM (SELECT * FROM (SELECT pid FROM person) a) b	{"columns":["count"],"types":["int8"],"rows":[[5]]}
+c1-derived-unaliased	multiset	-	ok	SELECT count(*) FROM (SELECT 1)	{"columns":["count"],"types":["int8"],"rows":[[1]]}
+c1-derived-where-below-join	ordered	-	ok	SELECT p.name FROM person p JOIN (SELECT pid FROM orders) o ON o.pid = p.pid WHERE o.pid = 4 ORDER BY p.name	{"columns":["name"],"types":["varchar"],"rows":[["Di"],["Di"]]}
+c1-derived-string-literal-column	ordered	-	ok	SELECT k FROM (SELECT 'a' AS k UNION ALL SELECT 'b') t ORDER BY k	{"columns":["k"],"types":["text"],"rows":[["a"],["b"]]}
+err-c1-derived-column-list-too-long	multiset	-	ok	SELECT * FROM (SELECT 1) AS t (a, b)	{"error":"42P10"}
+err-c1-derived-ambiguous-column	multiset	-	ok	SELECT pid FROM (SELECT pid FROM person) a JOIN (SELECT pid FROM orders) b ON a.pid = b.pid	{"error":"42702"}
+err-c1-derived-column-not-in-subquery	multiset	-	ok	SELECT t.name FROM (SELECT pid FROM person) t	{"error":"42703"}
+err-c1-derived-duplicate-alias	multiset	-	ok	SELECT 1 FROM (SELECT 1) t, (SELECT 2) t	{"error":"42712"}
+c1-union-all	ordered	-	ok	SELECT name FROM person WHERE city = 'Delft' UNION ALL SELECT name FROM company ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[["Acme"],["Ada"],["Birch"],["Bo"],["Cedar"]]}
+c1-union-distinct	ordered	-	ok	SELECT city FROM person UNION SELECT city FROM person WHERE age > 40 ORDER BY city	{"columns":["city"],"types":["varchar"],"rows":[["Delft"],["Leiden"],["Utrecht"]]}
+c1-union-explicit-distinct	ordered	-	ok	SELECT city FROM person UNION DISTINCT SELECT 'Delft' ORDER BY city	{"columns":["city"],"types":["varchar"],"rows":[["Delft"],["Leiden"],["Utrecht"]]}
+c1-union-int-and-numeric	ordered	-	ok	SELECT pid FROM person UNION ALL SELECT total FROM orders ORDER BY 1	{"columns":["pid"],"types":["numeric"],"rows":[[1],[1.00],[2],[3],[4],[5],[5.00],[7.25],[10.00],[25.50],[99.99]]}
+c1-union-int-and-bigint	ordered	-	ok	SELECT 1 AS a UNION SELECT 2::int8 ORDER BY a	{"columns":["a"],"types":["int8"],"rows":[[1],[2]]}
+c1-union-int-and-float	ordered	-	ok	SELECT pid AS a FROM person WHERE pid < 3 UNION SELECT 2.5::float8 ORDER BY a	{"columns":["a"],"types":["float8"],"rows":[[1.0],[2.0],[2.5]]}
+c1-union-null-and-text-literal	ordered	-	ok	SELECT 1 AS a, NULL AS b UNION ALL SELECT 2, 'x' ORDER BY a	{"columns":["a","b"],"types":["int4","text"],"rows":[[1,null],[2,"x"]]}
+c1-union-text-literals	ordered	-	ok	SELECT 'a' AS k UNION SELECT 'b' ORDER BY k	{"columns":["k"],"types":["text"],"rows":[["a"],["b"]]}
+c1-union-literal-takes-integer	ordered	-	ok	SELECT 1 AS a UNION SELECT '2' ORDER BY a	{"columns":["a"],"types":["int4"],"rows":[[1],[2]]}
+c1-union-varchar-and-text	ordered	-	ok	SELECT name FROM person WHERE pid < 3 UNION SELECT 'z'::text ORDER BY 1	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"],["z"]]}
+c1-union-date-and-timestamp	ordered	-	ok	SELECT placed FROM orders WHERE oid = 100 UNION ALL SELECT '2026-01-01'::timestamp ORDER BY 1	{"columns":["placed"],"types":["timestamp"],"rows":[["2026-01-01T00:00"],["2026-01-05T00:00"]]}
+c1-union-nulls-are-equal	ordered	-	ok	SELECT pid FROM orders UNION SELECT NULL::int4 ORDER BY 1	{"columns":["pid"],"types":["int4"],"rows":[[1],[2],[4],[null]]}
+c1-intersect	ordered	-	ok	SELECT pid FROM person INTERSECT SELECT pid FROM orders ORDER BY pid	{"columns":["pid"],"types":["int4"],"rows":[[1],[2],[4]]}
+c1-intersect-all	ordered	-	ok	SELECT pid FROM orders INTERSECT ALL SELECT pid FROM person WHERE pid < 3 ORDER BY pid	{"columns":["pid"],"types":["int4"],"rows":[[1],[2]]}
+c1-except	ordered	-	ok	SELECT pid FROM person EXCEPT SELECT pid FROM orders ORDER BY pid	{"columns":["pid"],"types":["int4"],"rows":[[3],[5]]}
+c1-except-all	ordered	-	ok	SELECT pid FROM orders EXCEPT ALL SELECT pid FROM person WHERE pid < 3 ORDER BY pid	{"columns":["pid"],"types":["int4"],"rows":[[1],[4],[4],[null]]}
+c1-set-intersect-binds-tighter	ordered	-	ok	SELECT 1 AS a UNION SELECT 2 INTERSECT SELECT 2 ORDER BY a	{"columns":["a"],"types":["int4"],"rows":[[1],[2]]}
+c1-set-except-groups-left	ordered	-	ok	SELECT 1 AS a UNION SELECT 2 EXCEPT SELECT 2 ORDER BY a	{"columns":["a"],"types":["int4"],"rows":[[1]]}
+c1-set-parenthesised-operands	ordered	-	ok	(SELECT pid FROM person ORDER BY pid LIMIT 2) UNION ALL (SELECT pid FROM person ORDER BY pid DESC LIMIT 2) ORDER BY pid	{"columns":["pid"],"types":["int4"],"rows":[[1],[2],[4],[5]]}
+c1-set-order-limit-offset-of-the-whole	ordered	-	ok	SELECT name FROM person UNION ALL SELECT name FROM company ORDER BY name DESC LIMIT 3 OFFSET 1	{"columns":["name"],"types":["varchar"],"rows":[["Di"],["Cy"],["Cedar"]]}
+c1-set-order-by-position	ordered	-	ok	SELECT name, age FROM person UNION ALL SELECT name, NULL FROM company ORDER BY 1	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Acme",null],["Ada",36],["Birch",null],["Bo",41],["Cedar",null],["Cy",null],["Di",29],["Ed",52]]}
+c1-set-names-of-the-left-operand	ordered	-	ok	SELECT pid AS a FROM person UNION ALL SELECT oid AS b FROM orders ORDER BY a	{"columns":["a"],"types":["int4"],"rows":[[1],[2],[3],[4],[5],[100],[101],[102],[103],[104],[105]]}
+c1-set-three-operands	ordered	-	ok	SELECT pid FROM person UNION SELECT oid FROM orders UNION SELECT cid FROM company ORDER BY pid	{"columns":["pid"],"types":["int4"],"rows":[[1],[2],[3],[4],[5],[10],[20],[30],[100],[101],[102],[103],[104],[105]]}
+c1-set-in-derived-table	multiset	-	ok	SELECT count(*) FROM (SELECT pid FROM person UNION SELECT pid FROM orders) t	{"columns":["count"],"types":["int8"],"rows":[[6]]}
+c1-set-in-join	ordered	-	ok	SELECT p.name FROM person p JOIN (SELECT pid FROM orders UNION SELECT 5) o ON o.pid = p.pid ORDER BY p.name	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"],["Di"],["Ed"]]}
+c1-set-order-limit-inside-parentheses-outside-too	ordered	-	ok	(SELECT pid FROM person) ORDER BY pid DESC LIMIT 2	{"columns":["pid"],"types":["int4"],"rows":[[5],[4]]}
+err-c1-union-column-count	multiset	-	ok	SELECT 1, 2 UNION SELECT 3	{"error":"42601"}
+err-c1-union-types	multiset	-	ok	SELECT name FROM person UNION SELECT pid FROM person	{"error":"42804"}
+err-c1-union-literal-not-a-number	multiset	-	ok	SELECT 1 UNION SELECT 'a'	{"error":"22P02"}
+err-c1-union-order-by-expression	multiset	-	ok	SELECT pid FROM person UNION SELECT oid FROM orders ORDER BY pid + 1	{"error":"0A000"}
+err-c1-union-order-by-unknown-column	multiset	-	ok	SELECT pid FROM person UNION SELECT oid FROM orders ORDER BY nosuch	{"error":"42703"}
+err-c1-multiple-order-by	multiset	-	ok	(SELECT pid FROM person ORDER BY pid) ORDER BY pid	{"error":"42601"}
+c1-with-basic	ordered	-	ok	WITH d AS (SELECT name, age FROM person WHERE city = 'Delft') SELECT * FROM d ORDER BY name	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Ada",36],["Bo",41]]}
+c1-with-read-twice	multiset	-	ok	WITH d AS (SELECT pid FROM person WHERE age > 30) SELECT count(*) FROM d a JOIN d b ON a.pid = b.pid	{"columns":["count"],"types":["int8"],"rows":[[3]]}
+c1-with-chain	ordered	-	ok	WITH a AS (SELECT pid FROM person), b AS (SELECT pid FROM a WHERE pid > 2) SELECT * FROM b ORDER BY pid	{"columns":["pid"],"types":["int4"],"rows":[[3],[4],[5]]}
+c1-with-column-list	ordered	-	ok	WITH t (x, y) AS (SELECT name, age FROM person) SELECT x, y FROM t WHERE y > 40 ORDER BY x	{"columns":["x","y"],"types":["varchar","int4"],"rows":[["Bo",41],["Ed",52]]}
+c1-with-column-list-shorter	ordered	-	ok	WITH t (x) AS (SELECT name, age FROM person) SELECT x, age FROM t WHERE age > 40 ORDER BY x	{"columns":["x","age"],"types":["varchar","int4"],"rows":[["Bo",41],["Ed",52]]}
+c1-with-set-operation	multiset	-	ok	WITH ids AS (SELECT pid FROM person UNION SELECT pid FROM orders) SELECT count(*) FROM ids	{"columns":["count"],"types":["int8"],"rows":[[6]]}
+c1-with-inside-derived-table	multiset	-	ok	SELECT count(*) FROM (WITH d AS (SELECT 1 AS x) SELECT x FROM d) t	{"columns":["count"],"types":["int8"],"rows":[[1]]}
+c1-with-hides-table	multiset	-	ok	WITH person AS (SELECT 1 AS pid) SELECT pid FROM person	{"columns":["pid"],"types":["int4"],"rows":[[1]]}
+c1-with-body-is-set-operation	ordered	-	ok	WITH d AS (SELECT pid FROM person) SELECT pid FROM d WHERE pid < 2 UNION ALL SELECT pid FROM d WHERE pid > 4 ORDER BY pid	{"columns":["pid"],"types":["int4"],"rows":[[1],[5]]}
+c1-with-joined-to-table	ordered	-	ok	WITH big AS (SELECT oid, pid FROM orders WHERE total > 9) SELECT p.name, big.oid FROM big JOIN person p ON p.pid = big.pid ORDER BY big.oid	{"columns":["name","oid"],"types":["varchar","int4"],"rows":[["Ada",100],["Ada",101],["Bo",102]]}
+c1-with-materialized	multiset	-	ok	WITH t AS MATERIALIZED (SELECT 1 AS x) SELECT x FROM t	{"columns":["x"],"types":["int4"],"rows":[[1]]}
+c1-with-unused	multiset	-	ok	WITH t AS (SELECT 1 AS x) SELECT 2	{"columns":["?column?"],"types":["int4"],"rows":[[2]]}
+c1-with-alias-of-cte	multiset	-	ok	WITH t AS (SELECT pid, name FROM person) SELECT u.name FROM t AS u WHERE u.pid = 3	{"columns":["name"],"types":["varchar"],"rows":[["Cy"]]}
+err-c1-with-column-list-too-long	multiset	-	ok	WITH t (a, b) AS (SELECT 1) SELECT * FROM t	{"error":"42P10"}
+err-c1-with-duplicate-name	multiset	-	ok	WITH t AS (SELECT 1), t AS (SELECT 2) SELECT * FROM t	{"error":"42712"}
+err-c1-with-reads-itself	multiset	-	ok	WITH t AS (SELECT * FROM t) SELECT * FROM t	{"error":"42P01"}
+err-c1-with-name-out-of-scope	multiset	-	ok	SELECT * FROM (WITH t AS (SELECT 1) SELECT 1) a, t	{"error":"42P01"}
 c2-in-subquery	ordered	-	ok	SELECT name FROM person WHERE pid IN (SELECT pid FROM orders) ORDER BY name	pending-server
 c2-not-in-subquery	ordered	-	ok	SELECT name FROM person WHERE pid NOT IN (SELECT pid FROM orders WHERE pid IS NOT NULL) ORDER BY name	pending-server
 c2-not-in-subquery-with-a-null-row	ordered	-	ok	SELECT name FROM person WHERE pid NOT IN (SELECT pid FROM orders) ORDER BY name	pending-server
