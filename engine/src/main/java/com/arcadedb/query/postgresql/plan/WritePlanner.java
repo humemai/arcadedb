@@ -166,7 +166,8 @@ public final class WritePlanner {
 
     if (insert.source() instanceof InsertStatement.DefaultValues) {
       width = 0;
-      valueRows = List.of(new Slot[0]);
+      valueRows = new ArrayList<>();
+      valueRows.add(new Slot[0]);
       steps.add("INSERT INTO " + table.name() + " DEFAULT VALUES");
     } else if (insert.source() instanceof InsertStatement.Values values) {
       width = values.rows().get(0).size();
