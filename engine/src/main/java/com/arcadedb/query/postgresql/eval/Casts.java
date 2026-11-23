@@ -94,6 +94,8 @@ public final class Casts {
       return value.toString();
     case TIMESTAMP:
       return formatTimestamp((LocalDateTime) value);
+    case VECTOR:
+      return VectorDistance.toText((float[]) value);
     default:
       throw PostgreSQLEvaluationException.unsupported("The text form of a value of type " + type.displayName()
           + " is not supported");
@@ -167,6 +169,8 @@ public final class Casts {
       return parseDate(text);
     case TIMESTAMP:
       return parseTimestamp(text);
+    case VECTOR:
+      return VectorDistance.parse(text);
     default:
       throw PostgreSQLEvaluationException.unsupported("A value of type " + type.displayName() + " cannot be written as a literal");
     }
@@ -355,6 +359,8 @@ public final class Casts {
             + scale + " must round to an absolute value less than 10^" + (precision - scale));
       return rounded;
     }
+    if (type == PgType.VECTOR && typmod.length >= 1 && ((float[]) value).length != typmod[0])
+      throw new PostgreSQLEvaluationException("22000", "expected " + typmod[0] + " dimensions, not " + ((float[]) value).length);
     if (type == PgType.VARCHAR && typmod.length >= 1) {
       final String text = (String) value;
       if (text.codePointCount(0, text.length()) > typmod[0])
@@ -422,6 +428,8 @@ public final class Casts {
       return toDate(raw);
     case TIMESTAMP:
       return toTimestamp(raw);
+    case VECTOR:
+      return VectorDistance.fromEngine(raw);
     default:
       return raw;
     }

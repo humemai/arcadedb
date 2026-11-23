@@ -362,6 +362,10 @@ public final class ExpressionCompiler {
       return comparison(operator, compile(e.left()), compile(e.right()));
     case CONCAT:
       return concat(compile(e.left()), compile(e.right()));
+    case L2_DISTANCE:
+    case COSINE_DISTANCE:
+    case NEGATIVE_INNER_PRODUCT:
+      return VectorDistance.of(operator, compile(e.left()), compile(e.right()));
     case ADD:
     case SUBTRACT:
     case MULTIPLY:

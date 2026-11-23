@@ -36,11 +36,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * depends on the engine, so the engine cannot call the wire's mapping: this test, which sees both, is what keeps them one mapping.
  * It fails when the wire changes a type, when the language does, and when a new schema {@link Type} appears.
  * <p>
- * The differences, each decided for the prototype (fork issue #1, question 15) and each written down here and nowhere else:
+ * The differences, each decided for the prototype (fork issue #1, question 15, and fork issue #11 for the vectors) and each written
+ * down here and nowhere else:
  * <ul>
  * <li>{@code json} is {@code jsonb}: for {@code MAP}, {@code EMBEDDED}, and a {@code LIST} the wire announces as {@code json}
  * (a list of embedded documents or of lists). {@code jsonb} is the JSON type with an equality operator.</li>
  * <li>{@code LINK} is {@code text}, the wire says {@code varchar}: it is the same kind of value as {@code id}, a record id as text.</li>
+ * <li>{@code ARRAY_OF_FLOATS} is {@code vector}, the wire says {@code float4[]}: the pgvector operators take the type, and the wire
+ * has no {@code vector} type yet (the wire step decides how it announces one).</li>
  * </ul>
  */
 class ColumnTypeWireParityTest {
@@ -80,13 +83,14 @@ class ColumnTypeWireParityTest {
 
         final boolean json = wire == PostgresType.JSON && language == ColumnType.JSONB;
         final boolean link = type == Type.LINK && wire == PostgresType.VARCHAR && language == ColumnType.TEXT;
-        assertThat(json || link).as("%s: the wire says %s, the language says %s", label, wireName(wire), language).isTrue();
+        final boolean vector = type == Type.ARRAY_OF_FLOATS && wireName(wire).equals("float4[]") && language == ColumnType.VECTOR;
+        assertThat(json || link || vector).as("%s: the wire says %s, the language says %s", label, wireName(wire), language).isTrue();
         differing.add(type.name());
       }
 
     assertThat(compared).isGreaterThan(Type.values().length * 20);
     // a list differs only for the elements the wire announces as json
-    assertThat(differing).containsExactly("EMBEDDED", "LINK", "LIST", "MAP");
+    assertThat(differing).containsExactly("ARRAY_OF_FLOATS", "EMBEDDED", "LINK", "LIST", "MAP");
   }
 
   @Test
@@ -99,6 +103,8 @@ class ColumnTypeWireParityTest {
         assertThat(language.typeName()).as(type.name()).isEqualTo("text");
       else if (type == Type.MAP || type == Type.EMBEDDED)
         assertThat(language.typeName()).as(type.name()).isEqualTo("jsonb");
+      else if (type == Type.ARRAY_OF_FLOATS)
+        assertThat(language.typeName()).as(type.name()).isEqualTo("vector");
       else
         assertThat(language.typeName()).as(type.name()).isEqualTo(name);
     }
@@ -109,6 +115,9 @@ class ColumnTypeWireParityTest {
   @Test
   void everyColumnTypeNamesAWireType() {
     for (final ColumnType type : ColumnType.values()) {
+      // the wire module has no vector type yet
+      if (type == ColumnType.VECTOR)
+        continue;
       if (type.isArray()) {
         final PostgresType element = PostgresType.byName(type.elementType().typeName());
         assertThat(element).as(type.typeName()).isNotNull();
