@@ -2,12 +2,16 @@ name: Java CI - test
 
 on:
   workflow_dispatch:
+  # Fork only (humemai/arcadedb#1, question 4): the long-lived branch of the PostgreSQL-style SQL prototype gets the
+  # same checks as main, on its pull requests and on every merge into it. Drop this commit when anything goes upstream.
   pull_request:
     branches:
       - main
+      - feat/postgresql-prototype
   push:
     branches:
       - main
+      - feat/postgresql-prototype
   # A GitHub merge queue tests the merge result (the PR rebased onto the current main plus every
   # entry queued ahead of it), not the branch, so two PRs that are each green against a base lacking
   # the other cannot land into a red main (#9850). Without this trigger the queue's required checks
