@@ -68,7 +68,13 @@ final class Diagnostics {
       Map.entry("unsupportedSimilarEscape", "SUBSTRING with SIMILAR"),
       Map.entry("unsupportedBitString", "A bit string constant"),
       Map.entry("unsupportedUnicodeString", "A Unicode escape string"),
-      Map.entry("unsupportedSetof", "SETOF"));
+      Map.entry("unsupportedSetof", "SETOF"),
+      Map.entry("unsupportedCollate", "COLLATE"),
+      Map.entry("unsupportedAtTimeZone", "AT TIME ZONE"),
+      Map.entry("unsupportedIsDistinct", "IS DISTINCT FROM"),
+      Map.entry("unsupportedStarArg", "A whole-row reference such as t.*"),
+      Map.entry("unsupportedUnicodeIdent", "A Unicode escape identifier"),
+      Map.entry("unsupportedTableAlias", "An alias after a subquery or a function in FROM"));
 
   private static final Set<Integer> NOT_WRITES = Set.of(PostgreSQLParser.WITH, PostgreSQLParser.VALUES, PostgreSQLParser.TABLE,
       PostgreSQLParser.LPAREN);
@@ -112,25 +118,29 @@ final class Diagnostics {
   /** The words of the construct as written, in upper case: {@code RIGHT OUTER JOIN}, {@code IS NOT DISTINCT FROM}. */
   private static String words(final String ruleName, final ParserRuleContext marker) {
     final List<String> words = new ArrayList<>();
-    collect(marker, words);
-    if (words.isEmpty())
-      return "A construct of PostgreSQL";
     if ("unsupportedPrimary".equals(ruleName) && marker.getStart().getType() == PostgreSQLParser.LPAREN)
       return "A subquery";
     if ("unsupportedStatement".equals(ruleName) && marker.getStart().getType() == PostgreSQLParser.LPAREN)
       return "A parenthesised query";
+    collect(marker, words);
+    if (words.isEmpty())
+      return "A construct of PostgreSQL";
     final String joined = String.join(" ", words);
     return "unsupportedJoinKind".equals(ruleName) ? joined + " JOIN" : joined;
   }
 
-  private static void collect(final ParseTree tree, final List<String> words) {
+  /** Adds the words from the start of the construct up to the first token that is not a word; @return false once it stopped. */
+  private static boolean collect(final ParseTree tree, final List<String> words) {
     if (tree instanceof TerminalNode terminal) {
       final String text = terminal.getText();
-      if (!text.isEmpty() && Character.isLetter(text.charAt(0)))
-        words.add(text.toUpperCase(Locale.ROOT));
-      return;
+      if (text.isEmpty() || !Character.isLetter(text.charAt(0)))
+        return false;
+      words.add(text.toUpperCase(Locale.ROOT));
+      return true;
     }
     for (int i = 0; i < tree.getChildCount(); i++)
-      collect(tree.getChild(i), words);
+      if (!collect(tree.getChild(i), words))
+        return false;
+    return true;
   }
 }

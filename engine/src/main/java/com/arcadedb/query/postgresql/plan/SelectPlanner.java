@@ -40,6 +40,8 @@ import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.VectorDistance;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.query.postgresql.plan.join.BuildMemory;
+import com.arcadedb.query.postgresql.plan.join.JoinPlanner;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -54,18 +56,28 @@ import java.util.Locale;
  * {@code column = <constant>} on a property that has an index of its own reads through the index; anything else scans the type,
  * with its subtypes unless the statement says {@code ONLY}.
  *
- * <p><b>Seam for joins (S5).</b> {@link #planFrom(List)} is the one place that turns the {@code FROM} items into a
- * {@link RelationSource}; a join is refused there today. Everything below it works on the columns of that source.
+ * <p><b>Joins (S5).</b> A {@code FROM} clause with a join or with several items is planned by the
+ * {@link JoinPlanner}, which gets the {@code WHERE} clause as well because it moves the terms of it below the joins: it hands
+ * back one {@link RelationSource} and the terms that stay above. Everything after that works on the columns of that source.
  */
 public class SelectPlanner {
   private final Database           database;
   private final RelationalCatalog  catalog;
   private final Parameters         parameters;
+  private final long               joinMemoryCap;
 
   public SelectPlanner(final Database database, final Parameters parameters) {
+    this(database, parameters, BuildMemory.DEFAULT_CAP_BYTES);
+  }
+
+  /**
+   * @param joinMemoryCap the bytes of rows that one join may keep in memory before it stops with SQLSTATE {@code 53200}
+   */
+  public SelectPlanner(final Database database, final Parameters parameters, final long joinMemoryCap) {
     this.database = database;
     this.catalog = RelationalCatalog.of(database);
     this.parameters = parameters;
+    this.joinMemoryCap = joinMemoryCap;
   }
 
   public RelationalCatalog catalog() {
@@ -74,18 +86,32 @@ public class SelectPlanner {
 
   // ---- FROM ----
 
-  /**
-   * The source of the {@code FROM} items. S5 replaces the refusal below with the join sources: a join of two references is a
-   * source over the sources of both ({@link #planTable} builds the source of one table), and a comma separated list is a join
-   * of the items with the conditions of the {@code WHERE} clause.
-   */
+  /** The source of a {@code FROM} clause that has no join: no item ({@code SELECT 1}) or one table. */
   protected RelationSource planFrom(final List<TableReference> from) {
     if (from.isEmpty())
       return RelationSource.singleRow();
     if (from.size() == 1 && from.get(0) instanceof TableReference.Table table)
       return planTable(table);
-    throw new PostgreSQLFeatureNotSupportedException(
-        "A join is not supported by the postgresql language yet (" + from.get(0).position() + ")");
+    throw new IllegalArgumentException("A FROM clause with a join is planned by the JoinPlanner");
+  }
+
+  private static boolean hasJoin(final List<TableReference> from) {
+    return from.size() > 1 || (from.size() == 1 && from.get(0) instanceof TableReference.Join);
+  }
+
+  /** What the join planner needs from this planner: the source of one table, and the access path for the terms pushed to it. */
+  private JoinPlanner.Tables joinTables() {
+    return new JoinPlanner.Tables() {
+      @Override
+      public TableSource table(final TableReference.Table reference) {
+        return planTable(reference);
+      }
+
+      @Override
+      public TableSource narrow(final TableSource table, final List<Expression> terms, final ExpressionCompiler compiler) {
+        return chooseAccessPath(table, terms, compiler);
+      }
+    };
   }
 
   /** The rows of one table of the {@code FROM} clause, read by a scan until the {@code WHERE} clause picks an index. */
@@ -106,14 +132,26 @@ public class SelectPlanner {
   public SelectPlan plan(final SelectStatement select) {
     final boolean grouping = !select.groupBy().isEmpty() || select.having() != null || hasAggregate(select);
 
-    RelationSource source = planFrom(select.from());
+    RelationSource source;
+    JoinPlanner.Result joined = null;
+    if (hasJoin(select.from())) {
+      joined = new JoinPlanner(database, catalog, parameters, joinTables(), joinMemoryCap).plan(select.from(), select.where());
+      source = joined.source();
+    } else
+      source = planFrom(select.from());
     final RelationScope scope = new RelationScope(source.columns(), catalog);
     final ExpressionCompiler compiler = new ExpressionCompiler(scope, parameters);
 
     Evaluable where = null;
     if (select.where() != null) {
       where = compiler.compileCondition(select.where(), "WHERE");
-      if (source instanceof TableSource tableSource)
+      if (joined != null) {
+        // the join planner applied the terms it could place below the joins; the others are the filter on top
+        final List<Evaluable> above = new ArrayList<>();
+        for (final Expression term : joined.remaining())
+          above.add(compiler.compileCondition(term, "WHERE"));
+        where = above.isEmpty() ? null : JoinPlanner.allOf(above);
+      } else if (source instanceof TableSource tableSource)
         source = chooseAccessPath(tableSource, select.where(), compiler);
     }
 
@@ -211,7 +249,7 @@ public class SelectPlanner {
       columns.add(new PostgreSQLResultSet.Column(names.get(i), outputs.get(i).typeName()));
 
     final List<String> steps = new ArrayList<>();
-    steps.add(source.describe());
+    steps.addAll(source.describeTree());
     if (exactReason != null)
       steps.add("SCAN + SORT exact distance (" + exactReason + ")");
     if (where != null)
@@ -263,8 +301,13 @@ public class SelectPlanner {
   }
 
   private TableSource chooseAccessPath(final TableSource table, final Expression where, final ExpressionCompiler compiler) {
+    return chooseAccessPath(table, conjuncts(where), compiler);
+  }
+
+  /** The access path for a list of {@code AND} terms; the join planner calls it with the terms it pushed to one table. */
+  private TableSource chooseAccessPath(final TableSource table, final List<Expression> terms, final ExpressionCompiler compiler) {
     TableSource best = table;
-    for (final Expression conjunct : conjuncts(where)) {
+    for (final Expression conjunct : terms) {
       if (!(conjunct instanceof Expression.BinaryOp op) || op.operator() != Expression.BinaryOperator.EQUAL)
         continue;
       final Evaluable left = compiler.compile(op.left());

@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql.parser;
 
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
+import com.arcadedb.query.postgresql.PostgreSQLInvalidEscapeException;
 import com.arcadedb.query.postgresql.PostgreSQLSyntaxException;
 import com.arcadedb.query.postgresql.corpus.Corpus;
 import org.junit.jupiter.api.Test;
@@ -44,11 +45,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SyntaxCorpusTest {
   private enum Verdict {
-    ACCEPTED, REFUSED_0A000, REFUSED_42601, INTERNAL_ERROR
+    ACCEPTED, REFUSED_0A000, REFUSED_42601, REFUSED_OTHER, INTERNAL_ERROR
   }
 
   /** {@code line} is the number of the entry in the corpus, from 1. */
-  private record Entry(int line, String id, String pg18, String subset, String gap, String statement, String source) {
+  private record Entry(int line, String id, String pg18, String subset, String gap, String statement, String source,
+                       String detail) {
   }
 
   /** The corpus is read through the classes of the parity harness, which also write it: {@code Corpus}. */
@@ -56,7 +58,7 @@ class SyntaxCorpusTest {
     final List<Entry> entries = new ArrayList<>();
     int number = 0;
     for (final Corpus.SyntaxCase c : Corpus.syntaxCases(Corpus.readSyntax()))
-      entries.add(new Entry(++number, c.id(), c.pg18(), c.subset(), c.gap(), c.statement(), c.source()));
+      entries.add(new Entry(++number, c.id(), c.pg18(), c.subset(), c.gap(), c.statement(), c.source(), c.detail()));
     return entries;
   }
 
@@ -70,6 +72,10 @@ class SyntaxCorpusTest {
     } catch (final PostgreSQLSyntaxException e) {
       detail.append(e.getMessage());
       return Verdict.REFUSED_42601;
+    } catch (final PostgreSQLInvalidEscapeException e) {
+      // refused with a SQLSTATE of its own, which the server wrote in the detail column
+      detail.append(e.getSqlState()).append(": ").append(e.getMessage());
+      return Verdict.REFUSED_OTHER;
     } catch (final RuntimeException | StackOverflowError e) {
       detail.append(e);
       return Verdict.INTERNAL_ERROR;
@@ -77,7 +83,7 @@ class SyntaxCorpusTest {
   }
 
   /** @return why the verdict disagrees with the entry, or {@code null} when they agree */
-  private static String disagreement(final Entry entry, final Verdict verdict) {
+  private static String disagreement(final Entry entry, final Verdict verdict, final String answer) {
     if (verdict == Verdict.INTERNAL_ERROR)
       return "the parser failed with an exception that is not one of the two refusals";
     switch (entry.subset()) {
@@ -98,6 +104,9 @@ class SyntaxCorpusTest {
     case "ok":
       if (verdict == Verdict.REFUSED_42601)
         return "PostgreSQL 18 accepts it, so it must not be a syntax error";
+      // the scanner of PostgreSQL refuses some text with a SQLSTATE that is not a syntax matter; the server wrote it
+      if (verdict == Verdict.REFUSED_OTHER && !answer.startsWith(entry.detail() + ":"))
+        return "PostgreSQL 18 answers " + entry.detail() + " and the parser another SQLSTATE";
       break;
     case "syntax-error":
       if (verdict != Verdict.REFUSED_42601)
@@ -127,7 +136,7 @@ class SyntaxCorpusTest {
     for (final Entry entry : entries) {
       final StringBuilder detail = new StringBuilder();
       final Verdict verdict = verdictOf(entry, detail);
-      final String reason = disagreement(entry, verdict);
+      final String reason = disagreement(entry, verdict, detail.toString());
       final boolean isGap = !"-".equals(entry.gap());
 
       summary.merge("pg18=" + entry.pg18() + " subset=" + entry.subset() + " -> " + verdict, 1, Integer::sum);

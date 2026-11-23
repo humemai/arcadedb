@@ -50,9 +50,11 @@ permissions:
 
 # One run per branch and kind: a push to a branch with an open pull request starts the run of the pull request too, and the
 # newer one cancels the older. A run started by hand is its own kind, so a push does not cancel a generator run. head_ref is the
-# branch of a pull request, ref_name the branch of a push or a dispatch.
+# branch of a pull request, ref_name the branch of a push or a dispatch. The event is in the group so that the run of a push and the
+# run of a pull request do not cancel each other: a cancelled check on the head of a pull request is not SUCCESS and the merge guard
+# refuses such a head. A dispatch (the generator) is its own event, so it is never cancelled by a push either.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'auto' }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
