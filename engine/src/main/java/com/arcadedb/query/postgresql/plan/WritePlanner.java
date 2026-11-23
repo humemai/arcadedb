@@ -265,6 +265,8 @@ public final class WritePlanner {
           given.add(column.property());
           if (values[i] != null)
             record.set(column.property(), toEngine(db, table, column, values[i]));
+          else
+            setNull(table, record, column);
         }
         applyDefaults(table, record, given);
         requireValues(table, record);
@@ -369,13 +371,13 @@ public final class WritePlanner {
             value = property == null ? null : property.getDefaultValue();
             changed.add(column.property());
             if (value == null)
-              record.remove(column.property());
+              setNull(table, record, column);
             else
               record.set(column.property(), value);
           } else {
             changed.add(column.property());
             if (value == null)
-              record.remove(column.property());
+              setNull(table, record, column);
             else
               record.set(column.property(), toEngine(db, table, column, value));
           }
@@ -455,6 +457,19 @@ public final class WritePlanner {
           + "constraint on column \"" + column.name() + "\": the value \"" + text + "\" is not a record"
           + (linked == null ? "" : " of the type " + linked));
     return rid;
+  }
+
+  /**
+   * {@code NULL} in a column: the property is absent, which reads as {@code NULL}. A property that has a default is given an
+   * explicit null instead, because the engine fills an absent property with its default when it saves the record, and an explicit
+   * {@code NULL} is not replaced by the default.
+   */
+  private static void setNull(final Table table, final MutableDocument record, final Column column) {
+    final Property property = table.documentType().getPolymorphicPropertyIfExists(column.property());
+    if (property != null && property.getDefaultValue() != null)
+      record.set(column.property(), null);
+    else
+      record.remove(column.property());
   }
 
   /** A column that is not given, or given as {@code DEFAULT}, takes the default of its property. */
