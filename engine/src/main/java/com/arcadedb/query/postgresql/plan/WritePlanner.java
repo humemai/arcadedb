@@ -341,9 +341,9 @@ public final class WritePlanner {
       }
     }
     if (source == null)
-      throw notNull(table, Column.SOURCE_ID);
+      throw notNull(table, nameOf(table, Column.Kind.SOURCE));
     if (target == null)
-      throw notNull(table, Column.TARGET_ID);
+      throw notNull(table, nameOf(table, Column.Kind.TARGET));
 
     for (final Column column : table.columns()) {
       if (column.kind() != Column.Kind.PROPERTY || given.contains(column.property()))
@@ -355,8 +355,8 @@ public final class WritePlanner {
     }
     requireValues(table, properties::get);
 
-    final Vertex from = endpoint(db, table, Column.SOURCE_ID, source, table.sourceTable());
-    final Vertex to = endpoint(db, table, Column.TARGET_ID, target, table.targetTable());
+    final Vertex from = endpoint(db, table, nameOf(table, Column.Kind.SOURCE), source, table.sourceTable());
+    final Vertex to = endpoint(db, table, nameOf(table, Column.Kind.TARGET), target, table.targetTable());
     final EdgeType type = (EdgeType) db.getSchema().getType(table.name());
     if (type.isLightweight()) {
       if (!properties.isEmpty())
@@ -371,6 +371,18 @@ public final class WritePlanner {
       flat[next++] = property.getValue();
     }
     return from.newEdge(table.name(), to, flat);
+  }
+
+  /**
+   * The name the catalog gives the synthetic column of this kind in this table. The executors never spell {@code id},
+   * {@code source_id} or {@code target_id}: they find the record id, the source and the target by their kind, so a rule of the
+   * catalog about which column carries which name (fork issue #38) changes no executor.
+   */
+  private static String nameOf(final Table table, final Column.Kind kind) {
+    for (final Column column : table.columns())
+      if (column.kind() == kind)
+        return column.name();
+    throw new IllegalStateException("The table " + table.name() + " has no column of the kind " + kind);
   }
 
   private static PostgreSQLEvaluationException notNull(final Table table, final String column) {
