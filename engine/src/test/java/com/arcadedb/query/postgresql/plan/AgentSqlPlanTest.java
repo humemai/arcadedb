@@ -45,15 +45,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * them on empty tables.
  * <p>
  * The schema is the one the models were given (the eight tables of {@code agent-sql-schema.sql}), declared in a database the way
- * the relational view reads it: a type per table in lower case (an unquoted name is folded to lower case, as PostgreSQL does)
- * and a declared property per column, so the {@code id} column of the LDBC tables is a declared property {@code id}, which the
- * view shows as {@code id_}, while {@code id} is the record id as text (the decision of fork issue #1). A statement that joins an
- * integer foreign key to {@code id} is therefore refused by the binder, which is what the measurement is for. The tables are
- * empty, so a statement that runs says only that it binds, plans and executes without an error, not that its rows are right.
+ * the relational view reads it: a type per table in lower case (an unquoted name is folded to lower case, as PostgreSQL does), a
+ * declared property per column, and a unique index on the {@code id} of the six tables that have one, as the loader of the
+ * experiment declares it. By the rule of fork issue #38 the declared property {@code id} is the column {@code id} (a {@code
+ * bigint}, the primary key) and the record id is {@code rid}, so a statement that joins an integer foreign key to {@code id}
+ * binds. Before that rule {@code id} was the record id as text, the property was shown as {@code id_}, and 95 of the 160 accepted
+ * statements were refused with {@code 42883}: the number of statements that run as written, in the report of this test, is the
+ * measurement of the rule. The tables are empty, so a statement that runs says only that it binds, plans and executes without an
+ * error, not that its rows are right.
  * <p>
- * Each accepted statement is run twice: as written, and with the word {@code id} read as the declared column ({@code id_}), which
- * is the answer to "what if the declared {@code id} were what an agent gets under that name". The second run changes no design
- * and no code: it only rewrites the text of the statement, to show how much of the refusal is the {@code id} decision.
+ * Each accepted statement is run once, as written: the statement texts are the models' own and nothing is rewritten.
  * <p>
  * It prints the outcome per group and verdict, the refusals by SQLSTATE and message, and every refused statement, and writes the
  * same to {@code target/pg-agent-fit/plan-report.md}. It never fails on the numbers.
@@ -62,19 +63,17 @@ class AgentSqlPlanTest extends TestHelper {
   private static final String RESOURCE = "/postgresql/corpus/agent-sql.tsv";
   private static final List<String> GROUPS = List.of("single", "join", "multi_join", "graph");
 
-  /** {@code sqlState} and {@code message} are the run as written, {@code whatIfState} and {@code whatIfMessage} the run with id read as id_. */
-  private record Outcome(String id, String group, String duckdb, String statement, String sqlState, String message,
-                         String whatIfState, String whatIfMessage) {
+  /** {@code sqlState} and {@code message} are empty when the statement ran to its end. */
+  private record Outcome(String id, String group, String duckdb, String statement, String sqlState, String message) {
     boolean ran() {
       return sqlState.isEmpty();
     }
-
-    boolean ranWhatIf() {
-      return whatIfState.isEmpty();
-    }
   }
 
-  /** The eight tables of {@code agent-sql-schema.sql}: BIGINT is LONG, INTEGER is INTEGER and VARCHAR is STRING. */
+  /**
+   * The eight tables of {@code agent-sql-schema.sql}: BIGINT is LONG, INTEGER is INTEGER and VARCHAR is STRING, and the six
+   * tables with {@code id BIGINT PRIMARY KEY} get a unique index on {@code id}.
+   */
   private void declareSchema() {
     final Schema schema = database.getSchema();
     table(schema, "person", "id", Type.LONG, "first_name", Type.STRING, "last_name", Type.STRING, "gender", Type.STRING, "birth_year",
@@ -90,8 +89,13 @@ class AgentSqlPlanTest extends TestHelper {
 
   private static void table(final Schema schema, final String name, final Object... propertiesAndTypes) {
     final DocumentType type = schema.createDocumentType(name);
-    for (int i = 0; i < propertiesAndTypes.length; i += 2)
+    boolean hasId = false;
+    for (int i = 0; i < propertiesAndTypes.length; i += 2) {
       type.createProperty((String) propertiesAndTypes[i], (Type) propertiesAndTypes[i + 1]);
+      hasId |= "id".equals(propertiesAndTypes[i]);
+    }
+    if (hasId)
+      schema.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, name, "id");
   }
 
   @Test
@@ -114,9 +118,7 @@ class AgentSqlPlanTest extends TestHelper {
         continue;
       }
       final String[] asWritten = run(statement);
-      final String[] whatIf = run(statement.replaceAll("(?i)\\bid\\b", "id_"));
-      outcomes.add(new Outcome(row[idColumn], row[groupColumn], row[verdictColumn], statement, asWritten[0], asWritten[1], whatIf[0],
-          whatIf[1]));
+      outcomes.add(new Outcome(row[idColumn], row[groupColumn], row[verdictColumn], statement, asWritten[0], asWritten[1]));
     }
 
     final String report = report(file.rows.size(), refusedByTheParser, outcomes);
@@ -167,19 +169,16 @@ class AgentSqlPlanTest extends TestHelper {
         .append(pct(correctRan, correct)).append(" |\n\n");
     out.append("Refused by the parser (not in the table above): ").append(refusedByTheParser).append(".\n");
 
-    out.append("\n## Per group, statements the parser accepts\n\n| group | accepted by the parser | ran as written | refused after the parser | ran with id read as id_ |\n|---|---|---|---|---|\n");
+    out.append("\n## Per group, statements the parser accepts\n\n| group | accepted by the parser | ran as written | refused after the parser |\n|---|---|---|---|\n");
     for (final String group : GROUPS) {
       final List<Outcome> sub = outcomes.stream().filter(o -> group.equals(o.group())).toList();
       final long subRan = sub.stream().filter(Outcome::ran).count();
-      final long subWhatIf = sub.stream().filter(Outcome::ranWhatIf).count();
       out.append("| ").append(group).append(" | ").append(sub.size()).append(" | ").append(subRan).append(" | ")
-          .append(sub.size() - subRan).append(" | ").append(subWhatIf).append(" |\n");
+          .append(sub.size() - subRan).append(" |\n");
     }
-    final long whatIfRan = outcomes.stream().filter(Outcome::ranWhatIf).count();
-    final long whatIfCorrect = outcomes.stream().filter(o -> "correct".equals(o.duckdb()) && o.ranWhatIf()).count();
-    out.append("\nWith id read as the declared column (id_): ").append(whatIfRan).append(" of ").append(outcomes.size())
-        .append(" accepted statements run (").append(pct(whatIfRan, outcomes.size())).append("), ").append(whatIfCorrect)
-        .append(" of the ").append(correct).append(" accepted statements that were correct on DuckDB (").append(pct(whatIfCorrect, correct))
+    out.append("\nThe id rule of fork issue #38: ").append(ran).append(" of the ").append(outcomes.size())
+        .append(" accepted statements run as written (").append(pct(ran, outcomes.size())).append("), ").append(correctRan)
+        .append(" of the ").append(correct).append(" accepted statements that were correct on DuckDB (").append(pct(correctRan, correct))
         .append(").\n");
 
     final Map<String, int[]> byMessage = new TreeMap<>();
@@ -193,25 +192,11 @@ class AgentSqlPlanTest extends TestHelper {
       out.append("| ").append(cell(each.getKey())).append(" | ").append(each.getValue()[0]).append(" | ").append(each.getValue()[1])
           .append(" |\n");
 
-    final Map<String, int[]> byWhatIf = new TreeMap<>();
-    for (final Outcome o : outcomes)
-      if (!o.ranWhatIf())
-        byWhatIf.computeIfAbsent(o.whatIfState() + " " + normalise(o.whatIfMessage()), k -> new int[2])[o.duckdb().equals("correct") ? 0 : 1]++;
-    out.append("\n## Refused after the parser with id read as id_, by SQLSTATE and message\n\n| SQLSTATE and message | correct statements | other |\n|---|---|---|\n");
-    for (final Map.Entry<String, int[]> each : byWhatIf.entrySet())
-      out.append("| ").append(cell(each.getKey())).append(" | ").append(each.getValue()[0]).append(" | ").append(each.getValue()[1])
-          .append(" |\n");
-
     out.append("\n## Every refused statement (as written)\n\n");
     for (final Outcome o : outcomes)
       if (!o.ran())
         out.append("- ").append(o.id()).append(" (").append(o.group()).append(", ").append(o.duckdb()).append("): ")
             .append(oneLine(o.message(), 220)).append("\n    ").append(cell(oneLine(o.statement(), 240))).append('\n');
-    out.append("\n## Every statement refused with id read as id_\n\n");
-    for (final Outcome o : outcomes)
-      if (!o.ranWhatIf())
-        out.append("- ").append(o.id()).append(" (").append(o.group()).append(", ").append(o.duckdb()).append("): ")
-            .append(oneLine(o.whatIfMessage(), 220)).append("\n    ").append(cell(oneLine(o.statement(), 240))).append('\n');
     return out.toString();
   }
 

@@ -99,7 +99,7 @@ jobs:
       - name: Run the parity harness
         run: >-
           ./mvnw verify -Pintegration --batch-mode --errors --show-version -pl e2e
-          -Dit.test=PostgresServerIT,PgParityIT,PgTpchParityIT
+          -Dit.test=PostgresServerIT,PgParityIT,PgTpchParityIT,PgIdRuleParityIT
           -Dpgparity.regenerate="${PGPARITY_REGENERATE}"
           -Dpgparity.tpch.dir="${RUNNER_TEMP}/tpch"
 
@@ -121,6 +121,19 @@ jobs:
               echo
               echo '```'
               cat "${RUNNER_TEMP}/tpch-data.txt" e2e/target/pgparity/report-tpch.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Report of the id rule parity
+        if: always()
+        run: |
+          if [ -f e2e/target/pgparity/report-idrule.txt ]; then
+            {
+              echo '## PostgreSQL id rule parity report'
+              echo
+              echo '```'
+              cat e2e/target/pgparity/report-idrule.txt
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -155,9 +168,11 @@ jobs:
             engine/src/test/resources/postgresql/corpus/syntax.tsv
             engine/src/test/resources/postgresql/corpus/answers.tsv
             engine/src/test/resources/postgresql/corpus/tpch.tsv
+            engine/src/test/resources/postgresql/corpus/idrule.tsv
             engine/src/test/resources/postgresql/corpus/agent-sql.tsv
             e2e/target/pgparity/report.txt
             e2e/target/pgparity/report-tpch.txt
+            e2e/target/pgparity/report-idrule.txt
           if-no-files-found: error
           retention-days: 7
 
@@ -170,5 +185,6 @@ jobs:
             e2e/target/failsafe-reports/*
             e2e/target/pgparity/report.txt
             e2e/target/pgparity/report-tpch.txt
+            e2e/target/pgparity/report-idrule.txt
           if-no-files-found: ignore
           retention-days: 7

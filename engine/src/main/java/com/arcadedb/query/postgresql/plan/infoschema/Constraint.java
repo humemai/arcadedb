@@ -31,7 +31,8 @@ import java.util.Map;
  * names its keys the way PostgreSQL names the keys that a {@code CREATE TABLE} creates, so the names are a rule and not a counter:
  * <ul>
  * <li>primary key: {@code <table>_pkey};</li>
- * <li>unique key: {@code <table>_<column>_<column>_key}, the columns in the order of the key;</li>
+ * <li>unique key: {@code <table>_<column>_<column>_key}, the columns in the order of the key (the record id of a table whose property
+ * {@code id} is its primary key is the unique key {@code <table>_rid_key});</li>
  * <li>foreign key: {@code <table>_<column>_fkey}, the column being the {@code LINK} property, {@code source_id} or
  * {@code target_id}.</li>
  * </ul>
@@ -45,7 +46,7 @@ import java.util.Map;
  * @param columns           the constrained columns, in key order
  * @param referencedTable   the table a foreign key refers to, {@code null} for a primary or unique key
  * @param referencedColumns the columns of the referenced table, in the order of the referenced key; empty for a primary or unique key
- * @param referencedKey     the name of the primary key that a foreign key refers to, {@code null} for a primary or unique key
+ * @param referencedKey     the name of the primary or unique key that a foreign key refers to, {@code null} for a primary or unique key
  */
 record Constraint(String name, String table, String type, List<String> columns, String referencedTable,
     List<String> referencedColumns, String referencedKey) {
@@ -76,7 +77,7 @@ record Constraint(String name, String table, String type, List<String> columns, 
       for (final Table.ForeignKey foreignKey : table.foreignKeys()) {
         final Table referenced = byName.get(foreignKey.referencedTable());
         out.add(new Constraint(foreignKey.name(), table.name(), FOREIGN_KEY, foreignKey.columns(), referenced.name(),
-            foreignKey.referencedColumns(), referenced.primaryKey().name()));
+            foreignKey.referencedColumns(), referenced.keyOn(foreignKey.referencedColumns()).name()));
       }
     }
     return out;

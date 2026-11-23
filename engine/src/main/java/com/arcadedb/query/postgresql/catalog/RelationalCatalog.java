@@ -57,13 +57,25 @@ import java.util.Set;
  * Every type of the schema is a table except time series types (a different shape, no relational view yet). The rules, as decided
  * for the prototype:
  * <ul>
- * <li>{@code id} is the record id as text ({@code #12:3}) and the primary key of every document, vertex and edge table with
- * records. A declared property {@code id} is the column {@code id_}.</li>
+ * <li><b>The {@code id} rule</b> (fork issue #38, option B). A type that declares a property {@code id} has that property as its
+ * column {@code id}, and the primary key of its table when a unique index covers that property alone; the record id as text
+ * ({@code #12:3}) is then the column {@code rid}, a unique key of the table, and the primary key when the property {@code id} has
+ * no unique index. A type with no property {@code id} has the record id as the column {@code id}, the primary key. So a table
+ * loaded from a relational schema reads as that schema wrote it, and the record id is one name away.</li>
+ * <li><b>The collision rule.</b> A property that has the name of a column the view adds wins its name, as the property {@code id}
+ * does: a type that declares a property {@code rid} keeps it as the column {@code rid}, and its record id is {@code id} (when it
+ * has no property {@code id}, as it was before). A type that declares both {@code id} and {@code rid} has no record id column
+ * (both names are the user's); the edges that end in it still hold its record ids in {@code source_id} and {@code target_id}, and
+ * there is no foreign key to it, because no column holds the value to refer to. The one exception is the endpoint columns of an
+ * edge table: a property named {@code source_id} or {@code target_id} is shown as {@code source_id_} or {@code target_id_}, as
+ * before.</li>
  * <li>An edge table also has {@code source_id} and {@code target_id}, the record ids of the out and the in vertex read from the edge
- * record. A bidirectional edge is one row per edge record. A lightweight edge has no {@code id}: see {@link Table.EdgeStorage}.</li>
+ * record, whatever the endpoint types call their own key. A bidirectional edge is one row per edge record. A lightweight edge has
+ * no record id column: see {@link Table.EdgeStorage}.</li>
  * <li>The foreign keys of an edge table come only from the endpoint tables declared on the edge type ({@link EdgeEndpoints}), never
- * from the data. A {@code LINK} property is a many-to-one foreign key to the {@code id} of the table of its target type, under the
- * name of the property.</li>
+ * from the data. A {@code LINK} property is a many-to-one foreign key to the table of its target type, under the name of the
+ * property. Both refer to the record id column of the other table ({@code id}, or {@code rid} when that type has its own
+ * {@code id}), since they hold record ids.</li>
  * <li>Only declared properties are columns. An unknown column is SQLSTATE {@code 42703} with a hint, and an absent property is
  * {@code NULL}.</li>
  * <li>The table of a supertype has the rows of its subtypes, {@code FROM ONLY} has its own.</li>
@@ -186,11 +198,13 @@ public final class RelationalCatalog {
     final Map<String, String> linkTargets;
     final Table.Key          primaryKey;
     final List<Table.Key>    uniqueKeys;
+    /** the name of the record id column when it is a key that a foreign key can refer to, else {@code null} */
+    final String             referable;
     final List<String>       superTables;
     final List<String>       subTables;
 
     Draft(final DocumentType type, final Table.Kind kind, final Table.EdgeStorage storage, final List<Column> columns,
-        final Map<String, String> linkTargets, final Table.Key primaryKey, final List<Table.Key> uniqueKeys,
+        final Map<String, String> linkTargets, final Table.Key primaryKey, final List<Table.Key> uniqueKeys, final String referable,
         final List<String> superTables, final List<String> subTables) {
       this.type = type;
       this.name = type.getName();
@@ -200,6 +214,7 @@ public final class RelationalCatalog {
       this.linkTargets = linkTargets;
       this.primaryKey = primaryKey;
       this.uniqueKeys = uniqueKeys;
+      this.referable = referable;
       this.superTables = superTables;
       this.subTables = subTables;
     }
@@ -211,11 +226,14 @@ public final class RelationalCatalog {
     final EdgeType edgeType = type instanceof EdgeType edge ? edge : null;
     final Table.EdgeStorage storage = edgeType == null ? null : storageOf(edgeType);
 
+    final Map<String, Property> properties = declaredProperties(type);
+    // the id rule and its collision rule, see the class comment: a declared property wins the name it has
+    final String identity = properties.containsKey(Column.ID) ? (properties.containsKey(Column.RID) ? null : Column.RID) : Column.ID;
     final List<Column> columns = new ArrayList<>();
     final Set<String> reserved = new HashSet<>();
-    if (storage != Table.EdgeStorage.LIGHTWEIGHT) {
-      columns.add(new Column(Column.ID, ColumnType.TEXT, storage == Table.EdgeStorage.MIXED, Column.Kind.IDENTITY, null, false));
-      reserved.add(Column.ID);
+    if (identity != null && storage != Table.EdgeStorage.LIGHTWEIGHT) {
+      columns.add(new Column(identity, ColumnType.TEXT, storage == Table.EdgeStorage.MIXED, Column.Kind.IDENTITY, null, false));
+      reserved.add(identity);
     }
     if (kind == Table.Kind.EDGE) {
       columns.add(new Column(Column.SOURCE_ID, ColumnType.TEXT, false, Column.Kind.SOURCE, null, false));
@@ -224,7 +242,6 @@ public final class RelationalCatalog {
       reserved.add(Column.TARGET_ID);
     }
 
-    final Map<String, Property> properties = declaredProperties(type);
     final Set<String> used = new HashSet<>(reserved);
     final Map<String, String> shownByProperty = new HashMap<>();
     final Map<String, String> linkTargets = new HashMap<>();
@@ -249,19 +266,42 @@ public final class RelationalCatalog {
     final List<String> superTables = tableNamesOf(type.getSuperTypes(), tableNames);
     final List<String> subTables = tableNamesOf(type.getSubTypes(), tableNames);
 
+    final List<Table.Key> uniqueKeys = new ArrayList<>(
+        uniqueKeys(type, name, shownByProperty, edgeType != null && storage == Table.EdgeStorage.REGULAR && edgeType.isUnique()));
+
+    final boolean hasRecordIds = identity != null && (storage == null || storage == Table.EdgeStorage.REGULAR);
+    // a unique index on the property id alone
+    Table.Key ownId = null;
+    if (properties.containsKey(Column.ID))
+      for (final Table.Key key : uniqueKeys)
+        if (key.columns().equals(List.of(Column.ID)))
+          ownId = key;
+
     final Table.Key primaryKey;
-    if (storage == null || storage == Table.EdgeStorage.REGULAR)
+    if (ownId != null && (hasRecordIds || identity == null)) {
+      // the property id is the primary key, and the record id, when the view has a column for it, is a unique key of its own
+      uniqueKeys.remove(ownId);
+      if (hasRecordIds) {
+        uniqueKeys.add(new Table.Key(name + "_" + identity + "_key", List.of(identity)));
+        uniqueKeys.sort(Comparator.comparing((Table.Key key) -> String.join(",", key.columns())));
+      }
       primaryKey = new Table.Key(name + "_pkey", List.of(Column.ID));
-    else if (storage == Table.EdgeStorage.LIGHTWEIGHT && edgeType.isUnique() && subTables.isEmpty())
+      // a primary key is NOT NULL, as it is in PostgreSQL
+      for (int i = 0; i < columns.size(); i++)
+        if (columns.get(i).kind() == Column.Kind.PROPERTY && Column.ID.equals(columns.get(i).name()))
+          columns.set(i, columns.get(i).notNull());
+    } else if (hasRecordIds) {
+      // the record id is the primary key: id, or rid beside a property id that no unique index covers alone
+      primaryKey = new Table.Key(name + "_pkey", List.of(identity));
+    } else if (storage == Table.EdgeStorage.LIGHTWEIGHT && edgeType.isUnique() && subTables.isEmpty())
       // the identity of a lightweight edge is (type, out, in), and UNIQUE says there is one per pair. With subtypes, the same
       // pair can be in two of the types, so the table of the supertype cannot promise it
       primaryKey = new Table.Key(name + "_pkey", List.of(Column.SOURCE_ID, Column.TARGET_ID));
     else
       primaryKey = null;
 
-    return new Draft(type, kind, storage, columns, linkTargets, primaryKey,
-        uniqueKeys(type, name, shownByProperty, edgeType != null && storage == Table.EdgeStorage.REGULAR && edgeType.isUnique()),
-        superTables, subTables);
+    return new Draft(type, kind, storage, columns, linkTargets, primaryKey, uniqueKeys, hasRecordIds ? identity : null, superTables,
+        subTables);
   }
 
   private static Table table(final Draft draft, final Schema schema, final Map<String, Draft> drafts) {
@@ -274,10 +314,10 @@ public final class RelationalCatalog {
       targetTable = declaredVertexTable(EdgeEndpoints.targetTable(edgeType), drafts);
       if (sourceTable != null)
         foreignKeys.add(new Table.ForeignKey(draft.name + "_" + Column.SOURCE_ID + "_fkey", List.of(Column.SOURCE_ID), sourceTable,
-            drafts.get(sourceTable).primaryKey.columns(), Table.ForeignKey.Origin.EDGE_SOURCE));
+            List.of(drafts.get(sourceTable).referable), Table.ForeignKey.Origin.EDGE_SOURCE));
       if (targetTable != null)
         foreignKeys.add(new Table.ForeignKey(draft.name + "_" + Column.TARGET_ID + "_fkey", List.of(Column.TARGET_ID), targetTable,
-            drafts.get(targetTable).primaryKey.columns(), Table.ForeignKey.Origin.EDGE_TARGET));
+            List.of(drafts.get(targetTable).referable), Table.ForeignKey.Origin.EDGE_TARGET));
     }
 
     for (final Column column : draft.columns) {
@@ -286,10 +326,10 @@ public final class RelationalCatalog {
         continue;
       final DocumentType target = schema.getTypeOrNull(linkedType);
       final Draft targetDraft = target == null ? null : drafts.get(target.getName());
-      // a link to a type that does not exist, or that has no primary key to refer to, is a column and not a foreign key
-      if (targetDraft != null && targetDraft.primaryKey != null)
+      // a link to a type that does not exist, or that has no record id column to refer to, is a column and not a foreign key
+      if (targetDraft != null && targetDraft.referable != null)
         foreignKeys.add(new Table.ForeignKey(draft.name + "_" + column.name() + "_fkey", List.of(column.name()), targetDraft.name,
-            targetDraft.primaryKey.columns(), Table.ForeignKey.Origin.LINK_PROPERTY));
+            List.of(targetDraft.referable), Table.ForeignKey.Origin.LINK_PROPERTY));
     }
 
     final List<String> walkFrom = new ArrayList<>();
@@ -309,7 +349,7 @@ public final class RelationalCatalog {
 
   /**
    * The vertex table that a declared endpoint names, {@code null} when nothing is declared or the name is not a vertex table with a
-   * primary key. The name is the type name: exact first, else the one name that differs only in case, so a declaration written in
+   * record id column to refer to. The name is the type name: exact first, else the one name that differs only in case, so a declaration written in
    * the case of a statement still finds {@code Person}; ambiguity is no match, a declaration is never guessed.
    */
   private static String declaredVertexTable(final String declared, final Map<String, Draft> drafts) {
@@ -324,7 +364,7 @@ public final class RelationalCatalog {
           draft = candidate;
         }
     }
-    return draft != null && draft.kind == Table.Kind.VERTEX && draft.primaryKey != null ? draft.name : null;
+    return draft != null && draft.kind == Table.Kind.VERTEX && draft.referable != null ? draft.name : null;
   }
 
   private static Table.EdgeStorage storageOf(final EdgeType type) {

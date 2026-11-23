@@ -57,35 +57,178 @@ class CatalogRulesTest extends TestHelper {
   // ---- id, undeclared properties, nullability ----
 
   @Test
-  void aDeclaredPropertyNamedIdIsShownAsIdUnderscoreAndIdKeepsTheRecordId() {
+  void aDeclaredPropertyNamedIdIsTheIdColumnAndTheRecordIdIsRid() {
     final DocumentType thing = schema().createDocumentType("thing");
     thing.createProperty("id", Type.STRING);
     thing.createProperty("name", Type.STRING);
     database.transaction(() -> database.newDocument("thing").set("id", "mine").set("name", "n").save());
 
     final Table table = table("thing");
-    assertThat(names(table)).containsExactly("id", "id_", "name");
-    assertThat(table.column("id").kind()).isEqualTo(Column.Kind.IDENTITY);
-    assertThat(table.column("id_").kind()).isEqualTo(Column.Kind.PROPERTY);
-    assertThat(table.column("id_").property()).isEqualTo("id");
+    assertThat(names(table)).containsExactly("rid", "id", "name");
+    assertThat(table.column("rid").kind()).isEqualTo(Column.Kind.IDENTITY);
+    assertThat(table.column("rid").type()).isEqualTo(ColumnType.TEXT);
+    assertThat(table.column("id").kind()).isEqualTo(Column.Kind.PROPERTY);
+    assertThat(table.column("id").property()).isEqualTo("id");
+    assertThat(table.identityColumn().name()).isEqualTo("rid");
 
     final Document row = database.<Document>iterateType("thing", false).next();
-    assertThat(table.column("id").read(row)).isEqualTo(row.getIdentity().toString());
-    assertThat(table.column("id_").read(row)).isEqualTo("mine");
+    assertThat(table.column("rid").read(row)).isEqualTo(row.getIdentity().toString());
+    assertThat(table.column("id").read(row)).isEqualTo("mine");
   }
 
   @Test
-  void aFurtherUnderscoreIsAddedWhenIdUnderscoreExistsToo() {
-    final DocumentType thing = schema().createDocumentType("thing");
-    thing.createProperty("id", Type.STRING);
-    thing.createProperty("id_", Type.INTEGER);
-    thing.createProperty("name", Type.STRING);
+  void aTypeWithoutAPropertyIdKeepsTheRecordIdAsIdAndOffersNoRid() {
+    schema().createDocumentType("thing").createProperty("name", Type.STRING);
 
     final Table table = table("thing");
-    assertThat(names(table)).containsExactly("id", "id__", "id_", "name");
-    assertThat(table.column("id__").property()).isEqualTo("id");
-    assertThat(table.column("id_").property()).isEqualTo("id_");
-    assertThat(table.column("id_").type()).isEqualTo(ColumnType.INT4);
+    assertThat(names(table)).containsExactly("id", "name");
+    assertThat(table.identityColumn().name()).isEqualTo("id");
+    assertThat(table.findColumn(Identifier.unquoted("rid"))).isNull();
+    assertThat(table.primaryKey().columns()).containsExactly("id");
+    assertThat(table.uniqueKeys()).isEmpty();
+  }
+
+  @Test
+  void thePropertyIdIsThePrimaryKeyWhenAUniqueIndexCoversItAndTheRecordIdIsAUniqueKey() {
+    final DocumentType person = schema().createVertexType("person");
+    person.createProperty("id", Type.LONG);
+    person.createProperty("name", Type.STRING);
+    schema().createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, "person", "id");
+
+    final Table table = table("person");
+    assertThat(names(table)).containsExactly("rid", "id", "name");
+    assertThat(table.primaryKey().name()).isEqualTo("person_pkey");
+    assertThat(table.primaryKey().columns()).containsExactly("id");
+    assertThat(table.uniqueKeys()).extracting(Table.Key::name).containsExactly("person_rid_key");
+    assertThat(table.uniqueKeys().get(0).columns()).containsExactly("rid");
+    assertThat(table.keyOn(List.of("rid")).name()).isEqualTo("person_rid_key");
+    assertThat(table.keyOn(List.of("name"))).isNull();
+    // a primary key is NOT NULL, as in PostgreSQL; the record id is NOT NULL too
+    assertThat(table.column("id").nullable()).isFalse();
+    assertThat(table.column("rid").nullable()).isFalse();
+    assertThat(table.column("name").nullable()).isTrue();
+  }
+
+  @Test
+  void thePropertyIdWithoutAUniqueIndexAloneLeavesTheRecordIdAsThePrimaryKey() {
+    final DocumentType thing = schema().createDocumentType("thing");
+    thing.createProperty("id", Type.LONG);
+    thing.createProperty("kind", Type.STRING);
+    schema().createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, false, "thing", "id");
+    schema().createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, "thing", "id", "kind");
+
+    final Table table = table("thing");
+    assertThat(table.primaryKey().columns()).containsExactly("rid");
+    // a unique index over two columns is a unique key and does not make id the primary key
+    assertThat(table.uniqueKeys()).extracting(Table.Key::columns).containsExactly(List.of("id", "kind"));
+    assertThat(table.column("id").nullable()).isTrue();
+  }
+
+  @Test
+  void aPropertyRidWinsItsNameAndTheRecordIdStaysIdWhenThereIsNoPropertyId() {
+    final DocumentType badge = schema().createDocumentType("badge");
+    badge.createProperty("rid", Type.STRING);
+    badge.createProperty("color", Type.STRING);
+
+    final Table table = table("badge");
+    assertThat(names(table)).containsExactly("id", "color", "rid");
+    assertThat(table.column("id").kind()).isEqualTo(Column.Kind.IDENTITY);
+    assertThat(table.column("rid").kind()).isEqualTo(Column.Kind.PROPERTY);
+    assertThat(table.primaryKey().columns()).containsExactly("id");
+  }
+
+  @Test
+  void aTypeWithBothPropertiesIdAndRidHasNoRecordIdColumnAndNoForeignKeyPointsAtIt() {
+    final DocumentType both = schema().createVertexType("both");
+    both.createProperty("id", Type.LONG);
+    both.createProperty("rid", Type.STRING);
+    schema().createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, "both", "id");
+    final EdgeType link = schema().createEdgeType("link");
+    link.setCustomValue(EdgeEndpoints.SOURCE_KEY, "both");
+    link.setCustomValue(EdgeEndpoints.TARGET_KEY, "both");
+    final DocumentType note = schema().createDocumentType("note");
+    note.createProperty("about", Type.LINK, "both");
+
+    final Table table = table("both");
+    assertThat(names(table)).containsExactly("id", "rid");
+    assertThat(table.identityColumn()).isNull();
+    assertThat(table.column("id").kind()).isEqualTo(Column.Kind.PROPERTY);
+    assertThat(table.column("rid").kind()).isEqualTo(Column.Kind.PROPERTY);
+    assertThat(table.primaryKey().columns()).containsExactly("id");
+    assertThat(table.uniqueKeys()).isEmpty();
+    // the edge columns still hold record ids, and nothing declares what they refer to
+    assertThat(names(table("link"))).containsExactly("id", "source_id", "target_id");
+    assertThat(table("link").foreignKeys()).isEmpty();
+    assertThat(table("link").sourceTable()).isNull();
+    assertThat(table("note").foreignKeys()).isEmpty();
+  }
+
+  @Test
+  void theForeignKeysOfEdgesAndLinksPointAtTheRecordIdColumnOfATypeWithItsOwnId() {
+    final DocumentType person = schema().createVertexType("person");
+    person.createProperty("id", Type.LONG);
+    schema().createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, "person", "id");
+    final DocumentType tag = schema().createVertexType("tag");
+    tag.createProperty("name", Type.STRING);
+    final EdgeType likes = schema().createEdgeType("likes");
+    likes.setCustomValue(EdgeEndpoints.SOURCE_KEY, "person");
+    likes.setCustomValue(EdgeEndpoints.TARGET_KEY, "tag");
+    final DocumentType post = schema().createDocumentType("post");
+    post.createProperty("author", Type.LINK, "person");
+    post.createProperty("topic", Type.LINK, "tag");
+
+    final Table likesTable = table("likes");
+    assertThat(references(likesTable)).containsExactly("likes_source_id_fkey -> person.rid", "likes_target_id_fkey -> tag.id");
+    assertThat(references(table("post"))).containsExactly("post_author_fkey -> person.rid", "post_topic_fkey -> tag.id");
+
+    // the values of source_id and target_id are record ids, whatever the endpoint types call their key
+    final String[] ids = new String[2];
+    database.transaction(() -> {
+      final MutableVertex a = database.newVertex("person").set("id", 7L).save();
+      final MutableVertex b = database.newVertex("tag").set("name", "x").save();
+      ids[0] = a.getIdentity().toString();
+      ids[1] = b.getIdentity().toString();
+      a.newEdge("likes", b);
+    });
+    final Edge edge = database.<Edge>iterateType("likes", false).next();
+    assertThat(likesTable.column("source_id").read(edge)).isEqualTo(ids[0]);
+    assertThat(likesTable.column("target_id").read(edge)).isEqualTo(ids[1]);
+    final Document personRow = database.<Document>iterateType("person", false).next();
+    assertThat(table("person").column("rid").read(personRow)).isEqualTo(ids[0]);
+    assertThat(table("person").column("id").read(personRow)).isEqualTo(7L);
+  }
+
+  private static List<String> references(final Table table) {
+    final List<String> out = new ArrayList<>();
+    for (final Table.ForeignKey foreignKey : table.foreignKeys())
+      out.add(foreignKey.name() + " -> " + foreignKey.referencedTable() + "." + String.join(",", foreignKey.referencedColumns()));
+    return out;
+  }
+
+  @Test
+  void anEdgeTypeWithAPropertyIdHasThePropertyAsIdAndTheRecordIdAsRid() {
+    final EdgeType follows = schema().createEdgeType("follows");
+    follows.createProperty("id", Type.INTEGER);
+    follows.createProperty("since", Type.INTEGER);
+
+    final Table table = table("follows");
+    assertThat(names(table)).containsExactly("rid", "source_id", "target_id", "id", "since");
+    assertThat(table.column("rid").kind()).isEqualTo(Column.Kind.IDENTITY);
+    assertThat(table.column("id").property()).isEqualTo("id");
+    assertThat(table.primaryKey().columns()).containsExactly("rid");
+  }
+
+  @Test
+  void aFurtherUnderscoreIsAddedToAnEndpointNameWhenItsUnderscoreFormExistsToo() {
+    final EdgeType links = schema().createEdgeType("links");
+    links.createProperty("source_id", Type.STRING);
+    links.createProperty("source_id_", Type.INTEGER);
+
+    final Table table = table("links");
+    assertThat(names(table)).containsExactly("id", "source_id", "target_id", "source_id__", "source_id_");
+    assertThat(table.column("source_id__").property()).isEqualTo("source_id");
+    assertThat(table.column("source_id_").property()).isEqualTo("source_id_");
+    assertThat(table.column("source_id_").type()).isEqualTo(ColumnType.INT4);
   }
 
   @Test

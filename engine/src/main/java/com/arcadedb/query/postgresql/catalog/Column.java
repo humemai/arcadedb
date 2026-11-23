@@ -37,7 +37,11 @@ import java.util.Objects;
  */
 public final class Column {
   public enum Kind {
-    /** {@code id}: the record id as text, {@code #12:3}. */
+    /**
+     * The record id as text, {@code #12:3}: the column {@code id}, or {@code rid} in a type that has a property of its own named
+     * {@code id}. It is never written: INSERT and UPDATE refuse it with SQLSTATE {@code 428C9} (fork issue #29). A property named
+     * {@code id} is the user's data and an ordinary {@link #PROPERTY} column, which a write sets like any other.
+     */
     IDENTITY,
     /** {@code source_id}: the record id of the out vertex of an edge, read from the edge record. */
     SOURCE,
@@ -48,6 +52,7 @@ public final class Column {
   }
 
   public static final String ID         = "id";
+  public static final String RID        = "rid";
   public static final String SOURCE_ID  = "source_id";
   public static final String TARGET_ID  = "target_id";
 
@@ -68,6 +73,11 @@ public final class Column {
     this.link = link;
   }
 
+  /** The same column, not nullable: a property that is the primary key of its table. */
+  Column notNull() {
+    return new Column(name, type, false, kind, property, link);
+  }
+
   /** The name of the column as the statement refers to it. */
   public String name() {
     return name;
@@ -77,7 +87,10 @@ public final class Column {
     return type;
   }
 
-  /** False for the synthetic columns, which every row has, and for a property declared {@code NOTNULL}. */
+  /**
+   * False for the synthetic columns, which every row has, for a property declared {@code NOTNULL} and for a property {@code id}
+   * that is the primary key of its table (a primary key is {@code NOT NULL} in PostgreSQL, so the view says so).
+   */
   public boolean nullable() {
     return nullable;
   }
@@ -90,7 +103,10 @@ public final class Column {
     return kind != Kind.PROPERTY;
   }
 
-  /** The name of the property behind a {@link Kind#PROPERTY} column, which differs from {@link #name()} for {@code id_}; else {@code null}. */
+  /**
+   * The name of the property behind a {@link Kind#PROPERTY} column, else {@code null}. It differs from {@link #name()} only for a
+   * property that has the name of an endpoint column of an edge table ({@code source_id_} shows the property {@code source_id}).
+   */
   public String property() {
     return property;
   }
@@ -103,10 +119,11 @@ public final class Column {
   /**
    * The value of this column in a row.
    * <ul>
-   * <li>{@code id}: the record id as text, {@code #12:3}. It is {@code null} for an edge that has no record (a lightweight edge in
-   * an edge table that also holds records, see {@link Table.EdgeStorage#MIXED}).</li>
+   * <li>The identity column ({@code id}, or {@code rid} when the type has its own property {@code id}): the record id as text,
+   * {@code #12:3}. It is {@code null} for an edge that has no record (a lightweight edge in an edge table that also holds records,
+   * see {@link Table.EdgeStorage#MIXED}).</li>
    * <li>{@code source_id} and {@code target_id}: the record id of the out and the in vertex as text, read from the edge, with no
-   * vertex loaded.</li>
+   * vertex loaded. They hold record ids whatever the endpoint types call their own key.</li>
    * <li>A {@code LINK} property: the record id of the target as text.</li>
    * <li>Any other property: the value as the record holds it, {@code null} when the record does not have the property (an absent
    * property and a {@code NULL} are the same thing). Converting it to the evaluator's value space is not the catalog's job.</li>

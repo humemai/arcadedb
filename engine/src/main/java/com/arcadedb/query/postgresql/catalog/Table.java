@@ -78,7 +78,9 @@ public final class Table {
 
   /**
    * A foreign key: the {@code columns} of this table refer to the {@code referencedColumns} of the {@code referencedTable}, which
-   * are the primary key of that table.
+   * are a key of that table: the identity column ({@link Table#identityColumn()}), which is the primary key of a table that has no
+   * property {@code id} of its own and a unique key of one that has. The columns of a foreign key hold record ids, so it refers to
+   * the record id column under whatever name the table gives it ({@code id} or {@code rid}).
    */
   public record ForeignKey(String name, List<String> columns, String referencedTable, List<String> referencedColumns, Origin origin) {
     public enum Origin {
@@ -105,6 +107,7 @@ public final class Table {
   private final String              sourceTable;
   private final String              targetTable;
   private final List<String>        walkFromTables;
+  private final Column              identityColumn;
 
   Table(final String name, final Kind kind, final DocumentType documentType, final List<Column> columns, final Key primaryKey,
       final List<Key> uniqueKeys, final List<ForeignKey> foreignKeys, final List<String> superTables, final List<String> subTables,
@@ -126,6 +129,11 @@ public final class Table {
     this.sourceTable = sourceTable;
     this.targetTable = targetTable;
     this.walkFromTables = List.copyOf(walkFromTables);
+    Column identity = null;
+    for (final Column column : columns)
+      if (column.kind() == Column.Kind.IDENTITY)
+        identity = column;
+    this.identityColumn = identity;
   }
 
   /** The name of the table: the name of its type, exactly. */
@@ -145,6 +153,26 @@ public final class Table {
   /** The columns in order, see the class comment. */
   public List<Column> columns() {
     return columns;
+  }
+
+  /**
+   * The column that holds the record id as text: {@code id}, or {@code rid} when the type has a property of its own named
+   * {@code id} (that property is then the column {@code id}, the decision of fork issue #38). {@code null} when the table has none:
+   * a lightweight edge table (no record), and a table whose type has both a property {@code id} and a property {@code rid}, where
+   * the two names are the user's and the record id has no name in the view.
+   */
+  public Column identityColumn() {
+    return identityColumn;
+  }
+
+  /** The primary key or the unique key over exactly these columns, in this order; {@code null} when there is none. */
+  public Key keyOn(final List<String> keyColumns) {
+    if (primaryKey != null && primaryKey.columns().equals(keyColumns))
+      return primaryKey;
+    for (final Key key : uniqueKeys)
+      if (key.columns().equals(keyColumns))
+        return key;
+    return null;
   }
 
   /**
@@ -176,9 +204,11 @@ public final class Table {
   }
 
   /**
-   * The primary key, {@code null} when the table has none: {@code id} for a document, a vertex and an edge with records;
-   * {@code (source_id, target_id)} for a lightweight edge table of a type declared {@code UNIQUE} that has no subtypes; none for
-   * any other lightweight edge table and for a {@link EdgeStorage#MIXED} one.
+   * The primary key, {@code null} when the table has none. For a document, a vertex and an edge with records: the property
+   * {@code id} when the type has one with a unique index on it alone, else the identity column ({@code id} or {@code rid}, see
+   * {@link #identityColumn()}); {@code (source_id, target_id)} for a lightweight edge table of a type declared {@code UNIQUE} that
+   * has no subtypes; none for any other lightweight edge table, for a {@link EdgeStorage#MIXED} one and for a table that has no
+   * identity column.
    */
   public Key primaryKey() {
     return primaryKey;
@@ -186,8 +216,9 @@ public final class Table {
 
   /**
    * The unique keys that are not the primary key: the unique indexes of the type on declared properties (key indexes only, not
-   * full text, vector, geospatial or columnar ones), and {@code (source_id, target_id)} for a regular edge type declared
-   * {@code UNIQUE}.
+   * full text, vector, geospatial or columnar ones), {@code (source_id, target_id)} for a regular edge type declared
+   * {@code UNIQUE}, and the identity column when the primary key is the property {@code id}: the record id is unique too, and the
+   * foreign keys of the edge tables and of the {@code LINK} properties refer to it.
    */
   public List<Key> uniqueKeys() {
     return uniqueKeys;
@@ -197,7 +228,8 @@ public final class Table {
    * The foreign keys, in the order {@code source_id}, {@code target_id}, then the {@code LINK} columns in column order.
    * The two keys of an edge table come only from the endpoint tables declared on the edge type ({@link EdgeEndpoints}), never from
    * the data: there is none for an endpoint that is not declared, or that names a type that is not a vertex type. A {@code LINK}
-   * property gives one when the type it links to is declared and is a table with a primary key.
+   * property gives one when the type it links to is declared and is a table with an identity column that is a key. Both refer to
+   * the identity column of the other table ({@code rid} when that type has its own property {@code id}).
    */
   public List<ForeignKey> foreignKeys() {
     return foreignKeys;

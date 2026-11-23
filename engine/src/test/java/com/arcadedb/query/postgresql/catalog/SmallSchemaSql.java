@@ -66,13 +66,7 @@ public final class SmallSchemaSql {
     for (final Table table : tables)
       rows.put(table.name(), scan(database, table));
 
-    final Map<String, String> renumbered = new HashMap<>();
-    if (normalizeIds)
-      for (int t = 0; t < tables.size(); ++t) {
-        final List<Document> tableRows = rows.get(tables.get(t).name());
-        for (int r = 0; r < tableRows.size(); ++r)
-          renumbered.put(tableRows.get(r).getIdentity().toString(), "#" + (t + 1) + ":" + r);
-      }
+    final Map<String, String> renumbered = normalizeIds ? renumbering(tables, rows) : new HashMap<>();
     final UnaryOperator<String> id = rid -> renumbered.getOrDefault(rid, rid);
 
     final StringBuilder out = new StringBuilder();
@@ -93,6 +87,29 @@ public final class SmallSchemaSql {
         insert(out, table, row, id);
     }
     return out.toString();
+  }
+
+  /**
+   * The real record id of every row of the database, to the id that {@code generate(database, true)} writes for the same row
+   * (table number from 1 in file order, row number from 0). A harness that loads the normalised file into PostgreSQL and runs the
+   * engine on the database translates the ids of the engine with this map before it compares.
+   */
+  public static Map<String, String> recordIdAliases(final Database database) {
+    final List<Table> tables = inDependencyOrder(RelationalCatalog.of(database).tables());
+    final Map<String, List<Document>> rows = new LinkedHashMap<>();
+    for (final Table table : tables)
+      rows.put(table.name(), scan(database, table));
+    return renumbering(tables, rows);
+  }
+
+  private static Map<String, String> renumbering(final List<Table> tables, final Map<String, List<Document>> rows) {
+    final Map<String, String> renumbered = new HashMap<>();
+    for (int t = 0; t < tables.size(); ++t) {
+      final List<Document> tableRows = rows.get(tables.get(t).name());
+      for (int r = 0; r < tableRows.size(); ++r)
+        renumbered.put(tableRows.get(r).getIdentity().toString(), "#" + (t + 1) + ":" + r);
+    }
+    return renumbered;
   }
 
   private static void createTable(final StringBuilder out, final Table table) {

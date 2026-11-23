@@ -1,0 +1,34 @@
+# PostgreSQL-style SQL prototype: the answer parity corpus of the id rule (fork issue #38).
+# Same columns and rules as answers.tsv (read its header): id, order, tol, status, statement, expected. An id that starts with err- is a statement the server must refuse.
+# The rule: when a type declares a property id, that property is the column id (the primary key when a unique index covers it alone) and the record id is the column rid; a type with no property id keeps the record id as id. source_id, target_id and a LINK column hold record ids, so their foreign keys refer to rid of a type that has its own id. A property rid keeps its name and wins it (the record id is then id, or has no column when the type declares both id and rid).
+# data: the idrule fixture, engine/src/test/java/com/arcadedb/query/postgresql/IdRuleFixture.java built in ArcadeDB, and the same tables in PostgreSQL, written from the relational view of that database by SmallSchemaSql (generate(database, true)), so the two cannot drift. The tables: account (own id, unique), post (own id, unique, two LINK columns), topic (no id property), follows and interested (edges), memo (own id, not unique), badge (property rid), twin (properties id and rid).
+# ids in expected: the record ids as SmallSchemaSql numbers them (#<table number>:<row number>); the engine's real record ids are translated to them before the comparison. A statement never names a record id.
+# expected: written by the generator from the real server, never by hand (see the header of answers.tsv for how to start the generator).
+id	order	tol	status	statement	expected
+idr-star-account	ordered	-	ok	SELECT * FROM account ORDER BY id	pending-server
+idr-rid-and-id	ordered	-	ok	SELECT rid, id FROM account ORDER BY id	pending-server
+idr-where-id	multiset	-	ok	SELECT name FROM account WHERE id = 12	pending-server
+idr-where-id-range	multiset	-	ok	SELECT count(*) AS n FROM account WHERE id > 11	pending-server
+idr-join-on-rid	multiset	-	ok	SELECT a.name FROM account a JOIN account b ON a.rid = b.rid WHERE b.id = 12	pending-server
+idr-star-topic	ordered	-	ok	SELECT * FROM topic ORDER BY label	pending-server
+err-idr-no-rid-without-own-id	multiset	-	ok	SELECT rid FROM topic	pending-server
+idr-link-to-account	ordered	-	ok	SELECT p.title, a.name FROM post p JOIN account a ON p.author = a.rid ORDER BY p.id	pending-server
+err-idr-link-to-account-by-id	multiset	-	ok	SELECT p.title FROM post p JOIN account a ON p.author = a.id	pending-server
+idr-link-to-topic	ordered	-	ok	SELECT p.title, t.label FROM post p JOIN topic t ON p.topic = t.id ORDER BY p.id	pending-server
+idr-edge-account-account	ordered	-	ok	SELECT a.name, b.name, f.since FROM account a JOIN follows f ON f.source_id = a.rid JOIN account b ON f.target_id = b.rid ORDER BY f.since	pending-server
+idr-edge-account-topic	ordered	-	ok	SELECT a.name, t.label FROM account a JOIN interested i ON i.source_id = a.rid JOIN topic t ON i.target_id = t.id ORDER BY a.name, t.label	pending-server
+err-idr-edge-by-id	multiset	-	ok	SELECT count(*) AS n FROM account a JOIN follows f ON f.source_id = a.id	pending-server
+idr-left-join-count	ordered	-	ok	SELECT a.name, count(f.id) AS follows FROM account a LEFT JOIN follows f ON f.source_id = a.rid GROUP BY a.name ORDER BY a.name	pending-server
+idr-memo-star	ordered	-	ok	SELECT * FROM memo ORDER BY body	pending-server
+idr-memo-ids-repeat	multiset	-	ok	SELECT m1.body, m2.body FROM memo m1 JOIN memo m2 ON m1.id = m2.id AND m1.body < m2.body	pending-server
+idr-badge-star	ordered	-	ok	SELECT * FROM badge ORDER BY rid	pending-server
+idr-badge-record-id	multiset	-	ok	SELECT id FROM badge WHERE rid = 'r1'	pending-server
+idr-twin-star	ordered	-	ok	SELECT * FROM twin ORDER BY id	pending-server
+idr-columns-account	ordered	-	ok	SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = 'account' ORDER BY ordinal_position	pending-server
+idr-columns-edge	ordered	-	ok	SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'follows' ORDER BY ordinal_position	pending-server
+idr-keys-account	ordered	-	ok	SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'account' AND constraint_type <> 'CHECK' ORDER BY constraint_name	pending-server
+idr-keys-memo	ordered	-	ok	SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'memo' AND constraint_type <> 'CHECK' ORDER BY constraint_name	pending-server
+idr-keys-twin	ordered	-	ok	SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'twin' AND constraint_type <> 'CHECK' ORDER BY constraint_name	pending-server
+idr-key-columns	ordered	-	ok	SELECT constraint_name, column_name FROM information_schema.key_column_usage WHERE table_name IN ('account', 'memo', 'topic') ORDER BY constraint_name, ordinal_position	pending-server
+idr-fk-three-views-join	ordered	-	ok	SELECT kcu.table_name, kcu.column_name, ccu.table_name AS referred_table, ccu.column_name AS referred_column FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema WHERE tc.constraint_type = 'FOREIGN KEY' ORDER BY kcu.table_name, kcu.column_name	pending-server
+idr-fk-referential	ordered	-	ok	SELECT constraint_name, unique_constraint_name FROM information_schema.referential_constraints ORDER BY constraint_name	pending-server
