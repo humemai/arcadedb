@@ -129,15 +129,7 @@ class PostgreSQLQueryEngineTest extends TestHelper {
   }
 
   @Test
-  void aWriteIsRefusedByQueryAndByCommandUntilItsStageHasLanded() {
-    assertThatThrownBy(() -> database.query("postgresql", "DELETE FROM person"))
-        .isInstanceOfSatisfying(PostgreSQLFeatureNotSupportedException.class,
-            e -> assertThat(e.getSqlState()).isEqualTo("0A000"))
-        .hasMessageContaining("DELETE is not supported by the postgresql language yet (line 1, column 1)");
-    assertThatThrownBy(() -> database.command("postgresql", "INSERT INTO person VALUES (1)"))
-        .isInstanceOfSatisfying(PostgreSQLFeatureNotSupportedException.class,
-            e -> assertThat(e.getSqlState()).isEqualTo("0A000"))
-        .hasMessageContaining("INSERT is not supported by the postgresql language yet (line 1, column 1)");
+  void aTransactionStatementIsRefusedUntilItsStageHasLanded() {
     assertThatThrownBy(() -> database.command("postgresql", "BEGIN")).isInstanceOf(PostgreSQLFeatureNotSupportedException.class)
         .hasMessageContaining("BEGIN is not supported by the postgresql language yet");
   }

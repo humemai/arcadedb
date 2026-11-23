@@ -112,6 +112,7 @@ public final class PostgreSQLResultSet extends InternalResultSet {
 
   private final List<Column> columns;
   private final List<String> warnings;
+  private       long         affectedRows = -1;
 
   public PostgreSQLResultSet(final List<Column> columns, final Plan plan) {
     this(columns, plan, List.of());
@@ -129,6 +130,20 @@ public final class PostgreSQLResultSet extends InternalResultSet {
    */
   public List<String> warnings() {
     return warnings;
+  }
+
+  /**
+   * The rows an {@code INSERT}, {@code UPDATE} or {@code DELETE} changed, the number in the command tag of PostgreSQL; {@code -1}
+   * for the answer of a {@code SELECT}. A write without {@code RETURNING} answers one row with this number in the column
+   * {@code count}; with {@code RETURNING} the rows are the returned ones and this is their number.
+   */
+  public long affectedRows() {
+    return affectedRows;
+  }
+
+  public PostgreSQLResultSet withAffectedRows(final long affected) {
+    this.affectedRows = affected;
+    return this;
   }
 
   /** The output columns in order: the labels PostgreSQL sends and their PostgreSQL type names. */

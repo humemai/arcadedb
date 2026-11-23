@@ -22,6 +22,7 @@ import com.arcadedb.query.postgresql.corpus.Json;
 import com.arcadedb.query.postgresql.corpus.Outcome;
 import com.arcadedb.query.postgresql.corpus.ResultTable;
 import com.arcadedb.query.postgresql.corpus.Values;
+import com.arcadedb.query.postgresql.corpus.WriteOutcome;
 import org.postgresql.PGConnection;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -176,6 +177,46 @@ final class PostgresServer implements AutoCloseable {
       if (e.getSQLState() == null)
         throw new IllegalStateException("The connection failed on: " + sql, e);
       return Outcome.refused(e.getSQLState(), e.getMessage());
+    }
+  }
+
+  /**
+   * One write of the write corpus: in a transaction that is rolled back at the end, behind a savepoint so that a refused statement
+   * leaves the transaction usable, the statement (its {@code RETURNING} rows, or the number of rows it changed as one row of
+   * {@code count}, or its SQLSTATE), then each check, which sees what the statement did.
+   */
+  WriteOutcome runWrite(final String sql, final List<String> checks) throws SQLException {
+    connection.setAutoCommit(false);
+    try {
+      try (final Statement statement = connection.createStatement()) {
+        statement.execute("SAVEPOINT write_case");
+      }
+      Outcome result;
+      try (final Statement statement = connection.createStatement()) {
+        statement.setQueryTimeout(60);
+        if (statement.execute(sql)) {
+          try (final ResultSet rs = statement.getResultSet()) {
+            result = Outcome.answer(read(rs));
+          }
+        } else {
+          final List<List<Object>> rows = List.of(List.of(Values.normalize(Long.valueOf(statement.getUpdateCount()))));
+          result = Outcome.answer(new ResultTable(List.of("count"), List.of("int8"), rows));
+        }
+      } catch (final SQLException e) {
+        if (e.getSQLState() == null)
+          throw new IllegalStateException("The connection failed on: " + sql, e);
+        result = Outcome.refused(e.getSQLState(), e.getMessage());
+        try (final Statement statement = connection.createStatement()) {
+          statement.execute("ROLLBACK TO SAVEPOINT write_case");
+        }
+      }
+      final List<Outcome> after = new ArrayList<>();
+      for (final String check : checks)
+        after.add(run(check));
+      return new WriteOutcome(result, after);
+    } finally {
+      connection.rollback();
+      connection.setAutoCommit(true);
     }
   }
 

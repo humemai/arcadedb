@@ -322,7 +322,8 @@ public class SelectPlanner {
     return out;
   }
 
-  private TableSource chooseAccessPath(final TableSource table, final Expression where, final ExpressionCompiler compiler) {
+  /** The access path of the table for a {@code WHERE} clause; the write planner uses it for {@code UPDATE} and {@code DELETE}. */
+  TableSource chooseAccessPath(final TableSource table, final Expression where, final ExpressionCompiler compiler) {
     return chooseAccessPath(table, conjuncts(where), compiler);
   }
 

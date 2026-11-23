@@ -24,6 +24,7 @@ import com.arcadedb.query.postgresql.corpus.CorpusFile;
 import com.arcadedb.query.postgresql.corpus.Outcome;
 import com.arcadedb.query.postgresql.corpus.ResultComparator;
 import com.arcadedb.query.postgresql.corpus.Values;
+import com.arcadedb.query.postgresql.corpus.WriteOutcome;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
@@ -430,6 +431,77 @@ class PgParityIT {
     assertTrue(corpusFailures.isEmpty(), "the corpus and the server disagree:\n" + String.join("\n", corpusFailures));
     if (!regenerate)
       assertTrue(engineFailures.isEmpty(), "the engine and the server disagree:\n" + String.join("\n", engineFailures));
+  }
+
+  /**
+   * The write corpus (fork issue #29): every write of {@code writes.tsv} on the server and on the engine, each in a transaction
+   * that is rolled back, and the answer of the statement and the tables it touched compared as multisets. The server first gets
+   * {@code small-writes.sql}, which makes its {@code id} generated and a deleted vertex take its edges, as the table view does.
+   * Unless regenerating, the server must still do what the corpus says; regenerating writes the {@code expected} cells.
+   */
+  @Test
+  @Order(9)
+  void writeCorpus() throws Exception {
+    final Path path = corpusFile(Corpus.WRITES_FILE);
+    final Path guards = resources.resolve("postgresql/small-writes.sql");
+    assumeTrue(Files.exists(path) && Files.exists(guards), "the write corpus is not on this branch yet");
+    pg.load(Files.readString(guards, StandardCharsets.UTF_8));
+    final CorpusFile file = CorpusFile.read(path);
+    final List<String> corpusFailures = new ArrayList<>();
+    final List<String> engineFailures = new ArrayList<>();
+    int equal = 0;
+    int pending = 0;
+    int different = 0;
+
+    for (final String[] row : file.rows) {
+      final Corpus.WriteCase c = new Corpus.WriteCase(row);
+      final WriteOutcome server = pg.runWrite(c.statement(), c.checks());
+      if (server.result.isRefusal() != c.expectsRefusal())
+        corpusFailures.add(c.id() + ": " + (c.expectsRefusal() ? "the server answered a statement that an err- id says it refuses: "
+            : "the server refused a statement that its id says it answers: ") + server.result.describe());
+
+      if (regenerate)
+        row[Corpus.WriteCase.EXPECTED] = server.toJson();
+      else if (!c.hasOutcome())
+        corpusFailures.add(c.id() + ": the corpus has no outcome, run the generator");
+      else {
+        final String drift = WriteOutcome.compare(WriteOutcome.fromJson(c.expected()), server, Values.DEFAULT_TOLERANCE);
+        if (drift != null)
+          corpusFailures.add(c.id() + ": the server no longer does what the corpus says: " + drift);
+      }
+
+      final WriteOutcome engine = arcade.runWrite(c.statement(), c.checks());
+      final String difference = WriteOutcome.compare(server, engine, Values.DEFAULT_TOLERANCE);
+      final String verdict;
+      if (difference == null && c.pending()) {
+        verdict = "pending, but equal: flip the status to ok";
+        engineFailures.add(c.id() + ": pending, yet the engine does what the server did: flip status to ok in writes.tsv");
+      } else if (difference == null) {
+        verdict = "equal";
+        ++equal;
+      } else if (c.pending()) {
+        verdict = "pending (" + difference + ")";
+        ++pending;
+      } else {
+        verdict = "different (" + difference + ")";
+        ++different;
+        engineFailures.add(c.id() + ": " + difference);
+      }
+      line("writes", c.id(), verdict);
+    }
+
+    final String summary = "writes: " + file.rows.size() + " statements, " + equal + " equal, " + pending + " pending, " + different
+        + " different";
+    REPORT.add(summary);
+    System.out.println("pgparity: " + summary);
+
+    if (regenerate) {
+      stamp(file);
+      file.write(path);
+    }
+    assertTrue(corpusFailures.isEmpty(), "the write corpus and the server disagree:\n" + String.join("\n", corpusFailures));
+    if (!regenerate)
+      assertTrue(engineFailures.isEmpty(), "the engine and the server disagree on writes:\n" + String.join("\n", engineFailures));
   }
 
   /** The classifier of the capability matrix on hand-made outcomes: a mistake of the harness fails here, not as a wrong count. */
