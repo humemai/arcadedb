@@ -3,11 +3,13 @@ name: Java CI - test
 on:
   workflow_dispatch:
   # Fork only (humemai/arcadedb#1, question 4): the long-lived branch of the PostgreSQL-style SQL prototype gets the
-  # same checks as main, on its pull requests and on every merge into it. Drop this commit when anything goes upstream.
+  # full suite on every merge into it (push). Its pull requests get the fast loop (pg-prototype-engine-tests.yml) and REUSE,
+  # not the full suite: the `unit-tests (engine, engine, 2)` shard fails on a different timing test on every run, also
+  # on the branch before any prototype code existed, and `coverage-report` needs a token that the fork does not have, so a
+  # full run on a pull request is red whatever the change is. Drop this commit when anything goes upstream.
   pull_request:
     branches:
       - main
-      - feat/postgresql-prototype
   push:
     branches:
       - main
