@@ -164,7 +164,8 @@ public final class JoinPlanner {
 
     @Override
     Set<String> tables() {
-      return Set.of(table.table().name());
+      // a view of information_schema has no table behind it
+      return table == null ? Set.of() : Set.of(table.table().name());
     }
 
     @Override
@@ -428,7 +429,7 @@ public final class JoinPlanner {
     else
       estimated = inner ? Math.max(leftRows, rightRows) : leftRows;
     return new JoinSource(strategy, join.type, left, right, keys, residual, buildLeft, probe, traversal, capBytes,
-        header + " [" + describe(support) + "]", rightLines, support, support.supported() ? null : warningOf(join, condition),
+        header + " [" + describe(support) + "]", rightLines, support, warns(join, support) ? warningOf(join, condition) : null,
         estimated);
   }
 
@@ -724,6 +725,14 @@ public final class JoinPlanner {
   }
 
   // ---- the warning (fork issue #9) ----
+
+  /**
+   * Whether the join gets the warning: nothing supports it, and both sides read tables. A view of {@code information_schema} is
+   * not a part of the model that a relationship could be missing from, so a join with one never warns.
+   */
+  private static boolean warns(final JoinNode join, final JoinSupport support) {
+    return !support.supported() && !join.left.tables().isEmpty() && !join.right.tables().isEmpty();
+  }
 
   /**
    * The sentence for a join that nothing supports: the two sides, the condition, and what may be missing. The plan lists it and

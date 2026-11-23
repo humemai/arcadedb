@@ -204,6 +204,16 @@ class JoinWarningTest extends TestHelper {
     assertThat(GlobalConfiguration.POSTGRESQL_JOIN_WARNING.getDefValue()).isEqualTo(true);
   }
 
+  @Test
+  void aJoinWithAViewOfInformationSchemaLogsNothing() {
+    assertThat(rows("SELECT count(*) FROM information_schema.tables t JOIN information_schema.columns c ON t.table_name = c.table_name"))
+        .hasSize(1);
+    assertThat(rows("SELECT count(*) FROM person p JOIN information_schema.tables t ON t.table_name = p.name")).hasSize(1);
+    assertThat(logger.warnings).isEmpty();
+    assertThat(explain("SELECT count(*) FROM person p JOIN information_schema.tables t ON t.table_name = p.name"))
+        .noneMatch(line -> line.startsWith("WARNING"));
+  }
+
   // ---- the plan ----
 
   @Test
