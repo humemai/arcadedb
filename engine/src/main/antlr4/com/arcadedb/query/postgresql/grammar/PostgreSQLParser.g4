@@ -302,7 +302,7 @@ aExpr
   | l=aExpr op=(STAR | SLASH | PERCENT) r=aExpr                               # multiplicativeExpr
   | l=aExpr op=(PLUS | MINUS) r=aExpr                                         # additiveExpr
   | unsupportedPrefixOperator aExpr                                           # unsupportedPrefixExpr
-  | l=aExpr OPERATOR r=aExpr                                                  # operatorExpr
+  | l=aExpr OP r=aExpr                                                  # operatorExpr
   | aExpr NOT? IN LPAREN exprList RPAREN                                      # inListExpr
   | aExpr NOT? IN unsupportedInSubquery                                       # unsupportedInExpr
   | aExpr NOT? BETWEEN ASYMMETRIC? low=bExpr AND high=aExpr                   # betweenExpr
@@ -329,7 +329,7 @@ bExpr
   | l=bExpr op=(STAR | SLASH | PERCENT) r=bExpr                               # bMultiplicativeExpr
   | l=bExpr op=(PLUS | MINUS) r=bExpr                                         # bAdditiveExpr
   | unsupportedPrefixOperator bExpr                                           # bUnsupportedPrefixExpr
-  | l=bExpr OPERATOR r=bExpr                                                  # bOperatorExpr
+  | l=bExpr OP r=bExpr                                                  # bOperatorExpr
   | l=bExpr op=(LT | GT | EQ | LE | GE | NE) r=bExpr                          # bComparisonExpr
   ;
 
@@ -339,7 +339,7 @@ unsupportedPostfix
   ;
 
 unsupportedPrefixOperator
-  : OPERATOR
+  : OP
   ;
 
 unsupportedInSubquery
@@ -355,7 +355,7 @@ unsupportedPatternOperator
   ;
 
 unsupportedQuantifiedComparison
-  : (EQ | LT | GT | LE | GE | NE | PLUS | MINUS | STAR | SLASH | PERCENT | CARET | OPERATOR) (ANY | SOME | ALL) LPAREN
+  : (EQ | LT | GT | LE | GE | NE | PLUS | MINUS | STAR | SLASH | PERCENT | CARET | OP) (ANY | SOME | ALL) LPAREN
   ;
 
 unsupportedIsForm

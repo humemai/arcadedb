@@ -25,9 +25,9 @@
  * What it does as PostgreSQL does:
  *  - Keywords are case insensitive. The keyword list is src/include/parser/kwlist.h of PostgreSQL 18; the class of each
  *    keyword (reserved, unreserved, type or function name, column name) is applied by the parser grammar.
- *  - Any run of operator characters is one generic OPERATOR token, with the rule of PostgreSQL that trailing plus and minus
+ *  - Any run of operator characters is one generic OP token, with the rule of PostgreSQL that trailing plus and minus
  *    signs are not part of an operator that has no ~ ! @ # % ^ & | ` ? in it, so a=-1 reads as a, =, -, 1. The parser maps
- *    the text of an OPERATOR (||, <->, <=>, <#>), so a new operator needs no lexer change.
+ *    the text of an OP (||, <->, <=>, <#>), so a new operator needs no lexer change.
  *  - Strings: standard strings with doubled quotes and no backslash escapes, E'...' strings with backslash escapes, and the
  *    joining of strings that are separated by a newline. Dollar-quoted strings are read in nextToken (see the members).
  *  - Quoted identifiers with doubled quotes, nested block comments, line comments, and numeric constants with an exponent,
@@ -153,7 +153,7 @@ NE: '<>' | '!=';
 // second has a character of the special set in it, and may end in a plus or a minus sign. A run that has neither is cut
 // before its trailing plus and minus signs, which the single character tokens above then read. A slash that starts a block
 // comment is not part of an operator.
-OPERATOR
+OP
   : OP_ANY* OP_NO_SIGN
   | OP_ANY* OP_SPECIAL OP_ANY*
   ;

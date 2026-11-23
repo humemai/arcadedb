@@ -208,7 +208,7 @@ final class AstBuilder {
     if (context instanceof AdditiveExprContext e)
       return binary(arithmetic(e.op), e.op, expression(e.l), expression(e.r));
     if (context instanceof OperatorExprContext e)
-      return binary(operator(e.OPERATOR().getSymbol()), e.OPERATOR().getSymbol(), expression(e.l), expression(e.r));
+      return binary(operator(e.OP().getSymbol()), e.OP().getSymbol(), expression(e.l), expression(e.r));
     if (context instanceof InListExprContext e) {
       final List<Expression> values = new ArrayList<>();
       for (final AExprContext value : e.exprList().items)
@@ -258,7 +258,7 @@ final class AstBuilder {
     if (context instanceof BAdditiveExprContext e)
       return binary(arithmetic(e.op), e.op, bExpression(e.l), bExpression(e.r));
     if (context instanceof BOperatorExprContext e)
-      return binary(operator(e.OPERATOR().getSymbol()), e.OPERATOR().getSymbol(), bExpression(e.l), bExpression(e.r));
+      return binary(operator(e.OP().getSymbol()), e.OP().getSymbol(), bExpression(e.l), bExpression(e.r));
     if (context instanceof BComparisonExprContext e) {
       if (e.l instanceof BComparisonExprContext)
         throw Diagnostics.syntaxError(e.op);
