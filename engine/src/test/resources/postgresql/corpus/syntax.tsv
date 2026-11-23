@@ -1564,9 +1564,9 @@ c1-with-insert	ok	outside	-	WITH a AS (INSERT INTO t VALUES (1) RETURNING x) SEL
 c1-multiple-order-by	syntax-error	unknown	-	(SELECT 1 ORDER BY 1) ORDER BY 1	written for the parser	42601
 c1-union-missing-operand	syntax-error	unknown	-	SELECT 1 UNION	written for the parser	42601
 c1-with-missing-body	syntax-error	unknown	-	WITH a AS (SELECT 1)	written for the parser	42601
-c2-in-subquery	pending-server	inside	-	SELECT a FROM t WHERE a IN (SELECT b FROM u)	written for the parser	-
-c2-not-in-subquery	pending-server	inside	-	SELECT a FROM t WHERE a NOT IN (SELECT b FROM u UNION SELECT c FROM v)	written for the parser	-
-c2-in-subquery-parenthesised	pending-server	inside	-	SELECT a FROM t WHERE a IN ((SELECT b FROM u))	written for the parser	-
-c2-in-subquery-with	pending-server	inside	-	SELECT a FROM t WHERE a IN (WITH x AS (SELECT 1) SELECT * FROM x)	written for the parser	-
-c2-in-values	pending-server	outside	-	SELECT a FROM t WHERE a IN (VALUES (1), (2))	written for the parser	-
-c2-in-subquery-missing-paren	pending-server	unknown	-	SELECT a FROM t WHERE a IN (SELECT b FROM u	written for the parser	-
+c2-in-subquery	ok	inside	-	SELECT a FROM t WHERE a IN (SELECT b FROM u)	written for the parser	42P01
+c2-not-in-subquery	ok	inside	-	SELECT a FROM t WHERE a NOT IN (SELECT b FROM u UNION SELECT c FROM v)	written for the parser	42P01
+c2-in-subquery-parenthesised	ok	inside	-	SELECT a FROM t WHERE a IN ((SELECT b FROM u))	written for the parser	42P01
+c2-in-subquery-with	ok	inside	-	SELECT a FROM t WHERE a IN (WITH x AS (SELECT 1) SELECT * FROM x)	written for the parser	42P01
+c2-in-values	ok	outside	-	SELECT a FROM t WHERE a IN (VALUES (1), (2))	written for the parser	42P01
+c2-in-subquery-missing-paren	syntax-error	unknown	-	SELECT a FROM t WHERE a IN (SELECT b FROM u	written for the parser	42601

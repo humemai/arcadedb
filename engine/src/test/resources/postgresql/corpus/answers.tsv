@@ -243,26 +243,26 @@ err-c1-with-column-list-too-long	multiset	-	ok	WITH t (a, b) AS (SELECT 1) SELEC
 err-c1-with-duplicate-name	multiset	-	ok	WITH t AS (SELECT 1), t AS (SELECT 2) SELECT * FROM t	{"error":"42712"}
 err-c1-with-reads-itself	multiset	-	ok	WITH t AS (SELECT * FROM t) SELECT * FROM t	{"error":"42P01"}
 err-c1-with-name-out-of-scope	multiset	-	ok	SELECT * FROM (WITH t AS (SELECT 1) SELECT 1) a, t	{"error":"42P01"}
-c2-in-subquery	ordered	-	ok	SELECT name FROM person WHERE pid IN (SELECT pid FROM orders) ORDER BY name	pending-server
-c2-not-in-subquery	ordered	-	ok	SELECT name FROM person WHERE pid NOT IN (SELECT pid FROM orders WHERE pid IS NOT NULL) ORDER BY name	pending-server
-c2-not-in-subquery-with-a-null-row	ordered	-	ok	SELECT name FROM person WHERE pid NOT IN (SELECT pid FROM orders) ORDER BY name	pending-server
-c2-in-subquery-null-operand-never-matches	ordered	-	ok	SELECT oid FROM orders WHERE pid IN (SELECT pid FROM person) ORDER BY oid	pending-server
-c2-in-empty-subquery	multiset	-	ok	SELECT count(*) FROM person WHERE pid IN (SELECT pid FROM orders WHERE oid > 1000)	pending-server
-c2-not-in-empty-subquery-keeps-null-operand	multiset	-	ok	SELECT count(*) FROM orders WHERE pid NOT IN (SELECT pid FROM person WHERE pid > 100)	pending-server
-c2-in-subquery-in-the-select-list	ordered	-	ok	SELECT pid, pid IN (SELECT pid FROM orders) AS has_order FROM person ORDER BY pid	pending-server
-c2-not-in-subquery-null-operand-in-the-select-list	ordered	-	ok	SELECT oid, pid NOT IN (SELECT pid FROM person WHERE pid < 3) AS r FROM orders ORDER BY oid	pending-server
-c2-in-subquery-integer-widths	multiset	-	ok	SELECT count(*) FROM orders WHERE oid IN (SELECT pid::int8 + 100 FROM person)	pending-server
-c2-in-subquery-text	multiset	-	ok	SELECT count(*) FROM person WHERE city IN (SELECT city FROM person WHERE age > 40)	pending-server
-c2-in-subquery-numeric-and-integer	ordered	-	ok	SELECT oid FROM orders WHERE total IN (SELECT pid::numeric * 5 FROM person) ORDER BY oid	pending-server
-c2-in-subquery-set-operation	multiset	-	ok	SELECT count(*) FROM person WHERE pid IN (SELECT pid FROM orders UNION SELECT 5)	pending-server
-c2-in-subquery-of-a-with	ordered	-	ok	WITH o AS (SELECT pid FROM orders) SELECT name FROM person WHERE pid IN (SELECT pid FROM o) ORDER BY name	pending-server
-c2-in-subquery-of-a-derived-table	ordered	-	ok	SELECT name FROM person WHERE pid IN (SELECT t.pid FROM (SELECT pid FROM orders WHERE total > 20) t) ORDER BY name	pending-server
-c2-in-subquery-in-having	ordered	-	ok	SELECT city FROM person GROUP BY city HAVING count(*) IN (SELECT 2) ORDER BY city	pending-server
-c2-in-subquery-in-an-on-condition	ordered	-	ok	SELECT o.oid FROM person p JOIN orders o ON o.pid = p.pid AND p.pid IN (SELECT 1) ORDER BY o.oid	pending-server
-c2-in-subquery-under-a-join	ordered	-	ok	SELECT p.name, o.oid FROM person p JOIN orders o ON o.pid = p.pid WHERE o.oid NOT IN (SELECT oid FROM orders WHERE total > 20) ORDER BY o.oid	pending-server
-c2-in-subquery-under-or	ordered	-	ok	SELECT name FROM person WHERE pid IN (SELECT 1) OR age > 50 ORDER BY name	pending-server
-c2-in-subquery-is-three-valued	ordered	-	ok	SELECT oid FROM orders WHERE NOT (pid IN (SELECT pid FROM person WHERE pid > 2)) ORDER BY oid	pending-server
-c2-in-subquery-parenthesised-twice	multiset	-	ok	SELECT count(*) FROM person WHERE pid IN ((SELECT pid FROM orders))	pending-server
-err-c2-in-subquery-two-columns	multiset	-	ok	SELECT 1 WHERE 1 IN (SELECT 1, 2)	pending-server
-err-c2-in-subquery-type-mismatch	multiset	-	ok	SELECT name FROM person WHERE pid IN (SELECT name FROM person)	pending-server
-err-c2-in-subquery-unknown-column	multiset	-	ok	SELECT name FROM person WHERE pid IN (SELECT nosuch FROM orders)	pending-server
+c2-in-subquery	ordered	-	ok	SELECT name FROM person WHERE pid IN (SELECT pid FROM orders) ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"],["Di"]]}
+c2-not-in-subquery	ordered	-	ok	SELECT name FROM person WHERE pid NOT IN (SELECT pid FROM orders WHERE pid IS NOT NULL) ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[["Cy"],["Ed"]]}
+c2-not-in-subquery-with-a-null-row	ordered	-	ok	SELECT name FROM person WHERE pid NOT IN (SELECT pid FROM orders) ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[]}
+c2-in-subquery-null-operand-never-matches	ordered	-	ok	SELECT oid FROM orders WHERE pid IN (SELECT pid FROM person) ORDER BY oid	{"columns":["oid"],"types":["int4"],"rows":[[100],[101],[102],[103],[104]]}
+c2-in-empty-subquery	multiset	-	ok	SELECT count(*) FROM person WHERE pid IN (SELECT pid FROM orders WHERE oid > 1000)	{"columns":["count"],"types":["int8"],"rows":[[0]]}
+c2-not-in-empty-subquery-keeps-null-operand	multiset	-	ok	SELECT count(*) FROM orders WHERE pid NOT IN (SELECT pid FROM person WHERE pid > 100)	{"columns":["count"],"types":["int8"],"rows":[[6]]}
+c2-in-subquery-in-the-select-list	ordered	-	ok	SELECT pid, pid IN (SELECT pid FROM orders) AS has_order FROM person ORDER BY pid	{"columns":["pid","has_order"],"types":["int4","bool"],"rows":[[1,true],[2,true],[3,null],[4,true],[5,null]]}
+c2-not-in-subquery-null-operand-in-the-select-list	ordered	-	ok	SELECT oid, pid NOT IN (SELECT pid FROM person WHERE pid < 3) AS r FROM orders ORDER BY oid	{"columns":["oid","r"],"types":["int4","bool"],"rows":[[100,false],[101,false],[102,false],[103,true],[104,true],[105,null]]}
+c2-in-subquery-integer-widths	multiset	-	ok	SELECT count(*) FROM orders WHERE oid IN (SELECT pid::int8 + 100 FROM person)	{"columns":["count"],"types":["int8"],"rows":[[5]]}
+c2-in-subquery-text	multiset	-	ok	SELECT count(*) FROM person WHERE city IN (SELECT city FROM person WHERE age > 40)	{"columns":["count"],"types":["int8"],"rows":[[3]]}
+c2-in-subquery-numeric-and-integer	ordered	-	ok	SELECT oid FROM orders WHERE total IN (SELECT pid::numeric * 5 FROM person) ORDER BY oid	{"columns":["oid"],"types":["int4"],"rows":[[101],[103]]}
+c2-in-subquery-set-operation	multiset	-	ok	SELECT count(*) FROM person WHERE pid IN (SELECT pid FROM orders UNION SELECT 5)	{"columns":["count"],"types":["int8"],"rows":[[4]]}
+c2-in-subquery-of-a-with	ordered	-	ok	WITH o AS (SELECT pid FROM orders) SELECT name FROM person WHERE pid IN (SELECT pid FROM o) ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"],["Di"]]}
+c2-in-subquery-of-a-derived-table	ordered	-	ok	SELECT name FROM person WHERE pid IN (SELECT t.pid FROM (SELECT pid FROM orders WHERE total > 20) t) ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"]]}
+c2-in-subquery-in-having	ordered	-	ok	SELECT city FROM person GROUP BY city HAVING count(*) IN (SELECT 2) ORDER BY city	{"columns":["city"],"types":["varchar"],"rows":[["Delft"],["Leiden"]]}
+c2-in-subquery-in-an-on-condition	ordered	-	ok	SELECT o.oid FROM person p JOIN orders o ON o.pid = p.pid AND p.pid IN (SELECT 1) ORDER BY o.oid	{"columns":["oid"],"types":["int4"],"rows":[[100],[101]]}
+c2-in-subquery-under-a-join	ordered	-	ok	SELECT p.name, o.oid FROM person p JOIN orders o ON o.pid = p.pid WHERE o.oid NOT IN (SELECT oid FROM orders WHERE total > 20) ORDER BY o.oid	{"columns":["name","oid"],"types":["varchar","int4"],"rows":[["Ada",101],["Di",103],["Di",104]]}
+c2-in-subquery-under-or	ordered	-	ok	SELECT name FROM person WHERE pid IN (SELECT 1) OR age > 50 ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Ed"]]}
+c2-in-subquery-is-three-valued	ordered	-	ok	SELECT oid FROM orders WHERE NOT (pid IN (SELECT pid FROM person WHERE pid > 2)) ORDER BY oid	{"columns":["oid"],"types":["int4"],"rows":[[100],[101],[102]]}
+c2-in-subquery-parenthesised-twice	multiset	-	ok	SELECT count(*) FROM person WHERE pid IN ((SELECT pid FROM orders))	{"columns":["count"],"types":["int8"],"rows":[[3]]}
+err-c2-in-subquery-two-columns	multiset	-	ok	SELECT 1 WHERE 1 IN (SELECT 1, 2)	{"error":"42601"}
+err-c2-in-subquery-type-mismatch	multiset	-	ok	SELECT name FROM person WHERE pid IN (SELECT name FROM person)	{"error":"42883"}
+err-c2-in-subquery-unknown-column	multiset	-	ok	SELECT name FROM person WHERE pid IN (SELECT nosuch FROM orders)	{"error":"42703"}
