@@ -24,6 +24,7 @@ import com.arcadedb.query.postgresql.SmallFixture;
 import com.arcadedb.query.postgresql.corpus.Outcome;
 import com.arcadedb.query.postgresql.corpus.ResultTable;
 import com.arcadedb.query.postgresql.corpus.Values;
+import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
 
@@ -75,19 +76,29 @@ final class ArcadeSide implements AutoCloseable {
 
   /**
    * Runs one statement in {@code language} and keeps everything it answered, or the SQLSTATE of its refusal. The engine reports
-   * no column types yet, so the types of the table are {@code null}; a result without rows reports no labels either.
+   * no column types yet, so the types of the table are {@code null}; a result without rows reports no labels either. The
+   * {@code postgresql} language answers a {@code PostgreSQLResultSet}: its labels are the ones PostgreSQL would send, duplicates
+   * included ({@code SELECT p.name, c.name} has two {@code name}), while a row is a map whose second duplicate has a suffix, so
+   * the labels come from {@code columns()} and the values are read by the unique key of each column.
    */
   Outcome run(final String language, final String sql) {
     try (final ResultSet rs = database.query(language, sql)) {
+      final List<String> described = rs instanceof PostgreSQLResultSet answer
+          ? answer.columns().stream().map(PostgreSQLResultSet.Column::name).toList() : null;
+      final List<String> describedKeys = rs instanceof PostgreSQLResultSet answer
+          ? PostgreSQLResultSet.uniqueKeys(answer.columns()) : null;
       List<String> labels = null;
+      List<String> keys = null;
       final List<List<Object>> rows = new ArrayList<>();
       while (rs.hasNext()) {
         final Result result = rs.next();
-        if (labels == null)
-          labels = new ArrayList<>(result.getPropertyNames());
-        final List<Object> row = new ArrayList<>(labels.size());
-        for (final String label : labels) {
-          final Object value = result.getProperty(label);
+        if (labels == null) {
+          labels = described != null ? described : new ArrayList<>(result.getPropertyNames());
+          keys = describedKeys != null ? describedKeys : labels;
+        }
+        final List<Object> row = new ArrayList<>(keys.size());
+        for (final String key : keys) {
+          final Object value = result.getProperty(key);
           row.add(alias(Values.normalize(value)));
         }
         rows.add(row);

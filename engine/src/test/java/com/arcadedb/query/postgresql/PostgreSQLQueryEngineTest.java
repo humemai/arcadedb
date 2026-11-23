@@ -117,14 +117,20 @@ class PostgreSQLQueryEngineTest extends TestHelper {
             e -> assertThat(e.getSqlState()).isEqualTo("0A000"));
   }
 
-  // REMOVE WHEN S1 lands: until the grammar exists a SELECT other than SELECT 1 is a read the engine cannot answer yet
-  @ParameterizedTest
-  @ValueSource(strings = { "SELECT 2", "SELECT name FROM person", "SELECT 1 + 1" })
-  void aSelectOtherThanSelectOneIsNotSupportedYet(final String statement) {
-    assertThatThrownBy(() -> database.query("postgresql", statement)).as(statement)
-        .isInstanceOfSatisfying(PostgreSQLFeatureNotSupportedException.class,
-            e -> assertThat(e.getSqlState()).isEqualTo("0A000"))
-        .hasMessageContaining("line 1, column 1");
+  // the S0 placeholder that answered SELECT 1 and refused every other SELECT is gone: the planner answers them all
+  @Test
+  void anyOtherSelectIsAnsweredByThePlanner() {
+    try (final ResultSet resultSet = database.query("postgresql", "SELECT 2")) {
+      assertThat(resultSet.next().<Integer>getProperty("?column?")).isEqualTo(2);
+    }
+    try (final ResultSet resultSet = database.query("postgresql", "SELECT 1 + 1 AS x")) {
+      final Result row = resultSet.next();
+      assertThat(row.<Integer>getProperty("x")).isEqualTo(2);
+      assertThat(row.getPropertyNames()).containsExactly("x");
+    }
+    // a table that the schema does not have is the error of PostgreSQL, not a refusal of the statement
+    assertThatThrownBy(() -> database.query("postgresql", "SELECT name FROM person"))
+        .isInstanceOfSatisfying(PostgreSQLUndefinedTableException.class, e -> assertThat(e.getSqlState()).isEqualTo("42P01"));
   }
 
   @Test

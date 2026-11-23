@@ -23,33 +23,46 @@ import com.arcadedb.database.DatabaseInternal;
 import com.arcadedb.query.OperationType;
 import com.arcadedb.query.QueryEngine;
 import com.arcadedb.query.postgresql.ast.EmptyStatement;
-import com.arcadedb.query.postgresql.ast.Expression;
-import com.arcadedb.query.postgresql.ast.SelectItem;
+import com.arcadedb.query.postgresql.ast.ExplainStatement;
 import com.arcadedb.query.postgresql.ast.SelectStatement;
 import com.arcadedb.query.postgresql.ast.Statement;
+import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.parser.StatementParser;
-import com.arcadedb.query.sql.executor.InternalResultSet;
+import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
+import com.arcadedb.query.postgresql.plan.SelectPlan;
+import com.arcadedb.query.postgresql.plan.SelectPlanner;
 import com.arcadedb.query.sql.executor.ResultInternal;
 import com.arcadedb.query.sql.executor.ResultSet;
 import com.arcadedb.utility.CollectionUtils;
 
-import java.math.BigInteger;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
  * The {@code postgresql} query language: PostgreSQL-style SQL over a relational view of the schema, next to {@code sql} and
- * {@code opencypher} and with no effect on either. It reads only. A statement is read by the parser of the language
- * ({@link StatementParser}): text that is not PostgreSQL syntax is refused with SQLSTATE {@code 42601}, PostgreSQL syntax
- * outside the subset (every write, {@code WITH}, a subquery, a right join) with {@code 0A000}, and a {@code SELECT} of the
- * subset is a read. Running it comes with the binder and the evaluator of the later steps: until then the engine answers the
- * one statement {@code SELECT 1}.
+ * {@code opencypher} and with no effect on either. It reads only. A statement goes through three steps:
+ * <ol>
+ * <li>the parser ({@link StatementParser}): text that is not PostgreSQL syntax is refused with SQLSTATE {@code 42601},
+ * PostgreSQL syntax outside the subset (every write, {@code WITH}, a subquery, a right join) with {@code 0A000};</li>
+ * <li>the planner ({@link SelectPlanner}): names are bound through the {@link com.arcadedb.query.postgresql.catalog.RelationalCatalog}
+ * ({@code 42703}, {@code 42P01}, {@code 42702}), every expression is typed by the evaluator with PostgreSQL's rules
+ * ({@code 42883}, {@code 42804}, {@code 22P02}) and the access path of the table is chosen;</li>
+ * <li>the execution of the plan ({@link SelectPlan#execute}): the answer is a {@link PostgreSQLResultSet}, whose columns carry
+ * the PostgreSQL names and type names, and whose execution plan says how the table was read.</li>
+ * </ol>
+ * Parameters are {@code $1}, {@code $2} and so on: {@code db.query("postgresql", sql, a, b)} binds {@code $1} to {@code a}; a map
+ * binds the keys {@code "1"} or {@code "$1"}. {@code EXPLAIN SELECT ...} answers the plan as rows of one column
+ * {@code QUERY PLAN} and reads nothing.
  */
 public class PostgreSQLQueryEngine implements QueryEngine {
   public static final String ENGINE_NAME = "postgresql";
 
   /** The name PostgreSQL gives the column of a select list item that has no name, as in {@code SELECT 1}. */
   static final String UNNAMED_COLUMN = "?column?";
+
+  /** The column of an {@code EXPLAIN}, as PostgreSQL names it. */
+  static final String PLAN_COLUMN = "QUERY PLAN";
 
   /** The analysis of every statement the language accepts: a read, never schema, never a write. */
   private static final AnalyzedQuery READ = new AnalyzedQuery() {
@@ -105,12 +118,12 @@ public class PostgreSQLQueryEngine implements QueryEngine {
 
   @Override
   public ResultSet query(final String query, final ContextConfiguration configuration, final Map<String, Object> parameters) {
-    return execute(query);
+    return execute(query, Parameters.of(parameters));
   }
 
   @Override
   public ResultSet query(final String query, final ContextConfiguration configuration, final Object... parameters) {
-    return execute(query);
+    return execute(query, Parameters.of(parameters));
   }
 
   /**
@@ -118,26 +131,32 @@ public class PostgreSQLQueryEngine implements QueryEngine {
    */
   @Override
   public ResultSet command(final String query, final ContextConfiguration configuration, final Map<String, Object> parameters) {
-    return execute(query);
+    return execute(query, Parameters.of(parameters));
   }
 
   @Override
   public ResultSet command(final String query, final ContextConfiguration configuration, final Object... parameters) {
-    return execute(query);
+    return execute(query, Parameters.of(parameters));
   }
 
-  private ResultSet execute(final String query) {
+  private ResultSet execute(final String query, final Parameters parameters) {
     final Statement statement = parse(query);
+    final SelectPlanner planner = new SelectPlanner(database, parameters);
+    if (statement instanceof ExplainStatement explain)
+      return explain(planner.plan(explain.select()));
+    return planner.plan((SelectStatement) statement).execute(database);
+  }
 
-    // REMOVE WHEN S4 lands: the binder and the evaluator do not exist yet, and this answers exactly the one statement of the
-    // first test, now read by the parser instead of matched as text
-    if (!(statement instanceof SelectStatement select) || !isSelectOne(select))
-      throw new PostgreSQLFeatureNotSupportedException(
-          "This statement is not supported by the postgresql language yet, only SELECT 1 is (" + statement.position() + ")");
-
-    final ResultInternal row = new ResultInternal(database);
-    row.setProperty(UNNAMED_COLUMN, 1);
-    return new InternalResultSet(row);
+  /** {@code EXPLAIN}: the plan, one line per row, and nothing is read. */
+  private PostgreSQLResultSet explain(final SelectPlan plan) {
+    final List<PostgreSQLResultSet.Column> columns = List.of(new PostgreSQLResultSet.Column(PLAN_COLUMN, "text"));
+    final PostgreSQLResultSet result = new PostgreSQLResultSet(columns, new PostgreSQLResultSet.Plan(plan.steps()));
+    for (final String line : plan.steps()) {
+      final ResultInternal row = new ResultInternal(database);
+      row.setProperty(PLAN_COLUMN, line);
+      result.add(row);
+    }
+    return result;
   }
 
   /**
@@ -152,15 +171,5 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       throw new PostgreSQLFeatureNotSupportedException(
           "An empty statement is not supported by the postgresql language (" + statement.position() + ")");
     return statement;
-  }
-
-  // REMOVE WHEN S4 lands: SELECT 1, and nothing else
-  private static boolean isSelectOne(final SelectStatement select) {
-    if (select.distinct() || !select.from().isEmpty() || select.where() != null || !select.groupBy().isEmpty()
-        || select.having() != null || !select.orderBy().isEmpty() || select.limit() != null || select.offset() != null
-        || select.items().size() != 1)
-      return false;
-    return select.items().get(0) instanceof SelectItem.Projection projection && projection.alias() == null
-        && projection.expression() instanceof Expression.IntegerLiteral literal && BigInteger.ONE.equals(literal.value());
   }
 }
