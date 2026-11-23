@@ -24,6 +24,8 @@ import com.arcadedb.database.Identifiable;
 import com.arcadedb.database.MutableDocument;
 import com.arcadedb.database.RID;
 import com.arcadedb.database.Record;
+import com.arcadedb.graph.Edge;
+import com.arcadedb.graph.Vertex;
 import com.arcadedb.index.IndexCursor;
 import com.arcadedb.index.TypeIndex;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
@@ -50,12 +52,16 @@ import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultInternal;
 import com.arcadedb.query.sql.executor.ResultSet;
 import com.arcadedb.schema.DocumentType;
+import com.arcadedb.schema.EdgeType;
 import com.arcadedb.schema.Property;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 import java.util.Set;
 
 /**
@@ -74,7 +80,12 @@ import java.util.Set;
  * keep the whole {@code WHERE} clause as a filter, so the path never changes the answer. The rows are found first and changed
  * after, so a statement sees the table as it was when it started. A vertex that is deleted takes its edges with it, as in
  * ArcadeDB, which is what {@code ON DELETE CASCADE} does.</li>
- * <li>An edge table is not written yet ({@code 0A000}, stage 3).</li>
+ * <li>An edge table is written through its two endpoint columns. {@code INSERT} creates one edge between the vertices named by
+ * {@code source_id} and {@code target_id}, both required (else {@code 23502}), both an existing vertex (else {@code 23503}), and
+ * for a type with declared endpoint tables a vertex of that table; the edge properties are given as for any record. A
+ * lightweight edge type is written the same way and keeps no record, so it has no property to give. {@code UPDATE} changes edge
+ * properties only: {@code source_id} and {@code target_id} are {@code 0A000} with the hint to delete the edge and insert it
+ * again, and {@code id} is {@code 428C9}. {@code DELETE} deletes the edges.</li>
  * </ul>
  * The answer is the number of rows in the column {@code count}, or the rows of {@code RETURNING}; see
  * {@link PostgreSQLResultSet#affectedRows()}.
@@ -132,9 +143,6 @@ public final class WritePlanner {
       throw new PostgreSQLEvaluationException("55000", "cannot change view \"" + name.get(name.size() - 1).value() + "\"");
     final Table table = name.size() == 1 ? catalog.table(identifier(name.get(0)))
         : catalog.table(identifier(name.get(0)), identifier(name.get(1)));
-    if (table.kind() == Table.Kind.EDGE)
-      throw new PostgreSQLFeatureNotSupportedException(verb + " on the edge table " + table.name()
-          + " is not supported yet (stage 3 of fork issue #29) (" + reference.position() + ")");
     return table;
   }
 
@@ -185,7 +193,8 @@ public final class WritePlanner {
         }
         valueRows.add(slots);
       }
-      steps.add("INSERT INTO " + table.name() + ": " + valueRows.size() + " row(s) of VALUES");
+      steps.add("INSERT INTO " + table.name() + ": " + valueRows.size() + " row(s) of VALUES"
+          + (table.kind() == Table.Kind.EDGE ? ", one edge each between source_id and target_id" : ""));
     } else {
       final InsertStatement.Query query = (InsertStatement.Query) insert.source();
       selectPlan = selectPlanner.plan(query.select());
@@ -254,6 +263,14 @@ public final class WritePlanner {
       }
 
       final List<Object[]> returned = new ArrayList<>();
+      if (table.kind() == Table.Kind.EDGE) {
+        for (final Object[] values : rows) {
+          final Edge edge = insertEdge(db, table, targets, values);
+          if (returning.present())
+            returned.add(project(returning, shape.rowOf(edge)));
+        }
+        return answer(db, returning, returned, rows.size(), steps);
+      }
       for (final Object[] values : rows) {
         final MutableDocument record = table.kind() == Table.Kind.VERTEX ? db.newVertex(table.name())
             : db.newDocument(table.name());
@@ -291,11 +308,102 @@ public final class WritePlanner {
   private static void checkSlot(final Column column, final Evaluable value, final PgType type) {
     if (value == null)
       return;
-    if (column.isSynthetic())
+    if (column.kind() == Column.Kind.IDENTITY)
       throw new PostgreSQLEvaluationException("428C9", "cannot insert a non-DEFAULT value into column \"" + column.name() + "\": the record id is generated");
     if (value instanceof Evaluable.Constant constant && constant.value() == null)
       return;
     Assignments.check(type, column);
+  }
+
+  /**
+   * One edge of an {@code INSERT} on an edge table: between the vertices {@code source_id} and {@code target_id} name, with the
+   * properties given. A lightweight edge type keeps no record, a regular one gets its record from the engine.
+   */
+  private Edge insertEdge(final Database db, final Table table, final List<Column> targets, final Object[] values) {
+    String source = null;
+    String target = null;
+    final Map<String, Object> properties = new LinkedHashMap<>();
+    final Set<String> given = new HashSet<>();
+    for (int i = 0; i < values.length; i++) {
+      final Column column = targets.get(i);
+      if (values[i] == DEFAULT)
+        continue;
+      switch (column.kind()) {
+      case SOURCE -> source = (String) values[i];
+      case TARGET -> target = (String) values[i];
+      case PROPERTY -> {
+        given.add(column.property());
+        if (values[i] != null)
+          properties.put(column.property(), toEngine(db, table, column, values[i]));
+      }
+      default -> {
+      }
+      }
+    }
+    if (source == null)
+      throw notNull(table, nameOf(table, Column.Kind.SOURCE));
+    if (target == null)
+      throw notNull(table, nameOf(table, Column.Kind.TARGET));
+
+    for (final Column column : table.columns()) {
+      if (column.kind() != Column.Kind.PROPERTY || given.contains(column.property()))
+        continue;
+      final Property property = table.documentType().getPolymorphicPropertyIfExists(column.property());
+      final Object value = property == null ? null : property.getDefaultValue();
+      if (value != null)
+        properties.put(column.property(), value);
+    }
+    requireValues(table, properties::get);
+
+    final Vertex from = endpoint(db, table, nameOf(table, Column.Kind.SOURCE), source, table.sourceTable());
+    final Vertex to = endpoint(db, table, nameOf(table, Column.Kind.TARGET), target, table.targetTable());
+    final EdgeType type = (EdgeType) db.getSchema().getType(table.name());
+    if (type.isLightweight()) {
+      if (!properties.isEmpty())
+        throw new PostgreSQLFeatureNotSupportedException("The edge type " + table.name() + " is lightweight: its edges have no record, "
+            + "so no property can be given");
+      return from.newLightEdge(table.name(), to);
+    }
+    final Object[] flat = new Object[properties.size() * 2];
+    int next = 0;
+    for (final Map.Entry<String, Object> property : properties.entrySet()) {
+      flat[next++] = property.getKey();
+      flat[next++] = property.getValue();
+    }
+    return from.newEdge(table.name(), to, flat);
+  }
+
+  /**
+   * The name the catalog gives the synthetic column of this kind in this table. The executors never spell {@code id},
+   * {@code source_id} or {@code target_id}: they find the record id, the source and the target by their kind, so a rule of the
+   * catalog about which column carries which name (fork issue #38) changes no executor.
+   */
+  private static String nameOf(final Table table, final Column.Kind kind) {
+    for (final Column column : table.columns())
+      if (column.kind() == kind)
+        return column.name();
+    throw new IllegalStateException("The table " + table.name() + " has no column of the kind " + kind);
+  }
+
+  private static PostgreSQLEvaluationException notNull(final Table table, final String column) {
+    return new PostgreSQLEvaluationException("23502",
+        "null value in column \"" + column + "\" of relation \"" + table.name() + "\" violates not-null constraint");
+  }
+
+  /** The vertex that an endpoint column names: it has to exist, and to be of the declared endpoint table when there is one. */
+  private static Vertex endpoint(final Database db, final Table table, final String column, final String text, final String declared) {
+    Record found = null;
+    try {
+      found = db.lookupByRID(new RID(text), true);
+    } catch (final RuntimeException notFound) {
+      // reported below with the one SQLSTATE of a reference that has no target
+    }
+    if (!(found instanceof Vertex vertex) || (declared != null && !vertex.getTypeName().equals(declared)
+        && !db.getSchema().getType(vertex.getTypeName()).instanceOf(declared)))
+      throw new PostgreSQLEvaluationException("23503", "insert or update on table \"" + table.name() + "\" violates foreign key "
+          + "constraint on column \"" + column + "\": the value \"" + text + "\" is not a vertex"
+          + (declared == null ? "" : " of the table " + declared));
+    return vertex;
   }
 
   // ------------------------------------------------------------------------------------------------ UPDATE
@@ -317,6 +425,9 @@ public final class WritePlanner {
       final Column column = table.column(identifier(assignment.column()));
       if (columns.contains(column))
         throw new PostgreSQLEvaluationException("42601", "multiple assignments to the same column \"" + column.name() + "\"");
+      if (column.kind() == Column.Kind.SOURCE || column.kind() == Column.Kind.TARGET)
+        throw new PostgreSQLFeatureNotSupportedException("UPDATE of the column " + column.name() + " of the edge table " + table.name()
+            + " is not supported: delete the edge and insert it again (" + assignment.position() + ")");
       if (column.isSynthetic() && !assignment.value().isDefault())
         throw new PostgreSQLEvaluationException("428C9", "column \"" + column.name() + "\" can only be updated to DEFAULT");
       Evaluable value = null;
@@ -428,8 +539,12 @@ public final class WritePlanner {
         if (returning.present())
           returned.add(project(returning, row));
       }
-      for (final Document record : matched)
-        db.deleteRecord(record);
+      for (final Document record : matched) {
+        if (record instanceof Edge edge)
+          edge.delete();
+        else
+          db.deleteRecord(record);
+      }
       return answer(db, returning, returned, matched.size(), steps);
     });
   }
@@ -488,8 +603,12 @@ public final class WritePlanner {
 
   /** A {@code NOTNULL} or {@code MANDATORY} property with no value: {@code 23502}, as a {@code NOT NULL} column has it. */
   private static void requireValues(final Table table, final MutableDocument record) {
+    requireValues(table, record::get);
+  }
+
+  private static void requireValues(final Table table, final Function<String, Object> valueOf) {
     for (final Column column : table.columns()) {
-      if (column.kind() != Column.Kind.PROPERTY || record.get(column.property()) != null)
+      if (column.kind() != Column.Kind.PROPERTY || valueOf.apply(column.property()) != null)
         continue;
       final Property property = table.documentType().getPolymorphicPropertyIfExists(column.property());
       if (!column.nullable() || (property != null && property.isMandatory()))

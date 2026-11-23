@@ -23,6 +23,7 @@ $$;
 CREATE TRIGGER company_write_guard BEFORE INSERT OR UPDATE ON company FOR EACH ROW EXECUTE FUNCTION write_guard();
 CREATE TRIGGER person_write_guard BEFORE INSERT OR UPDATE ON person FOR EACH ROW EXECUTE FUNCTION write_guard();
 CREATE TRIGGER orders_write_guard BEFORE INSERT OR UPDATE ON orders FOR EACH ROW EXECUTE FUNCTION write_guard();
+CREATE TRIGGER works_at_write_guard BEFORE INSERT OR UPDATE ON works_at FOR EACH ROW EXECUTE FUNCTION write_guard();
 
 ALTER TABLE works_at DROP CONSTRAINT works_at_source_id_fkey;
 ALTER TABLE works_at DROP CONSTRAINT works_at_target_id_fkey;
