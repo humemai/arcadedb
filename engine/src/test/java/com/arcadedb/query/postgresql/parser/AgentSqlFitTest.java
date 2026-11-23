@@ -217,7 +217,8 @@ class AgentSqlFitTest {
     final long accepted = results.stream().filter(r -> r.kind() == Kind.ACCEPTED).count();
     final long correctAccepted = results.stream().filter(r -> r.entry().correct() && r.kind() == Kind.ACCEPTED).count();
     out.append("# agent-sql fit: ").append(results.size()).append(" statements, parsed with StatementParser.parse\n\n");
-    out.append("server column: ").append(file.headerValue("server")).append("\n\n");
+    out.append("server of the pg18 column: ").append(file.headerValue("server") == null ? "none, the generator has not run" : file.headerValue("server"))
+        .append("\n\n");
     out.append("| | statements | accepted | share |\n|---|---|---|---|\n");
     out.append("| all | ").append(results.size()).append(" | ").append(accepted).append(" | ").append(pct(accepted, results.size()))
         .append(" |\n");
@@ -417,6 +418,15 @@ class AgentSqlFitTest {
     for (final Map.Entry<String, Integer> each : byPresence)
       out.append("| ").append(each.getKey()).append(" | ").append(each.getValue()).append(" | ")
           .append(sole.getOrDefault(each.getKey(), 0)).append(" | ").append(pct(each.getValue(), correct)).append(" |\n");
+
+    final Map<String, Integer> combinations = new TreeMap<>();
+    for (final Set<String> set : needs)
+      combinations.merge(String.join(" + ", set), 1, Integer::sum);
+    final List<Map.Entry<String, Integer>> byCombination = new ArrayList<>(combinations.entrySet());
+    byCombination.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+    out.append("\n## The constructs each of those statements needs together\n\n| constructs | statements |\n|---|---|\n");
+    for (final Map.Entry<String, Integer> each : byCombination)
+      out.append("| ").append(each.getKey()).append(" | ").append(each.getValue()).append(" |\n");
 
     out.append("\n## Greedy plan: what to build first\n\n");
     out.append("| step | build | statements it completes | accepted after the step | share of ").append(correct)
