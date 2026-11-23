@@ -182,7 +182,8 @@ class TraversalRuleTest extends TestHelper {
 
   @Test
   void aPushedTermOnTheVertexNarrowsTheLeftSetThroughItsIndexBeforeTheWalk() {
-    final String sql = "SELECT p.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id WHERE p.pid = 1";
+    // ONLY: a table with subtypes read with them (person has employee) has no index lookup, the index of a type covers its own buckets
+    final String sql = "SELECT p.name, w.since FROM ONLY person p JOIN works_at w ON w.source_id = p.id WHERE p.pid = 1";
     assertThat(plan(sql)).contains("TRAVERSE INNER").contains("FETCH FROM INDEX person[pid]").doesNotContain("SCAN TYPE person");
     assertThat(rows(sql + " ORDER BY w.since")).containsExactly(row("Ann", 2019), row("Ann", 2022));
   }
