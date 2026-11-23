@@ -73,7 +73,7 @@ union	ok	inside	-	SELECT 1 UNION SELECT 2	written for the parser	-
 values	ok	outside	-	VALUES (1), (2)	written for the parser	-
 subquery-from	ok	inside	-	SELECT * FROM (SELECT 1) s	written for the parser	-
 subquery-in	ok	inside	-	SELECT name FROM person WHERE pid IN (SELECT pid FROM orders)	written for the parser	-
-exists	ok	outside	-	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid)	written for the parser	-
+exists	ok	inside	-	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid)	written for the parser	-
 window	ok	outside	-	SELECT name, row_number() OVER (ORDER BY name) FROM person	written for the parser	-
 distinct-on	ok	outside	-	SELECT DISTINCT ON (city) city, name FROM person	written for the parser	-
 ilike	ok	outside	-	SELECT name FROM person WHERE name ILIKE 'a%'	written for the parser	-
@@ -1587,3 +1587,9 @@ c4-using-alias	ok	outside	-	SELECT * FROM a JOIN b USING (x) AS j	written for th
 c4-using-right	ok	outside	-	SELECT * FROM a RIGHT JOIN b USING (x)	written for the parser	42P01
 c4-using-empty-list	syntax-error	unknown	-	SELECT * FROM a JOIN b USING ()	written for the parser	42601
 c4-join-without-condition	syntax-error	unknown	-	SELECT * FROM a JOIN b	written for the parser	42601
+c5-exists-select-list	ok	inside	-	SELECT EXISTS (SELECT 1 FROM t WHERE t.a = u.a) FROM u	written for the parser	42P01
+c5-not-exists	ok	inside	-	SELECT a FROM u WHERE NOT EXISTS (SELECT 1 FROM t WHERE t.a = u.a)	written for the parser	42P01
+c5-exists-with-set-operation	ok	inside	-	SELECT a FROM u WHERE EXISTS (SELECT 1 UNION SELECT 2)	written for the parser	42P01
+c5-exists-parenthesised-twice	ok	inside	-	SELECT a FROM u WHERE EXISTS ((SELECT 1))	written for the parser	42P01
+c5-exists-values	ok	outside	-	SELECT EXISTS (VALUES (1))	written for the parser	-
+c5-exists-unclosed	syntax-error	unknown	-	SELECT EXISTS (SELECT 1	written for the parser	42601

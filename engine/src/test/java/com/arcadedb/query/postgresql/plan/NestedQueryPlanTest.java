@@ -96,6 +96,32 @@ class NestedQueryPlanTest extends TestHelper {
   }
 
   @Test
+  void aCorrelatedExistsOverTheCapStopsWithOutOfMemory() {
+    assertCapStops("SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid)", "an EXISTS subquery");
+  }
+
+  @Test
+  void aCorrelationThatIsNotAnEqualityIsRefused() {
+    for (final String sql : new String[] {
+        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.total > p.age)",
+        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid OR o.oid = 1)",
+        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid + o.oid)",
+        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE p.age = 36)",
+        "SELECT name FROM person p WHERE EXISTS (SELECT count(*) FROM orders o WHERE o.pid = p.pid)",
+        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid LIMIT 1)" })
+      assertThatThrownBy(() -> planned(sql, BuildMemory.DEFAULT_CAP_BYTES)).as(sql)
+          .isInstanceOfSatisfying(com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException.class,
+              e -> assertThat(e.getSqlState()).isEqualTo("0A000"));
+  }
+
+  @Test
+  void anUncorrelatedExistsIsRunOnceWithLimitOne() {
+    // the inner query has five rows; with LIMIT 1 the kept rows are one, which fits a cap that five rows do not
+    final long oneRow = 80 + 8 + 16;
+    assertThat(planned("SELECT name FROM person WHERE EXISTS (SELECT pid FROM person)", oneRow + 1).execute(database).hasNext()).isTrue();
+  }
+
+  @Test
   void aSetOperationInsideADerivedTableChargesTheMemoryOfTheDerivedTable() {
     assertCapStops("SELECT count(*) FROM (SELECT name FROM person UNION ALL SELECT name FROM company) t", "a derived table");
   }

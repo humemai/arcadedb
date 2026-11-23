@@ -168,6 +168,18 @@ public final class Pushdown {
         out.add(scope.fields().get(slot.index()).relation());
       return;
     }
+    if (expression instanceof Expression.Exists) {
+      // the references of the subquery that this scope knows are the ones that read the outer query (or are taken for them, which only
+      // keeps the term higher than it could be); the others belong to the subquery and are its own business
+      for (final Expression child : ExpressionCompiler.children(expression)) {
+        try {
+          collect(child, scope, out);
+        } catch (final RuntimeException ignored) {
+          // not a column of this scope
+        }
+      }
+      return;
+    }
     for (final Expression child : ExpressionCompiler.children(expression))
       collect(child, scope, out);
   }

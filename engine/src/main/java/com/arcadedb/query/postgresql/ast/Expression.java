@@ -216,6 +216,19 @@ public sealed interface Expression extends Node {
   }
 
   /**
+   * {@code EXISTS (select)}: true when the query has a row, never {@code NULL}. {@code NOT EXISTS} is {@code NOT} of it. The query
+   * may read columns of the query around it, as equalities of its {@code WHERE} clause (a correlated subquery).
+   *
+   * @param query a {@link SelectStatement}, a {@link SetOperationStatement} or a {@link WithStatement}
+   */
+  record Exists(SourcePosition position, Statement query) implements Expression {
+    public Exists {
+      Objects.requireNonNull(position, "position");
+      Objects.requireNonNull(query, "query");
+    }
+  }
+
+  /**
    * {@code (select)} used as a value: the one column of the one row of the query, {@code NULL} when it has no row. A query that
    * has more than one row is the error 21000 when it runs.
    *
