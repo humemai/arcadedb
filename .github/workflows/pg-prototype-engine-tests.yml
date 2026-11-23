@@ -65,6 +65,27 @@ jobs:
       - name: Run the engine tests of the postgresql packages
         run: ./mvnw test --batch-mode --errors --show-version -pl engine -am "-Dsurefire.includes=**/postgresql/**/*Test.java"
 
+      # AgentSqlFitTest and AgentSqlPlanTest measure how much of the SQL that language models write the parser accepts and what the
+      # engine does with the part it accepts (fork issue #7). They write their reports next to the test results: the tables go into
+      # the job summary (the list of every statement does not), the files are an artifact. The tests never fail on the numbers.
+      - name: Report of the agent SQL measurement
+        if: always()
+        run: |
+          for report in engine/target/pg-agent-fit/*.md; do
+            [ -f "$report" ] || continue
+            sed '/^## Every statement/,$d' "$report" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload the report of the agent SQL measurement
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pg-agent-fit-report
+          path: engine/target/pg-agent-fit/*.md
+          if-no-files-found: ignore
+          retention-days: 30
+
   # The wire module depends on the engine, so a test that compares the two (the column types of the language against the
   # PostgresType mapping of the wire) lives in postgresw, in a package named postgresql. -am builds the modules it needs from this
   # tree. The test phase is enough: the tests selected here use no TinkerPop class, which is what the shaded gremlin jar of a

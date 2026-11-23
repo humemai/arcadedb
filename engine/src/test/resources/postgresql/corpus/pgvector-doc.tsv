@@ -1,0 +1,30 @@
+# The pgvector statements of the postgresql language (fork issue #11), with expected answers that come from the definitions of the
+# operators and not from a server: the official postgres:18 image of the parity run has no pgvector, and the extension is not added
+# to it. Every case is flagged doc. The engine tests read this file (PgVectorDocCorpusTest); the parity harness does not.
+# Columns, separated by one TAB: id, order, tol, status, statement, expected. The cells are those of answers.tsv (see its header):
+# order is ordered or multiset, tol is a floating point tolerance, statement escapes backslash, tab and line feed, expected is
+# {"columns":[labels],"types":[type names],"rows":[[cells]]} or {"error":"SQLSTATE"}.
+# status: doc = the expected cells were worked out by hand from the text named below. A case that fails is a difference between the
+# engine and the definition, to be settled by reading pgvector 0.8 (its source, or a server that has it), never by editing the cell.
+# Sources of the cells:
+#   README: pgvector README, section "Querying" (Supported distance functions are <-> L2 distance, <#> (negative) inner product,
+#   <=> cosine distance), section "Distances" (for cosine similarity, use 1 - cosine distance), section "Getting Started" (the
+#   vectors [1,2,3] and [4,5,6]), and section "Reference", "Vector Type" (finite elements, up to 16,000 dimensions).
+#   #11: the acceptance list of fork issue #11 (the fixture vec-small: a [1,0,0], b [0,1,0], c [2,2,0], d [-1,0,0], the query vector
+#   [1,0,0], the three ORDER BY results and the table of distances). Its values are the definitions applied by hand: sqrt(2),
+#   1 - 1/sqrt(2) = 0.292893, and so on.
+#   source: the error cases (22000 for vectors of different dimensions, 22P02 for text that is not a vector) are not in the README:
+#   they are the SQLSTATE of pgvector's CheckDims and vector_in in its vector.c.
+# data: the vec-small fixture, VecSmallFixture in the engine tests, without an index. The same statements with an LSM_VECTOR index of
+# the matching metric are asserted in VectorSearchPlanTest.
+id	order	tol	status	statement	expected
+doc-l2-order	ordered	-	doc	SELECT iid FROM item ORDER BY embedding <-> '[1,0,0]' LIMIT 3	{"columns":["iid"],"types":["varchar"],"rows":[["a"],["b"],["d"]]}
+doc-cosine-order	ordered	-	doc	SELECT iid FROM item ORDER BY embedding <=> '[1,0,0]' LIMIT 3	{"columns":["iid"],"types":["varchar"],"rows":[["a"],["c"],["b"]]}
+doc-inner-product-order	ordered	-	doc	SELECT iid FROM item ORDER BY embedding <#> '[1,0,0]' LIMIT 3	{"columns":["iid"],"types":["varchar"],"rows":[["c"],["a"],["b"]]}
+doc-distances	ordered	0.000001	doc	SELECT iid, embedding <-> '[1,0,0]' AS l2, embedding <=> '[1,0,0]' AS cosine, embedding <#> '[1,0,0]' AS ip FROM item ORDER BY iid	{"columns":["iid","l2","cosine","ip"],"types":["varchar","float8","float8","float8"],"rows":[["a",0,0,-1],["b",1.4142135623730951,1,0],["c",2.23606797749979,0.29289321881345254,-2],["d",2,2,1]]}
+doc-cosine-similarity	ordered	0.000001	doc	SELECT iid, 1 - (embedding <=> '[1,0,0]') AS cosine_similarity FROM item ORDER BY iid	{"columns":["iid","cosine_similarity"],"types":["varchar","float8"],"rows":[["a",1],["b",0],["c",0.7071067811865475],["d",-1]]}
+doc-readme-vectors	multiset	0.000001	doc	SELECT '[1,2,3]'::vector <-> '[4,5,6]' AS l2, '[1,2,3]'::vector <=> '[4,5,6]' AS cosine, '[1,2,3]'::vector <#> '[4,5,6]' AS ip	{"columns":["l2","cosine","ip"],"types":["float8","float8","float8"],"rows":[[5.196152422706632,0.025368153802923787,-32]]}
+doc-null-vector	multiset	-	doc	SELECT NULL::vector <-> '[1,2,3]' AS d	{"columns":["d"],"types":["float8"],"rows":[[null]]}
+err-doc-different-dimensions	multiset	-	doc	SELECT '[1,2,3]'::vector <-> '[1,2]'	{"error":"22000"}
+err-doc-not-a-vector	multiset	-	doc	SELECT '[1,x]'::vector <=> '[1,2]'	{"error":"22P02"}
+err-doc-no-elements	multiset	-	doc	SELECT '[]'::vector <#> '[1,2]'	{"error":"22000"}
