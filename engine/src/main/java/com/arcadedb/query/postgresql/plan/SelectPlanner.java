@@ -39,6 +39,7 @@ import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.query.postgresql.plan.infoschema.InformationSchema;
 import com.arcadedb.query.postgresql.plan.join.BuildMemory;
 import com.arcadedb.query.postgresql.plan.join.JoinPlanner;
 
@@ -90,7 +91,7 @@ public class SelectPlanner {
     if (from.isEmpty())
       return RelationSource.singleRow();
     if (from.size() == 1 && from.get(0) instanceof TableReference.Table table)
-      return planTable(table);
+      return planRelation(table);
     throw new IllegalArgumentException("A FROM clause with a join is planned by the JoinPlanner");
   }
 
@@ -102,8 +103,8 @@ public class SelectPlanner {
   private JoinPlanner.Tables joinTables() {
     return new JoinPlanner.Tables() {
       @Override
-      public TableSource table(final TableReference.Table reference) {
-        return planTable(reference);
+      public RelationSource table(final TableReference.Table reference) {
+        return planRelation(reference);
       }
 
       @Override
@@ -111,6 +112,16 @@ public class SelectPlanner {
         return chooseAccessPath(table, terms, compiler);
       }
     };
+  }
+
+  /**
+   * The source of one name of the {@code FROM} clause: a view of {@code information_schema}, which is answered before the tables
+   * of the catalog, or else a table ({@link #planTable}). Every leaf of a join goes through here, so that the views can be joined
+   * to tables and to each other.
+   */
+  protected RelationSource planRelation(final TableReference.Table reference) {
+    final RelationSource view = InformationSchema.resolve(reference, catalog);
+    return view != null ? view : planTable(reference);
   }
 
   /** The rows of one table of the {@code FROM} clause, read by a scan until the {@code WHERE} clause picks an index. */

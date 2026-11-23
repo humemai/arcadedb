@@ -99,7 +99,7 @@ public final class JoinPlanner {
   /** What the single-table planner offers to the join planner: the source of one table, and its access path for some terms. */
   public interface Tables {
     /** The source of one table of the {@code FROM} clause, read by a scan. */
-    TableSource table(TableReference.Table reference);
+    RelationSource table(TableReference.Table reference);
 
     /** The table read through the best access path that the terms (single table conditions) offer, as the single-table plan. */
     TableSource narrow(TableSource table, List<Expression> terms, ExpressionCompiler compiler);
@@ -135,17 +135,21 @@ public final class JoinPlanner {
   }
 
   private static final class Leaf extends Node {
-    private final TableSource table;
-    private final String      relation;
+    /** The rows of the leaf: a table, or a view of {@code information_schema}, which has no {@link #table}. */
+    private final RelationSource source;
+    /** The table behind the leaf, {@code null} for a view. */
+    private final TableSource    table;
+    private final String         relation;
 
-    Leaf(final TableSource table, final String relation) {
-      this.table = table;
+    Leaf(final RelationSource source, final String relation) {
+      this.source = source;
+      this.table = source instanceof TableSource tableSource ? tableSource : null;
       this.relation = relation;
     }
 
     @Override
     List<RelationSource.Field> fields() {
-      return table.columns();
+      return source.columns();
     }
 
     @Override
@@ -155,7 +159,8 @@ public final class JoinPlanner {
 
     @Override
     Located locate(final int slot) {
-      return new Located(table, table.table().columns().get(slot));
+      // a view has no keys, links or edges: the join of a view is never supported by one
+      return table == null ? null : new Located(table, table.table().columns().get(slot));
     }
   }
 
@@ -262,8 +267,9 @@ public final class JoinPlanner {
 
   private Node analyze(final TableReference reference) {
     if (reference instanceof TableReference.Table table) {
-      final TableSource source = tables.table(table);
-      return new Leaf(source, table.alias() != null ? table.alias().value() : source.table().name());
+      final RelationSource source = tables.table(table);
+      final String name = source instanceof TableSource tableSource ? tableSource.table().name() : source.columns().get(0).relation();
+      return new Leaf(source, table.alias() != null ? table.alias().value() : name);
     }
     final TableReference.Join join = (TableReference.Join) reference;
     final Node left = analyze(join.left());
@@ -299,7 +305,9 @@ public final class JoinPlanner {
 
   private RelationSource leafSource(final Leaf leaf, final List<Conjunct> pushed) {
     if (pushed.isEmpty())
-      return leaf.table;
+      return leaf.source;
+    if (leaf.table == null)
+      return filtered(leaf, leaf.source, pushed);
     final List<Expression> terms = new ArrayList<>();
     for (final Conjunct term : pushed)
       terms.add(term.expression());
@@ -656,7 +664,11 @@ public final class JoinPlanner {
     for (final Candidate candidate : candidates) {
       if (!(candidate.rawLeft() instanceof Evaluable.Slot left) || !(candidate.rawRight() instanceof Evaluable.Slot right))
         continue;
-      final JoinSupport found = classify(join.left.locate(left.index()), join.right.locate(right.index()));
+      final Located leftColumn = join.left.locate(left.index());
+      final Located rightColumn = join.right.locate(right.index());
+      if (leftColumn == null || rightColumn == null)
+        continue;
+      final JoinSupport found = classify(leftColumn, rightColumn);
       if (found != null && (best == null || found.kind().ordinal() < best.kind().ordinal()))
         best = found;
     }
