@@ -3546,6 +3546,14 @@ public enum GlobalConfiguration {
       the client takes between two fetches included. \
       0 means unlimited. Default is 1000000""", Integer.class, 1_000_000),
 
+  // POSTGRESQL QUERY LANGUAGE (the prototype of the postgresql language, not the Postgres wire protocol above)
+  POSTGRESQL_TRAVERSAL_RULE("arcadedb.postgresql.traversalRule", SCOPE.DATABASE, """
+      Lets the planner of the postgresql query language run a join through an edge table as a traversal: for \
+      person JOIN works_at ON works_at.source_id = person.id JOIN company ON works_at.target_id = company.id it walks the \
+      stored edges of each person instead of joining the three tables by value. The rows are the same with the rule on and off; \
+      only the cost and the plan differ. Set to false to plan every such join as a plain equality join, which is the control of \
+      a measurement. Default is true""", Boolean.class, true),
+
   // BOLT (Neo4j)
   BOLT_PORT("arcadedb.bolt.port", SCOPE.SERVER,
       "TCP/IP port number used for incoming connections for BOLT plugin. Default is 7687", Integer.class, 7687),

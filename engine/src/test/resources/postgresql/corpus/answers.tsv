@@ -133,3 +133,15 @@ err-order-by-ambiguous	multiset	-	ok	SELECT p.name, c.name FROM person p JOIN co
 err-aggregate-in-where	multiset	-	ok	SELECT name FROM person WHERE count(*) > 1	{"error":"42803"}
 err-negative-limit	multiset	-	ok	SELECT name FROM person LIMIT -1	{"error":"2201W"}
 err-non-boolean-where	multiset	-	ok	SELECT name FROM person WHERE age	{"error":"42804"}
+trav-edge-left-two	ordered	-	ok	SELECT p.name, c.name, w.since FROM person p LEFT JOIN works_at w ON w.source_id = p.id LEFT JOIN company c ON w.target_id = c.id ORDER BY p.name, w.since	pending-server
+trav-edge-incoming-left	ordered	-	ok	SELECT c.name, p.name FROM company c LEFT JOIN works_at w ON w.target_id = c.id LEFT JOIN person p ON w.source_id = p.id ORDER BY c.name, p.name	pending-server
+trav-edge-incoming-inner	ordered	-	ok	SELECT c.name, p.name, w.since FROM company c JOIN works_at w ON w.target_id = c.id JOIN person p ON w.source_id = p.id ORDER BY c.name, p.name, w.since	pending-server
+trav-edge-one-vertex	ordered	-	ok	SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON w.target_id = c.id WHERE p.pid = 1 ORDER BY w.since	pending-server
+trav-edge-edge-filter	ordered	-	ok	SELECT p.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id WHERE w.since >= 2020 ORDER BY w.since, p.name	pending-server
+trav-edge-half-edges	ordered	-	ok	SELECT p.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id ORDER BY p.name, w.since	pending-server
+trav-edge-half-end	ordered	-	ok	SELECT w.since, c.name FROM works_at w JOIN company c ON w.target_id = c.id ORDER BY w.since	pending-server
+trav-edge-on-residual-left	ordered	-	ok	SELECT p.name, w.since FROM person p LEFT JOIN works_at w ON w.source_id = p.id AND w.since > 2020 ORDER BY p.name, w.since	pending-server
+trav-edge-far-end-filter	ordered	-	ok	SELECT p.name, c.name FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON w.target_id = c.id AND c.cid = 20 ORDER BY p.name	pending-server
+trav-edge-comma-list	ordered	-	ok	SELECT p.name, c.name FROM person p, works_at w, company c WHERE w.source_id = p.id AND w.target_id = c.id ORDER BY p.name, w.since	pending-server
+trav-edge-count-left	ordered	-	ok	SELECT p.name, count(w.since) AS jobs FROM person p LEFT JOIN works_at w ON w.source_id = p.id GROUP BY p.name ORDER BY p.name	pending-server
+trav-edge-inner-then-left	ordered	-	ok	SELECT p.name, c.name FROM person p JOIN works_at w ON w.source_id = p.id LEFT JOIN company c ON w.target_id = c.id AND c.cid = 20 ORDER BY p.name, w.since	pending-server
