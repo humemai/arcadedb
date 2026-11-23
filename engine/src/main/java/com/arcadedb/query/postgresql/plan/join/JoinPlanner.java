@@ -24,6 +24,7 @@ import com.arcadedb.graph.Vertex;
 import com.arcadedb.query.postgresql.PostgreSQLReferenceException;
 import com.arcadedb.query.postgresql.ast.AstPrinter;
 import com.arcadedb.query.postgresql.ast.Expression;
+import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.TableReference;
 import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.EdgeEndpoints;
@@ -35,8 +36,10 @@ import com.arcadedb.query.postgresql.eval.Numbers;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.SubqueryPlanner;
 import com.arcadedb.query.postgresql.eval.PgType;
+import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.plan.RelationScope;
 import com.arcadedb.query.postgresql.plan.RelationSource;
+import com.arcadedb.query.postgresql.plan.SetTypes;
 import com.arcadedb.query.postgresql.plan.TableSource;
 import com.arcadedb.query.postgresql.plan.join.Pushdown.Conjunct;
 import com.arcadedb.schema.DocumentType;
@@ -138,6 +141,14 @@ public final class JoinPlanner {
   private abstract static class Node {
     abstract List<RelationSource.Field> fields();
 
+    /** The columns that an unqualified name reads: every field in order for a table, the merged columns first after a USING. */
+    List<RelationSource.Output> outputs() {
+      final List<RelationSource.Output> out = new ArrayList<>();
+      for (int i = 0; i < fields().size(); i++)
+        out.add(new RelationSource.Output(fields().get(i).name(), i, fields().get(i).type(), fields().get(i).typeName()));
+      return out;
+    }
+
     abstract Set<String> relations();
 
     /** The names of the tables behind the relations, for the warning. */
@@ -182,6 +193,10 @@ public final class JoinPlanner {
     }
   }
 
+  /** One column of a {@code USING} list: where it is among the outputs of each input, and the type of the merged column. */
+  private record Using(String name, int leftOutput, int rightOutput, PgType type, String typeName) {
+  }
+
   private static final class JoinNode extends Node {
     private final TableReference.JoinType            type;
     private final Node                               left;
@@ -189,12 +204,19 @@ public final class JoinPlanner {
     private final List<Conjunct>                     on;
     private final List<RelationSource.Field>         fields;
     private final Set<String>                        relations;
+    /** The columns of {@code USING}: the position in the outputs of the left and of the right input, and the merged column. */
+    private final List<Using>                        using;
 
     JoinNode(final TableReference.JoinType type, final Node left, final Node right, final List<Conjunct> on) {
+      this(type, left, right, on, List.of());
+    }
+
+    JoinNode(final TableReference.JoinType type, final Node left, final Node right, final List<Conjunct> on, final List<Using> using) {
       this.type = type;
       this.left = left;
       this.right = right;
       this.on = on;
+      this.using = using;
       final List<RelationSource.Field> all = new ArrayList<>(left.fields());
       all.addAll(right.fields());
       this.fields = List.copyOf(all);
@@ -218,6 +240,36 @@ public final class JoinPlanner {
       final Set<String> names = new LinkedHashSet<>(left.tables());
       names.addAll(right.tables());
       return names;
+    }
+
+    /**
+     * Without {@code USING} the columns of the left input then those of the right input. With it the merged columns first, in the
+     * order of the list, then the columns of the left and the right input that are not in the list. A merged column reads the left
+     * value, which is the value of both when the join keeps the row, and is the one that a {@code LEFT} join keeps without a
+     * partner.
+     */
+    @Override
+    List<RelationSource.Output> outputs() {
+      final List<RelationSource.Output> leftOutputs = left.outputs();
+      final List<RelationSource.Output> rightOutputs = right.outputs();
+      final int leftColumns = left.fields().size();
+      final Set<Integer> usedLeft = new java.util.HashSet<>();
+      final Set<Integer> usedRight = new java.util.HashSet<>();
+      final List<RelationSource.Output> out = new ArrayList<>();
+      for (final Using column : using) {
+        usedLeft.add(column.leftOutput);
+        usedRight.add(column.rightOutput);
+        out.add(new RelationSource.Output(column.name, leftOutputs.get(column.leftOutput).index(), column.type, column.typeName));
+      }
+      for (int i = 0; i < leftOutputs.size(); i++)
+        if (!usedLeft.contains(i))
+          out.add(leftOutputs.get(i));
+      for (int i = 0; i < rightOutputs.size(); i++)
+        if (!usedRight.contains(i)) {
+          final RelationSource.Output o = rightOutputs.get(i);
+          out.add(new RelationSource.Output(o.name(), o.index() + leftColumns, o.type(), o.typeName()));
+        }
+      return out;
     }
 
     @Override
@@ -283,7 +335,7 @@ public final class JoinPlanner {
   // ---- the tree ----
 
   private RelationScope scope(final Node node) {
-    return new RelationScope(node.fields(), catalog, tables.subqueries());
+    return new RelationScope(node.fields(), catalog, tables.subqueries(), node.outputs());
   }
 
   private ExpressionCompiler compiler(final Node node) {
@@ -308,12 +360,65 @@ public final class JoinPlanner {
         throw PostgreSQLReferenceException.duplicateAlias(name);
     final JoinNode partial = new JoinNode(join.type(), left, right, List.of());
     final RelationScope scope = scope(partial);
-    new ExpressionCompiler(scope, parameters).compileCondition(join.condition(), "JOIN/ON");
+    final List<Using> using = new ArrayList<>();
+    final Expression condition = join.using().isEmpty() ? join.condition() : usingCondition(join, left, right, using);
+    new ExpressionCompiler(scope, parameters).compileCondition(condition, join.using().isEmpty() ? "JOIN/ON" : "JOIN/USING");
     final List<Conjunct> on = new ArrayList<>();
-    for (final Conjunct term : Pushdown.terms(join.condition(), scope))
+    for (final Conjunct term : Pushdown.terms(condition, scope))
       if (!(term.expression() instanceof Expression.BooleanLiteral literal && literal.value()))
         on.add(term);
-    return new JoinNode(join.type(), left, right, on);
+    return new JoinNode(join.type(), left, right, on, using);
+  }
+
+  /**
+   * {@code JOIN ... USING (a, b)}: the columns must be in both inputs (SQLSTATE {@code 42703}), once in each ({@code 42702}), and
+   * their types must have a common type ({@code 42804}). The condition is the equality of each pair, written with the relation of
+   * each column so that it reads the same whatever else is in scope; the merged column of each pair goes to {@code using}.
+   */
+  private Expression usingCondition(final TableReference.Join join, final Node left, final Node right, final List<Using> using) {
+    Expression condition = null;
+    for (final Name name : join.using()) {
+      final int leftOutput = usingOutput(name, left, "left");
+      final int rightOutput = usingOutput(name, right, "right");
+      final RelationSource.Output leftColumn = left.outputs().get(leftOutput);
+      final RelationSource.Output rightColumn = right.outputs().get(rightOutput);
+      final PgType type = SetTypes.resolve(leftColumn.type(), rightColumn.type(), "JOIN/USING");
+      final String typeName = leftColumn.type() == type ? leftColumn.typeName()
+          : rightColumn.type() == type ? rightColumn.typeName() : type.typeName();
+      using.add(new Using(name.value(), leftOutput, rightOutput, type, typeName));
+      final Expression equal = new Expression.BinaryOp(name.position(), Expression.BinaryOperator.EQUAL,
+          columnOf(left, leftColumn, name), columnOf(right, rightColumn, name));
+      condition = condition == null ? equal
+          : new Expression.BinaryOp(name.position(), Expression.BinaryOperator.AND, condition, equal);
+    }
+    return condition;
+  }
+
+  private static Expression.ColumnRef columnOf(final Node node, final RelationSource.Output output, final Name name) {
+    final RelationSource.Field field = node.fields().get(output.index());
+    return new Expression.ColumnRef(name.position(), List.of(new Name(name.position(), field.relation(), true)),
+        new Name(name.position(), field.name(), true));
+  }
+
+  /** The position of the column among the outputs of one side of a {@code USING} join. */
+  private static int usingOutput(final Name name, final Node side, final String which) {
+    for (int pass = 0; pass < 2; pass++) {
+      final List<Integer> matches = new ArrayList<>();
+      final List<RelationSource.Output> outputs = side.outputs();
+      for (int i = 0; i < outputs.size(); i++)
+        if (pass == 0 ? outputs.get(i).name().equals(name.value())
+            : !name.quoted() && outputs.get(i).name().equalsIgnoreCase(name.value()))
+          matches.add(i);
+      if (matches.size() == 1)
+        return matches.get(0);
+      if (matches.size() > 1)
+        throw new PostgreSQLEvaluationException("42702",
+            "common column name \"" + name.value() + "\" appears more than once in " + which + " table");
+      if (name.quoted())
+        break;
+    }
+    throw new PostgreSQLEvaluationException("42703",
+        "column \"" + name.value() + "\" specified in USING clause does not exist in " + which + " table");
   }
 
   private Built build(final Node node, final List<Conjunct> incoming) {
@@ -441,7 +546,7 @@ public final class JoinPlanner {
       estimated = inner ? Math.max(leftRows, rightRows) : leftRows;
     return new JoinSource(strategy, join.type, left, right, keys, residual, buildLeft, probe, traversal, capBytes,
         header + " [" + describe(support) + "]", rightLines, support, warns(join, support) ? warningOf(join, condition) : null,
-        estimated);
+        estimated).withOutputs(join.outputs());
   }
 
   /** The strategy a join without any key cannot avoid, and the one an equality join starts from. */

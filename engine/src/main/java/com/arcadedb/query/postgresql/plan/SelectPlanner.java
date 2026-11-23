@@ -226,7 +226,7 @@ public class SelectPlanner {
       source = joined.source();
     } else
       source = planFrom(select.from());
-    final RelationScope scope = new RelationScope(source.columns(), catalog, subqueryPlanner());
+    final RelationScope scope = new RelationScope(source.columns(), catalog, subqueryPlanner(), source.outputs());
     final ExpressionCompiler compiler = new ExpressionCompiler(scope, parameters);
 
     Evaluable where = null;

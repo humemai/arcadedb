@@ -27,6 +27,7 @@ import com.arcadedb.query.postgresql.catalog.Identifier;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
+import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.eval.SubqueryPlanner;
 import com.arcadedb.query.postgresql.plan.infoschema.InformationSchema;
@@ -53,6 +54,7 @@ public final class RelationScope implements ExpressionCompiler.Scope {
   private final List<RelationSource.Field> fields;
   private final RelationalCatalog          catalog;
   private final SubqueryPlanner            subqueries;
+  private final List<RelationSource.Output> outputs;
 
   public RelationScope(final List<RelationSource.Field> fields, final RelationalCatalog catalog) {
     this(fields, catalog, null);
@@ -62,9 +64,41 @@ public final class RelationScope implements ExpressionCompiler.Scope {
    * @param subqueries plans the subqueries of the expressions of this scope, {@code null} where the clause has none
    */
   public RelationScope(final List<RelationSource.Field> fields, final RelationalCatalog catalog, final SubqueryPlanner subqueries) {
+    this(fields, catalog, subqueries, null);
+  }
+
+  /**
+   * @param outputs the columns that an unqualified name or {@code *} reads, {@code null} for every field in order; a qualified
+   *                name reads the fields whatever this says
+   */
+  public RelationScope(final List<RelationSource.Field> fields, final RelationalCatalog catalog, final SubqueryPlanner subqueries,
+      final List<RelationSource.Output> outputs) {
     this.fields = List.copyOf(fields);
     this.catalog = catalog;
     this.subqueries = subqueries;
+    this.outputs = outputs == null ? null : List.copyOf(outputs);
+  }
+
+  /** The output that an unqualified name stands for: the exact name first, then the one that differs in case (not for a quoted name). */
+  public RelationSource.Output output(final Name column) {
+    for (int pass = 0; pass < 2; pass++) {
+      final List<RelationSource.Output> matches = new ArrayList<>();
+      for (final RelationSource.Output output : outputs)
+        if (same(column, output.name(), pass))
+          matches.add(output);
+      if (matches.size() == 1)
+        return matches.get(0);
+      if (matches.size() > 1) {
+        final List<String> names = new ArrayList<>();
+        for (final RelationSource.Output match : matches)
+          names.add(fields.get(match.index()).relation().isEmpty() ? match.name()
+              : fields.get(match.index()).relation() + "." + match.name());
+        throw PostgreSQLAmbiguousIdentifierException.column(column.value(), names);
+      }
+      if (column.quoted())
+        break;
+    }
+    throw PostgreSQLReferenceException.undefinedColumn(column.value());
   }
 
   @Override
@@ -85,6 +119,17 @@ public final class RelationScope implements ExpressionCompiler.Scope {
       relation = qualifier.get(1);
     } else if (qualifier.size() == 1)
       relation = qualifier.get(0);
+    if (relation == null && outputs != null) {
+      final RelationSource.Output output = output(reference.column());
+      final RelationSource.Field source = fields.get(output.index());
+      if (output.type() == source.type())
+        return new Evaluable.Slot(source.type(), source.typeName(), output.index());
+      // a merged column of two types is read in the common type
+      final int position = output.index();
+      final PgType from = source.type();
+      final PgType to = output.type();
+      return new Evaluable.Node(to, row -> SetTypes.convert(row[position], from, to));
+    }
     final int index = resolve(relation, reference.column());
     final RelationSource.Field field = fields.get(index);
     return new Evaluable.Slot(field.type(), field.typeName(), index);
@@ -155,6 +200,18 @@ public final class RelationScope implements ExpressionCompiler.Scope {
     } else if (fields.isEmpty())
       throw new PostgreSQLEvaluationException("42601", "SELECT * with no tables specified is not valid");
     final List<Expression.ColumnRef> out = new ArrayList<>();
+    if (relation == null && outputs != null) {
+      for (final RelationSource.Output output : outputs) {
+        final RelationSource.Field field = fields.get(output.index());
+        if (output.type() != field.type())
+          // a merged column of two types: its name stands for it, and is read in the common type
+          out.add(new Expression.ColumnRef(star.position(), List.of(), new Name(star.position(), output.name(), true)));
+        else
+          out.add(new Expression.ColumnRef(star.position(), List.of(new Name(star.position(), field.relation(), true)),
+              new Name(star.position(), field.name(), true)));
+      }
+      return out;
+    }
     for (final RelationSource.Field field : fields) {
       if (relation != null && !sameRelation(relation, field.relation()))
         continue;

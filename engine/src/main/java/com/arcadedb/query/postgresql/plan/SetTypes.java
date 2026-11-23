@@ -33,11 +33,11 @@ import java.time.LocalDate;
  * {@code double precision}, strings to {@code text}, a date and a timestamp to the timestamp. Any other pair is SQLSTATE
  * {@code 42804}.
  */
-final class SetTypes {
+public final class SetTypes {
   private SetTypes() {
   }
 
-  static PgType resolve(final PgType left, final PgType right, final String operation) {
+  public static PgType resolve(final PgType left, final PgType right, final String operation) {
     if (left == PgType.UNKNOWN && right == PgType.UNKNOWN)
       return PgType.TEXT;
     if (left == PgType.UNKNOWN)
@@ -67,7 +67,7 @@ final class SetTypes {
   }
 
   /** The value of a column of type {@code from} in the type {@code to} that {@link #resolve} chose. */
-  static Object convert(final Object value, final PgType from, final PgType to) {
+  public static Object convert(final Object value, final PgType from, final PgType to) {
     if (value == null || from == to)
       return value;
     if (from == PgType.UNKNOWN)

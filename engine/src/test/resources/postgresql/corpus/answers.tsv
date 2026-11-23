@@ -290,3 +290,23 @@ err-c3-scalar-subquery-two-rows-in-where	multiset	-	ok	SELECT name FROM person W
 err-c3-scalar-subquery-two-columns	multiset	-	ok	SELECT (SELECT 1, 2)	pending-server
 err-c3-scalar-subquery-unknown-column	multiset	-	ok	SELECT (SELECT nosuch FROM person)	pending-server
 err-c3-scalar-subquery-type-mismatch	multiset	-	ok	SELECT name FROM person WHERE pid = (SELECT name FROM person LIMIT 1)	pending-server
+c4-using-merged-column	ordered	-	ok	SELECT pid, name, oid FROM person JOIN orders USING (pid) ORDER BY oid	pending-server
+c4-using-star-puts-the-merged-column-first	ordered	-	ok	SELECT * FROM (SELECT pid, name FROM person) p JOIN (SELECT pid, total FROM orders) o USING (pid) ORDER BY o.total	pending-server
+c4-using-columns-stay-readable-qualified	ordered	-	ok	SELECT p.pid, o.pid, pid FROM person p JOIN orders o USING (pid) ORDER BY o.oid	pending-server
+c4-using-left-join-keeps-the-left-value	ordered	-	ok	SELECT pid, name, oid FROM person p LEFT JOIN orders o USING (pid) ORDER BY pid, oid	pending-server
+c4-using-two-columns	ordered	-	ok	SELECT * FROM (SELECT pid, city FROM person) a JOIN (SELECT pid, city, 1 AS k FROM person) b USING (pid, city) ORDER BY pid	pending-server
+c4-using-two-columns-in-the-order-of-the-list	ordered	-	ok	SELECT * FROM (SELECT pid, city FROM person) a JOIN (SELECT pid, city, 1 AS k FROM person) b USING (city, pid) ORDER BY pid	pending-server
+c4-using-chain	ordered	-	ok	SELECT * FROM (SELECT pid AS a, 1 AS p FROM person) x JOIN (SELECT pid AS a, 2 AS q FROM person) y USING (a) JOIN (SELECT pid AS a, 3 AS r FROM person) z USING (a) ORDER BY a	pending-server
+c4-using-then-on-reads-the-merged-column	ordered	-	ok	SELECT a, name FROM (SELECT pid AS a FROM person) x JOIN (SELECT pid AS a FROM orders) y USING (a) JOIN person p ON p.pid = a ORDER BY a, name	pending-server
+c4-using-where-on-the-merged-column	ordered	-	ok	SELECT pid, oid FROM person JOIN orders USING (pid) WHERE pid = 4 ORDER BY oid	pending-server
+c4-using-group-by-the-merged-column	ordered	-	ok	SELECT pid, count(*) AS n FROM person JOIN orders USING (pid) GROUP BY pid ORDER BY pid	pending-server
+c4-using-merged-column-has-the-common-type-on-the-right	ordered	-	ok	SELECT * FROM (SELECT pid AS a FROM orders) x JOIN (SELECT pid::int8 AS a FROM person) y USING (a) ORDER BY a	pending-server
+c4-using-merged-column-has-the-common-type-on-the-left	ordered	-	ok	SELECT a FROM (SELECT pid::int8 AS a FROM person) x JOIN (SELECT pid AS a FROM orders) y USING (a) ORDER BY a	pending-server
+c4-using-null-keys-do-not-match	multiset	-	ok	SELECT count(*) FROM orders a JOIN orders b USING (pid)	pending-server
+c4-using-with-a-cte	ordered	-	ok	WITH o AS (SELECT pid, total FROM orders) SELECT pid, name, total FROM person JOIN o USING (pid) ORDER BY total	pending-server
+c4-using-in-a-derived-table	ordered	-	ok	SELECT t.pid, t.oid FROM (SELECT pid, oid FROM person JOIN orders USING (pid)) t ORDER BY t.oid	pending-server
+c4-using-column-name-case	ordered	-	ok	SELECT PID, oid FROM person JOIN orders USING (PID) ORDER BY oid	pending-server
+err-c4-using-column-not-on-the-left	multiset	-	ok	SELECT 1 FROM person p JOIN orders o USING (nosuch)	pending-server
+err-c4-using-column-not-on-the-right	multiset	-	ok	SELECT 1 FROM person p JOIN company c USING (pid)	pending-server
+err-c4-using-column-twice-on-the-left	multiset	-	ok	SELECT 1 FROM person p JOIN company c ON true JOIN orders o USING (id)	pending-server
+err-c4-using-qualified-name-is-ambiguous-once-merged-is-not	multiset	-	ok	SELECT id FROM person p JOIN orders o USING (pid)	pending-server

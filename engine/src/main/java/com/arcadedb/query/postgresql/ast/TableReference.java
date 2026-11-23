@@ -76,16 +76,27 @@ public sealed interface TableReference extends Node {
    * parenthesis leaves no node. {@code CROSS}, {@code NATURAL}, {@code RIGHT}, {@code FULL} and {@code USING} are not in the
    * subset.
    *
-   * @param condition the {@code ON} expression
+   * @param condition the {@code ON} expression, {@code null} for a join with {@code USING}
+   * @param using     the column names of {@code USING (a, b)}, empty for a join with {@code ON}
    */
-  record Join(SourcePosition position, TableReference left, JoinType type, TableReference right, Expression condition)
-      implements TableReference {
+  record Join(SourcePosition position, TableReference left, JoinType type, TableReference right, Expression condition,
+              List<Name> using) implements TableReference {
     public Join {
       Objects.requireNonNull(position, "position");
       Objects.requireNonNull(left, "left");
       Objects.requireNonNull(type, "type");
       Objects.requireNonNull(right, "right");
-      Objects.requireNonNull(condition, "condition");
+      using = List.copyOf(using);
+      if (condition == null && using.isEmpty())
+        throw new IllegalArgumentException("A join has an ON condition or a USING list");
+      if (condition != null && !using.isEmpty())
+        throw new IllegalArgumentException("A join has an ON condition or a USING list, not both");
+    }
+
+    /** A join with an {@code ON} condition. */
+    public Join(final SourcePosition position, final TableReference left, final JoinType type, final TableReference right,
+        final Expression condition) {
+      this(position, left, type, right, condition, List.of());
     }
   }
 }

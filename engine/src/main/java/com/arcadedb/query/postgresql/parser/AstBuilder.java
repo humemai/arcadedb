@@ -387,7 +387,13 @@ final class AstBuilder {
       final TableReference right = tableReference(join.tableRef(1));
       final TableReference.JoinType type = join.joinKind() != null && has(join.joinKind(), PostgreSQLParser.LEFT)
           ? TableReference.JoinType.LEFT : TableReference.JoinType.INNER;
-      return new TableReference.Join(position(context.getStart()), left, type, right, expression(join.joinQual().aExpr()));
+      final JoinQualContext qualification = join.joinQual();
+      if (qualification.aExpr() != null)
+        return new TableReference.Join(position(context.getStart()), left, type, right, expression(qualification.aExpr()));
+      final List<Name> using = new ArrayList<>();
+      for (final ColIdContext column : qualification.names)
+        using.add(name(column));
+      return new TableReference.Join(position(context.getStart()), left, type, right, null, using);
     }
     if (context instanceof DerivedRefContext derived) {
       final DerivedAliasContext alias = derived.derivedAlias();

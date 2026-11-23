@@ -208,6 +208,19 @@ public final class JoinSource implements RelationSource {
     return columns;
   }
 
+  private List<Output> outputs;
+
+  /** The columns an unqualified name reads: the merged columns of a {@code USING} first. */
+  JoinSource withOutputs(final List<Output> outputs) {
+    this.outputs = outputs;
+    return this;
+  }
+
+  @Override
+  public List<Output> outputs() {
+    return outputs;
+  }
+
   @Override
   public String describe() {
     return header;

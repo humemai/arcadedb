@@ -50,7 +50,7 @@ final class Diagnostics {
       Map.entry("unsupportedSortUsing", "ORDER BY with USING"),
       Map.entry("unsupportedLimitComma", "LIMIT with two values"),
       Map.entry("unsupportedFetchClause", "FETCH FIRST"),
-      Map.entry("unsupportedJoinUsing", "JOIN with USING"),
+      Map.entry("unsupportedJoinUsingAlias", "A join alias (USING ... AS name)"),
       Map.entry("unsupportedJoinAlias", "An alias on a parenthesised join"),
       Map.entry("unsupportedTablesample", "TABLESAMPLE"),
       Map.entry("unsupportedColumnAliases", "A column alias list"),

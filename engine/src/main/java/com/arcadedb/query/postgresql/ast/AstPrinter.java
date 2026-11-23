@@ -175,8 +175,9 @@ public final class AstPrinter {
           .collect(Collectors.joining(", ")) + ")");
       case TableReference.Join join -> print(join.left()) + (join.type() == TableReference.JoinType.LEFT ? " LEFT JOIN " : " INNER JOIN ")
           // a join on the right has to be in parentheses to keep its shape: joins group to the left
-          + (join.right() instanceof TableReference.Join ? "(" + print(join.right()) + ")" : print(join.right())) + " ON "
-          + print(join.condition());
+          + (join.right() instanceof TableReference.Join ? "(" + print(join.right()) + ")" : print(join.right()))
+          + (join.using().isEmpty() ? " ON " + print(join.condition())
+          : " USING (" + join.using().stream().map(AstPrinter::print).collect(Collectors.joining(", ")) + ")");
     };
   }
 

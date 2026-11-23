@@ -64,7 +64,7 @@ right-join	ok	outside	-	SELECT * FROM a RIGHT JOIN b ON a.x = b.x	written for th
 full-join	ok	outside	-	SELECT * FROM a FULL OUTER JOIN b ON a.x = b.x	written for the parser	42P01
 cross-join	ok	outside	-	SELECT * FROM a CROSS JOIN b	written for the parser	42P01
 natural-join	ok	outside	-	SELECT * FROM a NATURAL JOIN b	written for the parser	42P01
-join-using	ok	outside	-	SELECT * FROM a JOIN b USING (x)	written for the parser	42P01
+join-using	ok	inside	-	SELECT * FROM a JOIN b USING (x)	written for the parser	42P01
 insert	ok	inside	-	INSERT INTO a VALUES (1)	written for the parser	42P01
 update	ok	inside	-	UPDATE a SET x = 1	written for the parser	42P01
 delete	ok	inside	-	DELETE FROM a	written for the parser	42P01
@@ -1440,7 +1440,7 @@ syn-empty-select-list	ok	outside	-	SELECT FROM person	s3	-
 out-right-join	ok	outside	-	SELECT * FROM person p RIGHT JOIN company c ON p.pid = c.cid	s3	-
 out-full-join	ok	outside	-	SELECT * FROM person p FULL JOIN company c ON p.pid = c.cid	s3	-
 out-cross-join	ok	outside	-	SELECT * FROM person CROSS JOIN company	s3	-
-out-join-using	ok	outside	-	SELECT * FROM person p JOIN orders o USING (pid)	s3	-
+out-join-using	ok	inside	-	SELECT * FROM person p JOIN orders o USING (pid)	s3	-
 out-natural-join	ok	outside	-	SELECT * FROM person NATURAL JOIN orders	s3	-
 out-lateral	ok	outside	-	SELECT * FROM person p, LATERAL (SELECT 1) AS l	s3	-
 out-insert	ok	inside	-	INSERT INTO company VALUES (40, 'Dune')	s3	22P02
@@ -1578,3 +1578,14 @@ c3-scalar-subquery-set-operation	pending-server	inside	-	SELECT (SELECT 1 UNION 
 c3-scalar-subquery-parenthesised-twice	pending-server	inside	-	SELECT ((SELECT 1))	written for the parser	-
 c3-scalar-subquery-values	pending-server	outside	-	SELECT (VALUES (1))	written for the parser	-
 c3-scalar-subquery-unclosed	pending-server	unknown	-	SELECT (SELECT 1	written for the parser	-
+c4-using-one-column	pending-server	inside	-	SELECT * FROM a JOIN b USING (x)	written for the parser	-
+c4-using-two-columns	pending-server	inside	-	SELECT * FROM a JOIN b USING (x, y)	written for the parser	-
+c4-using-left	pending-server	inside	-	SELECT * FROM a LEFT JOIN b USING (x)	written for the parser	-
+c4-using-left-outer	pending-server	inside	-	SELECT x FROM a LEFT OUTER JOIN b USING (x)	written for the parser	-
+c4-using-chain	pending-server	inside	-	SELECT * FROM a JOIN b USING (x) JOIN c USING (x)	written for the parser	-
+c4-using-then-on	pending-server	inside	-	SELECT * FROM a JOIN b USING (x) JOIN c ON c.x = a.x	written for the parser	-
+c4-using-quoted	pending-server	inside	-	SELECT * FROM a JOIN b USING ("X")	written for the parser	-
+c4-using-alias	pending-server	outside	-	SELECT * FROM a JOIN b USING (x) AS j	written for the parser	-
+c4-using-right	pending-server	outside	-	SELECT * FROM a RIGHT JOIN b USING (x)	written for the parser	-
+c4-using-empty-list	pending-server	unknown	-	SELECT * FROM a JOIN b USING ()	written for the parser	-
+c4-join-without-condition	pending-server	unknown	-	SELECT * FROM a JOIN b	written for the parser	-
