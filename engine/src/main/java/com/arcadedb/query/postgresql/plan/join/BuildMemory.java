@@ -42,10 +42,32 @@ public final class BuildMemory {
   /** The default cap of one join: 64 MiB of estimated row bytes. */
   public static final long DEFAULT_CAP_BYTES = 64L * 1024 * 1024;
 
+  /** The JVM property that raises or lowers the cap of a planner made without an explicit one, in MiB. */
+  public static final String CAP_PROPERTY = "arcadedb.postgresql.joinMemoryMb";
+
   private static final long ROW_OVERHEAD = 16 + 64;
 
   private final long cap;
   private long       used;
+
+  /**
+   * The cap of a planner made without one: {@link #DEFAULT_CAP_BYTES}, or the number of MiB in the JVM property
+   * {@link #CAP_PROPERTY}. TPC-H at scale factor 1 builds the 200000 rows of {@code part}, about 95 MiB by the estimate below, so
+   * the timed run of fork issue #13 sets it; a value that is not a positive number is an error, never a silent default.
+   */
+  public static long configuredCapBytes() {
+    final String value = System.getProperty(CAP_PROPERTY);
+    if (value == null || value.isBlank())
+      return DEFAULT_CAP_BYTES;
+    try {
+      final long mebibytes = Long.parseLong(value.strip());
+      if (mebibytes > 0 && mebibytes <= Long.MAX_VALUE / (1024L * 1024L))
+        return mebibytes * 1024L * 1024L;
+    } catch (final NumberFormatException e) {
+      // reported below
+    }
+    throw new IllegalArgumentException("The JVM property " + CAP_PROPERTY + " is " + value + ": a positive number of MiB is expected");
+  }
 
   public BuildMemory(final long capBytes) {
     this.cap = capBytes;

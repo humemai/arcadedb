@@ -33,8 +33,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -50,11 +53,20 @@ final class ArcadeSide implements AutoCloseable {
   private       Map<String, String> ridAliases = Map.of();
 
   ArcadeSide() throws IOException {
-    directory = Files.createTempDirectory("pgparity-arcadedb");
-    factory = new DatabaseFactory(directory.resolve("small").toString());
-    database = factory.create();
+    this("small");
     SmallFixture.createSchema(database);
     SmallFixture.load(database);
+  }
+
+  /** An empty database: the caller builds its own schema and rows in {@link #database()} (the TPC-H harness does). */
+  ArcadeSide(final String name) throws IOException {
+    directory = Files.createTempDirectory("pgparity-arcadedb");
+    factory = new DatabaseFactory(directory.resolve(name).toString());
+    database = factory.create();
+  }
+
+  Database database() {
+    return database;
   }
 
   /**
@@ -106,6 +118,47 @@ final class ArcadeSide implements AutoCloseable {
       return Outcome.answer(new ResultTable(labels, null, rows));
     } catch (final Throwable t) {
       return Outcome.refused(sqlState(t), String.valueOf(t.getMessage()));
+    }
+  }
+
+  /** What ArcadeDB's own {@code sql} language did with a statement: the table it answered, or the exception it threw. */
+  record NativeRun(ResultTable table, Throwable error) {
+  }
+
+  /**
+   * ArcadeDB's own {@code sql} language on the same database and the same data, for the capability matrix: the statement text
+   * goes in unchanged (nothing is added or rewritten) through {@code database.query("sql", statement)}, embedded, so the row
+   * limit that the HTTP layer adds does not exist. A row of this language is a map, so two columns with one name are one
+   * column, and a record that {@code SELECT *} returns also carries metadata names that start with {@code @} ({@code @rid},
+   * {@code @type}): those are not columns the statement selected and are left out, so rows compare on the selected columns
+   * only. A column that a row does not hold, because the record has no such property, is {@code null} in that row. Cells are
+   * normalised as in {@link #run}, record ids translated to the fixture file's.
+   */
+  NativeRun runNative(final String statement) {
+    try (final ResultSet rs = database.query("sql", statement)) {
+      final List<Map<String, Object>> maps = new ArrayList<>();
+      final Set<String> labels = new LinkedHashSet<>();
+      while (rs.hasNext()) {
+        final Result result = rs.next();
+        final Map<String, Object> map = new LinkedHashMap<>();
+        for (final String name : result.getPropertyNames())
+          if (!name.startsWith("@")) {
+            map.put(name, alias(Values.normalize(result.getProperty(name))));
+            labels.add(name);
+          }
+        maps.add(map);
+      }
+      final List<String> labelList = maps.isEmpty() ? null : new ArrayList<>(labels);
+      final List<List<Object>> rows = new ArrayList<>(maps.size());
+      for (final Map<String, Object> map : maps) {
+        final List<Object> row = new ArrayList<>(labelList.size());
+        for (final String label : labelList)
+          row.add(map.get(label));
+        rows.add(row);
+      }
+      return new NativeRun(new ResultTable(labelList, null, rows), null);
+    } catch (final Throwable t) {
+      return new NativeRun(null, t);
     }
   }
 
