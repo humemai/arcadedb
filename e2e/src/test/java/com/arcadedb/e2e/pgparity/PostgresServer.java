@@ -22,9 +22,15 @@ import com.arcadedb.query.postgresql.corpus.Json;
 import com.arcadedb.query.postgresql.corpus.Outcome;
 import com.arcadedb.query.postgresql.corpus.ResultTable;
 import com.arcadedb.query.postgresql.corpus.Values;
+import org.postgresql.PGConnection;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -144,6 +150,16 @@ final class PostgresServer implements AutoCloseable {
   void load(final String script) throws SQLException {
     try (final Statement statement = connection.createStatement()) {
       statement.execute(script);
+    }
+  }
+
+  /**
+   * Copies a tab separated file into a table with {@code COPY <table> FROM STDIN} (the text format: the columns of a line are the
+   * columns of the table), and returns the number of rows the server read.
+   */
+  long copyIn(final String table, final Path file) throws SQLException, IOException {
+    try (final Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+      return connection.unwrap(PGConnection.class).getCopyAPI().copyIn("COPY " + table + " FROM STDIN", reader);
     }
   }
 

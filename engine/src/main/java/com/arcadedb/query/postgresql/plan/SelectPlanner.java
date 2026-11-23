@@ -69,7 +69,7 @@ public class SelectPlanner {
   private final long               joinMemoryCap;
 
   public SelectPlanner(final Database database, final Parameters parameters) {
-    this(database, parameters, BuildMemory.DEFAULT_CAP_BYTES);
+    this(database, parameters, BuildMemory.configuredCapBytes());
   }
 
   /**
@@ -142,12 +142,14 @@ public class SelectPlanner {
   // ---- the plan ----
 
   public SelectPlan plan(final SelectStatement select) {
+    // PostgreSQL takes the terms that every branch of an OR has in common out of it before it plans (prepqual.c)
+    final Expression whereClause = OrFactoring.factor(select.where());
     final boolean grouping = !select.groupBy().isEmpty() || select.having() != null || hasAggregate(select);
 
     RelationSource source;
     JoinPlanner.Result joined = null;
     if (hasJoin(select.from())) {
-      joined = new JoinPlanner(database, catalog, parameters, joinTables(), joinMemoryCap).plan(select.from(), select.where());
+      joined = new JoinPlanner(database, catalog, parameters, joinTables(), joinMemoryCap).plan(select.from(), whereClause);
       source = joined.source();
     } else
       source = planFrom(select.from());
@@ -155,8 +157,8 @@ public class SelectPlanner {
     final ExpressionCompiler compiler = new ExpressionCompiler(scope, parameters);
 
     Evaluable where = null;
-    if (select.where() != null) {
-      where = compiler.compileCondition(select.where(), "WHERE");
+    if (whereClause != null) {
+      where = compiler.compileCondition(whereClause, "WHERE");
       if (joined != null) {
         // the join planner applied the terms it could place below the joins; the others are the filter on top
         final List<Evaluable> above = new ArrayList<>();
@@ -164,7 +166,7 @@ public class SelectPlanner {
           above.add(compiler.compileCondition(term, "WHERE"));
         where = above.isEmpty() ? null : JoinPlanner.allOf(above);
       } else if (source instanceof TableSource tableSource)
-        source = chooseAccessPath(tableSource, select.where(), compiler);
+        source = chooseAccessPath(tableSource, whereClause, compiler);
     }
 
     // grouping: the select list, HAVING and ORDER BY are then typed over the group rows
@@ -192,7 +194,11 @@ public class SelectPlanner {
           asts.add(reference);
         }
       } else if (item instanceof SelectItem.Projection projection) {
-        outputs.add(outputCompiler.resolveOutput(outputCompiler.compile(projection.expression())));
+        final Evaluable output = outputCompiler.resolveOutput(outputCompiler.compile(projection.expression()));
+        if (output.type() == PgType.INTERVAL)
+          throw new PostgreSQLFeatureNotSupportedException(
+              "A result column of type interval is not supported: an interval is read only as an operand of date arithmetic");
+        outputs.add(output);
         names.add(projection.alias() != null ? projection.alias().value() : outputName(projection.expression()));
         asts.add(projection.expression());
       }

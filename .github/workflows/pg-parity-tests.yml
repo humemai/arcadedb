@@ -26,7 +26,7 @@
 # every pull request into the prototype branch. The corpus classes themselves (comparison rules, file formats) are tested
 # without a server by the engine tests of pg-prototype-engine-tests.yml.
 #
-# Started by hand with the input regenerate on, it rewrites the expected cells of the two corpus files from the real server and
+# Started by hand with the input regenerate on, it rewrites the expected cells of the three corpus files from the real server and
 # uploads them as an artifact (the workflow has no write access): the generator is never on in a run that a push or a pull
 # request starts. Drop this file when anything goes upstream.
 name: PostgreSQL prototype - answer parity
@@ -64,6 +64,10 @@ jobs:
     timeout-minutes: 30
     env:
       PGPARITY_REGENERATE: ${{ inputs.regenerate == true && 'true' || 'false' }}
+      # the TPC-H data of PgTpchParityIT (fork issue #13): the scale factor of dbgen, and the version of uv and DuckDB that make it
+      PGPARITY_TPCH_SCALE: "0.01"
+      PGPARITY_UV_VERSION: "0.13.4"
+      PGPARITY_DUCKDB_VERSION: "1.5.4"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -74,18 +78,30 @@ jobs:
           java-version: 21
           cache: "maven"
 
+      # The data of PgTpchParityIT: lineitem and part of TPC-H from DuckDB's dbgen, generated here and never committed. dbgen is
+      # deterministic for one DuckDB version and one scale factor, both pinned above; the script prints the SHA-256 of each file.
+      - name: Install uv
+        run: curl -LsSf "https://astral.sh/uv/${PGPARITY_UV_VERSION}/install.sh" | sh && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Generate the TPC-H data
+        shell: bash
+        run: >-
+          uv run --python 3.12 --no-project --with "duckdb==${PGPARITY_DUCKDB_VERSION}" python -I .github/scripts/pg_tpch_data.py
+          "${RUNNER_TEMP}/tpch" "${PGPARITY_TPCH_SCALE}" | tee "${RUNNER_TEMP}/tpch-data.txt"
+
       # The e2e module needs the engine test-jar (SmallFixture and the corpus classes), a package-phase artifact. -am builds the
       # modules e2e depends on and installs them, the way the build job of mvn-test.yml does, without running any test.
       - name: Build the e2e module and what it depends on
         run: ./mvnw install -DskipTests --batch-mode --errors --show-version -pl e2e -am
 
-      # -Pintegration turns the integration tests on. -Dit.test names the two classes of the pgparity package: every other
+      # -Pintegration turns the integration tests on. -Dit.test names the three classes of the pgparity package: every other
       # class of the module needs the ArcadeDB image that this workflow does not build.
       - name: Run the parity harness
         run: >-
           ./mvnw verify -Pintegration --batch-mode --errors --show-version -pl e2e
-          -Dit.test=PostgresServerIT,PgParityIT
+          -Dit.test=PostgresServerIT,PgParityIT,PgTpchParityIT
           -Dpgparity.regenerate="${PGPARITY_REGENERATE}"
+          -Dpgparity.tpch.dir="${RUNNER_TEMP}/tpch"
 
       - name: Report of the run
         if: always()
@@ -99,6 +115,35 @@ jobs:
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+          if [ -f e2e/target/pgparity/report-tpch.txt ]; then
+            {
+              echo '## TPC-H parity report'
+              echo
+              echo '```'
+              cat "${RUNNER_TEMP}/tpch-data.txt" e2e/target/pgparity/report-tpch.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # The capability matrix (PgParityIT.capabilityMatrix): the statements of the answer corpus on PostgreSQL 18, on the postgresql
+      # language and on ArcadeDB's own sql language, counted per statement group. A report, never a gate.
+      - name: Capability matrix in the summary
+        if: always()
+        run: |
+          if [ -f e2e/target/pgparity/capability-matrix.md ]; then
+            cat e2e/target/pgparity/capability-matrix.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the capability matrix
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pgparity-capability-matrix
+          path: |
+            e2e/target/pgparity/capability-matrix.md
+            e2e/target/pgparity/capability-matrix.tsv
+          if-no-files-found: warn
+          retention-days: 14
 
       # Generator runs only: the files to commit. The run has no write access, so the files go through an artifact.
       - name: Upload the regenerated corpus
@@ -109,8 +154,10 @@ jobs:
           path: |
             engine/src/test/resources/postgresql/corpus/syntax.tsv
             engine/src/test/resources/postgresql/corpus/answers.tsv
+            engine/src/test/resources/postgresql/corpus/tpch.tsv
             engine/src/test/resources/postgresql/corpus/agent-sql.tsv
             e2e/target/pgparity/report.txt
+            e2e/target/pgparity/report-tpch.txt
           if-no-files-found: error
           retention-days: 7
 
@@ -122,5 +169,6 @@ jobs:
           path: |
             e2e/target/failsafe-reports/*
             e2e/target/pgparity/report.txt
+            e2e/target/pgparity/report-tpch.txt
           if-no-files-found: ignore
           retention-days: 7
