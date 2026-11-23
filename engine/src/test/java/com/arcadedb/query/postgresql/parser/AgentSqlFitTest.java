@@ -101,10 +101,10 @@ class AgentSqlFitTest {
     feature("WITH (CTE)", "\\A\\s*with\\b");
     feature("WITH RECURSIVE", "\\bwith\\s+recursive\\b");
     feature("UNION, INTERSECT, EXCEPT", "\\b(union|intersect|except)\\b");
-    feature("subquery in FROM or JOIN", "\\b(from|join)\\s*\\(\\s*(select|with)\\b|,\\s*\\(\\s*select\\b");
+    feature("subquery in FROM or JOIN", "\\b(from|join)\\s*\\(\\s*(select|with)\\b");
     feature("IN (SELECT ...)", "\\bin\\s*\\(\\s*select\\b");
     feature("EXISTS (...)", "\\bexists\\s*\\(");
-    feature("scalar subquery", "[=<>+*/-]\\s*\\(\\s*select\\b|select\\b[^()]*\\(\\s*select\\b");
+    feature("scalar subquery", "[=<>+*/-]\\s*\\(\\s*select\\b|\\bselect\\s*\\(\\s*select\\b|,\\s*\\(\\s*select\\b[^)]*\\)\\s+as\\b");
     feature("window function (OVER)", "\\bover\\s*\\(|\\bover\\s+[a-z_]");
     feature("ILIKE", "\\bilike\\b");
     feature("DISTINCT ON", "\\bdistinct\\s+on\\b");
