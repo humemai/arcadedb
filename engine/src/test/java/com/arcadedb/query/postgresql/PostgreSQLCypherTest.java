@@ -41,8 +41,10 @@ class PostgreSQLCypherTest extends TestHelper {
 
   private List<Result> rows(final String language, final String statement, final Object... parameters) {
     final List<Result> rows = new ArrayList<>();
-    try (final ResultSet resultSet = "postgresql".equals(language) && !statement.startsWith("SELECT")
-        ? database.command(language, statement, parameters) : database.query(language, statement, parameters)) {
+    // a read goes through query, a write or a transaction statement through command, in both languages
+    final boolean read = statement.startsWith("SELECT") || statement.startsWith("MATCH") && !statement.contains(" CREATE ");
+    try (final ResultSet resultSet = read ? database.query(language, statement, parameters)
+        : database.command(language, statement, parameters)) {
       while (resultSet.hasNext())
         rows.add(resultSet.next());
     }
