@@ -67,6 +67,24 @@
             <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
+        <!-- The PostgreSQL parity harness (com.arcadedb.e2e.pgparity, fork issue #2) runs the engine embedded and builds the
+             small fixture with SmallFixture, which lives in the engine's test classes: the test-jar is how it reaches it, so
+             that the fixture of the engine tests and of the harness is one build. A test-jar is a package-phase artifact: a
+             build of this module needs the engine in the reactor (-am) or installed, as for the network module. The corpus
+             classes (com.arcadedb.query.postgresql.corpus) come the same way. -->
+        <dependency>
+            <groupId>com.arcadedb</groupId>
+            <artifactId>arcadedb-engine</artifactId>
+            <version>${project.parent.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.arcadedb</groupId>
+            <artifactId>arcadedb-engine</artifactId>
+            <version>${project.parent.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>com.arcadedb</groupId>
             <artifactId>arcadedb-network</artifactId>

@@ -1,0 +1,229 @@
+# PostgreSQL-style SQL prototype: the accept and reject corpus (grammar issue #3, harness issue #2).
+# Columns, separated by one TAB: id, scope, statement, expected.
+# id: unique, lower case, words joined by hyphens. Add a case at the end of its group; never renumber or reuse an id.
+# scope: in = the statement lies inside the subset of the grammar, out = it lies outside. With the outcome read from the server the engine must parse an in statement that the server parsed, refuse an out statement that the server parsed with SQLSTATE 0A000, and refuse a statement that the server rejected as syntax-error 42601 with 42601, whatever its scope.
+# statement: one statement, with backslash, tab, line feed and carriage return written as \\, \t, \n and \r.
+# expected: written by the generator from the real server, never by hand. ok = the server parsed the statement. syntax-error 42601 = the server rejected it as a syntax error. error SQLSTATE = the server parsed it and a later stage refused it (an unknown table, an undetermined parameter type), which counts as parsed. Empty = the generator has not run on the case yet: add a case with an empty expected, then run the generator.
+# generator: the integration test PgParityIT of the e2e module with -Dpgparity.regenerate=true, or the workflow PostgreSQL prototype - answer parity started by hand with regenerate on. The server only parses a statement here (the parse step of the protocol), it never runs one.
+# readers: the harness (answer parity of issue #2) and the parser tests (issue #3), through com.arcadedb.query.postgresql.corpus.Corpus.
+id	scope	statement	expected
+demo-select-one	in	SELECT 1	
+demo-names-by-pid	in	SELECT name FROM person ORDER BY pid	
+demo-loader-check	in	SELECT count(*), sum(age), min(age), max(age) FROM person	
+demo-join-limit	in	SELECT p.name, o.oid FROM orders o JOIN person p ON o.pid = p.pid WHERE p.city = 'Delft' ORDER BY o.oid LIMIT 2	
+st-star-company	in	SELECT * FROM company ORDER BY cid	
+st-columns	in	SELECT name, age FROM person ORDER BY pid	
+st-alias-arithmetic	in	SELECT name AS who, age + 1 AS next_age FROM person ORDER BY pid	
+st-distinct-city	in	SELECT DISTINCT city FROM person	
+st-distinct-city-sorted	in	SELECT DISTINCT city FROM person ORDER BY city	
+st-unnamed-columns	in	SELECT 1, 'a', true	
+st-constant-column	in	SELECT 'x' AS tag, pid FROM person ORDER BY pid	
+st-where-gt	in	SELECT name FROM person WHERE age > 30 ORDER BY pid	
+st-where-range	in	SELECT name FROM person WHERE age >= 36 AND age <= 41 ORDER BY pid	
+st-where-ne	in	SELECT name FROM person WHERE age <> 36 ORDER BY pid	
+st-where-is-null	in	SELECT name FROM person WHERE age IS NULL ORDER BY pid	
+st-where-is-not-null	in	SELECT name FROM person WHERE age IS NOT NULL ORDER BY pid	
+st-where-not	in	SELECT name FROM person WHERE NOT (age > 30) ORDER BY pid	
+st-where-or	in	SELECT name FROM person WHERE age > 100 OR city = 'Leiden' ORDER BY pid	
+st-where-precedence	in	SELECT name FROM person WHERE city = 'Delft' OR city = 'Leiden' AND age > 30 ORDER BY pid	
+st-where-in	in	SELECT name FROM person WHERE city IN ('Delft', 'Utrecht') ORDER BY pid	
+st-where-not-in	in	SELECT name FROM person WHERE city NOT IN ('Delft', 'Utrecht') ORDER BY pid	
+st-where-not-in-null	in	SELECT name FROM person WHERE age NOT IN (36, NULL) ORDER BY pid	
+st-where-between	in	SELECT name FROM person WHERE age BETWEEN 29 AND 41 ORDER BY pid	
+st-where-not-between	in	SELECT name FROM person WHERE age NOT BETWEEN 29 AND 41 ORDER BY pid	
+st-where-like-prefix	in	SELECT name FROM person WHERE name LIKE 'A%' ORDER BY pid	
+st-where-like-case	in	SELECT name FROM person WHERE name LIKE '%d%' ORDER BY pid	
+st-where-like-underscore	in	SELECT name FROM person WHERE name LIKE '_o' ORDER BY pid	
+st-where-not-like	in	SELECT name FROM person WHERE name NOT LIKE '%d%' ORDER BY pid	
+st-where-text-compare	in	SELECT name FROM person WHERE name < 'C' ORDER BY pid	
+st-where-equals-null	in	SELECT name FROM person WHERE age = NULL ORDER BY pid	
+st-text-compare-case	in	SELECT 'a' < 'B' AS a_before_b, 'a' = 'A' AS same_case, 'Z' < 'a' AS z_before_a	
+st-null-comparisons	in	SELECT NULL = NULL AS eq, 1 = NULL AS one_eq, NULL IS NULL AS is_null	
+st-three-valued-logic	in	SELECT NULL::boolean AND false AS a, NULL::boolean OR true AS b, NULL::boolean AND true AS c, NOT NULL::boolean AS d	
+st-boolean-column	in	SELECT name, age > 30 AS over_30 FROM person ORDER BY pid	
+st-integer-division	in	SELECT pid, age / 5 AS q, age % 5 AS r FROM person ORDER BY pid	
+st-division-constants	in	SELECT 7 / 2 AS int_div, 7.0 / 2 AS numeric_div, 7 % 2 AS modulo, -7 / 2 AS negative_div, 7 / 2.0 AS mixed	
+st-numeric-third	in	SELECT 10.0 / 3 AS third	
+st-arithmetic-precedence	in	SELECT 2 + 3 * 4 AS a, (2 + 3) * 4 AS b	
+st-unary-minus-power	out	SELECT -2 ^ 2 AS p	
+st-modulo-signs	in	SELECT -7 % 3 AS a, 7 % -3 AS b	
+st-bigint-arithmetic	in	SELECT 2147483647::bigint + 1 AS big	
+st-numeric-column-arithmetic	in	SELECT oid, total * 2 AS doubled, total + 0.5 AS plus FROM orders ORDER BY oid	
+st-round	in	SELECT oid, round(total) AS r FROM orders ORDER BY oid	
+st-abs	in	SELECT pid, abs(age - 40) AS dist FROM person ORDER BY pid	
+st-concat	in	SELECT name || ' (' || city || ')' AS label FROM person ORDER BY pid	
+st-concat-null	in	SELECT name || age AS name_age FROM person ORDER BY pid	
+st-text-functions	in	SELECT upper(name) AS u, lower(city) AS l, length(name) AS n FROM person ORDER BY pid	
+st-coalesce	in	SELECT name, coalesce(age, 0) AS age_or_zero FROM person ORDER BY pid	
+st-nullif	in	SELECT name, nullif(city, 'Delft') AS other_city FROM person ORDER BY pid	
+st-case-searched	in	SELECT name, CASE WHEN age IS NULL THEN 'unknown' WHEN age < 40 THEN 'young' ELSE 'old' END AS band FROM person ORDER BY pid	
+st-case-simple	in	SELECT name, CASE city WHEN 'Delft' THEN 1 WHEN 'Leiden' THEN 2 END AS code FROM person ORDER BY pid	
+st-cast-column	in	SELECT pid, CAST(pid AS text) AS t, age::text AS age_text FROM person ORDER BY pid	
+st-cast-literals	in	SELECT CAST('42' AS integer) + 1 AS n, '2026-03-09'::date AS d, DATE '2026-03-09' + 1 AS next_day	
+st-date-compare	in	SELECT oid FROM orders WHERE placed >= DATE '2026-02-01' ORDER BY oid	
+st-date-order	in	SELECT oid, placed FROM orders ORDER BY placed DESC, oid	
+st-extract-month	out	SELECT oid, extract(month FROM placed) AS m FROM orders ORDER BY oid	
+st-order-default-nulls	in	SELECT name, age FROM person ORDER BY age, pid	
+st-order-desc-default-nulls	in	SELECT name, age FROM person ORDER BY age DESC, pid	
+st-order-nulls-first	in	SELECT name, age FROM person ORDER BY age NULLS FIRST, pid	
+st-order-desc-nulls-last	in	SELECT name, age FROM person ORDER BY age DESC NULLS LAST, pid	
+st-order-two-keys	in	SELECT name, city FROM person ORDER BY city DESC, name	
+st-order-ordinals	in	SELECT name, age FROM person ORDER BY 2 DESC NULLS LAST, 1	
+st-order-expression	in	SELECT name FROM person ORDER BY length(name), name	
+st-order-alias	in	SELECT name, age + 1 AS next FROM person ORDER BY next DESC NULLS LAST, name	
+st-limit	in	SELECT name FROM person ORDER BY pid LIMIT 2	
+st-limit-offset	in	SELECT name FROM person ORDER BY pid LIMIT 2 OFFSET 1	
+st-offset-only	in	SELECT name FROM person ORDER BY pid OFFSET 3	
+st-limit-zero	in	SELECT name FROM person ORDER BY pid LIMIT 0	
+st-limit-null	in	SELECT name FROM person ORDER BY pid LIMIT NULL	
+st-aggregates	in	SELECT count(*) AS n, count(age) AS n_age, sum(age) AS s, avg(age) AS a, min(age) AS lo, max(age) AS hi FROM person	
+st-aggregates-empty	in	SELECT count(*) AS n, sum(age) AS s, avg(age) AS a, min(age) AS lo FROM person WHERE age > 100	
+st-aggregate-types-person	in	SELECT sum(pid) AS s, avg(pid) AS a, min(name) AS lo, max(name) AS hi FROM person	
+st-aggregate-types-orders	in	SELECT sum(total) AS s, avg(total) AS a, min(placed) AS first_day, max(placed) AS last_day FROM orders	
+st-group-by	in	SELECT city, count(*) AS n FROM person GROUP BY city ORDER BY city	
+st-group-by-avg	in	SELECT city, avg(age) AS a, count(age) AS c FROM person GROUP BY city ORDER BY city	
+st-group-by-having	in	SELECT city, count(*) AS n FROM person GROUP BY city HAVING count(*) > 1 ORDER BY city	
+st-group-by-expression	in	SELECT age IS NULL AS unknown_age, count(*) AS n FROM person GROUP BY age IS NULL ORDER BY unknown_age	
+st-group-by-null-key	in	SELECT pid, count(*) AS n, sum(total) AS s FROM orders GROUP BY pid ORDER BY pid	
+st-count-distinct	in	SELECT count(DISTINCT city) AS n FROM person	
+st-group-order-by-aggregate	in	SELECT city, count(*) AS n FROM person GROUP BY city ORDER BY count(*) DESC, city	
+st-orders-columns	in	SELECT oid, pid, total, placed FROM orders ORDER BY oid	
+st-orders-total	in	SELECT oid FROM orders WHERE total > 9.99 ORDER BY oid	
+st-orders-no-buyer	in	SELECT oid FROM orders WHERE pid IS NULL ORDER BY oid	
+st-orders-array	in	SELECT oid, tags FROM orders ORDER BY oid	
+st-orders-jsonb	in	SELECT oid, address FROM orders ORDER BY oid	
+st-orders-link	in	SELECT oid, buyer FROM orders ORDER BY oid	
+st-person-id	in	SELECT id, pid FROM person ORDER BY pid	
+st-works-at	in	SELECT source_id, target_id, since FROM works_at ORDER BY since	
+join-inner	in	SELECT p.name, o.oid FROM orders o JOIN person p ON o.pid = p.pid ORDER BY o.oid	
+join-implicit	in	SELECT p.name, o.oid FROM orders o, person p WHERE o.pid = p.pid ORDER BY o.oid	
+join-left	in	SELECT p.name, o.oid FROM person p LEFT JOIN orders o ON o.pid = p.pid ORDER BY p.name, o.oid	
+join-edge	in	SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON w.target_id = c.id ORDER BY p.name, w.since	
+join-link	in	SELECT p.name FROM orders o JOIN person p ON o.buyer = p.id WHERE o.oid = 102	
+join-or-branches	in	SELECT o.oid FROM orders o, person p WHERE (o.pid = p.pid AND p.city = 'Delft') OR (o.pid = p.pid AND o.total < 6) ORDER BY o.oid	
+join-left-aggregate	in	SELECT p.name, count(o.oid) AS orders, coalesce(sum(o.total), 0) AS spent FROM person p LEFT JOIN orders o ON o.pid = p.pid GROUP BY p.name ORDER BY p.name	
+join-group-by-edge	in	SELECT p.city, count(*) AS jobs FROM person p JOIN works_at w ON w.source_id = p.id GROUP BY p.city ORDER BY p.city	
+join-left-count-star	in	SELECT c.name, count(*) AS n, count(w.since) AS jobs FROM company c LEFT JOIN works_at w ON w.target_id = c.id GROUP BY c.name ORDER BY c.name	
+join-null-key	in	SELECT count(*) AS n FROM orders o JOIN person p ON o.pid = p.pid	
+join-empty-result	in	SELECT o.oid FROM orders o JOIN person p ON o.pid = p.pid AND p.city = 'Utrecht'	
+join-star	in	SELECT * FROM person p LEFT JOIN orders o ON o.pid = p.pid ORDER BY p.pid, o.oid	
+join-non-equality	in	SELECT a.name AS a, b.name AS b FROM person a JOIN person b ON a.city = b.city AND a.pid < b.pid ORDER BY a.pid, b.pid	
+join-extra-condition	in	SELECT p.name, o.oid FROM person p JOIN orders o ON o.pid = p.pid AND o.total > 9 ORDER BY o.oid	
+join-three-tables	in	SELECT count(*) AS n FROM person p, company c, works_at w WHERE w.source_id = p.id AND w.target_id = c.id	
+join-expression-key	in	SELECT p.name, c.name FROM person p, company c WHERE p.pid = c.cid / 10 ORDER BY p.pid	
+err-unknown-column	in	SELECT nosuch FROM person	
+err-unknown-table	in	SELECT * FROM nosuch	
+err-division-by-zero	in	SELECT 1 / 0	
+err-bad-cast	in	SELECT 'abc'::integer	
+err-type-mismatch	in	SELECT name FROM person WHERE age = 'x'	
+err-no-such-function	in	SELECT sum(name) FROM person	
+err-grouping	in	SELECT name, count(*) FROM person GROUP BY city	
+err-ambiguous-column	in	SELECT name FROM person p JOIN company c ON p.pid = c.cid	
+err-duplicate-alias	in	SELECT 1 FROM person p JOIN company p ON true	
+err-integer-overflow	in	SELECT 2147483647 + 1	
+err-order-by-ambiguous	in	SELECT p.name, c.name FROM person p JOIN company c ON p.pid = c.cid ORDER BY name	
+err-aggregate-in-where	in	SELECT name FROM person WHERE count(*) > 1	
+err-negative-limit	in	SELECT name FROM person LIMIT -1	
+err-non-boolean-where	in	SELECT name FROM person WHERE age	
+syn-quoted-keywords	in	SELECT "left", "join" FROM "inner"	
+syn-keyword-as-column	in	SELECT left FROM person	
+syn-keyword-as-function	in	SELECT left(name, 1) FROM person	
+syn-vector-cosine	in	SELECT iid FROM item ORDER BY embedding <=> '[1,0,0]' LIMIT 3	
+syn-vector-euclidean	in	SELECT iid FROM item ORDER BY embedding <-> '[1,0,0]' LIMIT 3	
+syn-vector-inner-product	in	SELECT iid FROM item ORDER BY embedding <#> '[1,0,0]' LIMIT 3	
+syn-line-comment	in	SELECT 1 -- note	
+syn-nested-comment	in	/* a /* b */ c */ SELECT 1	
+syn-only-semicolon	in	;	
+syn-only-comment	in	-- nothing here	
+syn-trailing-semicolon	in	SELECT 1;	
+syn-comment-before-semicolon	in	SELECT 1 /* c */ ;	
+syn-select-count-star	in	SELECT count(*) FROM person	
+syn-select-star-qualified	in	SELECT p.* FROM person p	
+syn-schema-qualified	in	SELECT * FROM public.person	
+syn-information-schema	in	SELECT table_name FROM information_schema.tables	
+syn-from-only	in	SELECT * FROM ONLY person	
+syn-alias-without-as	in	SELECT name n FROM person p	
+syn-quoted-alias	in	SELECT 1 AS "a b"	
+syn-quoted-mixed-case	in	SELECT "Name" FROM "Person"	
+syn-parameter-in-where	in	SELECT name FROM person WHERE pid = $1	
+syn-parameter-select	in	SELECT $1	
+syn-not-equal-forms	in	SELECT 1 <> 2, 1 != 2	
+syn-double-cast	in	SELECT 1::int::text	
+syn-unary-signs	in	SELECT -1, +1	
+syn-escaped-quote	in	SELECT 'it''s'	
+syn-numeric-literal-forms	in	SELECT 1.5e3, .5, 5.	
+syn-interval-literal	in	SELECT INTERVAL '1' MONTH	
+syn-timestamp-literal	in	SELECT TIMESTAMP '2026-01-01 00:00:00'	
+syn-count-distinct-ordinal	in	SELECT city, count(DISTINCT name) FROM person GROUP BY 1	
+syn-string-continuation	in	SELECT 'a'\n'b'	
+syn-hex-literal	out	SELECT 0x1F	
+syn-underscore-literal	out	SELECT 1_000	
+syn-escape-string	out	SELECT E'a\\nb'	
+syn-dollar-quote	out	SELECT $$dollar$$	
+syn-empty-select-list	out	SELECT FROM person	
+out-right-join	out	SELECT * FROM person p RIGHT JOIN company c ON p.pid = c.cid	
+out-full-join	out	SELECT * FROM person p FULL JOIN company c ON p.pid = c.cid	
+out-cross-join	out	SELECT * FROM person CROSS JOIN company	
+out-join-using	out	SELECT * FROM person p JOIN orders o USING (pid)	
+out-natural-join	out	SELECT * FROM person NATURAL JOIN orders	
+out-lateral	out	SELECT * FROM person p, LATERAL (SELECT 1) AS l	
+out-insert	out	INSERT INTO company VALUES (40, 'Dune')	
+out-update	out	UPDATE person SET age = 1 WHERE pid = 1	
+out-delete	out	DELETE FROM person	
+out-create-table	out	CREATE TABLE t (a int)	
+out-drop-table	out	DROP TABLE t	
+out-truncate	out	TRUNCATE person	
+out-begin	out	BEGIN	
+out-commit	out	COMMIT	
+out-set	out	SET search_path = public	
+out-show	out	SHOW search_path	
+out-explain	out	EXPLAIN SELECT 1	
+out-values	out	VALUES (1)	
+out-subquery-from	out	SELECT * FROM (SELECT 1) AS s	
+out-subquery-in	out	SELECT name FROM person WHERE pid IN (SELECT pid FROM orders)	
+out-subquery-scalar	out	SELECT (SELECT 1)	
+out-exists	out	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid)	
+out-with	out	WITH t AS (SELECT 1) SELECT * FROM t	
+out-union	out	SELECT 1 UNION SELECT 2	
+out-intersect	out	SELECT 1 INTERSECT SELECT 1	
+out-window	out	SELECT row_number() OVER (ORDER BY pid) FROM person	
+out-distinct-on	out	SELECT DISTINCT ON (city) city, name FROM person ORDER BY city, pid	
+out-for-update	out	SELECT name FROM person FOR UPDATE	
+out-tablesample	out	SELECT * FROM person TABLESAMPLE SYSTEM (10)	
+out-rollup	out	SELECT city, count(*) FROM person GROUP BY ROLLUP (city)	
+out-ilike	out	SELECT name FROM person WHERE name ILIKE 'a%'	
+out-similar-to	out	SELECT name FROM person WHERE name SIMILAR TO 'A%'	
+out-is-distinct-from	out	SELECT 1 IS DISTINCT FROM 2	
+out-is-true	out	SELECT true IS TRUE	
+out-array-constructor	out	SELECT ARRAY[1, 2]	
+out-json-arrow	out	SELECT '{"a": 1}'::jsonb -> 'a'	
+out-function-in-from	out	SELECT a.x FROM generate_series(1, 3) AS a(x)	
+out-copy	out	COPY person TO STDOUT	
+bad-select-form	in	SELECT * FORM person	
+bad-trailing-comma	in	SELECT name, FROM person	
+bad-keyword-typo	in	SELEC 1	
+bad-open-paren	in	SELECT (1	
+bad-dangling-operator	in	SELECT 1 +	
+bad-unterminated-string	in	SELECT 'unterminated	
+bad-empty-where	in	SELECT * FROM person WHERE	
+bad-empty-order-by	in	SELECT * FROM person ORDER BY	
+bad-empty-limit	in	SELECT * FROM person LIMIT	
+bad-two-literals	in	SELECT 1 1	
+bad-alias-without-name	in	SELECT 1 AS	
+bad-join-without-on	in	SELECT * FROM person JOIN company	
+bad-dangling-comparison	in	SELECT * FROM person WHERE name = 	
+bad-group-without-by	in	SELECT * FROM person GROUP city	
+bad-two-aliases	in	SELECT * FROM person p p2	
+bad-count-star-unclosed	in	SELECT count(* FROM person	
+bad-case-without-end	in	SELECT CASE WHEN 1 THEN 2 FROM person	
+bad-cast-without-type	in	SELECT CAST(1)	
+bad-unclosed-where-paren	in	SELECT 1 FROM person WHERE (pid = 1	
+bad-star-then-name	in	SELECT * person	
+bad-offset-without-number	in	SELECT 1 ORDER BY 1 LIMIT 1 OFFSET	
+bad-adjacent-strings	in	SELECT 'a' 'b'	
+bad-dangling-and	in	SELECT * FROM person WHERE age > 30 AND	
+bad-nulls-without-position	in	SELECT name FROM person ORDER BY age NULLS	
+bad-empty-in-list	in	SELECT name FROM person WHERE pid IN ()	
+bad-between-without-and	in	SELECT name FROM person WHERE pid BETWEEN 1	
+bad-reserved-word-as-name	in	SELECT * FROM select	
+bad-double-comma	in	SELECT name,, age FROM person	

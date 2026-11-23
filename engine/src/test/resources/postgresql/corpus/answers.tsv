@@ -1,0 +1,130 @@
+# PostgreSQL-style SQL prototype: the answer parity corpus (issue #2).
+# Columns, separated by one TAB: id, order, tol, status, statement, expected.
+# id: unique, lower case, words joined by hyphens. Add a case at the end of its group; never renumber or reuse an id. An id that starts with err- is a statement the server must refuse: its expected is the SQLSTATE and the engine must refuse it with the same SQLSTATE.
+# order: ordered when the statement has an ORDER BY that is a total order on its rows (row order is then part of the answer), multiset otherwise (the same rows the same number of times, in any order). Stated for every statement.
+# tol: - for the default floating point tolerance (1e-9, relative to the larger of 1 and the two values) or a number. Only floating point values use it: integers, numeric and text compare exactly, numbers by value (38.5 equals 38.50).
+# status: ok = the engine is expected to answer like the server. pending = the engine does not support the statement yet: the harness runs it on the server only for its outcome, tries it on the engine, and reports it as pending, never as failed. When the engine answers a pending statement like the server the run fails until the flag is flipped to ok.
+# statement: one statement, with backslash, tab, line feed and carriage return written as \\, \t, \n and \r.
+# expected: written by the generator from the real server, never by hand: {"columns":[labels],"types":[PostgreSQL type names],"rows":[[cells]]}, or {"error":"SQLSTATE"}. Cells: NULL is null, numbers are numbers, text is text, dates and timestamps are ISO text, arrays are JSON arrays, jsonb is JSON. Empty = the generator has not run on the case yet.
+# rules of the comparison: the classes Values and ResultComparator in com.arcadedb.query.postgresql.corpus.
+# data: the small fixture of issue #2, engine/src/test/resources/postgresql/small-schema.sql loaded into PostgreSQL and SmallFixture built in ArcadeDB.
+# generator: see the header of syntax.tsv.
+id	order	tol	status	statement	expected
+demo-select-one	multiset	-	ok	SELECT 1	
+demo-names-by-pid	ordered	-	pending	SELECT name FROM person ORDER BY pid	
+demo-loader-check	multiset	-	pending	SELECT count(*), sum(age), min(age), max(age) FROM person	
+demo-join-limit	ordered	-	pending	SELECT p.name, o.oid FROM orders o JOIN person p ON o.pid = p.pid WHERE p.city = 'Delft' ORDER BY o.oid LIMIT 2	
+st-star-company	ordered	-	pending	SELECT * FROM company ORDER BY cid	
+st-columns	ordered	-	pending	SELECT name, age FROM person ORDER BY pid	
+st-alias-arithmetic	ordered	-	pending	SELECT name AS who, age + 1 AS next_age FROM person ORDER BY pid	
+st-distinct-city	multiset	-	pending	SELECT DISTINCT city FROM person	
+st-distinct-city-sorted	ordered	-	pending	SELECT DISTINCT city FROM person ORDER BY city	
+st-unnamed-columns	multiset	-	pending	SELECT 1, 'a', true	
+st-constant-column	ordered	-	pending	SELECT 'x' AS tag, pid FROM person ORDER BY pid	
+st-where-gt	ordered	-	pending	SELECT name FROM person WHERE age > 30 ORDER BY pid	
+st-where-range	ordered	-	pending	SELECT name FROM person WHERE age >= 36 AND age <= 41 ORDER BY pid	
+st-where-ne	ordered	-	pending	SELECT name FROM person WHERE age <> 36 ORDER BY pid	
+st-where-is-null	ordered	-	pending	SELECT name FROM person WHERE age IS NULL ORDER BY pid	
+st-where-is-not-null	ordered	-	pending	SELECT name FROM person WHERE age IS NOT NULL ORDER BY pid	
+st-where-not	ordered	-	pending	SELECT name FROM person WHERE NOT (age > 30) ORDER BY pid	
+st-where-or	ordered	-	pending	SELECT name FROM person WHERE age > 100 OR city = 'Leiden' ORDER BY pid	
+st-where-precedence	ordered	-	pending	SELECT name FROM person WHERE city = 'Delft' OR city = 'Leiden' AND age > 30 ORDER BY pid	
+st-where-in	ordered	-	pending	SELECT name FROM person WHERE city IN ('Delft', 'Utrecht') ORDER BY pid	
+st-where-not-in	ordered	-	pending	SELECT name FROM person WHERE city NOT IN ('Delft', 'Utrecht') ORDER BY pid	
+st-where-not-in-null	ordered	-	pending	SELECT name FROM person WHERE age NOT IN (36, NULL) ORDER BY pid	
+st-where-between	ordered	-	pending	SELECT name FROM person WHERE age BETWEEN 29 AND 41 ORDER BY pid	
+st-where-not-between	ordered	-	pending	SELECT name FROM person WHERE age NOT BETWEEN 29 AND 41 ORDER BY pid	
+st-where-like-prefix	ordered	-	pending	SELECT name FROM person WHERE name LIKE 'A%' ORDER BY pid	
+st-where-like-case	ordered	-	pending	SELECT name FROM person WHERE name LIKE '%d%' ORDER BY pid	
+st-where-like-underscore	ordered	-	pending	SELECT name FROM person WHERE name LIKE '_o' ORDER BY pid	
+st-where-not-like	ordered	-	pending	SELECT name FROM person WHERE name NOT LIKE '%d%' ORDER BY pid	
+st-where-text-compare	ordered	-	pending	SELECT name FROM person WHERE name < 'C' ORDER BY pid	
+st-where-equals-null	ordered	-	pending	SELECT name FROM person WHERE age = NULL ORDER BY pid	
+st-text-compare-case	multiset	-	pending	SELECT 'a' < 'B' AS a_before_b, 'a' = 'A' AS same_case, 'Z' < 'a' AS z_before_a	
+st-null-comparisons	multiset	-	pending	SELECT NULL = NULL AS eq, 1 = NULL AS one_eq, NULL IS NULL AS is_null	
+st-three-valued-logic	multiset	-	pending	SELECT NULL::boolean AND false AS a, NULL::boolean OR true AS b, NULL::boolean AND true AS c, NOT NULL::boolean AS d	
+st-boolean-column	ordered	-	pending	SELECT name, age > 30 AS over_30 FROM person ORDER BY pid	
+st-integer-division	ordered	-	pending	SELECT pid, age / 5 AS q, age % 5 AS r FROM person ORDER BY pid	
+st-division-constants	multiset	-	pending	SELECT 7 / 2 AS int_div, 7.0 / 2 AS numeric_div, 7 % 2 AS modulo, -7 / 2 AS negative_div, 7 / 2.0 AS mixed	
+st-numeric-third	multiset	-	pending	SELECT 10.0 / 3 AS third	
+st-arithmetic-precedence	multiset	-	pending	SELECT 2 + 3 * 4 AS a, (2 + 3) * 4 AS b	
+st-unary-minus-power	multiset	-	pending	SELECT -2 ^ 2 AS p	
+st-modulo-signs	multiset	-	pending	SELECT -7 % 3 AS a, 7 % -3 AS b	
+st-bigint-arithmetic	multiset	-	pending	SELECT 2147483647::bigint + 1 AS big	
+st-numeric-column-arithmetic	ordered	-	pending	SELECT oid, total * 2 AS doubled, total + 0.5 AS plus FROM orders ORDER BY oid	
+st-round	ordered	-	pending	SELECT oid, round(total) AS r FROM orders ORDER BY oid	
+st-abs	ordered	-	pending	SELECT pid, abs(age - 40) AS dist FROM person ORDER BY pid	
+st-concat	ordered	-	pending	SELECT name || ' (' || city || ')' AS label FROM person ORDER BY pid	
+st-concat-null	ordered	-	pending	SELECT name || age AS name_age FROM person ORDER BY pid	
+st-text-functions	ordered	-	pending	SELECT upper(name) AS u, lower(city) AS l, length(name) AS n FROM person ORDER BY pid	
+st-coalesce	ordered	-	pending	SELECT name, coalesce(age, 0) AS age_or_zero FROM person ORDER BY pid	
+st-nullif	ordered	-	pending	SELECT name, nullif(city, 'Delft') AS other_city FROM person ORDER BY pid	
+st-case-searched	ordered	-	pending	SELECT name, CASE WHEN age IS NULL THEN 'unknown' WHEN age < 40 THEN 'young' ELSE 'old' END AS band FROM person ORDER BY pid	
+st-case-simple	ordered	-	pending	SELECT name, CASE city WHEN 'Delft' THEN 1 WHEN 'Leiden' THEN 2 END AS code FROM person ORDER BY pid	
+st-cast-column	ordered	-	pending	SELECT pid, CAST(pid AS text) AS t, age::text AS age_text FROM person ORDER BY pid	
+st-cast-literals	multiset	-	pending	SELECT CAST('42' AS integer) + 1 AS n, '2026-03-09'::date AS d, DATE '2026-03-09' + 1 AS next_day	
+st-date-compare	ordered	-	pending	SELECT oid FROM orders WHERE placed >= DATE '2026-02-01' ORDER BY oid	
+st-date-order	ordered	-	pending	SELECT oid, placed FROM orders ORDER BY placed DESC, oid	
+st-extract-month	ordered	-	pending	SELECT oid, extract(month FROM placed) AS m FROM orders ORDER BY oid	
+st-order-default-nulls	ordered	-	pending	SELECT name, age FROM person ORDER BY age, pid	
+st-order-desc-default-nulls	ordered	-	pending	SELECT name, age FROM person ORDER BY age DESC, pid	
+st-order-nulls-first	ordered	-	pending	SELECT name, age FROM person ORDER BY age NULLS FIRST, pid	
+st-order-desc-nulls-last	ordered	-	pending	SELECT name, age FROM person ORDER BY age DESC NULLS LAST, pid	
+st-order-two-keys	ordered	-	pending	SELECT name, city FROM person ORDER BY city DESC, name	
+st-order-ordinals	ordered	-	pending	SELECT name, age FROM person ORDER BY 2 DESC NULLS LAST, 1	
+st-order-expression	ordered	-	pending	SELECT name FROM person ORDER BY length(name), name	
+st-order-alias	ordered	-	pending	SELECT name, age + 1 AS next FROM person ORDER BY next DESC NULLS LAST, name	
+st-limit	ordered	-	pending	SELECT name FROM person ORDER BY pid LIMIT 2	
+st-limit-offset	ordered	-	pending	SELECT name FROM person ORDER BY pid LIMIT 2 OFFSET 1	
+st-offset-only	ordered	-	pending	SELECT name FROM person ORDER BY pid OFFSET 3	
+st-limit-zero	ordered	-	pending	SELECT name FROM person ORDER BY pid LIMIT 0	
+st-limit-null	ordered	-	pending	SELECT name FROM person ORDER BY pid LIMIT NULL	
+st-aggregates	multiset	-	pending	SELECT count(*) AS n, count(age) AS n_age, sum(age) AS s, avg(age) AS a, min(age) AS lo, max(age) AS hi FROM person	
+st-aggregates-empty	multiset	-	pending	SELECT count(*) AS n, sum(age) AS s, avg(age) AS a, min(age) AS lo FROM person WHERE age > 100	
+st-aggregate-types-person	multiset	-	pending	SELECT sum(pid) AS s, avg(pid) AS a, min(name) AS lo, max(name) AS hi FROM person	
+st-aggregate-types-orders	multiset	-	pending	SELECT sum(total) AS s, avg(total) AS a, min(placed) AS first_day, max(placed) AS last_day FROM orders	
+st-group-by	ordered	-	pending	SELECT city, count(*) AS n FROM person GROUP BY city ORDER BY city	
+st-group-by-avg	ordered	-	pending	SELECT city, avg(age) AS a, count(age) AS c FROM person GROUP BY city ORDER BY city	
+st-group-by-having	ordered	-	pending	SELECT city, count(*) AS n FROM person GROUP BY city HAVING count(*) > 1 ORDER BY city	
+st-group-by-expression	ordered	-	pending	SELECT age IS NULL AS unknown_age, count(*) AS n FROM person GROUP BY age IS NULL ORDER BY unknown_age	
+st-group-by-null-key	ordered	-	pending	SELECT pid, count(*) AS n, sum(total) AS s FROM orders GROUP BY pid ORDER BY pid	
+st-count-distinct	multiset	-	pending	SELECT count(DISTINCT city) AS n FROM person	
+st-group-order-by-aggregate	ordered	-	pending	SELECT city, count(*) AS n FROM person GROUP BY city ORDER BY count(*) DESC, city	
+st-orders-columns	ordered	-	pending	SELECT oid, pid, total, placed FROM orders ORDER BY oid	
+st-orders-total	ordered	-	pending	SELECT oid FROM orders WHERE total > 9.99 ORDER BY oid	
+st-orders-no-buyer	ordered	-	pending	SELECT oid FROM orders WHERE pid IS NULL ORDER BY oid	
+st-orders-array	ordered	-	pending	SELECT oid, tags FROM orders ORDER BY oid	
+st-orders-jsonb	ordered	-	pending	SELECT oid, address FROM orders ORDER BY oid	
+st-orders-link	ordered	-	pending	SELECT oid, buyer FROM orders ORDER BY oid	
+st-person-id	ordered	-	pending	SELECT id, pid FROM person ORDER BY pid	
+st-works-at	ordered	-	pending	SELECT source_id, target_id, since FROM works_at ORDER BY since	
+join-inner	ordered	-	pending	SELECT p.name, o.oid FROM orders o JOIN person p ON o.pid = p.pid ORDER BY o.oid	
+join-implicit	ordered	-	pending	SELECT p.name, o.oid FROM orders o, person p WHERE o.pid = p.pid ORDER BY o.oid	
+join-left	ordered	-	pending	SELECT p.name, o.oid FROM person p LEFT JOIN orders o ON o.pid = p.pid ORDER BY p.name, o.oid	
+join-edge	ordered	-	pending	SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON w.target_id = c.id ORDER BY p.name, w.since	
+join-link	multiset	-	pending	SELECT p.name FROM orders o JOIN person p ON o.buyer = p.id WHERE o.oid = 102	
+join-or-branches	ordered	-	pending	SELECT o.oid FROM orders o, person p WHERE (o.pid = p.pid AND p.city = 'Delft') OR (o.pid = p.pid AND o.total < 6) ORDER BY o.oid	
+join-left-aggregate	ordered	-	pending	SELECT p.name, count(o.oid) AS orders, coalesce(sum(o.total), 0) AS spent FROM person p LEFT JOIN orders o ON o.pid = p.pid GROUP BY p.name ORDER BY p.name	
+join-group-by-edge	ordered	-	pending	SELECT p.city, count(*) AS jobs FROM person p JOIN works_at w ON w.source_id = p.id GROUP BY p.city ORDER BY p.city	
+join-left-count-star	ordered	-	pending	SELECT c.name, count(*) AS n, count(w.since) AS jobs FROM company c LEFT JOIN works_at w ON w.target_id = c.id GROUP BY c.name ORDER BY c.name	
+join-null-key	multiset	-	pending	SELECT count(*) AS n FROM orders o JOIN person p ON o.pid = p.pid	
+join-empty-result	multiset	-	pending	SELECT o.oid FROM orders o JOIN person p ON o.pid = p.pid AND p.city = 'Utrecht'	
+join-star	ordered	-	pending	SELECT * FROM person p LEFT JOIN orders o ON o.pid = p.pid ORDER BY p.pid, o.oid	
+join-non-equality	ordered	-	pending	SELECT a.name AS a, b.name AS b FROM person a JOIN person b ON a.city = b.city AND a.pid < b.pid ORDER BY a.pid, b.pid	
+join-extra-condition	ordered	-	pending	SELECT p.name, o.oid FROM person p JOIN orders o ON o.pid = p.pid AND o.total > 9 ORDER BY o.oid	
+join-three-tables	multiset	-	pending	SELECT count(*) AS n FROM person p, company c, works_at w WHERE w.source_id = p.id AND w.target_id = c.id	
+join-expression-key	ordered	-	pending	SELECT p.name, c.name FROM person p, company c WHERE p.pid = c.cid / 10 ORDER BY p.pid	
+err-unknown-column	multiset	-	pending	SELECT nosuch FROM person	
+err-unknown-table	multiset	-	pending	SELECT * FROM nosuch	
+err-division-by-zero	multiset	-	pending	SELECT 1 / 0	
+err-bad-cast	multiset	-	pending	SELECT 'abc'::integer	
+err-type-mismatch	multiset	-	pending	SELECT name FROM person WHERE age = 'x'	
+err-no-such-function	multiset	-	pending	SELECT sum(name) FROM person	
+err-grouping	multiset	-	pending	SELECT name, count(*) FROM person GROUP BY city	
+err-ambiguous-column	multiset	-	pending	SELECT name FROM person p JOIN company c ON p.pid = c.cid	
+err-duplicate-alias	multiset	-	pending	SELECT 1 FROM person p JOIN company p ON true	
+err-integer-overflow	multiset	-	pending	SELECT 2147483647 + 1	
+err-order-by-ambiguous	multiset	-	pending	SELECT p.name, c.name FROM person p JOIN company c ON p.pid = c.cid ORDER BY name	
+err-aggregate-in-where	multiset	-	pending	SELECT name FROM person WHERE count(*) > 1	
+err-negative-limit	multiset	-	pending	SELECT name FROM person LIMIT -1	
+err-non-boolean-where	multiset	-	pending	SELECT name FROM person WHERE age	

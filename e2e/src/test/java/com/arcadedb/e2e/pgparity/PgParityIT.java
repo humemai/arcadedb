@@ -1,0 +1,342 @@
+/*
+ * Copyright © 2021-present Arcade Data Ltd (info@arcadedata.com)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package com.arcadedb.e2e.pgparity;
+
+import com.arcadedb.query.postgresql.corpus.Corpus;
+import com.arcadedb.query.postgresql.corpus.CorpusFile;
+import com.arcadedb.query.postgresql.corpus.Outcome;
+import com.arcadedb.query.postgresql.corpus.ResultComparator;
+import com.arcadedb.query.postgresql.corpus.Values;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * The answer parity harness of the PostgreSQL-style SQL prototype (fork issue #2): the same statement on ArcadeDB's
+ * {@code postgresql} language and on a real PostgreSQL 18, and the outcomes compared. It needs a container runtime (the server is
+ * the official {@code postgres:18} image through Testcontainers) and runs in the workflow {@code pg-parity-tests.yml} and in the
+ * {@code java-e2e-tests} lane of {@code mvn-test.yml}.
+ * <p>
+ * <b>The data.</b> PostgreSQL gets {@code engine/src/test/resources/postgresql/small-schema.sql}, the one file that describes the
+ * {@code small} fixture for the server. ArcadeDB gets {@code SmallFixture} of the engine's test classes, reached through the
+ * engine test-jar (a test dependency of this module). {@link #fixturesAgree()} compares the two builds (counts, sums and the
+ * record ids) so they cannot drift.
+ * <p>
+ * <b>The corpus.</b> {@code engine/src/test/resources/postgresql/corpus/answers.tsv} (this harness) and {@code syntax.tsv} (the
+ * accept and reject differential of the grammar). The columns are described at the top of each file, and the engine tests read
+ * the same files through {@code Corpus}. The comparison rules are the classes {@code Values} and {@code ResultComparator}.
+ * <p>
+ * <b>To add a statement</b> append a line to {@code answers.tsv} (an id that is not used, {@code ordered} only when the
+ * {@code ORDER BY} is a total order and {@code multiset} otherwise, {@code -} for the tolerance, {@code pending}, the statement,
+ * and an empty last cell) and run the generator. An id that starts with {@code err-} is a statement the server must refuse. Add
+ * a statement to {@code syntax.tsv} the same way, with scope {@code in} or {@code out}.
+ * <p>
+ * <b>To regenerate</b> run this class with {@code -Dpgparity.regenerate=true} (in CI: start the workflow by hand with the input
+ * {@code regenerate} on and take the files from its artifact). The expected cells are then written from the server, never typed,
+ * together with the version string and the collation of the server in the header. It is off by default and never on in CI. A
+ * regenerated file is a diff to read before it is committed: a changed outcome is a PostgreSQL change or a corpus change.
+ * <p>
+ * <b>Pending.</b> A statement marked {@code pending} is run on the server for its outcome and tried on the engine, and reported
+ * as pending whatever the engine does, never as failed. When the engine answers it like the server, the run fails until the
+ * flag in {@code answers.tsv} is flipped to {@code ok}: the list of pending statements may only shrink, and a statement that is
+ * not pending is a test that must pass.
+ * <p>
+ * <b>The report.</b> One line per case on the standard output, {@code pgparity <file> <id> <language> <verdict>}, and the same
+ * in {@code target/pgparity/report.txt}.
+ */
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+class PgParityIT {
+  private static final String LANGUAGE = "postgresql";
+
+  private static boolean      regenerate;
+  private static Path         resources;
+  private static PostgresServer pg;
+  private static ArcadeSide   arcade;
+  private static final List<String> REPORT = new ArrayList<>();
+
+  @BeforeAll
+  static void start() throws Exception {
+    regenerate = Boolean.getBoolean("pgparity.regenerate");
+    resources = findResources();
+    pg = PostgresServer.start();
+    final String version = pg.version();
+    REPORT.add("server: " + version);
+    REPORT.add("collation: " + pg.collation());
+    REPORT.add("regenerate: " + regenerate);
+    System.out.println("pgparity: " + version);
+
+    pg.load(Files.readString(resources.resolve("postgresql/small-schema.sql"), StandardCharsets.UTF_8));
+    arcade = new ArcadeSide();
+  }
+
+  @AfterAll
+  static void stop() throws Exception {
+    try {
+      final Path directory = Path.of("target", "pgparity");
+      Files.createDirectories(directory);
+      Files.write(directory.resolve("report.txt"), REPORT, StandardCharsets.UTF_8);
+    } finally {
+      try {
+        if (arcade != null)
+          arcade.close();
+      } finally {
+        if (pg != null)
+          pg.close();
+      }
+    }
+  }
+
+  /** {@code -Dpgparity.resources=<dir>}, else the test resources of the engine, found by walking up from the working directory. */
+  private static Path findResources() {
+    final String given = System.getProperty("pgparity.resources");
+    if (given != null && !given.isEmpty())
+      return Path.of(given);
+    Path directory = Path.of("").toAbsolutePath();
+    for (int depth = 0; directory != null && depth < 6; depth++) {
+      final Path candidate = directory.resolve("engine/src/test/resources");
+      if (Files.isDirectory(candidate.resolve("postgresql")))
+        return candidate;
+      directory = directory.getParent();
+    }
+    throw new IllegalStateException("engine/src/test/resources/postgresql not found above " + Path.of("").toAbsolutePath()
+        + ": pass -Dpgparity.resources=<dir>");
+  }
+
+  private static Path corpusFile(final String name) {
+    return resources.resolve("postgresql/corpus").resolve(name);
+  }
+
+  private static Outcome answer(final Outcome outcome) {
+    return Outcome.answer(outcome.table.valuesOnly());
+  }
+
+  /** The loader check of fork issue #2: the server holds the five people of the fixture. */
+  @Test
+  @Order(1)
+  void loaderCheck() {
+    final Outcome outcome = pg.run("SELECT count(*), sum(age), min(age), max(age) FROM person");
+    assertTrue(!outcome.isRefusal(), "the loader check was refused: " + outcome.describe());
+    final List<Object> row = outcome.table.rows.get(0);
+    final Object[] expected = { 5, 158, 29, 52 };
+    for (int i = 0; i < expected.length; i++)
+      assertTrue(Values.equal(Values.normalize(expected[i]), row.get(i), Values.DEFAULT_TOLERANCE),
+          "loader check column " + (i + 1) + " is " + Values.render(row.get(i)) + ", the fixture has " + expected[i]);
+  }
+
+  /**
+   * The self-test of the comparison, on the server: the same statement twice compares equal, with one row removed on one side
+   * it differs by one row, and with one row duplicated on one side it differs although the distinct rows are equal.
+   */
+  @Test
+  @Order(2)
+  void comparisonSelfTest() {
+    final String sql = "SELECT name FROM person ORDER BY pid";
+    final Outcome first = pg.run(sql);
+    final Outcome second = pg.run(sql);
+    assertEquals(5, first.table.rows.size());
+    assertNull(ResultComparator.compare(first, second, true, Values.DEFAULT_TOLERANCE));
+    assertNull(ResultComparator.compare(first, second, false, Values.DEFAULT_TOLERANCE));
+
+    final String removed = ResultComparator.compare(first, Outcome.answer(second.table.withoutRow(2)), false,
+        Values.DEFAULT_TOLERANCE);
+    assertTrue(removed != null && removed.startsWith("differs by 1 row "), "one row removed: " + removed);
+
+    final String duplicated = ResultComparator.compare(first, Outcome.answer(second.table.withRowDuplicated(2)), false,
+        Values.DEFAULT_TOLERANCE);
+    assertTrue(duplicated != null && duplicated.startsWith("differs by 1 row "), "one row duplicated: " + duplicated);
+  }
+
+  /**
+   * The two builds of the fixture hold the same data: row counts and sums per table through the {@code sql} language of the
+   * engine, and the record ids that the server's {@code id} and {@code buyer} columns must carry.
+   */
+  @Test
+  @Order(3)
+  void fixturesAgree() {
+    final String[][] pairs = {
+        { "SELECT count(*), sum(pid), sum(age) FROM person", "SELECT count(*), sum(pid), sum(age) FROM person" },
+        { "SELECT count(*), sum(cid) FROM company", "SELECT count(*), sum(cid) FROM company" },
+        { "SELECT count(*), sum(since) FROM works_at", "SELECT count(*), sum(since) FROM works_at" },
+        { "SELECT count(*), sum(oid), sum(total) FROM orders", "SELECT count(*), sum(oid), sum(total) FROM orders" },
+        { "SELECT id FROM person ORDER BY pid", "SELECT @rid AS id FROM person ORDER BY pid" },
+        { "SELECT id FROM company ORDER BY cid", "SELECT @rid AS id FROM company ORDER BY cid" },
+        { "SELECT id FROM orders ORDER BY oid", "SELECT @rid AS id FROM orders ORDER BY oid" },
+        { "SELECT buyer FROM orders ORDER BY oid", "SELECT buyer FROM orders ORDER BY oid" },
+    };
+    final List<String> failures = new ArrayList<>();
+    for (final String[] pair : pairs) {
+      final Outcome server = pg.run(pair[0]);
+      final Outcome engine = arcade.run("sql", pair[1]);
+      if (server.isRefusal() || engine.isRefusal())
+        failures.add(pair[0] + ": " + (server.isRefusal() ? "server " : "engine ") + (server.isRefusal() ? server : engine).describe());
+      else {
+        final String difference = ResultComparator.compare(answer(server), answer(engine), true, Values.DEFAULT_TOLERANCE);
+        if (difference != null)
+          failures.add(pair[0] + ": " + difference);
+      }
+    }
+    assertTrue(failures.isEmpty(), "the two builds of the small fixture differ:\n" + String.join("\n", failures));
+  }
+
+  /**
+   * The accept and reject corpus: the server only parses each statement. Regenerate writes the outcomes; otherwise the outcomes
+   * in the file must still be what the server says. The engine's answer is reported for information: the parser tests of the
+   * engine (fork issue #3) enforce the differential.
+   */
+  @Test
+  @Order(4)
+  void syntaxCorpus() throws Exception {
+    final Path path = corpusFile(Corpus.SYNTAX_FILE);
+    final CorpusFile file = CorpusFile.read(path);
+    final List<String> failures = new ArrayList<>();
+    int agree = 0;
+    int disagree = 0;
+    for (final String[] row : file.rows) {
+      final Corpus.SyntaxCase c = new Corpus.SyntaxCase(row);
+      final String outcome = pg.parseOutcome(c.statement());
+      if (regenerate)
+        row[Corpus.SyntaxCase.EXPECTED] = outcome;
+      else if (c.expected().isEmpty())
+        failures.add(c.id() + ": the corpus has no outcome, run the generator");
+      else if (!c.expected().equals(outcome))
+        failures.add(c.id() + ": the corpus says '" + c.expected() + "', the server now says '" + outcome + "'");
+
+      final Outcome engine = arcade.run(LANGUAGE, c.statement());
+      final String state = engine.isRefusal() ? engine.sqlState : "accepted";
+      final boolean agrees;
+      if ("syntax-error 42601".equals(outcome))
+        agrees = "42601".equals(state);
+      else if (c.inside())
+        agrees = !"0A000".equals(state) && !"42601".equals(state);
+      else
+        agrees = "0A000".equals(state);
+      if (agrees)
+        ++agree;
+      else
+        ++disagree;
+      line("syntax", c.id(), "server " + outcome + ", engine " + state + (agrees ? ", agrees" : ", pending"));
+    }
+    REPORT.add("syntax: " + file.rows.size() + " statements, the engine agrees with the differential on " + agree + ", not yet on "
+        + disagree);
+
+    // the server only parsed them: the data must be untouched
+    final Outcome people = pg.run("SELECT count(*) FROM person");
+    assertEquals(0, new BigDecimal(5).compareTo((BigDecimal) people.table.rows.get(0).get(0)), "the syntax pass ran a statement");
+
+    if (regenerate) {
+      stamp(file);
+      file.write(path);
+    }
+    assertTrue(failures.isEmpty(), String.join("\n", failures));
+  }
+
+  /**
+   * The answer corpus: every statement on the server (its outcome must have the shape its id promises and, unless regenerating,
+   * must still be the one in the file) and on the engine (equal to the server, or pending).
+   */
+  @Test
+  @Order(5)
+  void answerCorpus() throws Exception {
+    final Path path = corpusFile(Corpus.ANSWERS_FILE);
+    final CorpusFile file = CorpusFile.read(path);
+    final List<String> corpusFailures = new ArrayList<>();
+    final List<String> engineFailures = new ArrayList<>();
+    int equal = 0;
+    int pending = 0;
+    int different = 0;
+    int flip = 0;
+
+    for (final String[] row : file.rows) {
+      final Corpus.AnswerCase c = new Corpus.AnswerCase(row);
+      final Outcome server = pg.run(c.statement());
+
+      if (server.isRefusal() != c.expectsRefusal())
+        corpusFailures.add(c.id() + ": " + (c.expectsRefusal() ? "the server answered a statement that an err- id says it refuses: "
+            : "the server refused a statement that its id says it answers: ") + server.describe());
+
+      if (regenerate)
+        row[Corpus.AnswerCase.EXPECTED] = server.toJson();
+      else if (c.expected().isEmpty())
+        corpusFailures.add(c.id() + ": the corpus has no outcome, run the generator");
+      else {
+        final String drift = ResultComparator.compare(Outcome.fromJson(c.expected()), server, c.ordered(), c.tolerance());
+        if (drift != null)
+          corpusFailures.add(c.id() + ": the server no longer answers what the corpus says: " + drift);
+      }
+
+      final Outcome engine = arcade.run(LANGUAGE, c.statement());
+      final String difference = ResultComparator.compare(server, engine, c.ordered(), c.tolerance());
+      final String verdict;
+      if (difference == null && c.pending()) {
+        verdict = "pending, but equal: flip the status to ok";
+        ++flip;
+        engineFailures.add(c.id() + ": pending, yet the engine answers like the server: flip status to ok in answers.tsv");
+      } else if (difference == null) {
+        verdict = "equal";
+        ++equal;
+      } else if (c.pending()) {
+        verdict = "pending (" + difference + ")";
+        ++pending;
+      } else {
+        verdict = "different (" + difference + ")";
+        ++different;
+        engineFailures.add(c.id() + ": " + difference);
+      }
+      line("answers", c.id(), verdict);
+    }
+
+    final String summary = "answers: " + file.rows.size() + " statements, " + equal + " equal, " + pending + " pending, "
+        + different + " different, " + flip + " to flip";
+    REPORT.add(summary);
+    System.out.println("pgparity: " + summary);
+
+    if (regenerate) {
+      stamp(file);
+      file.write(path);
+    }
+    assertTrue(corpusFailures.isEmpty(), "the corpus and the server disagree:\n" + String.join("\n", corpusFailures));
+    if (!regenerate)
+      assertTrue(engineFailures.isEmpty(), "the engine and the server disagree:\n" + String.join("\n", engineFailures));
+  }
+
+  private static void line(final String file, final String id, final String verdict) {
+    final String text = "pgparity " + file + " " + id + " " + LANGUAGE + " " + verdict;
+    REPORT.add(text);
+    System.out.println(text);
+  }
+
+  private static void stamp(final CorpusFile file) throws Exception {
+    file.setHeaderValue("server", pg.version());
+    file.setHeaderValue("collation", pg.collation());
+  }
+}
