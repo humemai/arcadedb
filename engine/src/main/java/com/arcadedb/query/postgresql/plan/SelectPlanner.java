@@ -39,6 +39,7 @@ import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.query.postgresql.plan.infoschema.InformationSchema;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -82,9 +83,19 @@ public class SelectPlanner {
     if (from.isEmpty())
       return RelationSource.singleRow();
     if (from.size() == 1 && from.get(0) instanceof TableReference.Table table)
-      return planTable(table);
+      return planRelation(table);
     throw new PostgreSQLFeatureNotSupportedException(
         "A join is not supported by the postgresql language yet (" + from.get(0).position() + ")");
+  }
+
+  /**
+   * The source of one name of the {@code FROM} clause: a view of {@code information_schema}, which is answered before the tables
+   * of the catalog, or else a table ({@link #planTable}). Every leaf of a join goes through here, so that the views can be joined
+   * to tables and to each other.
+   */
+  protected RelationSource planRelation(final TableReference.Table reference) {
+    final RelationSource view = InformationSchema.resolve(reference, catalog);
+    return view != null ? view : planTable(reference);
   }
 
   /** The rows of one table of the {@code FROM} clause, read by a scan until the {@code WHERE} clause picks an index. */
