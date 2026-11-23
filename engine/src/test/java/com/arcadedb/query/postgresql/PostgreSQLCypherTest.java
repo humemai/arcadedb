@@ -49,6 +49,11 @@ class PostgreSQLCypherTest extends TestHelper {
     return rows;
   }
 
+  /** A number of Cypher, which may come as any integer class. */
+  private static int integer(final Result row, final String name) {
+    return ((Number) row.getProperty(name)).intValue();
+  }
+
   private long cypherCount(final String match) {
     return rows("opencypher", match + " RETURN count(*) AS n").get(0).<Long>getProperty("n");
   }
@@ -64,7 +69,7 @@ class PostgreSQLCypherTest extends TestHelper {
     final List<Result> found = rows("opencypher", "MATCH (p:person {pid: 6}) RETURN p.name AS name, p.age AS age, p.city AS city");
     assertThat(found).hasSize(1);
     assertThat(found.get(0).<String>getProperty("name")).isEqualTo("Fay");
-    assertThat(found.get(0).<Integer>getProperty("age")).isEqualTo(33);
+    assertThat(integer(found.get(0), "age")).isEqualTo(33);
     assertThat(cypherCount("MATCH (p:person)")).isEqualTo(6L);
   }
 
@@ -73,10 +78,10 @@ class PostgreSQLCypherTest extends TestHelper {
     rows("opencypher", "CREATE (:person {pid: 7, name: 'Gus', age: 20, city: 'Utrecht'})");
     assertThat(rows("postgresql", "SELECT name, age, city FROM person WHERE pid = 7")).hasSize(1);
 
-    assertThat(rows("postgresql", "UPDATE person SET age = age + 1, city = 'Delft' WHERE pid = 7 RETURNING age").get(0)
-        .<Integer>getProperty("age")).isEqualTo(21);
+    assertThat(integer(rows("postgresql", "UPDATE person SET age = age + 1, city = 'Delft' WHERE pid = 7 RETURNING age").get(0), "age"))
+        .isEqualTo(21);
     final Result seen = rows("opencypher", "MATCH (p:person {pid: 7}) RETURN p.age AS age, p.city AS city").get(0);
-    assertThat(seen.<Integer>getProperty("age")).isEqualTo(21);
+    assertThat(integer(seen, "age")).isEqualTo(21);
     assertThat(seen.<String>getProperty("city")).isEqualTo("Delft");
 
     rows("postgresql", "DELETE FROM person WHERE pid = 7");
@@ -115,11 +120,11 @@ class PostgreSQLCypherTest extends TestHelper {
         "MATCH (p:person {pid: 5})-[w:works_at]->(c:company) RETURN c.name AS company, w.since AS since");
     assertThat(walked).hasSize(1);
     assertThat(walked.get(0).<String>getProperty("company")).isEqualTo("Cedar");
-    assertThat(walked.get(0).<Integer>getProperty("since")).isEqualTo(2032);
+    assertThat(integer(walked.get(0), "since")).isEqualTo(2032);
 
     rows("postgresql", "UPDATE works_at SET since = 2033 WHERE since = 2032");
-    assertThat(rows("opencypher", "MATCH (:person {pid: 5})-[w:works_at]->(:company) RETURN w.since AS since").get(0)
-        .<Integer>getProperty("since")).isEqualTo(2033);
+    assertThat(integer(rows("opencypher", "MATCH (:person {pid: 5})-[w:works_at]->(:company) RETURN w.since AS since").get(0), "since"))
+        .isEqualTo(2033);
   }
 
   @Test
