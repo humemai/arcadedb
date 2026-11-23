@@ -1456,7 +1456,7 @@ out-show	ok	outside	-	SHOW search_path	s3	-
 out-explain	ok	inside	-	EXPLAIN SELECT 1	s3	-
 out-values	ok	outside	-	VALUES (1)	s3	-
 out-subquery-from	ok	inside	-	SELECT * FROM (SELECT 1) AS s	s3	-
-out-subquery-scalar	ok	outside	-	SELECT (SELECT 1)	s3	-
+out-subquery-scalar	ok	inside	-	SELECT (SELECT 1)	s3	-
 out-with	ok	inside	-	WITH t AS (SELECT 1) SELECT * FROM t	s3	-
 out-intersect	ok	inside	-	SELECT 1 INTERSECT SELECT 1	s3	-
 out-window	ok	outside	-	SELECT row_number() OVER (ORDER BY pid) FROM person	s3	-
@@ -1570,3 +1570,10 @@ c2-in-subquery-parenthesised	ok	inside	-	SELECT a FROM t WHERE a IN ((SELECT b F
 c2-in-subquery-with	ok	inside	-	SELECT a FROM t WHERE a IN (WITH x AS (SELECT 1) SELECT * FROM x)	written for the parser	42P01
 c2-in-values	ok	outside	-	SELECT a FROM t WHERE a IN (VALUES (1), (2))	written for the parser	42P01
 c2-in-subquery-missing-paren	syntax-error	unknown	-	SELECT a FROM t WHERE a IN (SELECT b FROM u	written for the parser	42601
+c3-scalar-subquery-select-list	ok	inside	-	SELECT (SELECT max(a) FROM t) AS m, b FROM u	written for the parser	42P01
+c3-scalar-subquery-comparison	ok	inside	-	SELECT a FROM t WHERE a = (SELECT max(a) FROM t)	written for the parser	42P01
+c3-scalar-subquery-arithmetic	ok	inside	-	SELECT (SELECT 1) + (SELECT 2)	written for the parser	-
+c3-scalar-subquery-set-operation	ok	inside	-	SELECT (SELECT 1 UNION SELECT 2 ORDER BY 1 LIMIT 1)	written for the parser	-
+c3-scalar-subquery-parenthesised-twice	ok	inside	-	SELECT ((SELECT 1))	written for the parser	-
+c3-scalar-subquery-values	ok	outside	-	SELECT (VALUES (1))	written for the parser	-
+c3-scalar-subquery-unclosed	syntax-error	unknown	-	SELECT (SELECT 1	written for the parser	42601

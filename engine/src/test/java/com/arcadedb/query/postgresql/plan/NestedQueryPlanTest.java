@@ -84,6 +84,18 @@ class NestedQueryPlanTest extends TestHelper {
   }
 
   @Test
+  void aScalarSubqueryOverTheCapStopsWithOutOfMemory() {
+    assertCapStops("SELECT (SELECT max(age) FROM person) AS m", "a subquery");
+  }
+
+  @Test
+  void aScalarSubqueryHasThePostgreSQLColumnName() {
+    assertThat(planned("SELECT (SELECT max(age) FROM person)", BuildMemory.DEFAULT_CAP_BYTES).columns().get(0).name()).isEqualTo("max");
+    assertThat(planned("SELECT (SELECT 1 AS x)", BuildMemory.DEFAULT_CAP_BYTES).columns().get(0).name()).isEqualTo("x");
+    assertThat(planned("SELECT (SELECT 1)", BuildMemory.DEFAULT_CAP_BYTES).columns().get(0).name()).isEqualTo("?column?");
+  }
+
+  @Test
   void aSetOperationInsideADerivedTableChargesTheMemoryOfTheDerivedTable() {
     assertCapStops("SELECT count(*) FROM (SELECT name FROM person UNION ALL SELECT name FROM company) t", "a derived table");
   }

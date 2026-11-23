@@ -108,6 +108,7 @@ public final class ExpressionCompiler {
       case Expression.IsNull e -> isNull(e);
       case Expression.InList e -> inList(e);
       case Expression.InSubquery e -> inSubquery(e);
+      case Expression.ScalarSubquery e -> scalarSubquery(e);
       case Expression.Between e -> between(e);
       case Expression.Like e -> like(e);
       case Expression.Case e -> caseExpression(e);
@@ -677,6 +678,37 @@ public final class ExpressionCompiler {
       }
       return unknown ? null : (Object) negated;
     });
+  }
+
+  /**
+   * {@code (subquery)} as a value: the one column of its one row, {@code NULL} for no row, SQLSTATE {@code 21000} for more than one
+   * row. It is run once, when the first row asks for it.
+   */
+  private Evaluable scalarSubquery(final Expression.ScalarSubquery e) {
+    final Subquery subquery = planSubquery(e.query());
+    if (subquery.types().size() != 1)
+      throw new PostgreSQLEvaluationException("42601", "subquery must return only one column");
+    final PgType type = subquery.types().get(0);
+    final String typeName = subquery.typeNames().get(0);
+    return new Evaluable() {
+      @Override
+      public PgType type() {
+        return type;
+      }
+
+      @Override
+      public String typeName() {
+        return typeName;
+      }
+
+      @Override
+      public Object eval(final Object[] row) {
+        final List<Object[]> rows = subquery.rows();
+        if (rows.size() > 1)
+          throw new PostgreSQLEvaluationException("21000", "more than one row returned by a subquery used as an expression");
+        return rows.isEmpty() ? null : rows.get(0)[0];
+      }
+    };
   }
 
   /** The key under which two values of these types that are equal are the same, or {@code null} when equality needs a comparison. */

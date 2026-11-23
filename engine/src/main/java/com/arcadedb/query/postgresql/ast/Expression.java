@@ -216,6 +216,19 @@ public sealed interface Expression extends Node {
   }
 
   /**
+   * {@code (select)} used as a value: the one column of the one row of the query, {@code NULL} when it has no row. A query that
+   * has more than one row is the error 21000 when it runs.
+   *
+   * @param query a {@link SelectStatement}, a {@link SetOperationStatement} or a {@link WithStatement} that has one column
+   */
+  record ScalarSubquery(SourcePosition position, Statement query) implements Expression {
+    public ScalarSubquery {
+      Objects.requireNonNull(position, "position");
+      Objects.requireNonNull(query, "query");
+    }
+  }
+
+  /**
    * {@code a_expr [NOT] IN (select)}: true when the operand equals a row of the subquery, with the three-valued logic of
    * PostgreSQL: {@code NULL} when no row is equal and a comparison was {@code NULL}, false for an empty subquery.
    *
