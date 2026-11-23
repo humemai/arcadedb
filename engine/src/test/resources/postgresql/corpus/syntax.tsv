@@ -65,9 +65,9 @@ full-join	ok	outside	-	SELECT * FROM a FULL OUTER JOIN b ON a.x = b.x	written fo
 cross-join	ok	outside	-	SELECT * FROM a CROSS JOIN b	written for the parser	42P01
 natural-join	ok	outside	-	SELECT * FROM a NATURAL JOIN b	written for the parser	42P01
 join-using	ok	outside	-	SELECT * FROM a JOIN b USING (x)	written for the parser	42P01
-insert	ok	outside	-	INSERT INTO a VALUES (1)	written for the parser	42P01
-update	ok	outside	-	UPDATE a SET x = 1	written for the parser	42P01
-delete	ok	outside	-	DELETE FROM a	written for the parser	42P01
+insert	ok	inside	-	INSERT INTO a VALUES (1)	written for the parser	42P01
+update	ok	inside	-	UPDATE a SET x = 1	written for the parser	42P01
+delete	ok	inside	-	DELETE FROM a	written for the parser	42P01
 with	ok	outside	-	WITH x AS (SELECT 1) SELECT * FROM x	written for the parser	-
 union	ok	outside	-	SELECT 1 UNION SELECT 2	written for the parser	-
 values	ok	outside	-	VALUES (1), (2)	written for the parser	-
@@ -1443,14 +1443,14 @@ out-cross-join	ok	outside	-	SELECT * FROM person CROSS JOIN company	s3	-
 out-join-using	ok	outside	-	SELECT * FROM person p JOIN orders o USING (pid)	s3	-
 out-natural-join	ok	outside	-	SELECT * FROM person NATURAL JOIN orders	s3	-
 out-lateral	ok	outside	-	SELECT * FROM person p, LATERAL (SELECT 1) AS l	s3	-
-out-insert	ok	outside	-	INSERT INTO company VALUES (40, 'Dune')	s3	22P02
-out-update	ok	outside	-	UPDATE person SET age = 1 WHERE pid = 1	s3	-
-out-delete	ok	outside	-	DELETE FROM person	s3	-
+out-insert	ok	inside	-	INSERT INTO company VALUES (40, 'Dune')	s3	22P02
+out-update	ok	inside	-	UPDATE person SET age = 1 WHERE pid = 1	s3	-
+out-delete	ok	inside	-	DELETE FROM person	s3	-
 out-create-table	ok	outside	-	CREATE TABLE t (a int)	s3	-
 out-drop-table	ok	outside	-	DROP TABLE t	s3	-
 out-truncate	ok	outside	-	TRUNCATE person	s3	-
-out-begin	ok	outside	-	BEGIN	s3	-
-out-commit	ok	outside	-	COMMIT	s3	-
+out-begin	ok	inside	-	BEGIN	s3	-
+out-commit	ok	inside	-	COMMIT	s3	-
 out-set	ok	outside	-	SET search_path = public	s3	-
 out-show	ok	outside	-	SHOW search_path	s3	-
 out-explain	ok	inside	-	EXPLAIN SELECT 1	s3	-
@@ -1498,3 +1498,48 @@ bad-empty-in-list	syntax-error	unknown	-	SELECT name FROM person WHERE pid IN ()
 bad-between-without-and	syntax-error	unknown	-	SELECT name FROM person WHERE pid BETWEEN 1	s3	42601
 bad-reserved-word-as-name	syntax-error	unknown	-	SELECT * FROM select	s3	42601
 bad-double-comma	syntax-error	unknown	-	SELECT name,, age FROM person	s3	42601
+w1-insert-values	pending-server	inside	-	INSERT INTO person (pid, name) VALUES (1, 'Ada'), (2, DEFAULT) RETURNING pid	w1 (fork issue #29)	-
+w1-insert-parameter	pending-server	inside	-	INSERT INTO company (cid) VALUES ($1)	w1 (fork issue #29)	-
+w1-insert-alias	pending-server	inside	-	INSERT INTO company AS c (cid, name) VALUES (1, 'x') RETURNING c.cid	w1 (fork issue #29)	-
+w1-insert-default-values	pending-server	inside	-	INSERT INTO company DEFAULT VALUES RETURNING *	w1 (fork issue #29)	-
+w1-insert-select	pending-server	inside	-	INSERT INTO company (cid, name) SELECT pid, name FROM person WHERE age > 30	w1 (fork issue #29)	-
+w1-insert-select-returning	pending-server	inside	-	INSERT INTO company SELECT cid, name FROM company RETURNING cid	w1 (fork issue #29)	-
+w1-update-basic	pending-server	inside	-	UPDATE person SET age = age + 1 WHERE pid = 1 RETURNING age	w1 (fork issue #29)	-
+w1-update-only-alias	pending-server	inside	-	UPDATE ONLY person AS p SET age = DEFAULT, name = NULL WHERE p.pid IN (1, 2)	w1 (fork issue #29)	-
+w1-update-all	pending-server	inside	-	UPDATE person SET age = 0	w1 (fork issue #29)	-
+w1-delete-basic	pending-server	inside	-	DELETE FROM person WHERE pid = 1 RETURNING *	w1 (fork issue #29)	-
+w1-delete-only-alias	pending-server	inside	-	DELETE FROM ONLY person AS p WHERE p.age > 40	w1 (fork issue #29)	-
+w1-delete-schema	pending-server	inside	-	DELETE FROM public.person	w1 (fork issue #29)	-
+w1-begin-work	pending-server	inside	-	BEGIN WORK	w1 (fork issue #29)	-
+w1-begin-transaction	pending-server	inside	-	BEGIN TRANSACTION	w1 (fork issue #29)	-
+w1-start-transaction	pending-server	inside	-	START TRANSACTION	w1 (fork issue #29)	-
+w1-commit-work	pending-server	inside	-	COMMIT WORK	w1 (fork issue #29)	-
+w1-end	pending-server	inside	-	END	w1 (fork issue #29)	-
+w1-rollback-transaction	pending-server	inside	-	ROLLBACK TRANSACTION	w1 (fork issue #29)	-
+w1-abort	pending-server	inside	-	ABORT	w1 (fork issue #29)	-
+w1-explain-update	pending-server	inside	-	EXPLAIN UPDATE person SET age = 1 WHERE pid = 1	w1 (fork issue #29)	-
+w1-explain-delete	pending-server	inside	-	EXPLAIN DELETE FROM person	w1 (fork issue #29)	-
+w1-explain-insert	pending-server	inside	-	EXPLAIN INSERT INTO company (cid) VALUES (1)	w1 (fork issue #29)	-
+w1-out-on-conflict	pending-server	outside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT DO NOTHING	w1 (fork issue #29)	-
+w1-out-overriding	pending-server	outside	-	INSERT INTO company OVERRIDING SYSTEM VALUE VALUES (1)	w1 (fork issue #29)	-
+w1-out-insert-with	pending-server	outside	-	INSERT INTO company WITH x AS (SELECT 1) SELECT * FROM x	w1 (fork issue #29)	-
+w1-out-insert-parenthesised	pending-server	outside	-	INSERT INTO company (SELECT 1, 'x')	w1 (fork issue #29)	-
+w1-out-update-from	pending-server	outside	-	UPDATE person SET age = 1 FROM company WHERE person.pid = company.cid	w1 (fork issue #29)	-
+w1-out-update-multi	pending-server	outside	-	UPDATE person SET (age, name) = (1, 'x')	w1 (fork issue #29)	-
+w1-out-delete-using	pending-server	outside	-	DELETE FROM person USING company WHERE person.pid = company.cid	w1 (fork issue #29)	-
+w1-out-update-current-of	pending-server	outside	-	UPDATE person SET age = 1 WHERE CURRENT OF c	w1 (fork issue #29)	-
+w1-out-delete-current-of	pending-server	outside	-	DELETE FROM person WHERE CURRENT OF c	w1 (fork issue #29)	-
+w1-out-begin-isolation	pending-server	outside	-	BEGIN ISOLATION LEVEL SERIALIZABLE	w1 (fork issue #29)	-
+w1-out-start-read-only	pending-server	outside	-	START TRANSACTION READ ONLY	w1 (fork issue #29)	-
+w1-out-commit-chain	pending-server	outside	-	COMMIT AND CHAIN	w1 (fork issue #29)	-
+w1-out-rollback-to	pending-server	outside	-	ROLLBACK TO SAVEPOINT a	w1 (fork issue #29)	-
+w1-out-savepoint	pending-server	outside	-	SAVEPOINT a	w1 (fork issue #29)	-
+w1-out-commit-prepared	pending-server	outside	-	COMMIT PREPARED 'x'	w1 (fork issue #29)	-
+w1-bad-values-length	pending-server	unknown	-	INSERT INTO company VALUES (1), (2, 3)	w1 (fork issue #29)	-
+w1-bad-insert-only	pending-server	unknown	-	INSERT INTO ONLY company VALUES (1)	w1 (fork issue #29)	-
+w1-bad-empty-values	pending-server	unknown	-	INSERT INTO company VALUES ()	w1 (fork issue #29)	-
+w1-bad-empty-columns	pending-server	unknown	-	INSERT INTO company () VALUES (1)	w1 (fork issue #29)	-
+w1-bad-bare-alias	pending-server	unknown	-	INSERT INTO company c VALUES (1)	w1 (fork issue #29)	-
+w1-bad-update-no-set	pending-server	unknown	-	UPDATE person WHERE pid = 1	w1 (fork issue #29)	-
+w1-bad-delete-no-from	pending-server	unknown	-	DELETE person	w1 (fork issue #29)	-
+w1-bad-commit-extra	pending-server	unknown	-	COMMIT 1	w1 (fork issue #29)	-

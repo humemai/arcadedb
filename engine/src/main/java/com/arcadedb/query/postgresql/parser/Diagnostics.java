@@ -74,7 +74,14 @@ final class Diagnostics {
       Map.entry("unsupportedIsDistinct", "IS DISTINCT FROM"),
       Map.entry("unsupportedStarArg", "A whole-row reference such as t.*"),
       Map.entry("unsupportedUnicodeIdent", "A Unicode escape identifier"),
-      Map.entry("unsupportedTableAlias", "An alias after a subquery or a function in FROM"));
+      Map.entry("unsupportedTableAlias", "An alias after a subquery or a function in FROM"),
+      Map.entry("unsupportedOnConflict", "ON CONFLICT"),
+      Map.entry("unsupportedMultiAssign", "A multiple-column assignment"),
+      Map.entry("unsupportedUpdateFrom", "UPDATE with FROM"),
+      Map.entry("unsupportedDeleteUsing", "DELETE with USING"),
+      Map.entry("unsupportedCurrentOf", "WHERE CURRENT OF"),
+      Map.entry("unsupportedTransactionMode", "A transaction mode (ISOLATION LEVEL, READ ONLY, DEFERRABLE)"),
+      Map.entry("unsupportedTransactionChain", "AND CHAIN"));
 
   private static final Set<Integer> NOT_WRITES = Set.of(PostgreSQLParser.WITH, PostgreSQLParser.VALUES, PostgreSQLParser.TABLE,
       PostgreSQLParser.LPAREN);
@@ -103,15 +110,16 @@ final class Diagnostics {
   }
 
   /**
-   * The refusal for the construct that a rule named {@code unsupported...} matched. A statement that is not a {@code SELECT}
-   * says how to run it: the language reads only.
+   * The refusal for the construct that a rule named {@code unsupported...} matched. A statement that the language does not run
+   * (DDL, a session or a utility statement) says how to run it.
    */
   static PostgreSQLFeatureNotSupportedException refusal(final String ruleName, final ParserRuleContext marker) {
     final Token start = marker.getStart();
     final String what = DESCRIPTIONS.containsKey(ruleName) ? DESCRIPTIONS.get(ruleName) : words(ruleName, marker);
     String message = what + " is not supported by the postgresql language (" + position(start) + ")";
     if ("unsupportedStatement".equals(ruleName) && !NOT_WRITES.contains(start.getType()))
-      message += ": the language reads only, use the sql language for it (the {sql} marker on the wire)";
+      message += ": the language runs SELECT, INSERT, UPDATE, DELETE and the transaction statements, use the sql language for it"
+          + " (the {sql} marker on the wire)";
     return new PostgreSQLFeatureNotSupportedException(message);
   }
 
@@ -120,7 +128,8 @@ final class Diagnostics {
     final List<String> words = new ArrayList<>();
     if ("unsupportedPrimary".equals(ruleName) && marker.getStart().getType() == PostgreSQLParser.LPAREN)
       return "A subquery";
-    if ("unsupportedStatement".equals(ruleName) && marker.getStart().getType() == PostgreSQLParser.LPAREN)
+    if (("unsupportedStatement".equals(ruleName) || "unsupportedInsertSource".equals(ruleName))
+        && marker.getStart().getType() == PostgreSQLParser.LPAREN)
       return "A parenthesised query";
     collect(marker, words);
     if (words.isEmpty())
