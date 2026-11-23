@@ -4,31 +4,34 @@
 # data: the idrule fixture, engine/src/test/java/com/arcadedb/query/postgresql/IdRuleFixture.java built in ArcadeDB, and the same tables in PostgreSQL, written from the relational view of that database by SmallSchemaSql (generate(database, true)), so the two cannot drift. The tables: account (own id, unique), post (own id, unique, two LINK columns), topic (no id property), follows and interested (edges), memo (own id, not unique), badge (property rid), twin (properties id and rid).
 # ids in expected: the record ids as SmallSchemaSql numbers them (#<table number>:<row number>); the engine's real record ids are translated to them before the comparison. A statement never names a record id.
 # expected: written by the generator from the real server, never by hand (see the header of answers.tsv for how to start the generator).
+# server: PostgreSQL 18.7 (Debian 18.7-1.pgdg13+5) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+# collation: C
+# encoding: UTF8
 id	order	tol	status	statement	expected
-idr-star-account	ordered	-	ok	SELECT * FROM account ORDER BY id	pending-server
-idr-rid-and-id	ordered	-	ok	SELECT rid, id FROM account ORDER BY id	pending-server
-idr-where-id	multiset	-	ok	SELECT name FROM account WHERE id = 12	pending-server
-idr-where-id-range	multiset	-	ok	SELECT count(*) AS n FROM account WHERE id > 11	pending-server
-idr-join-on-rid	multiset	-	ok	SELECT a.name FROM account a JOIN account b ON a.rid = b.rid WHERE b.id = 12	pending-server
-idr-star-topic	ordered	-	ok	SELECT * FROM topic ORDER BY label	pending-server
-err-idr-no-rid-without-own-id	multiset	-	ok	SELECT rid FROM topic	pending-server
-idr-link-to-account	ordered	-	ok	SELECT p.title, a.name FROM post p JOIN account a ON p.author = a.rid ORDER BY p.id	pending-server
-err-idr-link-to-account-by-id	multiset	-	ok	SELECT p.title FROM post p JOIN account a ON p.author = a.id	pending-server
-idr-link-to-topic	ordered	-	ok	SELECT p.title, t.label FROM post p JOIN topic t ON p.topic = t.id ORDER BY p.id	pending-server
-idr-edge-account-account	ordered	-	ok	SELECT a.name, b.name, f.since FROM account a JOIN follows f ON f.source_id = a.rid JOIN account b ON f.target_id = b.rid ORDER BY f.since	pending-server
-idr-edge-account-topic	ordered	-	ok	SELECT a.name, t.label FROM account a JOIN interested i ON i.source_id = a.rid JOIN topic t ON i.target_id = t.id ORDER BY a.name, t.label	pending-server
-err-idr-edge-by-id	multiset	-	ok	SELECT count(*) AS n FROM account a JOIN follows f ON f.source_id = a.id	pending-server
-idr-left-join-count	ordered	-	ok	SELECT a.name, count(f.id) AS follows FROM account a LEFT JOIN follows f ON f.source_id = a.rid GROUP BY a.name ORDER BY a.name	pending-server
-idr-memo-star	ordered	-	ok	SELECT * FROM memo ORDER BY body	pending-server
-idr-memo-ids-repeat	multiset	-	ok	SELECT m1.body, m2.body FROM memo m1 JOIN memo m2 ON m1.id = m2.id AND m1.body < m2.body	pending-server
-idr-badge-star	ordered	-	ok	SELECT * FROM badge ORDER BY rid	pending-server
-idr-badge-record-id	multiset	-	ok	SELECT id FROM badge WHERE rid = 'r1'	pending-server
-idr-twin-star	ordered	-	ok	SELECT * FROM twin ORDER BY id	pending-server
-idr-columns-account	ordered	-	ok	SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = 'account' ORDER BY ordinal_position	pending-server
-idr-columns-edge	ordered	-	ok	SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'follows' ORDER BY ordinal_position	pending-server
-idr-keys-account	ordered	-	ok	SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'account' AND constraint_type <> 'CHECK' ORDER BY constraint_name	pending-server
-idr-keys-memo	ordered	-	ok	SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'memo' AND constraint_type <> 'CHECK' ORDER BY constraint_name	pending-server
-idr-keys-twin	ordered	-	ok	SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'twin' AND constraint_type <> 'CHECK' ORDER BY constraint_name	pending-server
-idr-key-columns	ordered	-	ok	SELECT constraint_name, column_name FROM information_schema.key_column_usage WHERE table_name IN ('account', 'memo', 'topic') ORDER BY constraint_name, ordinal_position	pending-server
-idr-fk-three-views-join	ordered	-	ok	SELECT kcu.table_name, kcu.column_name, ccu.table_name AS referred_table, ccu.column_name AS referred_column FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema WHERE tc.constraint_type = 'FOREIGN KEY' ORDER BY kcu.table_name, kcu.column_name	pending-server
-idr-fk-referential	ordered	-	ok	SELECT constraint_name, unique_constraint_name FROM information_schema.referential_constraints ORDER BY constraint_name	pending-server
+idr-star-account	ordered	-	ok	SELECT * FROM account ORDER BY id	{"columns":["rid","id","name"],"types":["text","int8","varchar"],"rows":[["#1:0",11,"Ana"],["#1:1",12,"Bo"],["#1:2",13,"Cy"]]}
+idr-rid-and-id	ordered	-	ok	SELECT rid, id FROM account ORDER BY id	{"columns":["rid","id"],"types":["text","int8"],"rows":[["#1:0",11],["#1:1",12],["#1:2",13]]}
+idr-where-id	multiset	-	ok	SELECT name FROM account WHERE id = 12	{"columns":["name"],"types":["varchar"],"rows":[["Bo"]]}
+idr-where-id-range	multiset	-	ok	SELECT count(*) AS n FROM account WHERE id > 11	{"columns":["n"],"types":["int8"],"rows":[[2]]}
+idr-join-on-rid	multiset	-	ok	SELECT a.name FROM account a JOIN account b ON a.rid = b.rid WHERE b.id = 12	{"columns":["name"],"types":["varchar"],"rows":[["Bo"]]}
+idr-star-topic	ordered	-	ok	SELECT * FROM topic ORDER BY label	{"columns":["id","label"],"types":["text","varchar"],"rows":[["#5:0","db"],["#5:1","sql"]]}
+err-idr-no-rid-without-own-id	multiset	-	ok	SELECT rid FROM topic	{"error":"42703"}
+idr-link-to-account	ordered	-	ok	SELECT p.title, a.name FROM post p JOIN account a ON p.author = a.rid ORDER BY p.id	{"columns":["title","name"],"types":["varchar","varchar"],"rows":[["p1","Ana"],["p2","Ana"],["p3","Bo"]]}
+err-idr-link-to-account-by-id	multiset	-	ok	SELECT p.title FROM post p JOIN account a ON p.author = a.id	{"error":"42883"}
+idr-link-to-topic	ordered	-	ok	SELECT p.title, t.label FROM post p JOIN topic t ON p.topic = t.id ORDER BY p.id	{"columns":["title","label"],"types":["varchar","varchar"],"rows":[["p1","db"],["p2","sql"]]}
+idr-edge-account-account	ordered	-	ok	SELECT a.name, b.name, f.since FROM account a JOIN follows f ON f.source_id = a.rid JOIN account b ON f.target_id = b.rid ORDER BY f.since	{"columns":["name","name","since"],"types":["varchar","varchar","int4"],"rows":[["Ana","Bo",2020],["Ana","Cy",2021],["Bo","Cy",2022]]}
+idr-edge-account-topic	ordered	-	ok	SELECT a.name, t.label FROM account a JOIN interested i ON i.source_id = a.rid JOIN topic t ON i.target_id = t.id ORDER BY a.name, t.label	{"columns":["name","label"],"types":["varchar","varchar"],"rows":[["Ana","db"],["Bo","db"],["Bo","sql"]]}
+err-idr-edge-by-id	multiset	-	ok	SELECT count(*) AS n FROM account a JOIN follows f ON f.source_id = a.id	{"error":"42883"}
+idr-left-join-count	ordered	-	ok	SELECT a.name, count(f.id) AS follows FROM account a LEFT JOIN follows f ON f.source_id = a.rid GROUP BY a.name ORDER BY a.name	{"columns":["name","follows"],"types":["varchar","int8"],"rows":[["Ana",2],["Bo",1],["Cy",0]]}
+idr-memo-star	ordered	-	ok	SELECT * FROM memo ORDER BY body	{"columns":["rid","body","id"],"types":["text","varchar","varchar"],"rows":[["#4:0","one","a"],["#4:1","two","a"]]}
+idr-memo-ids-repeat	multiset	-	ok	SELECT m1.body, m2.body FROM memo m1 JOIN memo m2 ON m1.id = m2.id AND m1.body < m2.body	{"columns":["body","body"],"types":["varchar","varchar"],"rows":[["one","two"]]}
+idr-badge-star	ordered	-	ok	SELECT * FROM badge ORDER BY rid	{"columns":["id","color","rid"],"types":["text","varchar","varchar"],"rows":[["#2:0","red","r1"],["#2:1","blue","r2"]]}
+idr-badge-record-id	multiset	-	ok	SELECT id FROM badge WHERE rid = 'r1'	{"columns":["id"],"types":["text"],"rows":[["#2:0"]]}
+idr-twin-star	ordered	-	ok	SELECT * FROM twin ORDER BY id	{"columns":["id","note","rid"],"types":["int4","varchar","varchar"],"rows":[[1,"n1","x"],[2,"n2","y"]]}
+idr-columns-account	ordered	-	ok	SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = 'account' ORDER BY ordinal_position	{"columns":["column_name","data_type","is_nullable"],"types":["name","varchar","varchar"],"rows":[["rid","text","NO"],["id","bigint","NO"],["name","character varying","YES"]]}
+idr-columns-edge	ordered	-	ok	SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'follows' ORDER BY ordinal_position	{"columns":["column_name","data_type"],"types":["name","varchar"],"rows":[["id","text"],["source_id","text"],["target_id","text"],["since","integer"]]}
+idr-keys-account	ordered	-	ok	SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'account' AND constraint_type <> 'CHECK' ORDER BY constraint_name	{"columns":["constraint_name","constraint_type"],"types":["name","varchar"],"rows":[["account_pkey","PRIMARY KEY"],["account_rid_key","UNIQUE"]]}
+idr-keys-memo	ordered	-	ok	SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'memo' AND constraint_type <> 'CHECK' ORDER BY constraint_name	{"columns":["constraint_name","constraint_type"],"types":["name","varchar"],"rows":[["memo_pkey","PRIMARY KEY"]]}
+idr-keys-twin	ordered	-	ok	SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'twin' AND constraint_type <> 'CHECK' ORDER BY constraint_name	{"columns":["constraint_name","constraint_type"],"types":["name","varchar"],"rows":[["twin_pkey","PRIMARY KEY"]]}
+idr-key-columns	ordered	-	ok	SELECT constraint_name, column_name FROM information_schema.key_column_usage WHERE table_name IN ('account', 'memo', 'topic') ORDER BY constraint_name, ordinal_position	{"columns":["constraint_name","column_name"],"types":["name","name"],"rows":[["account_pkey","id"],["account_rid_key","rid"],["memo_pkey","rid"],["topic_pkey","id"]]}
+idr-fk-three-views-join	ordered	-	ok	SELECT kcu.table_name, kcu.column_name, ccu.table_name AS referred_table, ccu.column_name AS referred_column FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema WHERE tc.constraint_type = 'FOREIGN KEY' ORDER BY kcu.table_name, kcu.column_name	{"columns":["table_name","column_name","referred_table","referred_column"],"types":["name","name","name","name"],"rows":[["follows","source_id","account","rid"],["follows","target_id","account","rid"],["interested","source_id","account","rid"],["interested","target_id","topic","id"],["post","author","account","rid"],["post","topic","topic","id"]]}
+idr-fk-referential	ordered	-	ok	SELECT constraint_name, unique_constraint_name FROM information_schema.referential_constraints ORDER BY constraint_name	{"columns":["constraint_name","unique_constraint_name"],"types":["name","name"],"rows":[["follows_source_id_fkey","account_rid_key"],["follows_target_id_fkey","account_rid_key"],["interested_source_id_fkey","account_rid_key"],["interested_target_id_fkey","topic_pkey"],["post_author_fkey","account_rid_key"],["post_topic_fkey","topic_pkey"]]}
