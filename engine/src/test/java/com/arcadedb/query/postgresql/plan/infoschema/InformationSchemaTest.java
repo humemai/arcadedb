@@ -21,11 +21,15 @@ package com.arcadedb.query.postgresql.plan.infoschema;
 import com.arcadedb.TestHelper;
 import com.arcadedb.query.postgresql.PostgreSQLCatalogException;
 import com.arcadedb.query.postgresql.SmallFixture;
+import com.arcadedb.query.postgresql.catalog.EdgeEndpoints;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.catalog.Table;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
+import com.arcadedb.schema.DocumentType;
+import com.arcadedb.schema.EdgeType;
+import com.arcadedb.schema.Schema;
 import com.arcadedb.schema.Type;
 import org.junit.jupiter.api.Test;
 
@@ -309,6 +313,66 @@ class InformationSchemaTest extends TestHelper {
         lines.add(resultSet.next().getProperty("QUERY PLAN"));
       assertThat(lines).containsExactly("SCAN VIEW information_schema.tables AS t", "FILTER WHERE", "PROJECT 1 column(s)");
     }
+  }
+
+  // ---- the id rule of fork issue #38 ----
+
+  /**
+   * {@code account} declares its own {@code id} with a unique index, {@code topic} does not, and {@code follows} and {@code post}
+   * refer to both. The views must show {@code rid} where a type has its own {@code id}, the foreign keys pointing at the record
+   * id column, and {@code id} where it has none.
+   */
+  private void declareTypesWithTheirOwnId() {
+    final Schema schema = database.getSchema();
+    final DocumentType account = schema.createVertexType("account");
+    account.createProperty("id", Type.LONG);
+    account.createProperty("name", Type.STRING);
+    schema.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, "account", "id");
+    schema.createVertexType("topic").createProperty("label", Type.STRING);
+    final EdgeType follows = schema.createEdgeType("follows");
+    follows.setCustomValue(EdgeEndpoints.SOURCE_KEY, "account");
+    follows.setCustomValue(EdgeEndpoints.TARGET_KEY, "topic");
+    final DocumentType post = schema.createDocumentType("post");
+    post.createProperty("author", Type.LINK, "account");
+    post.createProperty("about", Type.LINK, "topic");
+  }
+
+  @Test
+  void aTypeWithItsOwnIdShowsTheRecordIdAsRidAndATypeWithoutOneKeepsId() {
+    declareTypesWithTheirOwnId();
+    assertThat(rows("SELECT table_name, column_name, ordinal_position, is_nullable, data_type FROM information_schema.columns"
+        + " WHERE table_name IN ('account', 'topic', 'follows', 'post') ORDER BY table_name, ordinal_position")).containsExactly(
+        row("account", "rid", 1, "NO", "text"), row("account", "id", 2, "NO", "bigint"),
+        row("account", "name", 3, "YES", "character varying"),
+        row("follows", "id", 1, "NO", "text"), row("follows", "source_id", 2, "NO", "text"), row("follows", "target_id", 3, "NO", "text"),
+        row("post", "id", 1, "NO", "text"), row("post", "about", 2, "YES", "text"), row("post", "author", 3, "YES", "text"),
+        row("topic", "id", 1, "NO", "text"), row("topic", "label", 2, "YES", "character varying"));
+  }
+
+  @Test
+  void theKeysOfATypeWithItsOwnIdArePrimaryOnIdAndUniqueOnRid() {
+    declareTypesWithTheirOwnId();
+    assertThat(rows("SELECT constraint_name, table_name, constraint_type FROM information_schema.table_constraints"
+        + " WHERE table_name IN ('account', 'topic', 'follows', 'post') ORDER BY constraint_name")).containsExactly(
+        row("account_pkey", "account", "PRIMARY KEY"), row("account_rid_key", "account", "UNIQUE"),
+        row("follows_pkey", "follows", "PRIMARY KEY"), row("follows_source_id_fkey", "follows", "FOREIGN KEY"),
+        row("follows_target_id_fkey", "follows", "FOREIGN KEY"), row("post_about_fkey", "post", "FOREIGN KEY"),
+        row("post_author_fkey", "post", "FOREIGN KEY"), row("post_pkey", "post", "PRIMARY KEY"),
+        row("topic_pkey", "topic", "PRIMARY KEY"));
+    assertThat(rows("SELECT constraint_name, column_name FROM information_schema.key_column_usage"
+        + " WHERE table_name IN ('account', 'topic') ORDER BY constraint_name")).containsExactly(
+        row("account_pkey", "id"), row("account_rid_key", "rid"), row("topic_pkey", "id"));
+
+    // the foreign keys refer to the record id column of the other table, and name the key that holds it
+    assertThat(rows("SELECT constraint_name, unique_constraint_name FROM information_schema.referential_constraints"
+        + " WHERE constraint_name IN ('follows_source_id_fkey', 'follows_target_id_fkey', 'post_about_fkey', 'post_author_fkey')"
+        + " ORDER BY constraint_name")).containsExactly(row("follows_source_id_fkey", "account_rid_key"),
+        row("follows_target_id_fkey", "topic_pkey"), row("post_about_fkey", "topic_pkey"), row("post_author_fkey", "account_rid_key"));
+    assertThat(rows("SELECT constraint_name, table_name, column_name FROM information_schema.constraint_column_usage"
+        + " WHERE constraint_name IN ('follows_source_id_fkey', 'follows_target_id_fkey', 'post_about_fkey', 'post_author_fkey')"
+        + " ORDER BY constraint_name")).containsExactly(
+        row("follows_source_id_fkey", "account", "rid"), row("follows_target_id_fkey", "topic", "id"),
+        row("post_about_fkey", "topic", "id"), row("post_author_fkey", "account", "rid"));
   }
 
   // ---- resolution ----
