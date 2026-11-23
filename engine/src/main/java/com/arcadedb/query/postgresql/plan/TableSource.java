@@ -280,7 +280,7 @@ public final class TableSource implements RelationSource {
       return Collections.emptyIterator();
     }
     if (record instanceof Document document && belongs(document))
-      return List.of(row(document)).iterator();
+      return Collections.singletonList(row(document)).iterator();
     return Collections.emptyIterator();
   }
 
