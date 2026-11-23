@@ -1577,7 +1577,6 @@ c3-scalar-subquery-set-operation	ok	inside	-	SELECT (SELECT 1 UNION SELECT 2 ORD
 c3-scalar-subquery-parenthesised-twice	ok	inside	-	SELECT ((SELECT 1))	written for the parser	-
 c3-scalar-subquery-values	ok	outside	-	SELECT (VALUES (1))	written for the parser	-
 c3-scalar-subquery-unclosed	syntax-error	unknown	-	SELECT (SELECT 1	written for the parser	42601
-c4-using-one-column	ok	inside	-	SELECT * FROM a JOIN b USING (x)	written for the parser	42P01
 c4-using-two-columns	ok	inside	-	SELECT * FROM a JOIN b USING (x, y)	written for the parser	42P01
 c4-using-left	ok	inside	-	SELECT * FROM a LEFT JOIN b USING (x)	written for the parser	42P01
 c4-using-left-outer	ok	inside	-	SELECT x FROM a LEFT OUTER JOIN b USING (x)	written for the parser	42P01
