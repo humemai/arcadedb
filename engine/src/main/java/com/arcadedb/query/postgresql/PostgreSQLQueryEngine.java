@@ -22,20 +22,38 @@ import com.arcadedb.ContextConfiguration;
 import com.arcadedb.database.DatabaseInternal;
 import com.arcadedb.query.OperationType;
 import com.arcadedb.query.QueryEngine;
-import com.arcadedb.query.sql.executor.InternalResultSet;
+import com.arcadedb.query.postgresql.ast.EmptyStatement;
+import com.arcadedb.query.postgresql.ast.ExplainStatement;
+import com.arcadedb.query.postgresql.ast.SelectStatement;
+import com.arcadedb.query.postgresql.ast.Statement;
+import com.arcadedb.query.postgresql.eval.Parameters;
+import com.arcadedb.query.postgresql.parser.StatementParser;
+import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
+import com.arcadedb.query.postgresql.plan.SelectPlan;
+import com.arcadedb.query.postgresql.plan.SelectPlanner;
 import com.arcadedb.query.sql.executor.ResultInternal;
 import com.arcadedb.query.sql.executor.ResultSet;
 import com.arcadedb.utility.CollectionUtils;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
  * The {@code postgresql} query language: PostgreSQL-style SQL over a relational view of the schema, next to {@code sql} and
- * {@code opencypher} and with no effect on either. It reads only. This is the skeleton the prototype builds on: it is
- * registered, it classifies a statement, it refuses what it does not support with SQLSTATE {@code 0A000}, and it answers the one
- * statement {@code SELECT 1} until the grammar exists.
+ * {@code opencypher} and with no effect on either. It reads only. A statement goes through three steps:
+ * <ol>
+ * <li>the parser ({@link StatementParser}): text that is not PostgreSQL syntax is refused with SQLSTATE {@code 42601},
+ * PostgreSQL syntax outside the subset (every write, {@code WITH}, a subquery, a right join) with {@code 0A000};</li>
+ * <li>the planner ({@link SelectPlanner}): names are bound through the {@link com.arcadedb.query.postgresql.catalog.RelationalCatalog}
+ * ({@code 42703}, {@code 42P01}, {@code 42702}), every expression is typed by the evaluator with PostgreSQL's rules
+ * ({@code 42883}, {@code 42804}, {@code 22P02}) and the access path of the table is chosen;</li>
+ * <li>the execution of the plan ({@link SelectPlan#execute}): the answer is a {@link PostgreSQLResultSet}, whose columns carry
+ * the PostgreSQL names and type names, and whose execution plan says how the table was read.</li>
+ * </ol>
+ * Parameters are {@code $1}, {@code $2} and so on: {@code db.query("postgresql", sql, a, b)} binds {@code $1} to {@code a}; a map
+ * binds the keys {@code "1"} or {@code "$1"}. {@code EXPLAIN SELECT ...} answers the plan as rows of one column
+ * {@code QUERY PLAN} and reads nothing.
  */
 public class PostgreSQLQueryEngine implements QueryEngine {
   public static final String ENGINE_NAME = "postgresql";
@@ -43,10 +61,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   /** The name PostgreSQL gives the column of a select list item that has no name, as in {@code SELECT 1}. */
   static final String UNNAMED_COLUMN = "?column?";
 
-  private static final String SELECT = "SELECT";
-
-  // REMOVE WHEN S1 lands: the grammar does not exist yet, and this recognises exactly the one statement of the first test
-  private static final Pattern SELECT_ONE = Pattern.compile("select\\s+1", Pattern.CASE_INSENSITIVE);
+  /** The column of an {@code EXPLAIN}, as PostgreSQL names it. */
+  static final String PLAN_COLUMN = "QUERY PLAN";
 
   /** The analysis of every statement the language accepts: a read, never schema, never a write. */
   private static final AnalyzedQuery READ = new AnalyzedQuery() {
@@ -90,23 +106,24 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
-   * A {@code SELECT} is a read. Everything else is refused with SQLSTATE {@code 0A000}: the language does not write, and a
-   * statement outside the subset says so with its position instead of a generic syntax error.
+   * A {@code SELECT} is a read. Everything else is refused: text that is not PostgreSQL syntax with SQLSTATE {@code 42601},
+   * and a statement outside the subset, which includes the empty statement and every write, with SQLSTATE {@code 0A000} and
+   * its position.
    */
   @Override
   public AnalyzedQuery analyze(final String query) {
-    requireSelect(query);
+    parse(query);
     return READ;
   }
 
   @Override
   public ResultSet query(final String query, final ContextConfiguration configuration, final Map<String, Object> parameters) {
-    return execute(query);
+    return execute(query, Parameters.of(parameters));
   }
 
   @Override
   public ResultSet query(final String query, final ContextConfiguration configuration, final Object... parameters) {
-    return execute(query);
+    return execute(query, Parameters.of(parameters));
   }
 
   /**
@@ -114,86 +131,45 @@ public class PostgreSQLQueryEngine implements QueryEngine {
    */
   @Override
   public ResultSet command(final String query, final ContextConfiguration configuration, final Map<String, Object> parameters) {
-    return execute(query);
+    return execute(query, Parameters.of(parameters));
   }
 
   @Override
   public ResultSet command(final String query, final ContextConfiguration configuration, final Object... parameters) {
-    return execute(query);
+    return execute(query, Parameters.of(parameters));
   }
 
-  private ResultSet execute(final String query) {
-    final int start = requireSelect(query);
-
-    // REMOVE WHEN S1 lands
-    if (!isSelectOne(query))
-      throw new PostgreSQLFeatureNotSupportedException(
-          "This SELECT is not supported by the postgresql language yet, only SELECT 1 is (" + position(query, start) + ")");
-
-    final ResultInternal row = new ResultInternal(database);
-    row.setProperty(UNNAMED_COLUMN, 1);
-    return new InternalResultSet(row);
+  private ResultSet execute(final String query, final Parameters parameters) {
+    final Statement statement = parse(query);
+    final SelectPlanner planner = new SelectPlanner(database, parameters);
+    if (statement instanceof ExplainStatement explain)
+      return explain(planner.plan(explain.select()));
+    return planner.plan((SelectStatement) statement).execute(database);
   }
 
-  /**
-   * @return the offset of the first word of {@code query}, which is {@code SELECT}
-   *
-   * @throws PostgreSQLFeatureNotSupportedException when the statement is empty or does not start with {@code SELECT}
-   */
-  private static int requireSelect(final String query) {
-    final int start = firstTokenOffset(query);
-    if (start >= query.length())
-      throw new PostgreSQLFeatureNotSupportedException(
-          "An empty statement is not supported by the postgresql language (" + position(query, start) + ")");
-
-    int end = start;
-    while (end < query.length() && isWordChar(query.charAt(end)))
-      ++end;
-    if (end == start)
-      // not a word: name the character
-      end = start + 1;
-
-    final String token = query.substring(start, end);
-    if (!SELECT.equalsIgnoreCase(token))
-      throw new PostgreSQLFeatureNotSupportedException(
-          token + " is not supported by the postgresql language (" + position(query, start)
-              + "): the language reads only, use the sql language for it (the {sql} marker on the wire)");
-    return start;
-  }
-
-  // REMOVE WHEN S1 lands: the tokenizer of the grammar knows whitespace and comments, this knows whitespace
-  private static int firstTokenOffset(final String query) {
-    int offset = 0;
-    while (offset < query.length() && Character.isWhitespace(query.charAt(offset)))
-      ++offset;
-    return offset;
-  }
-
-  private static boolean isWordChar(final char c) {
-    return Character.isLetterOrDigit(c) || c == '_';
-  }
-
-  // REMOVE WHEN S1 lands
-  private static boolean isSelectOne(final String query) {
-    String text = query.strip();
-    if (text.endsWith(";"))
-      text = text.substring(0, text.length() - 1).stripTrailing();
-    return SELECT_ONE.matcher(text).matches();
-  }
-
-  /**
-   * Line and column, both counted from 1, of {@code offset} in {@code text}, in the words of every message that points at one.
-   */
-  private static String position(final String text, final int offset) {
-    int line = 1;
-    int column = 1;
-    for (int i = 0; i < offset && i < text.length(); i++) {
-      if (text.charAt(i) == '\n') {
-        ++line;
-        column = 1;
-      } else
-        ++column;
+  /** {@code EXPLAIN}: the plan, one line per row, and nothing is read. */
+  private PostgreSQLResultSet explain(final SelectPlan plan) {
+    final List<PostgreSQLResultSet.Column> columns = List.of(new PostgreSQLResultSet.Column(PLAN_COLUMN, "text"));
+    final PostgreSQLResultSet result = new PostgreSQLResultSet(columns, new PostgreSQLResultSet.Plan(plan.steps()));
+    for (final String line : plan.steps()) {
+      final ResultInternal row = new ResultInternal(database);
+      row.setProperty(PLAN_COLUMN, line);
+      result.add(row);
     }
-    return "line " + line + ", column " + column;
+    return result;
+  }
+
+  /**
+   * @return the syntax tree of a {@code SELECT} or of an {@code EXPLAIN} of one
+   *
+   * @throws PostgreSQLSyntaxException               when the text is not PostgreSQL syntax
+   * @throws PostgreSQLFeatureNotSupportedException when the text is outside the subset, or is the empty statement
+   */
+  private static Statement parse(final String query) {
+    final Statement statement = StatementParser.parse(query);
+    if (statement instanceof EmptyStatement)
+      throw new PostgreSQLFeatureNotSupportedException(
+          "An empty statement is not supported by the postgresql language (" + statement.position() + ")");
+    return statement;
   }
 }

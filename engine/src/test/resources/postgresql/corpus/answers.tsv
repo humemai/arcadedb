@@ -1,0 +1,135 @@
+# PostgreSQL-style SQL prototype: the answer parity corpus (issue #2).
+# Columns, separated by one TAB: id, order, tol, status, statement, expected.
+# id: unique, lower case, words joined by hyphens. Add a case at the end of its group; never renumber or reuse an id. An id that starts with err- is a statement the server must refuse: its expected is the SQLSTATE and the engine must refuse it with the same SQLSTATE.
+# order: ordered when the statement has an ORDER BY that is a total order on its rows (row order is then part of the answer), multiset otherwise (the same rows the same number of times, in any order). Stated for every statement.
+# tol: - for the default floating point tolerance (1e-9, relative to the larger of 1 and the two values) or a number. Only floating point values use it: integers, numeric and text compare exactly, numbers by value (38.5 equals 38.50).
+# status: ok = the engine is expected to answer like the server. pending = the engine does not support the statement yet: the harness runs it on the server only for its outcome, tries it on the engine, and reports it as pending, never as failed. When the engine answers a pending statement like the server the run fails until the flag is flipped to ok.
+# statement: one statement, with backslash, tab, line feed and carriage return written as \\, \t, \n and \r.
+# expected: written by the generator from the real server, never by hand: {"columns":[labels],"types":[PostgreSQL type names],"rows":[[cells]]}, or {"error":"SQLSTATE"}. Cells: NULL is null, numbers are numbers, text is text, dates and timestamps are ISO text, arrays are JSON arrays, jsonb is JSON. pending-server = the generator has not run on the case yet: add a case with that value, then run the generator.
+# rules of the comparison: the classes Values and ResultComparator in com.arcadedb.query.postgresql.corpus.
+# data: the small fixture of issue #2, engine/src/test/resources/postgresql/small-schema.sql loaded into PostgreSQL and SmallFixture built in ArcadeDB.
+# ids in expected: the record ids of the fixture file (#<table number>:<row number>, as small-schema.sql numbers them), not ArcadeDB's real record ids, which depend on the buckets of a type. The harness translates the engine's real record ids to the file's before it compares (ArcadeSide.setRidAliases); a test of the engine tree does the same.
+# generator: see the header of syntax.tsv.
+# server: PostgreSQL 18.7 (Debian 18.7-1.pgdg13+5) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+# collation: C
+# encoding: UTF8
+id	order	tol	status	statement	expected
+demo-select-one	multiset	-	ok	SELECT 1	{"columns":["?column?"],"types":["int4"],"rows":[[1]]}
+demo-names-by-pid	ordered	-	ok	SELECT name FROM person ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"],["Cy"],["Di"],["Ed"]]}
+demo-loader-check	multiset	-	ok	SELECT count(*), sum(age), min(age), max(age) FROM person	{"columns":["count","sum","min","max"],"types":["int8","int8","int4","int4"],"rows":[[5,158,29,52]]}
+demo-join-limit	ordered	-	ok	SELECT p.name, o.oid FROM orders o JOIN person p ON o.pid = p.pid WHERE p.city = 'Delft' ORDER BY o.oid LIMIT 2	{"columns":["name","oid"],"types":["varchar","int4"],"rows":[["Ada",100],["Ada",101]]}
+st-star-company	ordered	-	ok	SELECT * FROM company ORDER BY cid	{"columns":["id","cid","name"],"types":["text","int4","varchar"],"rows":[["#1:0",10,"Acme"],["#1:1",20,"Birch"],["#1:2",30,"Cedar"]]}
+st-columns	ordered	-	ok	SELECT name, age FROM person ORDER BY pid	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Ada",36],["Bo",41],["Cy",null],["Di",29],["Ed",52]]}
+st-alias-arithmetic	ordered	-	ok	SELECT name AS who, age + 1 AS next_age FROM person ORDER BY pid	{"columns":["who","next_age"],"types":["varchar","int4"],"rows":[["Ada",37],["Bo",42],["Cy",null],["Di",30],["Ed",53]]}
+st-distinct-city	multiset	-	ok	SELECT DISTINCT city FROM person	{"columns":["city"],"types":["varchar"],"rows":[["Leiden"],["Utrecht"],["Delft"]]}
+st-distinct-city-sorted	ordered	-	ok	SELECT DISTINCT city FROM person ORDER BY city	{"columns":["city"],"types":["varchar"],"rows":[["Delft"],["Leiden"],["Utrecht"]]}
+st-unnamed-columns	multiset	-	ok	SELECT 1, 'a', true	{"columns":["?column?","?column?","?column?"],"types":["int4","text","bool"],"rows":[[1,"a",true]]}
+st-constant-column	ordered	-	ok	SELECT 'x' AS tag, pid FROM person ORDER BY pid	{"columns":["tag","pid"],"types":["text","int4"],"rows":[["x",1],["x",2],["x",3],["x",4],["x",5]]}
+st-where-gt	ordered	-	ok	SELECT name FROM person WHERE age > 30 ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"],["Ed"]]}
+st-where-range	ordered	-	ok	SELECT name FROM person WHERE age >= 36 AND age <= 41 ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"]]}
+st-where-ne	ordered	-	ok	SELECT name FROM person WHERE age <> 36 ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Bo"],["Di"],["Ed"]]}
+st-where-is-null	ordered	-	ok	SELECT name FROM person WHERE age IS NULL ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Cy"]]}
+st-where-is-not-null	ordered	-	ok	SELECT name FROM person WHERE age IS NOT NULL ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"],["Di"],["Ed"]]}
+st-where-not	ordered	-	ok	SELECT name FROM person WHERE NOT (age > 30) ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Di"]]}
+st-where-or	ordered	-	ok	SELECT name FROM person WHERE age > 100 OR city = 'Leiden' ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Cy"],["Di"]]}
+st-where-precedence	ordered	-	ok	SELECT name FROM person WHERE city = 'Delft' OR city = 'Leiden' AND age > 30 ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"]]}
+st-where-in	ordered	-	ok	SELECT name FROM person WHERE city IN ('Delft', 'Utrecht') ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"],["Ed"]]}
+st-where-not-in	ordered	-	ok	SELECT name FROM person WHERE city NOT IN ('Delft', 'Utrecht') ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Cy"],["Di"]]}
+st-where-not-in-null	ordered	-	ok	SELECT name FROM person WHERE age NOT IN (36, NULL) ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[]}
+st-where-between	ordered	-	ok	SELECT name FROM person WHERE age BETWEEN 29 AND 41 ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"],["Di"]]}
+st-where-not-between	ordered	-	ok	SELECT name FROM person WHERE age NOT BETWEEN 29 AND 41 ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ed"]]}
+st-where-like-prefix	ordered	-	ok	SELECT name FROM person WHERE name LIKE 'A%' ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"]]}
+st-where-like-case	ordered	-	ok	SELECT name FROM person WHERE name LIKE '%d%' ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Ed"]]}
+st-where-like-underscore	ordered	-	ok	SELECT name FROM person WHERE name LIKE '_o' ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Bo"]]}
+st-where-not-like	ordered	-	ok	SELECT name FROM person WHERE name NOT LIKE '%d%' ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Bo"],["Cy"],["Di"]]}
+st-where-text-compare	ordered	-	ok	SELECT name FROM person WHERE name < 'C' ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"]]}
+st-where-equals-null	ordered	-	ok	SELECT name FROM person WHERE age = NULL ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[]}
+st-text-compare-case	multiset	-	ok	SELECT 'a' < 'B' AS a_before_b, 'a' = 'A' AS same_case, 'Z' < 'a' AS z_before_a	{"columns":["a_before_b","same_case","z_before_a"],"types":["bool","bool","bool"],"rows":[[false,false,true]]}
+st-text-code-points	multiset	-	ok	SELECT 'a-b' < 'ab' AS dash_before_letter, 'B' < 'a' AS upper_before_lower, ' ' < '_' AS space_before_underscore, 'z' < 'é' AS accent_after_z	{"columns":["dash_before_letter","upper_before_lower","space_before_underscore","accent_after_z"],"types":["bool","bool","bool","bool"],"rows":[[true,true,true,true]]}
+st-null-comparisons	multiset	-	ok	SELECT NULL = NULL AS eq, 1 = NULL AS one_eq, NULL IS NULL AS is_null	{"columns":["eq","one_eq","is_null"],"types":["bool","bool","bool"],"rows":[[null,null,true]]}
+st-three-valued-logic	multiset	-	ok	SELECT NULL::boolean AND false AS a, NULL::boolean OR true AS b, NULL::boolean AND true AS c, NOT NULL::boolean AS d	{"columns":["a","b","c","d"],"types":["bool","bool","bool","bool"],"rows":[[false,true,null,null]]}
+st-boolean-column	ordered	-	ok	SELECT name, age > 30 AS over_30 FROM person ORDER BY pid	{"columns":["name","over_30"],"types":["varchar","bool"],"rows":[["Ada",true],["Bo",true],["Cy",null],["Di",false],["Ed",true]]}
+st-integer-division	ordered	-	ok	SELECT pid, age / 5 AS q, age % 5 AS r FROM person ORDER BY pid	{"columns":["pid","q","r"],"types":["int4","int4","int4"],"rows":[[1,7,1],[2,8,1],[3,null,null],[4,5,4],[5,10,2]]}
+st-division-constants	multiset	-	ok	SELECT 7 / 2 AS int_div, 7.0 / 2 AS numeric_div, 7 % 2 AS modulo, -7 / 2 AS negative_div, 7 / 2.0 AS mixed	{"columns":["int_div","numeric_div","modulo","negative_div","mixed"],"types":["int4","numeric","int4","int4","numeric"],"rows":[[3,3.5000000000000000,1,-3,3.5000000000000000]]}
+st-numeric-third	multiset	-	ok	SELECT 10.0 / 3 AS third	{"columns":["third"],"types":["numeric"],"rows":[[3.3333333333333333]]}
+st-arithmetic-precedence	multiset	-	ok	SELECT 2 + 3 * 4 AS a, (2 + 3) * 4 AS b	{"columns":["a","b"],"types":["int4","int4"],"rows":[[14,20]]}
+st-unary-minus-power	multiset	-	ok	SELECT -2 ^ 2 AS p	{"columns":["p"],"types":["float8"],"rows":[[4.0]]}
+st-modulo-signs	multiset	-	ok	SELECT -7 % 3 AS a, 7 % -3 AS b	{"columns":["a","b"],"types":["int4","int4"],"rows":[[-1,1]]}
+st-bigint-arithmetic	multiset	-	ok	SELECT 2147483647::bigint + 1 AS big	{"columns":["big"],"types":["int8"],"rows":[[2147483648]]}
+st-numeric-column-arithmetic	ordered	-	ok	SELECT oid, total * 2 AS doubled, total + 0.5 AS plus FROM orders ORDER BY oid	{"columns":["oid","doubled","plus"],"types":["int4","numeric","numeric"],"rows":[[100,51.00,26.00],[101,20.00,10.50],[102,199.98,100.49],[103,10.00,5.50],[104,14.50,7.75],[105,2.00,1.50]]}
+st-round	ordered	-	ok	SELECT oid, round(total) AS r FROM orders ORDER BY oid	{"columns":["oid","r"],"types":["int4","numeric"],"rows":[[100,26],[101,10],[102,100],[103,5],[104,7],[105,1]]}
+st-abs	ordered	-	ok	SELECT pid, abs(age - 40) AS dist FROM person ORDER BY pid	{"columns":["pid","dist"],"types":["int4","int4"],"rows":[[1,4],[2,1],[3,null],[4,11],[5,12]]}
+st-concat	ordered	-	ok	SELECT name || ' (' || city || ')' AS label FROM person ORDER BY pid	{"columns":["label"],"types":["text"],"rows":[["Ada (Delft)"],["Bo (Delft)"],["Cy (Leiden)"],["Di (Leiden)"],["Ed (Utrecht)"]]}
+st-concat-null	ordered	-	ok	SELECT name || age AS name_age FROM person ORDER BY pid	{"columns":["name_age"],"types":["text"],"rows":[["Ada36"],["Bo41"],[null],["Di29"],["Ed52"]]}
+st-text-functions	ordered	-	ok	SELECT upper(name) AS u, lower(city) AS l, length(name) AS n FROM person ORDER BY pid	{"columns":["u","l","n"],"types":["text","text","int4"],"rows":[["ADA","delft",3],["BO","delft",2],["CY","leiden",2],["DI","leiden",2],["ED","utrecht",2]]}
+st-coalesce	ordered	-	ok	SELECT name, coalesce(age, 0) AS age_or_zero FROM person ORDER BY pid	{"columns":["name","age_or_zero"],"types":["varchar","int4"],"rows":[["Ada",36],["Bo",41],["Cy",0],["Di",29],["Ed",52]]}
+st-nullif	ordered	-	ok	SELECT name, nullif(city, 'Delft') AS other_city FROM person ORDER BY pid	{"columns":["name","other_city"],"types":["varchar","text"],"rows":[["Ada",null],["Bo",null],["Cy","Leiden"],["Di","Leiden"],["Ed","Utrecht"]]}
+st-case-searched	ordered	-	ok	SELECT name, CASE WHEN age IS NULL THEN 'unknown' WHEN age < 40 THEN 'young' ELSE 'old' END AS band FROM person ORDER BY pid	{"columns":["name","band"],"types":["varchar","text"],"rows":[["Ada","young"],["Bo","old"],["Cy","unknown"],["Di","young"],["Ed","old"]]}
+st-case-simple	ordered	-	ok	SELECT name, CASE city WHEN 'Delft' THEN 1 WHEN 'Leiden' THEN 2 END AS code FROM person ORDER BY pid	{"columns":["name","code"],"types":["varchar","int4"],"rows":[["Ada",1],["Bo",1],["Cy",2],["Di",2],["Ed",null]]}
+st-cast-column	ordered	-	ok	SELECT pid, CAST(pid AS text) AS t, age::text AS age_text FROM person ORDER BY pid	{"columns":["pid","t","age_text"],"types":["int4","text","text"],"rows":[[1,"1","36"],[2,"2","41"],[3,"3",null],[4,"4","29"],[5,"5","52"]]}
+st-cast-literals	multiset	-	ok	SELECT CAST('42' AS integer) + 1 AS n, '2026-03-09'::date AS d, DATE '2026-03-09' + 1 AS next_day	{"columns":["n","d","next_day"],"types":["int4","date","date"],"rows":[[43,"2026-03-09","2026-03-10"]]}
+st-date-compare	ordered	-	ok	SELECT oid FROM orders WHERE placed >= DATE '2026-02-01' ORDER BY oid	{"columns":["oid"],"types":["int4"],"rows":[[102],[103],[104],[105]]}
+st-date-order	ordered	-	ok	SELECT oid, placed FROM orders ORDER BY placed DESC, oid	{"columns":["oid","placed"],"types":["int4","date"],"rows":[[105,"2026-03-10"],[104,"2026-03-09"],[103,"2026-02-03"],[102,"2026-02-01"],[101,"2026-01-07"],[100,"2026-01-05"]]}
+st-extract-month	ordered	-	ok	SELECT oid, extract(month FROM placed) AS m FROM orders ORDER BY oid	{"columns":["oid","m"],"types":["int4","numeric"],"rows":[[100,1],[101,1],[102,2],[103,2],[104,3],[105,3]]}
+st-order-default-nulls	ordered	-	ok	SELECT name, age FROM person ORDER BY age, pid	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Di",29],["Ada",36],["Bo",41],["Ed",52],["Cy",null]]}
+st-order-desc-default-nulls	ordered	-	ok	SELECT name, age FROM person ORDER BY age DESC, pid	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Cy",null],["Ed",52],["Bo",41],["Ada",36],["Di",29]]}
+st-order-nulls-first	ordered	-	ok	SELECT name, age FROM person ORDER BY age NULLS FIRST, pid	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Cy",null],["Di",29],["Ada",36],["Bo",41],["Ed",52]]}
+st-order-desc-nulls-last	ordered	-	ok	SELECT name, age FROM person ORDER BY age DESC NULLS LAST, pid	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Ed",52],["Bo",41],["Ada",36],["Di",29],["Cy",null]]}
+st-order-two-keys	ordered	-	ok	SELECT name, city FROM person ORDER BY city DESC, name	{"columns":["name","city"],"types":["varchar","varchar"],"rows":[["Ed","Utrecht"],["Cy","Leiden"],["Di","Leiden"],["Ada","Delft"],["Bo","Delft"]]}
+st-order-ordinals	ordered	-	ok	SELECT name, age FROM person ORDER BY 2 DESC NULLS LAST, 1	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Ed",52],["Bo",41],["Ada",36],["Di",29],["Cy",null]]}
+st-order-expression	ordered	-	ok	SELECT name FROM person ORDER BY length(name), name	{"columns":["name"],"types":["varchar"],"rows":[["Bo"],["Cy"],["Di"],["Ed"],["Ada"]]}
+st-order-alias	ordered	-	ok	SELECT name, age + 1 AS next FROM person ORDER BY next DESC NULLS LAST, name	{"columns":["name","next"],"types":["varchar","int4"],"rows":[["Ed",53],["Bo",42],["Ada",37],["Di",30],["Cy",null]]}
+st-limit	ordered	-	ok	SELECT name FROM person ORDER BY pid LIMIT 2	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"]]}
+st-limit-offset	ordered	-	ok	SELECT name FROM person ORDER BY pid LIMIT 2 OFFSET 1	{"columns":["name"],"types":["varchar"],"rows":[["Bo"],["Cy"]]}
+st-offset-only	ordered	-	ok	SELECT name FROM person ORDER BY pid OFFSET 3	{"columns":["name"],"types":["varchar"],"rows":[["Di"],["Ed"]]}
+st-limit-zero	ordered	-	ok	SELECT name FROM person ORDER BY pid LIMIT 0	{"columns":["name"],"types":["varchar"],"rows":[]}
+st-limit-null	ordered	-	ok	SELECT name FROM person ORDER BY pid LIMIT NULL	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"],["Cy"],["Di"],["Ed"]]}
+st-aggregates	multiset	-	ok	SELECT count(*) AS n, count(age) AS n_age, sum(age) AS s, avg(age) AS a, min(age) AS lo, max(age) AS hi FROM person	{"columns":["n","n_age","s","a","lo","hi"],"types":["int8","int8","int8","numeric","int4","int4"],"rows":[[5,4,158,39.5000000000000000,29,52]]}
+st-aggregates-empty	multiset	-	ok	SELECT count(*) AS n, sum(age) AS s, avg(age) AS a, min(age) AS lo FROM person WHERE age > 100	{"columns":["n","s","a","lo"],"types":["int8","int8","numeric","int4"],"rows":[[0,null,null,null]]}
+st-aggregate-types-person	multiset	-	ok	SELECT sum(pid) AS s, avg(pid) AS a, min(name) AS lo, max(name) AS hi FROM person	{"columns":["s","a","lo","hi"],"types":["int8","numeric","text","text"],"rows":[[15,3.0000000000000000,"Ada","Ed"]]}
+st-aggregate-types-orders	multiset	-	ok	SELECT sum(total) AS s, avg(total) AS a, min(placed) AS first_day, max(placed) AS last_day FROM orders	{"columns":["s","a","first_day","last_day"],"types":["numeric","numeric","date","date"],"rows":[[148.74,24.7900000000000000,"2026-01-05","2026-03-10"]]}
+st-group-by	ordered	-	ok	SELECT city, count(*) AS n FROM person GROUP BY city ORDER BY city	{"columns":["city","n"],"types":["varchar","int8"],"rows":[["Delft",2],["Leiden",2],["Utrecht",1]]}
+st-group-by-avg	ordered	-	ok	SELECT city, avg(age) AS a, count(age) AS c FROM person GROUP BY city ORDER BY city	{"columns":["city","a","c"],"types":["varchar","numeric","int8"],"rows":[["Delft",38.5000000000000000,2],["Leiden",29.0000000000000000,1],["Utrecht",52.0000000000000000,1]]}
+st-group-by-having	ordered	-	ok	SELECT city, count(*) AS n FROM person GROUP BY city HAVING count(*) > 1 ORDER BY city	{"columns":["city","n"],"types":["varchar","int8"],"rows":[["Delft",2],["Leiden",2]]}
+st-group-by-expression	ordered	-	ok	SELECT age IS NULL AS unknown_age, count(*) AS n FROM person GROUP BY age IS NULL ORDER BY unknown_age	{"columns":["unknown_age","n"],"types":["bool","int8"],"rows":[[false,4],[true,1]]}
+st-group-by-null-key	ordered	-	ok	SELECT pid, count(*) AS n, sum(total) AS s FROM orders GROUP BY pid ORDER BY pid	{"columns":["pid","n","s"],"types":["int4","int8","numeric"],"rows":[[1,2,35.50],[2,1,99.99],[4,2,12.25],[null,1,1.00]]}
+st-count-distinct	multiset	-	ok	SELECT count(DISTINCT city) AS n FROM person	{"columns":["n"],"types":["int8"],"rows":[[3]]}
+st-group-order-by-aggregate	ordered	-	ok	SELECT city, count(*) AS n FROM person GROUP BY city ORDER BY count(*) DESC, city	{"columns":["city","n"],"types":["varchar","int8"],"rows":[["Delft",2],["Leiden",2],["Utrecht",1]]}
+st-orders-columns	ordered	-	ok	SELECT oid, pid, total, placed FROM orders ORDER BY oid	{"columns":["oid","pid","total","placed"],"types":["int4","int4","numeric","date"],"rows":[[100,1,25.50,"2026-01-05"],[101,1,10.00,"2026-01-07"],[102,2,99.99,"2026-02-01"],[103,4,5.00,"2026-02-03"],[104,4,7.25,"2026-03-09"],[105,null,1.00,"2026-03-10"]]}
+st-orders-total	ordered	-	ok	SELECT oid FROM orders WHERE total > 9.99 ORDER BY oid	{"columns":["oid"],"types":["int4"],"rows":[[100],[101],[102]]}
+st-orders-no-buyer	ordered	-	ok	SELECT oid FROM orders WHERE pid IS NULL ORDER BY oid	{"columns":["oid"],"types":["int4"],"rows":[[105]]}
+st-orders-array	ordered	-	ok	SELECT oid, tags FROM orders ORDER BY oid	{"columns":["oid","tags"],"types":["int4","_text"],"rows":[[100,["gift","express"]],[101,["gift"]],[102,["express"]],[103,[]],[104,["gift"]],[105,[]]]}
+st-orders-jsonb	ordered	-	ok	SELECT oid, address FROM orders ORDER BY oid	{"columns":["oid","address"],"types":["int4","jsonb"],"rows":[[100,{"zip":"1000AA","city":"Delft"}],[101,{"zip":"1000AA","city":"Delft"}],[102,{"zip":"1000AA","city":"Delft"}],[103,{"zip":"1000AA","city":"Leiden"}],[104,{"zip":"1000AA","city":"Leiden"}],[105,{"zip":"1000AA","city":"Delft"}]]}
+st-orders-link	ordered	-	ok	SELECT oid, buyer FROM orders ORDER BY oid	{"columns":["oid","buyer"],"types":["int4","text"],"rows":[[100,"#2:0"],[101,"#2:0"],[102,"#2:1"],[103,"#2:3"],[104,"#2:3"],[105,null]]}
+st-person-id	ordered	-	ok	SELECT id, pid FROM person ORDER BY pid	{"columns":["id","pid"],"types":["text","int4"],"rows":[["#2:0",1],["#2:1",2],["#2:2",3],["#2:3",4],["#2:4",5]]}
+st-works-at	ordered	-	ok	SELECT source_id, target_id, since FROM works_at ORDER BY since	{"columns":["source_id","target_id","since"],"types":["text","text","int4"],"rows":[["#2:0","#1:0",2019],["#2:1","#1:0",2020],["#2:2","#1:1",2021],["#2:0","#1:0",2022],["#2:3","#1:1",2023]]}
+join-inner	ordered	-	ok	SELECT p.name, o.oid FROM orders o JOIN person p ON o.pid = p.pid ORDER BY o.oid	{"columns":["name","oid"],"types":["varchar","int4"],"rows":[["Ada",100],["Ada",101],["Bo",102],["Di",103],["Di",104]]}
+join-implicit	ordered	-	ok	SELECT p.name, o.oid FROM orders o, person p WHERE o.pid = p.pid ORDER BY o.oid	{"columns":["name","oid"],"types":["varchar","int4"],"rows":[["Ada",100],["Ada",101],["Bo",102],["Di",103],["Di",104]]}
+join-left	ordered	-	ok	SELECT p.name, o.oid FROM person p LEFT JOIN orders o ON o.pid = p.pid ORDER BY p.name, o.oid	{"columns":["name","oid"],"types":["varchar","int4"],"rows":[["Ada",100],["Ada",101],["Bo",102],["Cy",null],["Di",103],["Di",104],["Ed",null]]}
+join-edge	ordered	-	ok	SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON w.target_id = c.id ORDER BY p.name, w.since	{"columns":["name","name","since"],"types":["varchar","varchar","int4"],"rows":[["Ada","Acme",2019],["Ada","Acme",2022],["Bo","Acme",2020],["Cy","Birch",2021],["Di","Birch",2023]]}
+join-link	multiset	-	ok	SELECT p.name FROM orders o JOIN person p ON o.buyer = p.id WHERE o.oid = 102	{"columns":["name"],"types":["varchar"],"rows":[["Bo"]]}
+join-or-branches	ordered	-	ok	SELECT o.oid FROM orders o, person p WHERE (o.pid = p.pid AND p.city = 'Delft') OR (o.pid = p.pid AND o.total < 6) ORDER BY o.oid	{"columns":["oid"],"types":["int4"],"rows":[[100],[101],[102],[103]]}
+join-left-aggregate	ordered	-	ok	SELECT p.name, count(o.oid) AS orders, coalesce(sum(o.total), 0) AS spent FROM person p LEFT JOIN orders o ON o.pid = p.pid GROUP BY p.name ORDER BY p.name	{"columns":["name","orders","spent"],"types":["varchar","int8","numeric"],"rows":[["Ada",2,35.50],["Bo",1,99.99],["Cy",0,0],["Di",2,12.25],["Ed",0,0]]}
+join-group-by-edge	ordered	-	ok	SELECT p.city, count(*) AS jobs FROM person p JOIN works_at w ON w.source_id = p.id GROUP BY p.city ORDER BY p.city	{"columns":["city","jobs"],"types":["varchar","int8"],"rows":[["Delft",3],["Leiden",2]]}
+join-left-count-star	ordered	-	ok	SELECT c.name, count(*) AS n, count(w.since) AS jobs FROM company c LEFT JOIN works_at w ON w.target_id = c.id GROUP BY c.name ORDER BY c.name	{"columns":["name","n","jobs"],"types":["varchar","int8","int8"],"rows":[["Acme",3,3],["Birch",2,2],["Cedar",1,0]]}
+join-null-key	multiset	-	ok	SELECT count(*) AS n FROM orders o JOIN person p ON o.pid = p.pid	{"columns":["n"],"types":["int8"],"rows":[[5]]}
+join-empty-result	multiset	-	ok	SELECT o.oid FROM orders o JOIN person p ON o.pid = p.pid AND p.city = 'Utrecht'	{"columns":["oid"],"types":["int4"],"rows":[]}
+join-star	ordered	-	ok	SELECT * FROM person p LEFT JOIN orders o ON o.pid = p.pid ORDER BY p.pid, o.oid	{"columns":["id","age","city","name","pid","id","address","buyer","oid","pid","placed","tags","total"],"types":["text","int4","varchar","varchar","int4","text","jsonb","text","int4","int4","date","_text","numeric"],"rows":[["#2:0",36,"Delft","Ada",1,"#3:0",{"zip":"1000AA","city":"Delft"},"#2:0",100,1,"2026-01-05",["gift","express"],25.50],["#2:0",36,"Delft","Ada",1,"#3:1",{"zip":"1000AA","city":"Delft"},"#2:0",101,1,"2026-01-07",["gift"],10.00],["#2:1",41,"Delft","Bo",2,"#3:2",{"zip":"1000AA","city":"Delft"},"#2:1",102,2,"2026-02-01",["express"],99.99],["#2:2",null,"Leiden","Cy",3,null,null,null,null,null,null,null,null],["#2:3",29,"Leiden","Di",4,"#3:3",{"zip":"1000AA","city":"Leiden"},"#2:3",103,4,"2026-02-03",[],5.00],["#2:3",29,"Leiden","Di",4,"#3:4",{"zip":"1000AA","city":"Leiden"},"#2:3",104,4,"2026-03-09",["gift"],7.25],["#2:4",52,"Utrecht","Ed",5,null,null,null,null,null,null,null,null]]}
+join-non-equality	ordered	-	ok	SELECT a.name AS a, b.name AS b FROM person a JOIN person b ON a.city = b.city AND a.pid < b.pid ORDER BY a.pid, b.pid	{"columns":["a","b"],"types":["varchar","varchar"],"rows":[["Ada","Bo"],["Cy","Di"]]}
+join-extra-condition	ordered	-	ok	SELECT p.name, o.oid FROM person p JOIN orders o ON o.pid = p.pid AND o.total > 9 ORDER BY o.oid	{"columns":["name","oid"],"types":["varchar","int4"],"rows":[["Ada",100],["Ada",101],["Bo",102]]}
+join-three-tables	multiset	-	ok	SELECT count(*) AS n FROM person p, company c, works_at w WHERE w.source_id = p.id AND w.target_id = c.id	{"columns":["n"],"types":["int8"],"rows":[[5]]}
+join-expression-key	ordered	-	ok	SELECT p.name, c.name FROM person p, company c WHERE p.pid = c.cid / 10 ORDER BY p.pid	{"columns":["name","name"],"types":["varchar","varchar"],"rows":[["Ada","Acme"],["Bo","Birch"],["Cy","Cedar"]]}
+err-unknown-column	multiset	-	ok	SELECT nosuch FROM person	{"error":"42703"}
+err-unknown-table	multiset	-	ok	SELECT * FROM nosuch	{"error":"42P01"}
+err-division-by-zero	multiset	-	ok	SELECT 1 / 0	{"error":"22012"}
+err-bad-cast	multiset	-	ok	SELECT 'abc'::integer	{"error":"22P02"}
+err-type-mismatch	multiset	-	ok	SELECT name FROM person WHERE age = 'x'	{"error":"22P02"}
+err-no-such-function	multiset	-	ok	SELECT sum(name) FROM person	{"error":"42883"}
+err-grouping	multiset	-	ok	SELECT name, count(*) FROM person GROUP BY city	{"error":"42803"}
+err-ambiguous-column	multiset	-	ok	SELECT name FROM person p JOIN company c ON p.pid = c.cid	{"error":"42702"}
+err-duplicate-alias	multiset	-	ok	SELECT 1 FROM person p JOIN company p ON true	{"error":"42712"}
+err-integer-overflow	multiset	-	ok	SELECT 2147483647 + 1	{"error":"22003"}
+err-order-by-ambiguous	multiset	-	ok	SELECT p.name, c.name FROM person p JOIN company c ON p.pid = c.cid ORDER BY name	{"error":"42702"}
+err-aggregate-in-where	multiset	-	ok	SELECT name FROM person WHERE count(*) > 1	{"error":"42803"}
+err-negative-limit	multiset	-	ok	SELECT name FROM person LIMIT -1	{"error":"2201W"}
+err-non-boolean-where	multiset	-	ok	SELECT name FROM person WHERE age	{"error":"42804"}
