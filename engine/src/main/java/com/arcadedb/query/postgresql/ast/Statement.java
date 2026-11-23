@@ -24,6 +24,6 @@ package com.arcadedb.query.postgresql.ast;
  * the empty statement. Every other statement is refused with SQLSTATE 0A000 before a tree exists. The parser takes exactly one
  * statement; a text with a second statement after a semicolon is a syntax error, as the extended protocol of PostgreSQL has it.
  */
-public sealed interface Statement extends Node permits SelectStatement, ExplainStatement, ExplainWriteStatement, EmptyStatement, WriteStatement,
+public sealed interface Statement extends Node permits SelectStatement, SetOperationStatement, WithStatement, ExplainStatement, ExplainWriteStatement, EmptyStatement, WriteStatement,
     TransactionStatement {
 }

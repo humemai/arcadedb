@@ -24,6 +24,7 @@ import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.Numbers;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.query.postgresql.plan.join.BuildMemory;
 import com.arcadedb.query.sql.executor.ResultInternal;
 
 import java.math.BigDecimal;
@@ -49,7 +50,7 @@ import java.util.Set;
  * kept behind the output values until the sort is done. Without {@code ORDER BY} and {@code DISTINCT}, and without grouping, the
  * read stops as soon as {@code OFFSET + LIMIT} rows are in.
  */
-public final class SelectPlan {
+public final class SelectPlan implements QueryPlan {
 
   /** One key of the sort: where its value is in the row (output values first, then the extra keys), and its order. */
   record SortKey(int position, Comparator<Object> ordering) {
@@ -93,6 +94,7 @@ public final class SelectPlan {
   }
 
   /** The lines of the plan, the way the source reads first. */
+  @Override
   public List<String> steps() {
     return steps;
   }
@@ -101,10 +103,12 @@ public final class SelectPlan {
    * The warnings of the plan (fork issue #9): one sentence for each join that no edge, link or index supports. The plan lists
    * each as a {@code WARNING} line at its end; the engine writes them to the log once per statement.
    */
+  @Override
   public List<String> warnings() {
     return warnings;
   }
 
+  @Override
   public List<PostgreSQLResultSet.Column> columns() {
     return columns;
   }
@@ -113,7 +117,35 @@ public final class SelectPlan {
     return source;
   }
 
+  @Override
   public PostgreSQLResultSet execute(final Database database) {
+    final List<Object[]> rows = rows(null);
+    final List<String> keys = PostgreSQLResultSet.uniqueKeys(columns);
+    final PostgreSQLResultSet result = new PostgreSQLResultSet(columns, new PostgreSQLResultSet.Plan(steps), warnings);
+    for (final Object[] values : rows) {
+      final ResultInternal row = new ResultInternal(database);
+      for (int i = 0; i < outputs.length; i++)
+        row.setProperty(keys.get(i), values[i]);
+      result.add(row);
+    }
+    return result;
+  }
+
+  @Override
+  public List<PgType> outputTypes() {
+    final List<PgType> types = new ArrayList<>(outputs.length);
+    for (final Evaluable output : outputs)
+      types.add(output.type());
+    return types;
+  }
+
+  /**
+   * The rows of the answer, each as wide as the select list. The rows that are kept while the statement runs (before the sort, and
+   * the rows of the answer) are charged to the memory, when there is one: the caller that keeps the answer, a derived table or a set
+   * operation, gives its own.
+   */
+  @Override
+  public List<Object[]> rows(final BuildMemory memory) {
     final Long limitValue = count(limit, "LIMIT", "2201W");
     final Long offsetValue = count(offset, "OFFSET", "2201X");
     final long skip = offsetValue == null ? 0L : offsetValue;
@@ -135,6 +167,8 @@ public final class SelectPlan {
           out[outputs.length + j] = extras[j].eval(in);
         if (seen != null && !seen.add(distinctKey(out, outputs.length)))
           continue;
+        if (memory != null)
+          memory.charge(out);
         rows.add(out);
         if (rows.size() >= cap)
           break;
@@ -154,15 +188,10 @@ public final class SelectPlan {
     final int from = (int) Math.min(skip, (long) rows.size());
     final int to = limitValue == null || limitValue >= rows.size() - from ? rows.size() : from + (int) (long) limitValue;
 
-    final List<String> keys = PostgreSQLResultSet.uniqueKeys(columns);
-    final PostgreSQLResultSet result = new PostgreSQLResultSet(columns, new PostgreSQLResultSet.Plan(steps), warnings);
-    for (int r = from; r < to; r++) {
-      final ResultInternal row = new ResultInternal(database);
-      for (int i = 0; i < outputs.length; i++)
-        row.setProperty(keys.get(i), rows.get(r)[i]);
-      result.add(row);
-    }
-    return result;
+    final List<Object[]> answer = new ArrayList<>(Math.max(0, to - from));
+    for (int r = from; r < to; r++)
+      answer.add(extras.length == 0 ? rows.get(r) : Arrays.copyOf(rows.get(r), outputs.length));
+    return answer;
   }
 
   /** The rows the select list reads: the filtered rows of the source, or the rows of the groups that pass {@code HAVING}. */

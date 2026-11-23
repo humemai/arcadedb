@@ -23,10 +23,10 @@ import java.util.Objects;
 
 /**
  * A query: {@code SelectStmt} of {@code gram.y}, the {@code select_no_parens} form that is a single {@code simple_select} with
- * its {@code sort_clause} and {@code select_limit}. It holds the clauses in the order PostgreSQL evaluates their meaning:
+ * its {@code sort_clause} and {@code select_limit}; a set operation is a {@link SetOperationStatement} and a query with common
+ * table expressions a {@link WithStatement}. It holds the clauses in the order PostgreSQL evaluates their meaning:
  * {@code FROM}, {@code WHERE}, {@code GROUP BY}, {@code HAVING}, the select list, {@code DISTINCT}, {@code ORDER BY},
- * {@code OFFSET}, {@code LIMIT}. Not in the subset, and refused with SQLSTATE 0A000: {@code WITH}, {@code UNION},
- * {@code INTERSECT} and {@code EXCEPT}, {@code VALUES}, {@code TABLE}, {@code SELECT INTO}, {@code DISTINCT ON}, {@code WINDOW},
+ * {@code OFFSET}, {@code LIMIT}. Not in the subset, and refused with SQLSTATE 0A000: {@code WITH RECURSIVE}, {@code VALUES}, {@code TABLE}, {@code SELECT INTO}, {@code DISTINCT ON}, {@code WINDOW},
  * {@code GROUPING SETS}, {@code ROLLUP} and {@code CUBE}, {@code FETCH FIRST}, and the locking clause ({@code FOR UPDATE}).
  *
  * @param distinct true for {@code SELECT DISTINCT}; {@code SELECT ALL} and nothing are false

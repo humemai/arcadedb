@@ -23,7 +23,8 @@ import java.util.Objects;
 
 /**
  * An item of a {@code FROM} clause: {@code table_ref} of {@code gram.y}. Only a table name and a join of two references are in
- * the subset; a subquery, a function call, {@code LATERAL} and {@code TABLESAMPLE} are refused with SQLSTATE 0A000.
+ * the subset, and a subquery with an alias; a function call, {@code LATERAL} and {@code TABLESAMPLE} are refused with SQLSTATE
+ * 0A000.
  */
 public sealed interface TableReference extends Node {
 
@@ -44,6 +45,22 @@ public sealed interface TableReference extends Node {
       name = List.copyOf(name);
       if (name.isEmpty() || name.size() > 2)
         throw new IllegalArgumentException("A table name has one or two parts: " + name);
+    }
+  }
+
+  /**
+   * {@code (query) [AS] alias [(columns)]}: a derived table. Its rows are the rows of the query, read once when the statement
+   * runs; its columns have the names of the select list, or the names of the list after the alias.
+   *
+   * @param query   a {@link SelectStatement}, a {@link SetOperationStatement} or a {@link WithStatement}
+   * @param alias   the name of the derived table, or {@code null} when none is written (PostgreSQL 16 and later accept that)
+   * @param columns the names after the alias in parentheses, empty when there is no list
+   */
+  record Subquery(SourcePosition position, Statement query, Name alias, List<Name> columns) implements TableReference {
+    public Subquery {
+      Objects.requireNonNull(position, "position");
+      Objects.requireNonNull(query, "query");
+      columns = List.copyOf(columns);
     }
   }
 
