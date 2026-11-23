@@ -572,6 +572,8 @@ public final class JoinPlanner {
       if (!isEndpoint(end))
         continue;
       final Located vertex = join.left.locate(start.index());
+      if (vertex == null)
+        continue; // a view of information_schema has no vertex behind its columns
       final Table vertexTable = vertex.table().table();
       if (vertex.column().kind() != Column.Kind.IDENTITY || vertexTable.kind() != Table.Kind.VERTEX)
         continue;
@@ -623,7 +625,7 @@ public final class JoinPlanner {
     if (!(candidate.rawLeft() instanceof Evaluable.Slot slot))
       return null;
     final Located located = join.left.locate(slot.index());
-    return located.table().table().kind() == Table.Kind.EDGE && isEndpoint(located.column()) ? located : null;
+    return located != null && located.table().table().kind() == Table.Kind.EDGE && isEndpoint(located.column()) ? located : null;
   }
 
   /** The pattern of the walk, as openCypher would write it: {@code MATCH (p:person)-[w:works_at]->()}. */
