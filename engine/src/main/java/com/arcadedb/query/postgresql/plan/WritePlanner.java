@@ -72,7 +72,8 @@ import java.util.Set;
  * <ul>
  * <li><b>INSERT</b> creates one record per row of {@code VALUES} or of the {@code SELECT}. A column that is not given, or given as
  * {@code DEFAULT}, takes the default of its property, else it is absent, which reads as {@code NULL}; an explicit {@code NULL} is
- * not replaced by the default. {@code id} is never settable ({@code 428C9}), a column that the table does not have is
+ * not replaced by the default. {@code id} is never settable ({@code 428C9}: the record id column, {@code id} or {@code rid} by the rule of fork issue #38; a property of the user that is
+ * named {@code id} is an ordinary column and is set like any other), a column that the table does not have is
  * {@code 42703}, a property that is {@code NOTNULL} or {@code MANDATORY} and has no value is {@code 23502}, a unique index that
  * already holds the key is {@code 23505}, and a {@code LINK} that does not name an existing record of its type is {@code 23503}.</li>
  * <li><b>UPDATE</b> and <b>DELETE</b> find their rows with the access path of the read side ({@link SelectPlanner}: the record id
@@ -85,7 +86,7 @@ import java.util.Set;
  * for a type with declared endpoint tables a vertex of that table; the edge properties are given as for any record. A
  * lightweight edge type is written the same way and keeps no record, so it has no property to give. {@code UPDATE} changes edge
  * properties only: {@code source_id} and {@code target_id} are {@code 0A000} with the hint to delete the edge and insert it
- * again, and {@code id} is {@code 428C9}. {@code DELETE} deletes the edges.</li>
+ * again, and the record id column is {@code 428C9}. {@code DELETE} deletes the edges.</li>
  * </ul>
  * The answer is the number of rows in the column {@code count}, or the rows of {@code RETURNING}; see
  * {@link PostgreSQLResultSet#affectedRows()}.

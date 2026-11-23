@@ -25,6 +25,7 @@ import com.arcadedb.query.postgresql.corpus.CorpusFile;
 import com.arcadedb.query.postgresql.corpus.Outcome;
 import com.arcadedb.query.postgresql.corpus.ResultComparator;
 import com.arcadedb.query.postgresql.corpus.Values;
+import com.arcadedb.query.postgresql.corpus.WriteOutcome;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
@@ -213,6 +214,77 @@ class PgIdRuleParityIT {
     assertTrue(corpusFailures.isEmpty(), "the corpus and the server disagree:\n" + String.join("\n", corpusFailures));
     if (!regenerate)
       assertTrue(engineFailures.isEmpty(), "the engine and the server disagree:\n" + String.join("\n", engineFailures));
+  }
+
+  /**
+   * The writes of {@code idrule-writes.tsv}: each on the server and on the engine, in a transaction that is rolled back, the answer
+   * of the statement and the tables it touched compared. The server first gets {@code idrule-writes.sql}, which makes its record id
+   * column generated, as the table view does. The record id column is never settable (428C9); a property named {@code id} or
+   * {@code rid} is the user's data and is set like any other column.
+   */
+  @Test
+  @Order(3)
+  void idRuleWrites() throws Exception {
+    final Path path = resources.resolve("postgresql/corpus").resolve(Corpus.IDRULE_WRITES_FILE);
+    pg.load(Files.readString(resources.resolve("postgresql/idrule-writes.sql"), StandardCharsets.UTF_8));
+    final CorpusFile file = CorpusFile.read(path);
+    final List<String> corpusFailures = new ArrayList<>();
+    final List<String> engineFailures = new ArrayList<>();
+    int equal = 0;
+    int pending = 0;
+    int different = 0;
+
+    for (final String[] row : file.rows) {
+      final Corpus.WriteCase c = new Corpus.WriteCase(row);
+      final WriteOutcome server = pg.runWrite(c.statement(), c.checks());
+      if (server.result.isRefusal() != c.expectsRefusal())
+        corpusFailures.add(c.id() + ": " + (c.expectsRefusal() ? "the server answered a statement that an err- id says it refuses: "
+            : "the server refused a statement that its id says it answers: ") + server.result.describe());
+
+      if (regenerate)
+        row[Corpus.WriteCase.EXPECTED] = server.toJson();
+      else if (!c.hasOutcome())
+        corpusFailures.add(c.id() + ": the corpus has no outcome, run the generator");
+      else {
+        final String drift = WriteOutcome.compare(WriteOutcome.fromJson(c.expected()), server, Values.DEFAULT_TOLERANCE);
+        if (drift != null)
+          corpusFailures.add(c.id() + ": the server no longer does what the corpus says: " + drift);
+      }
+
+      final WriteOutcome engine = arcade.runWrite(c.statement(), c.checks());
+      final String difference = WriteOutcome.compare(server, engine, Values.DEFAULT_TOLERANCE);
+      final String verdict;
+      if (difference == null && c.pending()) {
+        verdict = "pending, but equal: flip the status to ok";
+        engineFailures.add(c.id() + ": pending, yet the engine does what the server did: flip status to ok in idrule-writes.tsv");
+      } else if (difference == null) {
+        verdict = "equal";
+        ++equal;
+      } else if (c.pending()) {
+        verdict = "pending (" + difference + ")";
+        ++pending;
+      } else {
+        verdict = "different (" + difference + ")";
+        ++different;
+        engineFailures.add(c.id() + ": " + difference);
+      }
+      line("writes-" + c.id(), verdict);
+    }
+
+    final String summary = "idrule writes: " + file.rows.size() + " statements, " + equal + " equal, " + pending + " pending, "
+        + different + " different";
+    REPORT.add(summary);
+    System.out.println("pgparity: " + summary);
+
+    if (regenerate) {
+      file.setHeaderValue("server", pg.version());
+      file.setHeaderValue("collation", pg.collation());
+      file.setHeaderValue("encoding", pg.encoding());
+      file.write(path);
+    }
+    assertTrue(corpusFailures.isEmpty(), "the write corpus and the server disagree:\n" + String.join("\n", corpusFailures));
+    if (!regenerate)
+      assertTrue(engineFailures.isEmpty(), "the engine and the server disagree on writes:\n" + String.join("\n", engineFailures));
   }
 
   private static void line(final String id, final String verdict) {

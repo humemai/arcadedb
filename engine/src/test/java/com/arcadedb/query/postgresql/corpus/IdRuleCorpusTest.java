@@ -106,6 +106,46 @@ class IdRuleCorpusTest extends TestHelper {
     assertThat(ridAliases.values()).contains("#1:0");
   }
 
+  static Stream<Corpus.WriteCase> writes() throws IOException {
+    return Corpus.writeCases(Corpus.readIdRuleWrites()).stream();
+  }
+
+  @Test
+  void theWriteFileIsWellFormed() throws IOException {
+    final CorpusFile file = Corpus.readIdRuleWrites();
+    assertThat(file.columns).containsExactly("id", "status", "checks", "statement", "expected");
+    assertThat(file.rows).isNotEmpty();
+    final Set<String> ids = new HashSet<>();
+    for (final Corpus.WriteCase c : Corpus.writeCases(file)) {
+      assertThat(c.id()).as("id of %s", c.statement()).matches(ID);
+      assertThat(c.id().replaceFirst("^err-", "")).startsWith("idrw-");
+      assertThat(ids.add(c.id())).as("unique id %s", c.id()).isTrue();
+      assertThat(c.row[Corpus.WriteCase.STATUS]).as("status of %s", c.id()).isIn("ok", "pending");
+      assertThat(c.checks()).as("checks of %s", c.id()).isNotEmpty();
+    }
+    if (file.rows.stream().anyMatch(row -> new Corpus.WriteCase(row).hasOutcome())) {
+      assertThat(file.headerValue("server")).startsWith("PostgreSQL 18");
+      assertThat(file.headerValue("collation")).isEqualTo("C");
+    }
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("writes")
+  void theEngineDoesWhatTheServerDidOnAWrite(final Corpus.WriteCase write) {
+    Assumptions.assumeTrue(write.hasOutcome(), "the generator has not run on this case");
+    final WriteOutcome expected = WriteOutcome.fromJson(write.expected());
+    final WriteOutcome actual = runWrite(write);
+    final String difference = WriteOutcome.compare(expected, actual, Values.DEFAULT_TOLERANCE);
+    if (write.pending()) {
+      if (difference == null)
+        throw new AssertionError(write.id() + " is pending, and the engine now does what the server did: flip its status to ok");
+      System.out.println("PENDING " + write.id() + ": " + difference);
+      Assumptions.assumeTrue(false, "pending: " + difference);
+      return;
+    }
+    assertThat(difference).as("%s: %s (engine: %s)", write.id(), write.statement(), actual.result.describe()).isNull();
+  }
+
   @ParameterizedTest(name = "{0}")
   @MethodSource("cases")
   void theEngineAnswersLikeTheServer(final Corpus.AnswerCase answer) throws IOException {
@@ -132,25 +172,48 @@ class IdRuleCorpusTest extends TestHelper {
 
   private Outcome run(final String sql) {
     try (final ResultSet resultSet = database.query("postgresql", sql)) {
-      final PostgreSQLResultSet answer = (PostgreSQLResultSet) resultSet;
-      final List<String> labels = new ArrayList<>();
-      final List<String> types = new ArrayList<>();
-      for (final PostgreSQLResultSet.Column column : answer.columns()) {
-        labels.add(column.name());
-        types.add(column.typeName());
-      }
-      final List<String> keys = PostgreSQLResultSet.uniqueKeys(answer.columns());
-      final List<List<Object>> rows = new ArrayList<>();
-      while (resultSet.hasNext()) {
-        final Result result = resultSet.next();
-        final List<Object> row = new ArrayList<>(keys.size());
-        for (final String key : keys)
-          row.add(alias(Values.normalize(result.getProperty(key))));
-        rows.add(row);
-      }
-      return Outcome.answer(new ResultTable(labels, types, rows));
+      return Outcome.answer(table(resultSet));
     } catch (final Throwable t) {
       return Outcome.refused(sqlState(t), String.valueOf(t.getMessage()));
+    }
+  }
+
+  private ResultTable table(final ResultSet resultSet) {
+    final PostgreSQLResultSet answer = (PostgreSQLResultSet) resultSet;
+    final List<String> labels = new ArrayList<>();
+    final List<String> types = new ArrayList<>();
+    for (final PostgreSQLResultSet.Column column : answer.columns()) {
+      labels.add(column.name());
+      types.add(column.typeName());
+    }
+    final List<String> keys = PostgreSQLResultSet.uniqueKeys(answer.columns());
+    final List<List<Object>> rows = new ArrayList<>();
+    while (resultSet.hasNext()) {
+      final Result result = resultSet.next();
+      final List<Object> row = new ArrayList<>(keys.size());
+      for (final String key : keys)
+        row.add(alias(Values.normalize(result.getProperty(key))));
+      rows.add(row);
+    }
+    return new ResultTable(labels, types, rows);
+  }
+
+  /** One write of {@code idrule-writes.tsv}: in a transaction that is rolled back, the statement and then each check. */
+  private WriteOutcome runWrite(final Corpus.WriteCase write) {
+    database.begin();
+    try {
+      Outcome result;
+      try (final ResultSet resultSet = database.command("postgresql", write.statement())) {
+        result = Outcome.answer(table(resultSet));
+      } catch (final Throwable t) {
+        result = Outcome.refused(sqlState(t), String.valueOf(t.getMessage()));
+      }
+      final List<Outcome> after = new ArrayList<>();
+      for (final String check : write.checks())
+        after.add(run(check));
+      return new WriteOutcome(result, after);
+    } finally {
+      database.rollback();
     }
   }
 

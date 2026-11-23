@@ -1,0 +1,22 @@
+# PostgreSQL-style SQL prototype: the write corpus of the id rule (fork issue #38).
+# Same columns and rules as writes.tsv (read its header): id, status, checks, statement, expected. An id that starts with err- is a statement the server must refuse.
+# The rule for writes: the record id column (id in a type with no property id, rid in a type with its own id) is never settable, SQLSTATE 428C9. A property named id or rid is the user's data and is set like any other column.
+# data: the idrule fixture of idrule.tsv. The server gets the tables of the relational view (SmallSchemaSql) and then idrule-writes.sql, which makes the record id column generated (428C9) and gives a new row one from a sequence, as the table view does.
+# expected: written by the generator from the real server, never by hand.
+id	status	checks	statement	expected
+idrw-insert-account	ok	SELECT id, name FROM account	INSERT INTO account (id, name) VALUES (14, 'Di')	pending-server
+idrw-insert-account-returning	ok	SELECT id, name FROM account	INSERT INTO account (id, name) VALUES (14, 'Di') RETURNING id, name	pending-server
+err-idrw-insert-account-rid	ok	SELECT id, name FROM account	INSERT INTO account (rid, id, name) VALUES ('#9:1', 15, 'Ed')	pending-server
+err-idrw-insert-account-duplicate-id	ok	SELECT id, name FROM account	INSERT INTO account (id, name) VALUES (11, 'Dup')	pending-server
+idrw-insert-topic	ok	SELECT label FROM topic	INSERT INTO topic (label) VALUES ('ml')	pending-server
+err-idrw-insert-topic-id	ok	SELECT label FROM topic	INSERT INTO topic (id, label) VALUES ('#9:1', 'ml')	pending-server
+idrw-update-account-id	ok	SELECT id, name FROM account	UPDATE account SET id = 21 WHERE id = 11	pending-server
+err-idrw-update-account-rid	ok	SELECT id, name FROM account	UPDATE account SET rid = '#9:5' WHERE id = 11	pending-server
+idrw-update-account-name	ok	SELECT id, name FROM account	UPDATE account SET name = 'Anna' WHERE id = 11 RETURNING id, name	pending-server
+idrw-delete-memo-by-id	ok	SELECT body FROM memo	DELETE FROM memo WHERE id = 'a'	pending-server
+idrw-update-memo-id	ok	SELECT id, body FROM memo	UPDATE memo SET id = 'b' WHERE body = 'one'	pending-server
+idrw-insert-twin	ok	SELECT id, rid, note FROM twin	INSERT INTO twin (id, rid, note) VALUES (3, 'z', 'n3')	pending-server
+idrw-insert-badge	ok	SELECT rid, color FROM badge	INSERT INTO badge (rid, color) VALUES ('r3', 'green')	pending-server
+err-idrw-insert-badge-id	ok	SELECT rid, color FROM badge	INSERT INTO badge (id, color) VALUES ('#9:1', 'green')	pending-server
+idrw-insert-post-link	ok	SELECT p.id, a.name FROM post p JOIN account a ON p.author = a.rid	INSERT INTO post (id, title, author) SELECT 5, 'p5', rid FROM account WHERE id = 12	pending-server
+idrw-insert-edge-by-rid	ok	SELECT a.name, b.name, f.since FROM account a JOIN follows f ON f.source_id = a.rid JOIN account b ON f.target_id = b.rid	INSERT INTO follows (source_id, target_id, since) SELECT a.rid, b.rid, 2023 FROM account a, account b WHERE a.id = 13 AND b.id = 11	pending-server
