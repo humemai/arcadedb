@@ -82,9 +82,10 @@ class PostgreSQLQueryEngineTest extends TestHelper {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = { "INSERT INTO person VALUES (1)", "update person set age = 1", "DELETE FROM person",
-      "CREATE TABLE t (a int)", "DROP TABLE person", "WITH x AS (SELECT 1) SELECT * FROM x", "(SELECT 1)", "", "   " })
-  void analyzeRefusesEverythingButASelectWithFeatureNotSupported(final String statement) {
+  @ValueSource(strings = { "CREATE TABLE t (a int)", "DROP TABLE person", "WITH x AS (SELECT 1) SELECT * FROM x", "(SELECT 1)",
+      "SET search_path = x", "SAVEPOINT a", "ROLLBACK TO a", "INSERT INTO person VALUES (1) ON CONFLICT DO NOTHING",
+      "UPDATE person SET age = 1 FROM orders", "DELETE FROM person USING orders", "", "   " })
+  void analyzeRefusesEverythingOutsideTheLanguageWithFeatureNotSupported(final String statement) {
     assertThatThrownBy(() -> engine().analyze(statement)).as(statement)
         .isInstanceOfSatisfying(PostgreSQLFeatureNotSupportedException.class,
             e -> assertThat(e.getSqlState()).isEqualTo("0A000"));
@@ -100,21 +101,31 @@ class PostgreSQLQueryEngineTest extends TestHelper {
 
   @Test
   void theRefusalNamesTheWordItsPositionAndTheWayOut() {
-    assertThatThrownBy(() -> engine().analyze("\n  INSERT INTO person VALUES (1)"))
+    assertThatThrownBy(() -> engine().analyze("\n  CREATE TABLE person (a int)"))
         .isInstanceOf(PostgreSQLFeatureNotSupportedException.class)
-        .hasMessageContaining("INSERT is not supported by the postgresql language")
+        .hasMessageContaining("CREATE is not supported by the postgresql language")
         .hasMessageContaining("line 2, column 3")
         .hasMessageContaining("{sql}");
   }
 
+  // stage 1 of fork issue #29: the parser reads the writes and the analysis classifies them, the executors come in the next stages
   @Test
-  void aWriteIsRefusedByQueryAndByCommand() {
-    assertThatThrownBy(() -> database.query("postgresql", "DELETE FROM person"))
-        .isInstanceOfSatisfying(PostgreSQLFeatureNotSupportedException.class,
-            e -> assertThat(e.getSqlState()).isEqualTo("0A000"));
-    assertThatThrownBy(() -> database.command("postgresql", "INSERT INTO person VALUES (1)"))
-        .isInstanceOfSatisfying(PostgreSQLFeatureNotSupportedException.class,
-            e -> assertThat(e.getSqlState()).isEqualTo("0A000"));
+  void analyzeClassifiesTheWritesAndTheTransactionStatements() {
+    assertThat(engine().analyze("INSERT INTO person (pid) VALUES (1)").getOperationTypes()).containsExactly(OperationType.CREATE);
+    assertThat(engine().analyze("update person set age = 1").getOperationTypes()).containsExactly(OperationType.UPDATE);
+    assertThat(engine().analyze("DELETE FROM person").getOperationTypes()).containsExactly(OperationType.DELETE);
+    for (final String write : new String[] { "INSERT INTO person (pid) VALUES (1)", "UPDATE person SET age = 1", "DELETE FROM person" }) {
+      assertThat(engine().analyze(write).isIdempotent()).as(write).isFalse();
+      assertThat(engine().analyze(write).isDDL()).as(write).isFalse();
+      assertThat(engine().analyze(write).isTransactionControl()).as(write).isFalse();
+    }
+    for (final String control : new String[] { "BEGIN", "START TRANSACTION", "COMMIT", "END", "ROLLBACK", "ABORT" }) {
+      assertThat(engine().analyze(control).isTransactionControl()).as(control).isTrue();
+      assertThat(engine().analyze(control).isIdempotent()).as(control).isFalse();
+    }
+    // EXPLAIN of a write changes nothing, but the analysis is the one of the explained statement's family: a read of the plan
+    assertThat(engine().analyze("EXPLAIN DELETE FROM person").getOperationTypes()).containsExactly(OperationType.READ);
+    assertThat(engine().analyze("EXPLAIN DELETE FROM person").isIdempotent()).isTrue();
   }
 
   // the S0 placeholder that answered SELECT 1 and refused every other SELECT is gone: the planner answers them all

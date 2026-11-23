@@ -19,12 +19,15 @@
 package com.arcadedb.query.postgresql.parser;
 
 import com.arcadedb.query.postgresql.PostgreSQLInvalidEscapeException;
+import com.arcadedb.query.postgresql.ast.DeleteStatement;
 import com.arcadedb.query.postgresql.ast.EmptyStatement;
 import com.arcadedb.query.postgresql.ast.ExplainStatement;
+import com.arcadedb.query.postgresql.ast.ExplainWriteStatement;
 import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.Expression.BinaryOperator;
 import com.arcadedb.query.postgresql.ast.Expression.SpecialFunctionKind;
 import com.arcadedb.query.postgresql.ast.Expression.UnaryOperator;
+import com.arcadedb.query.postgresql.ast.InsertStatement;
 import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.SelectItem;
 import com.arcadedb.query.postgresql.ast.SelectStatement;
@@ -32,7 +35,11 @@ import com.arcadedb.query.postgresql.ast.SortItem;
 import com.arcadedb.query.postgresql.ast.SourcePosition;
 import com.arcadedb.query.postgresql.ast.Statement;
 import com.arcadedb.query.postgresql.ast.TableReference;
+import com.arcadedb.query.postgresql.ast.TransactionStatement;
 import com.arcadedb.query.postgresql.ast.TypeName;
+import com.arcadedb.query.postgresql.ast.UpdateStatement;
+import com.arcadedb.query.postgresql.ast.WriteStatement;
+import com.arcadedb.query.postgresql.ast.WriteValue;
 import com.arcadedb.query.postgresql.grammar.PostgreSQLParser;
 import com.arcadedb.query.postgresql.grammar.PostgreSQLParser.*;
 import org.antlr.v4.runtime.ParserRuleContext;
@@ -59,11 +66,133 @@ final class AstBuilder {
     final StmtContext stmt = root.stmt();
     if (stmt instanceof SelectCommandContext command)
       return select(command.selectStmt());
-    if (stmt instanceof ExplainCommandContext command)
-      return new ExplainStatement(position(command.getStart()), select(command.explainStmt().selectStmt()));
+    if (stmt instanceof InsertCommandContext command)
+      return insert(command.insertStmt());
+    if (stmt instanceof UpdateCommandContext command)
+      return update(command.updateStmt());
+    if (stmt instanceof DeleteCommandContext command)
+      return delete(command.deleteStmt());
+    if (stmt instanceof TransactionCommandContext command)
+      return transaction(command.transactionStmt());
+    if (stmt instanceof ExplainCommandContext command) {
+      final ExplainStmtContext explain = command.explainStmt();
+      if (explain.writeStmt() != null)
+        return new ExplainWriteStatement(position(command.getStart()), write(explain.writeStmt()));
+      return new ExplainStatement(position(command.getStart()), select(explain.selectStmt()));
+    }
     if (stmt instanceof EmptyCommandContext)
       return new EmptyStatement(position(stmt.getStart()));
     throw new IllegalStateException("A statement the parser did not refuse has no tree: " + stmt.getText());
+  }
+
+  // ------------------------------------------------------------------------------------------------------ writes
+
+  private WriteStatement write(final WriteStmtContext context) {
+    if (context.insertStmt() != null)
+      return insert(context.insertStmt());
+    if (context.updateStmt() != null)
+      return update(context.updateStmt());
+    return delete(context.deleteStmt());
+  }
+
+  private InsertStatement insert(final InsertStmtContext context) {
+    final InsertTargetContext target = context.target;
+    final Name alias = target.alias == null ? null : name(target.alias);
+    final TableReference.Table table = new TableReference.Table(position(target.getStart()),
+        qualifiedName(target.qualifiedName(), target.getStart()), false, alias);
+
+    final List<Name> columns = new ArrayList<>();
+    final InsertStatement.Source source;
+    if (context.rest instanceof InsertDefaultValuesContext defaults) {
+      source = new InsertStatement.DefaultValues(position(defaults.getStart()));
+    } else {
+      final InsertColumnsAndSourceContext rest = (InsertColumnsAndSourceContext) context.rest;
+      if (rest.columns != null)
+        for (final InsertColumnContext column : rest.columns.items)
+          columns.add(name(column.colId()));
+      if (rest.source instanceof InsertFromSelectContext query) {
+        source = new InsertStatement.Query(position(query.getStart()), select(query.selectStmt()));
+      } else if (rest.source instanceof InsertFromValuesContext values) {
+        final List<List<WriteValue>> rows = new ArrayList<>();
+        for (final ValuesRowContext row : values.valuesClause().rows) {
+          final List<WriteValue> items = new ArrayList<>();
+          for (final WriteValueContext item : row.items)
+            items.add(writeValue(item));
+          // PostgreSQL checks the rows against the first one while it reads the VALUES list
+          if (!rows.isEmpty() && items.size() != rows.get(0).size())
+            throw Diagnostics.syntaxError("VALUES lists must all be the same length", row.getStart());
+          rows.add(items);
+        }
+        source = new InsertStatement.Values(position(values.getStart()), rows);
+      } else {
+        throw new IllegalStateException("An INSERT source the parser did not refuse has no tree: " + rest.source.getText());
+      }
+    }
+    return new InsertStatement(position(context.getStart()), table, columns, source, returning(context.returningClause()));
+  }
+
+  private UpdateStatement update(final UpdateStmtContext context) {
+    final List<UpdateStatement.Assignment> assignments = new ArrayList<>();
+    for (final SetClauseContext item : context.items) {
+      if (!(item instanceof SetSingleContext single))
+        throw new IllegalStateException("A multiple-column assignment should have been refused");
+      assignments.add(new UpdateStatement.Assignment(position(single.getStart()), name(single.column), writeValue(single.value)));
+    }
+    final Expression where = context.writeWhereClause() == null ? null : expression(context.writeWhereClause().aExpr());
+    return new UpdateStatement(position(context.getStart()), writeTarget(context.target), assignments, where,
+        returning(context.returningClause()));
+  }
+
+  private DeleteStatement delete(final DeleteStmtContext context) {
+    final Expression where = context.writeWhereClause() == null ? null : expression(context.writeWhereClause().aExpr());
+    return new DeleteStatement(position(context.getStart()), writeTarget(context.target), where,
+        returning(context.returningClause()));
+  }
+
+  /** The table of an {@code UPDATE} or a {@code DELETE}: {@code relation_expr_opt_alias} of {@code gram.y}. */
+  private TableReference.Table writeTarget(final UpdateTargetContext target) {
+    final RelationExprContext relation = target.relationExpr();
+    final Name alias = target.alias == null ? null : name(target.alias);
+    return new TableReference.Table(position(target.getStart()), qualifiedName(relation.qualifiedName(), relation.getStart()),
+        has(relation, PostgreSQLParser.ONLY), alias);
+  }
+
+  private WriteValue writeValue(final WriteValueContext context) {
+    if (context instanceof ExpressionValueContext value)
+      return new WriteValue(position(context.getStart()), expression(value.aExpr()));
+    return new WriteValue(position(context.getStart()), null);
+  }
+
+  private List<SelectItem> returning(final ReturningClauseContext context) {
+    final List<SelectItem> items = new ArrayList<>();
+    if (context != null)
+      for (final TargetElContext item : context.targetList().items)
+        items.add(selectItem(item));
+    return items;
+  }
+
+  private TransactionStatement transaction(final TransactionStmtContext context) {
+    final TransactionStatement.Kind kind;
+    if (context instanceof BeginTransactionContext || context instanceof StartTransactionContext)
+      kind = TransactionStatement.Kind.BEGIN;
+    else if (context instanceof CommitTransactionContext)
+      kind = TransactionStatement.Kind.COMMIT;
+    else
+      kind = TransactionStatement.Kind.ROLLBACK;
+    return new TransactionStatement(position(context.getStart()), kind);
+  }
+
+  /** {@code qualified_name} of a table: one part or schema and name; a name with three parts is a cross-database reference. */
+  private List<Name> qualifiedName(final QualifiedNameContext context, final Token start) {
+    final List<Name> parts = new ArrayList<>();
+    parts.add(name(context.first));
+    for (final AttrNameContext part : context.rest)
+      parts.add(name(part));
+    if (parts.size() == 3)
+      throw Diagnostics.notSupported("A cross-database table name", start);
+    if (parts.size() > 3)
+      throw Diagnostics.syntaxError("improper qualified name (too many dotted names)", start);
+    return parts;
   }
 
   // ------------------------------------------------------------------------------------------------------ SELECT
@@ -165,14 +294,7 @@ final class AstBuilder {
   private TableReference tableReference(final TableRefContext context) {
     if (context instanceof TableNameRefContext table) {
       final RelationExprContext relation = table.relationExpr();
-      final List<Name> parts = new ArrayList<>();
-      parts.add(name(relation.qualifiedName().first));
-      for (final AttrNameContext part : relation.qualifiedName().rest)
-        parts.add(name(part));
-      if (parts.size() == 3)
-        throw Diagnostics.notSupported("A cross-database table name", relation.getStart());
-      if (parts.size() > 3)
-        throw Diagnostics.syntaxError("improper qualified name (too many dotted names)", relation.getStart());
+      final List<Name> parts = qualifiedName(relation.qualifiedName(), relation.getStart());
       final Name alias = table.aliasClause() == null ? null : name(table.aliasClause().alias);
       return new TableReference.Table(position(context.getStart()), parts, has(relation, PostgreSQLParser.ONLY), alias);
     }

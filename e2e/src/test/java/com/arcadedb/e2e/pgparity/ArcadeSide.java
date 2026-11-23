@@ -24,6 +24,7 @@ import com.arcadedb.query.postgresql.SmallFixture;
 import com.arcadedb.query.postgresql.corpus.Outcome;
 import com.arcadedb.query.postgresql.corpus.ResultTable;
 import com.arcadedb.query.postgresql.corpus.Values;
+import com.arcadedb.query.postgresql.corpus.WriteOutcome;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
@@ -119,6 +120,53 @@ final class ArcadeSide implements AutoCloseable {
     } catch (final Throwable t) {
       return Outcome.refused(sqlState(t), String.valueOf(t.getMessage()));
     }
+  }
+
+  /**
+   * One write of the write corpus on the {@code postgresql} language: in a transaction that is rolled back at the end, the
+   * statement through {@code command} (the answer is its {@code RETURNING} rows, or one row of {@code count}), then each check as a
+   * query in the same transaction, which sees what the statement did. The record ids of the fixture are translated as for a read.
+   */
+  WriteOutcome runWrite(final String statement, final List<String> checks) {
+    database.begin();
+    try {
+      Outcome result;
+      try (final ResultSet rs = database.command("postgresql", statement)) {
+        result = Outcome.answer(table((PostgreSQLResultSet) rs));
+      } catch (final Throwable t) {
+        result = Outcome.refused(sqlState(t), String.valueOf(t.getMessage()));
+      }
+      final List<Outcome> after = new ArrayList<>();
+      for (final String check : checks) {
+        try (final ResultSet rs = database.query("postgresql", check)) {
+          after.add(Outcome.answer(table((PostgreSQLResultSet) rs)));
+        } catch (final Throwable t) {
+          after.add(Outcome.refused(sqlState(t), String.valueOf(t.getMessage())));
+        }
+      }
+      return new WriteOutcome(result, after);
+    } finally {
+      database.rollback();
+    }
+  }
+
+  private ResultTable table(final PostgreSQLResultSet answer) {
+    final List<String> labels = new ArrayList<>();
+    final List<String> types = new ArrayList<>();
+    for (final PostgreSQLResultSet.Column column : answer.columns()) {
+      labels.add(column.name());
+      types.add(column.typeName());
+    }
+    final List<String> keys = PostgreSQLResultSet.uniqueKeys(answer.columns());
+    final List<List<Object>> rows = new ArrayList<>();
+    while (answer.hasNext()) {
+      final Result result = answer.next();
+      final List<Object> row = new ArrayList<>(keys.size());
+      for (final String key : keys)
+        row.add(alias(Values.normalize(result.getProperty(key))));
+      rows.add(row);
+    }
+    return new ResultTable(labels, types, rows);
   }
 
   /** What ArcadeDB's own {@code sql} language did with a statement: the table it answered, or the exception it threw. */

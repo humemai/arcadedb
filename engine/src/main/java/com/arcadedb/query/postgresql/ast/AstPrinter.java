@@ -54,8 +54,52 @@ public final class AstPrinter {
     return switch (statement) {
       case EmptyStatement ignored -> "";
       case ExplainStatement explain -> "EXPLAIN " + print(explain.select());
+      case ExplainWriteStatement explain -> "EXPLAIN " + print(explain.statement());
       case SelectStatement select -> print(select);
+      case InsertStatement insert -> print(insert);
+      case UpdateStatement update -> print(update);
+      case DeleteStatement delete -> print(delete);
+      case TransactionStatement transaction -> transaction.kind().name();
     };
+  }
+
+  private static String print(final InsertStatement insert) {
+    final StringBuilder text = new StringBuilder("INSERT INTO ").append(print(insert.table()));
+    if (!insert.columns().isEmpty())
+      text.append(" (").append(insert.columns().stream().map(AstPrinter::print).collect(Collectors.joining(", "))).append(')');
+    switch (insert.source()) {
+    case InsertStatement.DefaultValues ignored -> text.append(" DEFAULT VALUES");
+    case InsertStatement.Values values -> text.append(" VALUES ").append(values.rows().stream()
+        .map(row -> row.stream().map(AstPrinter::print).collect(Collectors.joining(", ", "(", ")")))
+        .collect(Collectors.joining(", ")));
+    case InsertStatement.Query query -> text.append(' ').append(print(query.select()));
+    }
+    return text.append(printReturning(insert.returning())).toString();
+  }
+
+  private static String print(final UpdateStatement update) {
+    final StringBuilder text = new StringBuilder("UPDATE ").append(print(update.table())).append(" SET ");
+    text.append(update.assignments().stream().map(assignment -> print(assignment.column()) + " = " + print(assignment.value()))
+        .collect(Collectors.joining(", ")));
+    if (update.where() != null)
+      text.append(" WHERE ").append(print(update.where()));
+    return text.append(printReturning(update.returning())).toString();
+  }
+
+  private static String print(final DeleteStatement delete) {
+    final StringBuilder text = new StringBuilder("DELETE FROM ").append(print(delete.table()));
+    if (delete.where() != null)
+      text.append(" WHERE ").append(print(delete.where()));
+    return text.append(printReturning(delete.returning())).toString();
+  }
+
+  private static String printReturning(final List<SelectItem> returning) {
+    return returning.isEmpty() ? ""
+        : " RETURNING " + returning.stream().map(AstPrinter::print).collect(Collectors.joining(", "));
+  }
+
+  private static String print(final WriteValue value) {
+    return value.isDefault() ? "DEFAULT" : print(value.expression());
   }
 
   private static String print(final SelectStatement select) {
