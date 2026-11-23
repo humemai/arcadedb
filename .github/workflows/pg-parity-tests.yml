@@ -100,6 +100,26 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # The capability matrix (PgParityIT.capabilityMatrix): the statements of the answer corpus on PostgreSQL 18, on the postgresql
+      # language and on ArcadeDB's own sql language, counted per statement group. A report, never a gate.
+      - name: Capability matrix in the summary
+        if: always()
+        run: |
+          if [ -f e2e/target/pgparity/capability-matrix.md ]; then
+            cat e2e/target/pgparity/capability-matrix.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the capability matrix
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pgparity-capability-matrix
+          path: |
+            e2e/target/pgparity/capability-matrix.md
+            e2e/target/pgparity/capability-matrix.tsv
+          if-no-files-found: warn
+          retention-days: 14
+
       # Generator runs only: the files to commit. The run has no write access, so the files go through an artifact.
       - name: Upload the regenerated corpus
         if: ${{ always() && inputs.regenerate == true }}

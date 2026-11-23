@@ -18,6 +18,7 @@
  */
 package com.arcadedb.e2e.pgparity;
 
+import com.arcadedb.Constants;
 import com.arcadedb.query.postgresql.corpus.Corpus;
 import com.arcadedb.query.postgresql.corpus.CorpusFile;
 import com.arcadedb.query.postgresql.corpus.Outcome;
@@ -78,6 +79,11 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * <p>
  * <b>The report.</b> One line per case on the standard output, {@code pgparity <file> <id> <language> <verdict>}, and the same
  * in {@code target/pgparity/report.txt}.
+ * <p>
+ * <b>The capability matrix.</b> {@link #capabilityMatrix()} runs the answer corpus once more, unchanged, also on ArcadeDB's own
+ * {@code sql} language, and counts per statement group how many statements each language answers like the server, refuses, fails
+ * on or answers with other rows ({@link CapabilityMatrix}). It is a report and never fails on a count: it is printed and written to
+ * {@code target/pgparity/capability-matrix.md} (tables) and {@code .tsv} (one line per statement).
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class PgParityIT {
@@ -424,6 +430,37 @@ class PgParityIT {
     assertTrue(corpusFailures.isEmpty(), "the corpus and the server disagree:\n" + String.join("\n", corpusFailures));
     if (!regenerate)
       assertTrue(engineFailures.isEmpty(), "the engine and the server disagree:\n" + String.join("\n", engineFailures));
+  }
+
+  /** The classifier of the capability matrix on hand-made outcomes: a mistake of the harness fails here, not as a wrong count. */
+  @Test
+  @Order(7)
+  void capabilityClassifierSelfTest() {
+    final List<String> failures = CapabilityMatrix.selfTest();
+    assertTrue(failures.isEmpty(), "the capability matrix classifier is wrong:\n" + String.join("\n", failures));
+  }
+
+  /**
+   * The capability matrix ({@link CapabilityMatrix}): every statement of the answer corpus, unchanged, on the real server, on the
+   * {@code postgresql} language and on ArcadeDB's own {@code sql} language, all on the data of this run. A report, not a gate: no
+   * count of it fails the run. It is printed, and written to {@code target/pgparity/capability-matrix.md} and {@code .tsv}.
+   */
+  @Test
+  @Order(8)
+  void capabilityMatrix() throws Exception {
+    final CorpusFile file = CorpusFile.read(corpusFile(Corpus.ANSWERS_FILE));
+    final CapabilityMatrix matrix = new CapabilityMatrix();
+    for (final String[] row : file.rows) {
+      final Corpus.AnswerCase c = new Corpus.AnswerCase(row);
+      matrix.add(c, pg.run(c.statement()), arcade.run(LANGUAGE, c.statement()), arcade.runNative(c.statement()));
+    }
+    assertTrue(matrix.size() > 0 && matrix.size() == file.rows.size(), "the matrix holds " + matrix.size() + " of " + file.rows.size()
+        + " statements");
+    final String server = pg.version();
+    final String arcadeVersion = Constants.getRawVersion();
+    matrix.write(Path.of("target", "pgparity"), server, arcadeVersion);
+    System.out.println(matrix.render(server, arcadeVersion));
+    REPORT.add("capability matrix: " + matrix.size() + " statements, target/pgparity/capability-matrix.md");
   }
 
   private static void line(final String file, final String id, final String verdict) {
