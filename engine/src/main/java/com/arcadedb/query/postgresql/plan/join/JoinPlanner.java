@@ -26,6 +26,7 @@ import com.arcadedb.query.postgresql.ast.AstPrinter;
 import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.TableReference;
 import com.arcadedb.query.postgresql.catalog.Column;
+import com.arcadedb.query.postgresql.catalog.EdgeEndpoints;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.catalog.Table;
 import com.arcadedb.query.postgresql.eval.Evaluable;
@@ -42,6 +43,7 @@ import com.arcadedb.schema.EdgeType;
 import com.arcadedb.schema.Schema;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -131,6 +133,9 @@ public final class JoinPlanner {
 
     abstract Set<String> relations();
 
+    /** The names of the tables behind the relations, for the warning. */
+    abstract Set<String> tables();
+
     abstract Located locate(int slot);
   }
 
@@ -155,6 +160,12 @@ public final class JoinPlanner {
     @Override
     Set<String> relations() {
       return Set.of(relation);
+    }
+
+    @Override
+    Set<String> tables() {
+      // a view of information_schema has no table behind it
+      return table == null ? Set.of() : Set.of(table.table().name());
     }
 
     @Override
@@ -193,6 +204,13 @@ public final class JoinPlanner {
     @Override
     Set<String> relations() {
       return relations;
+    }
+
+    @Override
+    Set<String> tables() {
+      final Set<String> names = new LinkedHashSet<>(left.tables());
+      names.addAll(right.tables());
+      return names;
     }
 
     @Override
@@ -411,7 +429,8 @@ public final class JoinPlanner {
     else
       estimated = inner ? Math.max(leftRows, rightRows) : leftRows;
     return new JoinSource(strategy, join.type, left, right, keys, residual, buildLeft, probe, traversal, capBytes,
-        header + " [" + describe(support) + "]", rightLines, support, estimated);
+        header + " [" + describe(support) + "]", rightLines, support, warns(join, support) ? warningOf(join, condition) : null,
+        estimated);
   }
 
   /** The strategy a join without any key cannot avoid, and the one an equality join starts from. */
@@ -703,6 +722,68 @@ public final class JoinPlanner {
 
   private static boolean isEndpoint(final Column column) {
     return column.kind() == Column.Kind.SOURCE || column.kind() == Column.Kind.TARGET;
+  }
+
+  // ---- the warning (fork issue #9) ----
+
+  /**
+   * Whether the join gets the warning: nothing supports it, and both sides read tables. A view of {@code information_schema} is
+   * not a part of the model that a relationship could be missing from, so a join with one never warns.
+   */
+  private static boolean warns(final JoinNode join, final JoinSupport support) {
+    return !support.supported() && !join.left.tables().isEmpty() && !join.right.tables().isEmpty();
+  }
+
+  /**
+   * The sentence for a join that nothing supports: the two sides, the condition, and what may be missing. The plan lists it and
+   * the engine writes it to the log once per statement. When edge types with declared endpoints connect the two sides the
+   * sentence names them, otherwise it says that none does and that a relationship may be missing.
+   */
+  private String warningOf(final JoinNode join, final String condition) {
+    final Set<String> leftTables = join.left.tables();
+    final Set<String> rightTables = join.right.tables();
+    final String left = String.join(", ", leftTables);
+    final String right = String.join(", ", rightTables);
+    final StringBuilder text = new StringBuilder("The join of ").append(left).append(" and ").append(right).append(" on ")
+        .append(condition).append(" has no edge, LINK or index behind it, so every pair of rows is compared.");
+    final List<String> edges = connectingEdgeTypes(leftTables, rightTables);
+    if (edges.isEmpty())
+      text.append(" No edge type connects ").append(left).append(" and ").append(right)
+          .append(", so a relationship may be missing from the model.");
+    else
+      text.append(edges.size() == 1 ? " The edge type " : " The edge types ").append(String.join(", ", edges))
+          .append(edges.size() == 1 ? " connects them: join through it" : " connect them: join through one of them")
+          .append(", or add an index on the join key.");
+    return text.toString();
+  }
+
+  /** The edge types with declared endpoint tables that connect a table of one side to a table of the other, as {@code name (a to b)}. */
+  private List<String> connectingEdgeTypes(final Set<String> leftTables, final Set<String> rightTables) {
+    final Schema schema = database.getSchema();
+    final List<String> found = new ArrayList<>();
+    for (final DocumentType type : schema.getTypes()) {
+      if (!(type instanceof EdgeType edgeType))
+        continue;
+      final String source = EdgeEndpoints.sourceTable(edgeType);
+      final String target = EdgeEndpoints.targetTable(edgeType);
+      if (source == null || target == null || !schema.existsType(source) || !schema.existsType(target))
+        continue;
+      if (connects(leftTables, rightTables, source, target) || connects(rightTables, leftTables, source, target))
+        found.add(edgeType.getName() + " (" + source + " to " + target + ")");
+    }
+    Collections.sort(found);
+    return found;
+  }
+
+  /** Whether a table of {@code from} is related to the source table of an edge type and one of {@code to} to its target table. */
+  private boolean connects(final Set<String> from, final Set<String> to, final String source, final String target) {
+    boolean fromSide = false;
+    for (final String name : from)
+      fromSide |= related(name, source);
+    boolean toSide = false;
+    for (final String name : to)
+      toSide |= related(name, target);
+    return fromSide && toSide;
   }
 
   // ---- estimates ----

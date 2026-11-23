@@ -131,12 +131,14 @@ public final class JoinSource implements RelationSource {
   private final String                    header;
   private final List<String>              rightLines;
   private final JoinSupport               support;
+  private final String                    warning;
   private final long                      estimatedRows;
   private final List<Field>               columns;
 
   JoinSource(final Strategy strategy, final TableReference.JoinType type, final RelationSource left, final RelationSource right,
       final List<Key> keys, final Evaluable residual, final boolean buildLeft, final IndexProbe probe, final Traversal traversal,
-      final long capBytes, final String header, final List<String> rightLines, final JoinSupport support, final long estimatedRows) {
+      final long capBytes, final String header, final List<String> rightLines, final JoinSupport support, final String warning,
+      final long estimatedRows) {
     this.strategy = strategy;
     this.type = type;
     this.left = left;
@@ -150,6 +152,7 @@ public final class JoinSource implements RelationSource {
     this.header = header;
     this.rightLines = List.copyOf(rightLines);
     this.support = support;
+    this.warning = warning;
     this.estimatedRows = estimatedRows;
     final List<Field> all = new ArrayList<>(left.columns());
     all.addAll(right.columns());
@@ -163,6 +166,19 @@ public final class JoinSource implements RelationSource {
   /** The left input of the join. */
   RelationSource left() {
     return left;
+  }
+
+  /** The right input of the join. */
+  RelationSource right() {
+    return right;
+  }
+
+  /**
+   * The sentence of the warning for a join that no edge, link or index supports (fork issue #9), {@code null} for a join that
+   * something supports. The plan lists it as a {@code WARNING} line and the engine writes it to the log once per statement.
+   */
+  public String warning() {
+    return warning;
   }
 
   /** How the edges are walked when the strategy is {@link Strategy#TRAVERSE}, {@code null} for any other strategy. */
