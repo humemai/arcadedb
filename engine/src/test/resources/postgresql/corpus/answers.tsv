@@ -11,7 +11,8 @@
 # ids in expected: the record ids of the fixture file (#<table number>:<row number>, as small-schema.sql numbers them), not ArcadeDB's real record ids, which depend on the buckets of a type. The harness translates the engine's real record ids to the file's before it compares (ArcadeSide.setRidAliases); a test of the engine tree does the same.
 # generator: see the header of syntax.tsv.
 # server: PostgreSQL 18.7 (Debian 18.7-1.pgdg13+5) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
-# collation: en_US.utf8
+# collation: C
+# encoding: UTF8
 id	order	tol	status	statement	expected
 demo-select-one	multiset	-	ok	SELECT 1	{"columns":["?column?"],"types":["int4"],"rows":[[1]]}
 demo-names-by-pid	ordered	-	pending	SELECT name FROM person ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"],["Cy"],["Di"],["Ed"]]}
@@ -43,8 +44,8 @@ st-where-like-underscore	ordered	-	pending	SELECT name FROM person WHERE name LI
 st-where-not-like	ordered	-	pending	SELECT name FROM person WHERE name NOT LIKE '%d%' ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Bo"],["Cy"],["Di"]]}
 st-where-text-compare	ordered	-	pending	SELECT name FROM person WHERE name < 'C' ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"]]}
 st-where-equals-null	ordered	-	pending	SELECT name FROM person WHERE age = NULL ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[]}
-st-text-compare-case	multiset	-	pending	SELECT 'a' < 'B' AS a_before_b, 'a' = 'A' AS same_case, 'Z' < 'a' AS z_before_a	{"columns":["a_before_b","same_case","z_before_a"],"types":["bool","bool","bool"],"rows":[[true,false,false]]}
-st-text-code-points	multiset	-	pending	SELECT 'a-b' < 'ab' AS dash_before_letter, 'B' < 'a' AS upper_before_lower, ' ' < '_' AS space_before_underscore, 'z' < 'é' AS accent_after_z	
+st-text-compare-case	multiset	-	pending	SELECT 'a' < 'B' AS a_before_b, 'a' = 'A' AS same_case, 'Z' < 'a' AS z_before_a	{"columns":["a_before_b","same_case","z_before_a"],"types":["bool","bool","bool"],"rows":[[false,false,true]]}
+st-text-code-points	multiset	-	pending	SELECT 'a-b' < 'ab' AS dash_before_letter, 'B' < 'a' AS upper_before_lower, ' ' < '_' AS space_before_underscore, 'z' < 'é' AS accent_after_z	{"columns":["dash_before_letter","upper_before_lower","space_before_underscore","accent_after_z"],"types":["bool","bool","bool","bool"],"rows":[[true,true,true,true]]}
 st-null-comparisons	multiset	-	pending	SELECT NULL = NULL AS eq, 1 = NULL AS one_eq, NULL IS NULL AS is_null	{"columns":["eq","one_eq","is_null"],"types":["bool","bool","bool"],"rows":[[null,null,true]]}
 st-three-valued-logic	multiset	-	pending	SELECT NULL::boolean AND false AS a, NULL::boolean OR true AS b, NULL::boolean AND true AS c, NOT NULL::boolean AS d	{"columns":["a","b","c","d"],"types":["bool","bool","bool","bool"],"rows":[[false,true,null,null]]}
 st-boolean-column	ordered	-	pending	SELECT name, age > 30 AS over_30 FROM person ORDER BY pid	{"columns":["name","over_30"],"types":["varchar","bool"],"rows":[["Ada",true],["Bo",true],["Cy",null],["Di",false],["Ed",true]]}

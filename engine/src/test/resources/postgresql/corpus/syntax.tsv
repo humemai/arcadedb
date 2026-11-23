@@ -7,7 +7,8 @@
 # generator: the integration test PgParityIT of the e2e module with -Dpgparity.regenerate=true, or the workflow PostgreSQL prototype - answer parity started by hand with regenerate on. The server only parses a statement here (the parse step of the protocol), it never runs one.
 # readers: the harness (answer parity of issue #2) and the parser tests (issue #3), through com.arcadedb.query.postgresql.corpus.Corpus.
 # server: PostgreSQL 18.7 (Debian 18.7-1.pgdg13+5) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
-# collation: en_US.utf8
+# collation: C
+# encoding: UTF8
 id	scope	statement	expected
 demo-select-one	in	SELECT 1	ok
 demo-names-by-pid	in	SELECT name FROM person ORDER BY pid	ok
@@ -40,7 +41,7 @@ st-where-not-like	in	SELECT name FROM person WHERE name NOT LIKE '%d%' ORDER BY 
 st-where-text-compare	in	SELECT name FROM person WHERE name < 'C' ORDER BY pid	ok
 st-where-equals-null	in	SELECT name FROM person WHERE age = NULL ORDER BY pid	ok
 st-text-compare-case	in	SELECT 'a' < 'B' AS a_before_b, 'a' = 'A' AS same_case, 'Z' < 'a' AS z_before_a	ok
-st-text-code-points	in	SELECT 'a-b' < 'ab' AS dash_before_letter, 'B' < 'a' AS upper_before_lower, ' ' < '_' AS space_before_underscore, 'z' < 'é' AS accent_after_z	
+st-text-code-points	in	SELECT 'a-b' < 'ab' AS dash_before_letter, 'B' < 'a' AS upper_before_lower, ' ' < '_' AS space_before_underscore, 'z' < 'é' AS accent_after_z	ok
 st-null-comparisons	in	SELECT NULL = NULL AS eq, 1 = NULL AS one_eq, NULL IS NULL AS is_null	ok
 st-three-valued-logic	in	SELECT NULL::boolean AND false AS a, NULL::boolean OR true AS b, NULL::boolean AND true AS c, NOT NULL::boolean AS d	ok
 st-boolean-column	in	SELECT name, age > 30 AS over_30 FROM person ORDER BY pid	ok
