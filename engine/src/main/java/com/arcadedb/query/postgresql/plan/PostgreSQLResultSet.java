@@ -1,0 +1,139 @@
+/*
+ * Copyright © 2021-present Arcade Data Ltd (info@arcadedata.com)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package com.arcadedb.query.postgresql.plan;
+
+import com.arcadedb.query.sql.executor.ExecutionPlan;
+import com.arcadedb.query.sql.executor.ExecutionStep;
+import com.arcadedb.query.sql.executor.InternalResultSet;
+import com.arcadedb.query.sql.executor.Result;
+import com.arcadedb.query.sql.executor.ResultInternal;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * The answer of a {@code postgresql} query: ArcadeDB's rows, and the description of the columns the rows of a {@code Result}
+ * cannot carry. PostgreSQL allows two output columns with one name ({@code SELECT p.name, c.name}), a {@code Result} is a map,
+ * so the row gives the second and later duplicate a suffix ({@code name}, {@code name_1}, {@code name_2}) while {@link #columns()}
+ * keeps the names as PostgreSQL labels them, in order, each with its PostgreSQL type name ({@code int4}, {@code varchar},
+ * {@code _text}). The plan is {@link #getExecutionPlan()}: one step per line of {@link Plan#prettyPrint(int, int)}.
+ */
+public final class PostgreSQLResultSet extends InternalResultSet {
+
+  /** The label and the type of one output column; the label is the name PostgreSQL would send. */
+  public record Column(String name, String typeName) {
+  }
+
+  /** The plan of a query as text: how the table is read, then the steps applied to its rows. */
+  public static final class Plan implements ExecutionPlan {
+    private final List<String> lines;
+
+    public Plan(final List<String> lines) {
+      this.lines = List.copyOf(lines);
+    }
+
+    public List<String> lines() {
+      return lines;
+    }
+
+    @Override
+    public List<ExecutionStep> getSteps() {
+      final List<ExecutionStep> steps = new ArrayList<>();
+      for (final String line : lines)
+        steps.add(new Step(line));
+      return steps;
+    }
+
+    @Override
+    public String prettyPrint(final int depth, final int indent) {
+      final String margin = " ".repeat(depth * indent);
+      final StringBuilder out = new StringBuilder();
+      for (final String line : lines) {
+        if (!out.isEmpty())
+          out.append('\n');
+        out.append(margin).append("+ ").append(line);
+      }
+      return out.toString();
+    }
+
+    @Override
+    public Result toResult() {
+      final ResultInternal result = new ResultInternal();
+      result.setProperty("type", "PostgreSQLExecutionPlan");
+      result.setProperty("prettyPrint", prettyPrint(0, 2));
+      return result;
+    }
+
+    @Override
+    public String toString() {
+      return prettyPrint(0, 2);
+    }
+  }
+
+  /** One line of a plan as a step. */
+  private record Step(String description) implements ExecutionStep {
+    @Override
+    public String getName() {
+      final int space = description.indexOf(' ');
+      return space < 0 ? description : description.substring(0, space);
+    }
+
+    @Override
+    public String getType() {
+      return "PostgreSQLStep";
+    }
+
+    @Override
+    public String getDescription() {
+      return description;
+    }
+
+    @Override
+    public List<ExecutionStep> getSubSteps() {
+      return List.of();
+    }
+  }
+
+  private final List<Column> columns;
+
+  public PostgreSQLResultSet(final List<Column> columns, final Plan plan) {
+    this.columns = List.copyOf(columns);
+    setPlan(plan);
+  }
+
+  /** The output columns in order: the labels PostgreSQL sends and their PostgreSQL type names. */
+  public List<Column> columns() {
+    return columns;
+  }
+
+  /**
+   * The keys of a row for these labels: a label that is already used gets {@code _1}, {@code _2} and so on until it is free.
+   */
+  public static List<String> uniqueKeys(final List<Column> columns) {
+    final List<String> keys = new ArrayList<>(columns.size());
+    for (final Column column : columns) {
+      String key = column.name();
+      int suffix = 0;
+      while (keys.contains(key))
+        key = column.name() + "_" + (++suffix);
+      keys.add(key);
+    }
+    return keys;
+  }
+}
