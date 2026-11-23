@@ -55,6 +55,8 @@ final class PostgresServer implements AutoCloseable {
   private final Connection          connection;
   /** The parse step has a connection of its own, so that a problem of the driver with an odd statement cannot upset the answers. */
   private final Connection          parseConnection;
+  /** The message of the server when {@code SHOW lc_collate} was refused, else {@code null}. */
+  String                            showFailure;
 
   private PostgresServer(final GenericContainer<?> container, final Connection connection, final Connection parseConnection) {
     this.container = container;
@@ -101,16 +103,25 @@ final class PostgresServer implements AutoCloseable {
 
   /**
    * The collation of the database, which decides how text sorts and compares, read back with {@code SHOW lc_collate} and
-   * {@code SHOW lc_ctype}: {@code C} when both are C, else both values. {@code unknown} when it cannot be read.
+   * {@code SHOW lc_ctype}, and where the server does not have those settings (PostgreSQL 18 has not: {@link #showFailure})
+   * from {@code pg_database}: {@code C} when both are C, else both values. {@code unknown} when it cannot be read.
    */
   String collation() {
     try {
-      final String collate = singleString("SHOW lc_collate");
-      final String ctype = singleString("SHOW lc_ctype");
-      return collate.equals(ctype) ? collate : "lc_collate=" + collate + " lc_ctype=" + ctype;
+      return both(singleString("SHOW lc_collate"), singleString("SHOW lc_ctype"));
+    } catch (final SQLException show) {
+      showFailure = show.getMessage();
+    }
+    try {
+      return both(singleString("SELECT datcollate FROM pg_database WHERE datname = current_database()"),
+          singleString("SELECT datctype FROM pg_database WHERE datname = current_database()"));
     } catch (final SQLException e) {
       return "unknown";
     }
+  }
+
+  private static String both(final String collate, final String ctype) {
+    return collate.equals(ctype) ? collate : "lc_collate=" + collate + " lc_ctype=" + ctype;
   }
 
   /** The encoding of the database ({@code SHOW server_encoding}), {@code UTF8} for a server started by {@link #start()}. */

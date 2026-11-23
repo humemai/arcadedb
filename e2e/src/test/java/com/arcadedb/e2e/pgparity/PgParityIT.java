@@ -104,6 +104,7 @@ class PgParityIT {
     System.out.println("pgparity: " + version);
     // text order and comparison in the corpus are code point order: a server in another collation would write another corpus
     assertEquals("C", pg.collation(), "the server must run with the C collation");
+    REPORT.add("SHOW lc_collate: " + (pg.showFailure == null ? "answered" : "refused (" + pg.showFailure + "), read from pg_database"));
     assertEquals("UTF8", pg.encoding(), "the server must run with the UTF8 encoding");
     REPORT.add("encoding: " + pg.encoding());
 
