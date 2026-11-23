@@ -43,6 +43,7 @@ import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.plan.infoschema.InformationSchema;
 import com.arcadedb.query.postgresql.plan.join.BuildMemory;
 import com.arcadedb.query.postgresql.plan.join.JoinPlanner;
+import com.arcadedb.query.postgresql.plan.join.JoinWarnings;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -284,9 +285,13 @@ public class SelectPlanner {
       steps.add("OFFSET");
     if (limit != null)
       steps.add("LIMIT");
+    // a join that no edge, link or index supports: the plan says so, and the engine writes the log line once per statement
+    final List<String> warnings = JoinWarnings.of(source);
+    for (final String warning : warnings)
+      steps.add("WARNING: " + warning);
 
     return new SelectPlan(source, where, group, having, outputs.toArray(new Evaluable[0]), extras.toArray(new Evaluable[0]), columns,
-        select.distinct(), sortKeys, limit, offset, steps);
+        select.distinct(), sortKeys, limit, offset, steps, warnings);
   }
 
   /**
