@@ -690,7 +690,7 @@ balancedTokens
 
 subqueryGroup
   : LPAREN (SELECT | WITH | VALUES | TABLE) balancedTokens RPAREN
-  | LPAREN subqueryGroup RPAREN
+  | LPAREN subqueryGroup balancedTokens RPAREN
   ;
 
 // the rest of the statement after a construct the grammar does not read

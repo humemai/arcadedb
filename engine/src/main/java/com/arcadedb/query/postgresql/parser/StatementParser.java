@@ -130,6 +130,15 @@ public final class StatementParser {
     @Override
     public void syntaxError(final Recognizer<?, ?> recognizer, final Object offendingSymbol, final int line,
         final int charPositionInLine, final String message, final RecognitionException exception) {
+      // UESCAPE has to be followed by a string, whatever the construct around it
+      if (offendingSymbol instanceof Token offending && recognizer instanceof PostgreSQLParser parser) {
+        int index = offending.getTokenIndex() - 1;
+        while (index > 0 && parser.getTokenStream().get(index).getChannel() != Token.DEFAULT_CHANNEL)
+          --index;
+        if (index >= 0 && parser.getTokenStream().get(index).getType() == PostgreSQLLexer.UESCAPE)
+          throw Diagnostics.syntaxError("UESCAPE must be followed by a simple string literal", offending);
+      }
+
       // a construct outside the subset that was read before the error is what PostgreSQL would have accepted
       if (collector != null && collector.first != null)
         throw Diagnostics.refusal(collector.firstName, collector.first);
