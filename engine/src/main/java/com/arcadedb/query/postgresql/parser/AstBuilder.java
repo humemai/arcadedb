@@ -557,6 +557,8 @@ final class AstBuilder {
         throw Diagnostics.syntaxError("parameter number too large", token);
       }
     }
+    if (context instanceof ScalarSubqueryExprContext e)
+      return new Expression.ScalarSubquery(position(e.getStart()), query(e.selectStmt()));
     if (context instanceof ParenExprContext e)
       return expression(e.aExpr());
     if (context instanceof CaseExprAltContext e)

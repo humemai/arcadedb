@@ -266,3 +266,27 @@ c2-in-subquery-parenthesised-twice	multiset	-	ok	SELECT count(*) FROM person WHE
 err-c2-in-subquery-two-columns	multiset	-	ok	SELECT 1 WHERE 1 IN (SELECT 1, 2)	pending-server
 err-c2-in-subquery-type-mismatch	multiset	-	ok	SELECT name FROM person WHERE pid IN (SELECT name FROM person)	pending-server
 err-c2-in-subquery-unknown-column	multiset	-	ok	SELECT name FROM person WHERE pid IN (SELECT nosuch FROM orders)	pending-server
+c3-scalar-subquery-in-where	ordered	-	ok	SELECT name FROM person WHERE age = (SELECT max(age) FROM person)	pending-server
+c3-scalar-subquery-in-the-select-list	ordered	-	ok	SELECT name, (SELECT count(*) FROM orders) AS n FROM person ORDER BY name	pending-server
+c3-scalar-subquery-column-name-of-a-function	multiset	-	ok	SELECT (SELECT max(age) FROM person)	pending-server
+c3-scalar-subquery-column-name-of-an-alias	multiset	-	ok	SELECT (SELECT 1 AS x)	pending-server
+c3-scalar-subquery-column-name-unnamed	multiset	-	ok	SELECT (SELECT 1)	pending-server
+c3-scalar-subquery-no-row-is-null	multiset	-	ok	SELECT (SELECT age FROM person WHERE pid = 99) IS NULL AS r	pending-server
+c3-scalar-subquery-null-never-compares	ordered	-	ok	SELECT name FROM person WHERE age > (SELECT age FROM person WHERE pid = 99) ORDER BY name	pending-server
+c3-scalar-subquery-limit-one	multiset	-	ok	SELECT (SELECT name FROM person ORDER BY pid LIMIT 1) AS first_name	pending-server
+c3-scalar-subquery-integer-type	multiset	-	ok	SELECT (SELECT 1) + 1 AS a, (SELECT 'x') || 'y' AS b	pending-server
+c3-scalar-subquery-numeric-type	multiset	-	ok	SELECT (SELECT avg(age) FROM person) AS a, (SELECT sum(total) FROM orders) AS s	pending-server
+c3-scalar-subquery-in-having	ordered	-	ok	SELECT city, count(*) AS n FROM person GROUP BY city HAVING count(*) > (SELECT count(*) FROM company) - 2 ORDER BY city	pending-server
+c3-scalar-subquery-in-an-on-condition	ordered	-	ok	SELECT p.name, o.oid FROM person p JOIN orders o ON o.pid = p.pid AND o.total > (SELECT avg(total) FROM orders) ORDER BY o.oid	pending-server
+c3-scalar-subquery-in-a-derived-table	ordered	-	ok	SELECT * FROM (SELECT name, (SELECT max(pid) FROM person) AS m FROM person) t ORDER BY name	pending-server
+c3-scalar-subquery-of-a-with	ordered	-	ok	WITH m AS (SELECT max(age) AS a FROM person) SELECT name FROM person WHERE age = (SELECT a FROM m)	pending-server
+c3-scalar-subquery-set-operation	multiset	-	ok	SELECT (SELECT 1 UNION SELECT 1) AS one	pending-server
+c3-scalar-subquery-in-an-in-list	ordered	-	ok	SELECT name FROM person WHERE pid IN (1, (SELECT 4)) ORDER BY name	pending-server
+c3-scalar-subquery-in-arithmetic-with-a-column	ordered	-	ok	SELECT name, age - (SELECT min(age) FROM person) AS above_min FROM person ORDER BY name	pending-server
+c3-scalar-subquery-of-a-scalar-subquery	multiset	-	ok	SELECT (SELECT (SELECT max(pid) FROM person))	pending-server
+c3-scalar-subquery-of-a-date	multiset	-	ok	SELECT (SELECT min(placed) FROM orders) AS d	pending-server
+err-c3-scalar-subquery-two-rows	multiset	-	ok	SELECT (SELECT pid FROM person)	pending-server
+err-c3-scalar-subquery-two-rows-in-where	multiset	-	ok	SELECT name FROM person WHERE age = (SELECT age FROM person)	pending-server
+err-c3-scalar-subquery-two-columns	multiset	-	ok	SELECT (SELECT 1, 2)	pending-server
+err-c3-scalar-subquery-unknown-column	multiset	-	ok	SELECT (SELECT nosuch FROM person)	pending-server
+err-c3-scalar-subquery-type-mismatch	multiset	-	ok	SELECT name FROM person WHERE pid = (SELECT name FROM person LIMIT 1)	pending-server

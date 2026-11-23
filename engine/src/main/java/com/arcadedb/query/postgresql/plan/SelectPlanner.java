@@ -762,6 +762,17 @@ public class SelectPlanner {
         "argument of " + clause + " must be type bigint, not type " + count.type().displayName());
   }
 
+  /** The name of the first column of a query: PostgreSQL names the column of a scalar subquery after it. */
+  private static String firstColumnName(final Statement query) {
+    return switch (query) {
+      case SelectStatement select -> select.items().get(0) instanceof SelectItem.Projection projection
+          ? (projection.alias() != null ? projection.alias().value() : outputName(projection.expression())) : "?column?";
+      case SetOperationStatement set -> firstColumnName(set.left());
+      case WithStatement with -> firstColumnName(with.body());
+      default -> "?column?";
+    };
+  }
+
   /** The name PostgreSQL gives an output column that has no alias ({@code FigureColname} of {@code parse_target.c}). */
   static String outputName(final Expression expression) {
     if (expression instanceof Expression.ColumnRef reference)
@@ -772,6 +783,8 @@ public class SelectPlanner {
       return special.kind().name().toLowerCase(Locale.ROOT);
     if (expression instanceof Expression.Case)
       return "case";
+    if (expression instanceof Expression.ScalarSubquery subquery)
+      return firstColumnName(subquery.query());
     if (expression instanceof Expression.Cast cast) {
       final String inner = outputName(cast.operand());
       return "?column?".equals(inner) ? cast.type().name().get(cast.type().name().size() - 1) : inner;

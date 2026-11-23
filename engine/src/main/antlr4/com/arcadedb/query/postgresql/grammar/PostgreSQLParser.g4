@@ -566,6 +566,7 @@ cExpr
   : columnRef                                                                  # columnRefExpr
   | aexprConst                                                                 # constExpr
   | PARAM                                                                      # paramExpr
+  | LPAREN selectStmt RPAREN                                                   # scalarSubqueryExpr
   | LPAREN aExpr RPAREN                                                        # parenExpr
   | LPAREN aExpr RPAREN unsupportedIndirection                                 # unsupportedParenIndirectionExpr
   | LPAREN aExpr unsupportedRowComma RPAREN                                   # unsupportedRowExpr
