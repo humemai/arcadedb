@@ -434,7 +434,7 @@ class PgParityIT {
 
   /** The classifier of the capability matrix on hand-made outcomes: a mistake of the harness fails here, not as a wrong count. */
   @Test
-  @Order(6)
+  @Order(7)
   void capabilityClassifierSelfTest() {
     final List<String> failures = CapabilityMatrix.selfTest();
     assertTrue(failures.isEmpty(), "the capability matrix classifier is wrong:\n" + String.join("\n", failures));
@@ -446,7 +446,7 @@ class PgParityIT {
    * count of it fails the run. It is printed, and written to {@code target/pgparity/capability-matrix.md} and {@code .tsv}.
    */
   @Test
-  @Order(7)
+  @Order(8)
   void capabilityMatrix() throws Exception {
     final CorpusFile file = CorpusFile.read(corpusFile(Corpus.ANSWERS_FILE));
     final CapabilityMatrix matrix = new CapabilityMatrix();
