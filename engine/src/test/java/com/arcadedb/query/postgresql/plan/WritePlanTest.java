@@ -19,10 +19,12 @@
 package com.arcadedb.query.postgresql.plan;
 
 import com.arcadedb.TestHelper;
+import com.arcadedb.graph.Vertex;
 import com.arcadedb.query.postgresql.SmallFixture;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
 import com.arcadedb.schema.DocumentType;
+import com.arcadedb.schema.EdgeType;
 import com.arcadedb.schema.Type;
 import com.arcadedb.schema.VertexType;
 import org.junit.jupiter.api.Test;
@@ -281,14 +283,6 @@ class WritePlanTest extends TestHelper {
         .contains("the edges of a deleted vertex go with it");
   }
 
-  @Test
-  void anEdgeTableIsRefusedUntilItsStageHasLanded() {
-    assertState(() -> command("DELETE FROM works_at"), "0A000");
-    assertState(() -> command("INSERT INTO works_at (source_id, target_id) VALUES ('#1:0', '#1:1')"), "0A000");
-    assertState(() -> command("UPDATE works_at SET since = 1"), "0A000");
-    assertThat(value("SELECT count(*) FROM works_at")).isEqualTo(5L);
-  }
-
   // ---- the access path ----
 
   @Test
@@ -344,6 +338,115 @@ class WritePlanTest extends TestHelper {
     database.commit();
     assertThat(value("SELECT count(*) FROM person")).isEqualTo(6L);
     assertThat(database.isTransactionActive()).isFalse();
+  }
+
+  // ---- edge tables ----
+
+  private long outgoing(final int pid, final String edgeType) {
+    final Vertex vertex = (Vertex) database.lookupByRID(new com.arcadedb.database.RID((String) value("SELECT id FROM person WHERE pid = " + pid)), true);
+    return vertex.countEdges(Vertex.DIRECTION.OUT, edgeType);
+  }
+
+  @Test
+  void insertCreatesTheEdgeBetweenTheNamedVertices() {
+    final String ed = (String) value("SELECT id FROM person WHERE pid = 5");
+    final String cedar = (String) value("SELECT id FROM company WHERE cid = 30");
+    assertThat(outgoing(5, "works_at")).isEqualTo(0);
+    assertThat(command("INSERT INTO works_at (source_id, target_id, since) VALUES ($1, $2, 2024)", ed, cedar)).isEqualTo(1);
+    // the edge is the same record that Cypher and sql walk: the engine sees it from the vertex
+    assertThat(outgoing(5, "works_at")).isEqualTo(1);
+    assertThat(value("SELECT count(*) FROM works_at")).isEqualTo(6L);
+    final Result row = query("SELECT source_id, target_id, since FROM works_at WHERE since = 2024").get(0);
+    assertThat(row.<String>getProperty("source_id")).isEqualTo(ed);
+    assertThat(row.<String>getProperty("target_id")).isEqualTo(cedar);
+    try (final ResultSet resultSet = database.query("sql", "SELECT count(*) AS n FROM works_at WHERE since = 2024")) {
+      assertThat(resultSet.next().<Long>getProperty("n")).isEqualTo(1L);
+    }
+  }
+
+  @Test
+  void insertEdgeReturnsTheEdgeAndAParallelEdgeIsAllowed() {
+    try (final ResultSet resultSet = database.command("postgresql",
+        "INSERT INTO works_at (source_id, target_id, since) SELECT p.id, c.id, 1 FROM person p, company c WHERE p.pid = 1 AND c.cid = 10 "
+            + "RETURNING id, since")) {
+      final Result row = resultSet.next();
+      assertThat(row.<String>getProperty("id")).startsWith("#");
+      assertThat(row.<Integer>getProperty("since")).isEqualTo(1);
+    }
+    assertThat(outgoing(1, "works_at")).isEqualTo(3);
+  }
+
+  @Test
+  void insertEdgeRefusesWithThePostgreSQLStates() {
+    final String ada = (String) value("SELECT id FROM person WHERE pid = 1");
+    final String acme = (String) value("SELECT id FROM company WHERE cid = 10");
+    assertState(() -> command("INSERT INTO works_at (target_id) VALUES ($1)", acme), "23502");
+    assertState(() -> command("INSERT INTO works_at (source_id) VALUES ($1)", ada), "23502");
+    assertState(() -> command("INSERT INTO works_at (source_id, target_id) VALUES (NULL, $1)", acme), "23502");
+    assertState(() -> command("INSERT INTO works_at (source_id, target_id) VALUES ('#99:99', $1)", acme), "23503");
+    assertState(() -> command("INSERT INTO works_at (source_id, target_id) VALUES ($1, 'nonsense')", ada), "23503");
+    // the declared endpoint tables of works_at are person and company
+    assertState(() -> command("INSERT INTO works_at (source_id, target_id) VALUES ($1, $1)", acme), "23503");
+    assertState(() -> command("INSERT INTO works_at (source_id, target_id) VALUES ($1, $1)", ada), "23503");
+    assertState(() -> command("INSERT INTO works_at (id, source_id, target_id) VALUES ('#9:9', $1, $2)", ada, acme), "428C9");
+    assertThat(value("SELECT count(*) FROM works_at")).isEqualTo(5L);
+  }
+
+  @Test
+  void anEdgeTypeWithNoDeclaredEndpointsTakesAnyTwoVertices() {
+    database.getSchema().createEdgeType("related");
+    final String ada = (String) value("SELECT id FROM person WHERE pid = 1");
+    final String acme = (String) value("SELECT id FROM company WHERE cid = 10");
+    assertThat(command("INSERT INTO related (source_id, target_id) VALUES ($1, $2)", ada, acme)).isEqualTo(1);
+    assertThat(command("INSERT INTO related (source_id, target_id) VALUES ($2, $1)", ada, acme)).isEqualTo(1);
+    assertThat(value("SELECT count(*) FROM related")).isEqualTo(2L);
+  }
+
+  @Test
+  void aLightweightEdgeIsWrittenAndDeletedLikeAnyOtherAndKeepsNoRecord() {
+    final EdgeType knows = database.getSchema().buildEdgeType().withName("knows").withLightweight(true).create();
+    assertThat(knows.isLightweight()).isTrue();
+    final String ada = (String) value("SELECT id FROM person WHERE pid = 1");
+    final String bo = (String) value("SELECT id FROM person WHERE pid = 2");
+    assertThat(command("INSERT INTO knows (source_id, target_id) VALUES ($1, $2)", ada, bo)).isEqualTo(1);
+    assertThat(outgoing(1, "knows")).isEqualTo(1);
+    assertThat(value("SELECT count(*) FROM knows")).isEqualTo(1L);
+    assertThat(command("DELETE FROM knows")).isEqualTo(1);
+    assertThat(outgoing(1, "knows")).isEqualTo(0);
+  }
+
+  @Test
+  void updateChangesTheEdgePropertiesAndNeverTheEnds() {
+    assertThat(command("UPDATE works_at SET since = since + 1 WHERE since < 2021")).isEqualTo(2);
+    assertThat(value("SELECT count(*) FROM works_at WHERE since = 2020")).isEqualTo(1L);
+    assertThat(value("SELECT count(*) FROM works_at WHERE since = 2021")).isEqualTo(2L);
+    assertState(() -> command("UPDATE works_at SET source_id = target_id"), "0A000");
+    assertState(() -> command("UPDATE works_at SET target_id = source_id"), "0A000");
+    assertState(() -> command("UPDATE works_at SET id = '#9:9'"), "428C9");
+    assertThatThrownBy(() -> command("UPDATE works_at SET source_id = target_id")).hasMessageContaining("delete the edge and insert it again");
+  }
+
+  @Test
+  void deleteRemovesTheEdgesAndKeepsTheVertices() {
+    try (final ResultSet resultSet = database.command("postgresql", "DELETE FROM works_at WHERE since = 2019 RETURNING since")) {
+      assertThat(resultSet.next().<Integer>getProperty("since")).isEqualTo(2019);
+    }
+    assertThat(value("SELECT count(*) FROM works_at")).isEqualTo(4L);
+    assertThat(outgoing(1, "works_at")).isEqualTo(1);
+    assertThat(command("DELETE FROM works_at")).isEqualTo(4);
+    assertThat(value("SELECT count(*) FROM person")).isEqualTo(5L);
+    assertThat(value("SELECT count(*) FROM company")).isEqualTo(3L);
+  }
+
+  @Test
+  void anEdgeRecordIsWrittenInTheTransactionOfTheCaller() {
+    final String ed = (String) value("SELECT id FROM person WHERE pid = 5");
+    final String cedar = (String) value("SELECT id FROM company WHERE cid = 30");
+    database.begin();
+    command("INSERT INTO works_at (source_id, target_id) VALUES ($1, $2)", ed, cedar);
+    database.rollback();
+    assertThat(value("SELECT count(*) FROM works_at")).isEqualTo(5L);
+    assertThat(outgoing(5, "works_at")).isEqualTo(0);
   }
 
   @Test
