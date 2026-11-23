@@ -217,11 +217,6 @@ public final class TableSource implements RelationSource {
     }
   }
 
-  /** The row of a record of this table, the values in the canonical classes of {@link PgType}. */
-  public Object[] rowOf(final Document record) {
-    return row(record);
-  }
-
   // ---- reading ----
 
   private Object[] row(final Document record) {
