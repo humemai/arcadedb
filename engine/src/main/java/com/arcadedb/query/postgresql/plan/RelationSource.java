@@ -52,8 +52,26 @@ public interface RelationSource {
   record Field(String relation, String name, PgType type, String typeName) {
   }
 
+  /**
+   * One column that a name can stand for: {@code name}, or {@code *}. A source that reads one table has one per column. The
+   * result of {@code a JOIN b USING (x)} has the merged column {@code x} first, then the columns of {@code a} and of {@code b}
+   * without their own {@code x}, which stay readable as {@code a.x} and {@code b.x} only.
+   *
+   * @param name     the name the column has for an unqualified reference
+   * @param index    the position of the value in the row
+   * @param type     the type the column has for the query that reads it (the common type of the two columns of a merged column)
+   * @param typeName the name of the type as the client sees it
+   */
+  record Output(String name, int index, PgType type, String typeName) {
+  }
+
   /** The columns of every row, in order. */
   List<Field> columns();
+
+  /** The columns that an unqualified name or {@code *} reads, or {@code null} for every column of {@link #columns()} in order. */
+  default List<Output> outputs() {
+    return null;
+  }
 
   /** Starts a read: the rows, each time from the beginning. */
   Iterator<Object[]> open();

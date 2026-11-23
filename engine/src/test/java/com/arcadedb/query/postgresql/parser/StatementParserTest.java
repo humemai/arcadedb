@@ -423,7 +423,7 @@ class StatementParserTest {
         new String[] { "SELECT * FROM a FULL OUTER JOIN b ON a.x = b.x", "FULL OUTER JOIN is not supported" },
         new String[] { "SELECT * FROM a CROSS JOIN b", "CROSS JOIN is not supported" },
         new String[] { "SELECT * FROM a NATURAL JOIN b", "NATURAL JOIN is not supported" },
-        new String[] { "SELECT * FROM a JOIN b USING (x)", "JOIN with USING is not supported" },
+        new String[] { "SELECT * FROM a JOIN b USING (x) AS j", "A join alias (USING ... AS name) is not supported" },
         new String[] { "SELECT * FROM (VALUES (1)) s", "VALUES is not supported by the postgresql language (line 1, column 16)" },
         new String[] { "WITH x AS (SELECT 1) DELETE FROM t", "A WITH clause on INSERT, UPDATE, DELETE or MERGE is not supported" },
         new String[] { "SELECT * FROM generate_series(1, 3)", "is not supported" },

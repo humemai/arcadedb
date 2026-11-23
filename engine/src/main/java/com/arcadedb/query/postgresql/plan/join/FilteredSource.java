@@ -69,6 +69,11 @@ public final class FilteredSource implements RelationSource {
   }
 
   @Override
+  public List<Output> outputs() {
+    return inner.outputs();
+  }
+
+  @Override
   public String describe() {
     return inner.describe();
   }

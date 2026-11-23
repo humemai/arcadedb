@@ -354,11 +354,11 @@ joinKind
 
 joinQual
   : ON aExpr
-  | unsupportedJoinUsing
+  | USING LPAREN names+=colId (COMMA names+=colId)* RPAREN (unsupportedJoinUsingAlias)?
   ;
 
-unsupportedJoinUsing
-  : USING parenGroup (AS colId)?
+unsupportedJoinUsingAlias
+  : AS colId
   ;
 
 unsupportedJoinKind
