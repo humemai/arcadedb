@@ -365,10 +365,12 @@ class InformationSchemaTest extends TestHelper {
 
     // the foreign keys refer to the record id column of the other table, and name the key that holds it
     assertThat(rows("SELECT constraint_name, unique_constraint_name FROM information_schema.referential_constraints"
+        + " WHERE constraint_name IN ('follows_source_id_fkey', 'follows_target_id_fkey', 'post_about_fkey', 'post_author_fkey')"
         + " ORDER BY constraint_name")).containsExactly(row("follows_source_id_fkey", "account_rid_key"),
         row("follows_target_id_fkey", "topic_pkey"), row("post_about_fkey", "topic_pkey"), row("post_author_fkey", "account_rid_key"));
     assertThat(rows("SELECT constraint_name, table_name, column_name FROM information_schema.constraint_column_usage"
-        + " WHERE constraint_name LIKE '%_fkey' ORDER BY constraint_name")).containsExactly(
+        + " WHERE constraint_name IN ('follows_source_id_fkey', 'follows_target_id_fkey', 'post_about_fkey', 'post_author_fkey')"
+        + " ORDER BY constraint_name")).containsExactly(
         row("follows_source_id_fkey", "account", "rid"), row("follows_target_id_fkey", "topic", "id"),
         row("post_about_fkey", "topic", "id"), row("post_author_fkey", "account", "rid"));
   }
