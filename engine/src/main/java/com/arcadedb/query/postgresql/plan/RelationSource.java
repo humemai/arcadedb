@@ -31,10 +31,10 @@ import java.util.NoSuchElementException;
  * those of the right one, and its rows are the left row followed by the right row, so the scope that resolves names
  * ({@code RelationScope}) needs no change, because every column carries the name of its relation.
  *
- * <p>Where S5 plugs in: {@link SelectPlanner#planFrom} turns the {@code FROM} items into one source. For a single table it
- * returns a {@link TableSource}; for a join or a list of tables it refuses with SQLSTATE {@code 0A000} today. S5 replaces that
- * branch with a join source built from {@link SelectPlanner#planTable} (one source per table) and the {@code ON} condition,
- * which it compiles with the {@code RelationScope} of the combined columns. Nothing after {@code planFrom} changes.
+ * <p>{@link SelectPlanner#planFrom} turns a {@code FROM} clause without a join into one source: {@link TableSource} for a
+ * table. A join, or a list of tables, is planned by {@code plan.join.JoinPlanner} into a {@code JoinSource} over the sources of
+ * its inputs (one {@link SelectPlanner#planTable} source per table), with the {@code WHERE} terms that can be applied below the
+ * join already applied. Nothing after that changes.
  *
  * <p>A row is an array with one value per column, in the canonical Java classes of {@link PgType}.
  */
@@ -60,6 +60,14 @@ public interface RelationSource {
 
   /** One line of the plan: how this source reads its rows. */
   String describe();
+
+  /**
+   * The lines of the plan of this source: {@link #describe()} for a source that reads one table, and for a join its own line
+   * followed by the lines of its two inputs, indented by two spaces.
+   */
+  default List<String> describeTree() {
+    return List.of(describe());
+  }
 
   /** The source of {@code SELECT 1}: no column and one row. */
   static RelationSource singleRow() {
