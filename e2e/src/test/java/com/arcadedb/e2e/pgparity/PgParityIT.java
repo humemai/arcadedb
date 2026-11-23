@@ -192,6 +192,8 @@ class PgParityIT {
         { "SELECT id FROM company ORDER BY cid", "SELECT @rid AS id FROM company ORDER BY cid" },
         { "SELECT id FROM orders ORDER BY oid", "SELECT @rid AS id FROM orders ORDER BY oid" },
         { "SELECT buyer FROM orders ORDER BY oid", "SELECT buyer FROM orders ORDER BY oid" },
+        { "SELECT id, source_id, target_id FROM works_at ORDER BY since",
+            "SELECT @rid AS id, @out AS source_id, @in AS target_id FROM works_at ORDER BY since" },
     };
     final List<String> failures = new ArrayList<>();
     for (final String[] pair : pairs) {

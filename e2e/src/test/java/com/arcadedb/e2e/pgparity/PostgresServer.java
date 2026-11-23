@@ -53,10 +53,13 @@ final class PostgresServer implements AutoCloseable {
 
   private final GenericContainer<?> container;
   private final Connection          connection;
+  /** The parse step has a connection of its own, so that a problem of the driver with an odd statement cannot upset the answers. */
+  private final Connection          parseConnection;
 
-  private PostgresServer(final GenericContainer<?> container, final Connection connection) {
+  private PostgresServer(final GenericContainer<?> container, final Connection connection, final Connection parseConnection) {
     this.container = container;
     this.connection = connection;
+    this.parseConnection = parseConnection;
   }
 
   static PostgresServer start() throws Exception {
@@ -76,7 +79,9 @@ final class PostgresServer implements AutoCloseable {
       try {
         final Connection connection = DriverManager.getConnection(url, "postgres", PASSWORD);
         connection.setAutoCommit(true);
-        return new PostgresServer(container, connection);
+        final Connection parseConnection = DriverManager.getConnection(url, "postgres", PASSWORD);
+        parseConnection.setAutoCommit(true);
+        return new PostgresServer(container, connection, parseConnection);
       } catch (final SQLException e) {
         last = e;
         Thread.sleep(1000);
@@ -136,9 +141,14 @@ final class PostgresServer implements AutoCloseable {
    * type cannot be determined). The driver sends the statement as a Parse and a Describe message and no Execute.
    */
   String parseOutcome(final String sql) {
-    try (final PreparedStatement statement = connection.prepareStatement(sql)) {
+    // The driver counts the parameters of a statement by its ? markers and fails on the $1 of the protocol, so each $n is
+    // sent as ?: the driver turns it back into a numbered parameter, and the server parses the same statement
+    final String text = sql.replaceAll("\\$(\\d+)", "?");
+    try (final PreparedStatement statement = parseConnection.prepareStatement(text)) {
       statement.getMetaData();
       return "ok";
+    } catch (final RuntimeException e) {
+      throw new IllegalStateException("The driver failed on the statement: " + sql, e);
     } catch (final SQLException e) {
       final String state = e.getSQLState();
       if (state == null)
@@ -189,10 +199,12 @@ final class PostgresServer implements AutoCloseable {
 
   @Override
   public void close() {
-    try {
-      connection.close();
-    } catch (final SQLException ignored) {
-      // the container goes away anyway
+    for (final Connection each : List.of(connection, parseConnection)) {
+      try {
+        each.close();
+      } catch (final SQLException ignored) {
+        // the container goes away anyway
+      }
     }
     container.stop();
   }
