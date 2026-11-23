@@ -18,7 +18,9 @@
  */
 package com.arcadedb.query.postgresql.plan.join;
 
+import com.arcadedb.GlobalConfiguration;
 import com.arcadedb.database.Database;
+import com.arcadedb.graph.Vertex;
 import com.arcadedb.query.postgresql.PostgreSQLReferenceException;
 import com.arcadedb.query.postgresql.ast.AstPrinter;
 import com.arcadedb.query.postgresql.ast.Expression;
@@ -35,6 +37,9 @@ import com.arcadedb.query.postgresql.plan.RelationScope;
 import com.arcadedb.query.postgresql.plan.RelationSource;
 import com.arcadedb.query.postgresql.plan.TableSource;
 import com.arcadedb.query.postgresql.plan.join.Pushdown.Conjunct;
+import com.arcadedb.schema.DocumentType;
+import com.arcadedb.schema.EdgeType;
+import com.arcadedb.schema.Schema;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -72,10 +77,22 @@ import java.util.Set;
  * The row estimates use the type counts of the schema API and nothing else: a pushed condition divides the estimate by four and
  * an index lookup by ten, constants and not statistics.
  *
+ * <p><b>Traversal (fork issue #8).</b> One hop through an edge table reads as
+ * {@code v1 JOIN e ON e.source_id = v1.id JOIN v2 ON e.target_id = v2.id}, or the same with the two ends the other way round
+ * ({@code e.target_id = v1.id} first), {@code INNER} or {@code LEFT}. Planned as two value joins it throws away what the vertex
+ * holds, its edges. When the setting {@code arcadedb.postgresql.traversalRule} is on (the default) the join planner plans each of
+ * the two joins as the step it is: the join of an edge table to a vertex id on the left is a {@link JoinSource.Strategy#TRAVERSE}
+ * (for each left vertex, read it by its id and walk its stored edges of that type), and the join of an edge endpoint on the left
+ * to the id of a vertex table on the right is a read of that vertex by its record id for each edge row, whatever the sizes of the
+ * two inputs. The rule applies only where it gives the rows of the equality join: the edge table has declared endpoint tables
+ * ({@code EdgeEndpoints}) that the vertex table on the walked side matches (it is the declared table, a subtype of it, or a
+ * supertype of it), an incoming walk needs the edge type and its subtypes to store the incoming side (a unidirectional type does
+ * not), and an edge table that can hold lightweight edges is walked only from its declared source table, as its scan is. Anything
+ * else keeps the hash join or the index nested loop of S5. The plan line names the step and the equivalent pattern.
+ *
  * <p><b>Seams.</b> {@link #support} is the decision "an index, a link or an edge pattern supports this join, or nothing does",
- * with its reason; it is shown in the plan line of the join and is the place fork issue #9 raises its warning. A traversal for an
- * edge table (fork issue #8) is a fourth strategy: it replaces the choice in {@link #strategyOf} when {@code support} answers
- * {@link JoinSupport.Kind#EDGE}; the nodes of the tree know the table behind every column ({@link Located}).
+ * with its reason; it is shown in the plan line of the join and is the place fork issue #9 raises its warning. The nodes of the
+ * tree know the table behind every column ({@link Located}).
  */
 public final class JoinPlanner {
 
@@ -190,6 +207,7 @@ public final class JoinPlanner {
   private final Parameters        parameters;
   private final Tables            tables;
   private final long              capBytes;
+  private final boolean           traversalRule;
 
   /**
    * @param capBytes the memory cap of every join, see {@link BuildMemory}
@@ -201,6 +219,7 @@ public final class JoinPlanner {
     this.parameters = parameters;
     this.tables = tables;
     this.capBytes = capBytes;
+    this.traversalRule = database.getConfiguration().getValueAsBoolean(GlobalConfiguration.POSTGRESQL_TRAVERSAL_RULE);
   }
 
   /**
@@ -342,9 +361,15 @@ public final class JoinPlanner {
 
     JoinSource.Strategy strategy = strategyOf(keys);
     JoinSource.IndexProbe probe = null;
+    JoinSource.Traversal traversal = null;
     boolean buildLeft = false;
+    if (strategy == JoinSource.Strategy.HASH && traversalRule) {
+      traversal = traversal(join, right, candidates);
+      if (traversal != null)
+        strategy = JoinSource.Strategy.TRAVERSE;
+    }
     if (strategy == JoinSource.Strategy.HASH) {
-      probe = indexProbe(right, candidates, leftRows);
+      probe = indexProbe(join, right, candidates, leftRows);
       if (probe != null)
         strategy = JoinSource.Strategy.INDEX_NESTED_LOOP;
       else
@@ -354,11 +379,24 @@ public final class JoinPlanner {
     final String header;
     final List<String> rightLines = new ArrayList<>(right.describeTree());
     switch (strategy) {
-    case INDEX_NESTED_LOOP:
-      header = "INDEX NESTED LOOP " + join.type + " ON " + condition + " (probe " + names(join.right) + " by "
-          + probe.column().name() + ")";
+    case TRAVERSE:
+      header = "TRAVERSE " + join.type + " ON " + condition + " (" + (traversal.direction() == Vertex.DIRECTION.OUT ? "out " : "in ")
+          + traversal.edges().table().name() + " AS " + traversal.edges().relation() + " FROM " + traversal.from().relation()
+          + ") = " + firstHopPattern(traversal);
+      rightLines.set(0, "WALK " + (traversal.direction() == Vertex.DIRECTION.OUT ? "out" : "in") + " EDGES "
+          + traversal.edges().table().name() + " AS " + traversal.edges().relation() + " of each left row");
+      break;
+    case INDEX_NESTED_LOOP: {
+      final Located edgeEnd = traversalRule ? edgeEnd(join, candidates.get(probe.key())) : null;
+      if (edgeEnd != null)
+        header = "TRAVERSE TO " + names(join.right) + " " + join.type + " ON " + condition + " (read " + names(join.right)
+            + " by " + probe.column().name() + " from the edge) = " + secondHopPattern(left, edgeEnd, probe.table());
+      else
+        header = "INDEX NESTED LOOP " + join.type + " ON " + condition + " (probe " + names(join.right) + " by "
+            + probe.column().name() + ")";
       rightLines.set(0, lookupLine(probe) + " for each left row");
       break;
+    }
     case HASH:
       header = "HASH JOIN " + join.type + " ON " + condition + " (build " + names(buildLeft ? join.left : join.right) + ")";
       break;
@@ -372,7 +410,7 @@ public final class JoinPlanner {
       estimated = leftRows > Long.MAX_VALUE / Math.max(1L, rightRows) ? Long.MAX_VALUE : leftRows * Math.max(1L, rightRows);
     else
       estimated = inner ? Math.max(leftRows, rightRows) : leftRows;
-    return new JoinSource(strategy, join.type, left, right, keys, residual, buildLeft, probe, capBytes,
+    return new JoinSource(strategy, join.type, left, right, keys, residual, buildLeft, probe, traversal, capBytes,
         header + " [" + describe(support) + "]", rightLines, support, estimated);
   }
 
@@ -456,7 +494,8 @@ public final class JoinPlanner {
    * single-table plan can look up (a property with an index of its own, or {@code id}), the types of the key are two integers or
    * two strings, and the left input is not larger than the right table.
    */
-  private JoinSource.IndexProbe indexProbe(final RelationSource right, final List<Candidate> candidates, final long leftRows) {
+  private JoinSource.IndexProbe indexProbe(final JoinNode join, final RelationSource right, final List<Candidate> candidates,
+      final long leftRows) {
     RelationSource base = right;
     Evaluable filter = null;
     if (right instanceof FilteredSource filteredRight) {
@@ -465,13 +504,17 @@ public final class JoinPlanner {
     }
     if (!(base instanceof TableSource table) || table.access() != TableSource.Access.SCAN)
       return null;
-    if (leftRows > Math.max(1L, tableRows(table)))
-      return null;
+    final boolean smaller = leftRows <= Math.max(1L, tableRows(table));
     for (int i = 0; i < candidates.size(); i++) {
       final Candidate candidate = candidates.get(i);
       if (!(candidate.rawRight() instanceof Evaluable.Slot slot))
         continue;
       final Column column = table.table().columns().get(slot.index());
+      // the end vertex of an edge row is read by its record id whatever the sizes (the traversal rule): the edge says where it is
+      final boolean followsAnEdge = traversalRule && table.table().kind() == Table.Kind.VERTEX
+          && column.kind() == Column.Kind.IDENTITY && edgeEnd(join, candidate) != null;
+      if (!smaller && !followsAnEdge)
+        continue;
       final PgType columnType = slot.type();
       final PgType keyType = candidate.rawLeft().type();
       final boolean fits = (columnType.isInteger() && keyType.isInteger()) || (columnType.isString() && keyType.isString());
@@ -481,6 +524,129 @@ public final class JoinPlanner {
         return new JoinSource.IndexProbe(table, column, i, filter);
     }
     return null;
+  }
+
+  // ---- traversal (fork issue #8) ----
+
+  /**
+   * The walk that gives the rows of this join, or {@code null} when the rule does not apply: the right input is an edge table
+   * (with or without a pushed condition, which then filters the edges of each vertex) with declared endpoint tables, one key
+   * of the condition joins its {@code source_id} or {@code target_id} to the {@code id} of a vertex table on the left, and the
+   * walk gives the same rows as the equality join (see the class comment).
+   */
+  private JoinSource.Traversal traversal(final JoinNode join, final RelationSource right, final List<Candidate> candidates) {
+    RelationSource base = right;
+    Evaluable filter = null;
+    if (right instanceof FilteredSource filteredRight) {
+      base = filteredRight.inner();
+      filter = filteredRight.condition();
+    }
+    if (!(base instanceof TableSource edges))
+      return null;
+    final Table edgeTable = edges.table();
+    if (edgeTable.kind() != Table.Kind.EDGE || edgeTable.sourceTable() == null || edgeTable.targetTable() == null)
+      return null;
+    for (int i = 0; i < candidates.size(); i++) {
+      final Candidate candidate = candidates.get(i);
+      if (!(candidate.rawRight() instanceof Evaluable.Slot endpoint) || !(candidate.rawLeft() instanceof Evaluable.Slot start))
+        continue;
+      final Column end = edgeTable.columns().get(endpoint.index());
+      if (!isEndpoint(end))
+        continue;
+      final Located vertex = join.left.locate(start.index());
+      if (vertex == null)
+        continue; // a view of information_schema has no vertex behind its columns
+      final Table vertexTable = vertex.table().table();
+      if (vertex.column().kind() != Column.Kind.IDENTITY || vertexTable.kind() != Table.Kind.VERTEX)
+        continue;
+      final boolean outgoing = end.kind() == Column.Kind.SOURCE;
+      final String declared = outgoing ? edgeTable.sourceTable() : edgeTable.targetTable();
+      if (!related(vertexTable.name(), declared))
+        continue;
+      String guard = null;
+      if (edgeTable.edgeStorage() != Table.EdgeStorage.REGULAR) {
+        // a scan of an edge table that can hold lightweight edges walks the declared source table, so a walk may not see more
+        if (outgoing && !instanceOf(vertexTable.name(), declared))
+          continue;
+        if (!outgoing)
+          guard = edgeTable.sourceTable();
+      }
+      if (!outgoing && !storesIncomingSide(edges.edgeTypeNames()))
+        continue;
+      return new JoinSource.Traversal(database, edges, outgoing ? Vertex.DIRECTION.OUT : Vertex.DIRECTION.IN, i, filter, guard,
+          vertex.table());
+    }
+    return null;
+  }
+
+  private boolean instanceOf(final String type, final String superType) {
+    return database.getSchema().getType(type).instanceOf(superType);
+  }
+
+  /** Whether one of the two types is the other or a subtype of it: the vertices of the one are vertices of the other too. */
+  private boolean related(final String a, final String b) {
+    return a.equals(b) || instanceOf(a, b) || instanceOf(b, a);
+  }
+
+  /**
+   * Whether every one of these edge types keeps the incoming side on the vertex: a unidirectional type writes the outgoing
+   * pointer only, so an incoming walk of it would answer nothing (the vertex API keeps that contract).
+   */
+  private boolean storesIncomingSide(final String[] edgeTypes) {
+    final Schema schema = database.getSchema();
+    for (final String name : edgeTypes) {
+      final DocumentType type = schema.getType(name);
+      if (!(type instanceof EdgeType edgeType) || !edgeType.isBidirectional())
+        return false;
+    }
+    return true;
+  }
+
+  /** The edge endpoint column that a key of the left input reads, {@code null} when the key is not one. */
+  private static Located edgeEnd(final JoinNode join, final Candidate candidate) {
+    if (!(candidate.rawLeft() instanceof Evaluable.Slot slot))
+      return null;
+    final Located located = join.left.locate(slot.index());
+    return located != null && located.table().table().kind() == Table.Kind.EDGE && isEndpoint(located.column()) ? located : null;
+  }
+
+  /** The pattern of the walk, as openCypher would write it: {@code MATCH (p:person)-[w:works_at]->()}. */
+  private static String firstHopPattern(final JoinSource.Traversal walk) {
+    final String vertex = "(" + walk.from().relation() + ":" + walk.from().table().name() + ")";
+    final String edge = "[" + walk.edges().relation() + ":" + walk.edges().table().name() + "]";
+    return "MATCH " + (walk.direction() == Vertex.DIRECTION.OUT ? vertex + "-" + edge + "->()" : vertex + "<-" + edge + "-()");
+  }
+
+  /**
+   * The pattern of the read of the far end of an edge: joined to the walk that produced the edge rows it is the whole hop,
+   * {@code MATCH (p:person)-[w:works_at]->(c:company)}; otherwise it is the edge and its far end.
+   */
+  private static String secondHopPattern(final RelationSource left, final Located edgeEnd, final TableSource far) {
+    final String vertex = "(" + far.relation() + ":" + far.table().name() + ")";
+    final TableSource edges = edgeEnd.table();
+    final String edge = "[" + edges.relation() + ":" + edges.table().name() + "]";
+    final boolean toFar = edgeEnd.column().kind() == Column.Kind.TARGET;
+    final JoinSource.Traversal walk = walkOf(left, edges.relation());
+    String near = "()";
+    if (walk != null && (walk.direction() == Vertex.DIRECTION.OUT) == toFar)
+      near = "(" + walk.from().relation() + ":" + walk.from().table().name() + ")";
+    return "MATCH " + (toFar ? near + "-" + edge + "->" + vertex : vertex + "-" + edge + "->" + near);
+  }
+
+  /** The traversal below this source that produced the rows of the edge relation, {@code null} when there is none. */
+  private static JoinSource.Traversal walkOf(final RelationSource source, final String edgeRelation) {
+    RelationSource current = source;
+    while (true) {
+      if (current instanceof FilteredSource filtered)
+        current = filtered.inner();
+      else if (current instanceof JoinSource join) {
+        final JoinSource.Traversal walk = join.traversal();
+        if (walk != null && walk.edges().relation().equals(edgeRelation))
+          return walk;
+        current = join.left();
+      } else
+        return null;
+    }
   }
 
   // ---- support (fork issue #9) ----

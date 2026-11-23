@@ -18,6 +18,11 @@
  */
 package com.arcadedb.query.postgresql.plan.join;
 
+import com.arcadedb.database.Database;
+import com.arcadedb.database.RID;
+import com.arcadedb.exception.RecordNotFoundException;
+import com.arcadedb.graph.Edge;
+import com.arcadedb.graph.Vertex;
 import com.arcadedb.query.postgresql.ast.TableReference;
 import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.eval.Evaluable;
@@ -25,6 +30,7 @@ import com.arcadedb.query.postgresql.eval.Numbers;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.plan.RelationSource;
 import com.arcadedb.query.postgresql.plan.TableSource;
+import com.arcadedb.schema.DocumentType;
 
 import java.math.BigDecimal;
 import java.util.ArrayDeque;
@@ -36,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * The rows of a join of two sources: the columns of the left source followed by those of the right one, and for each pair of
@@ -48,8 +55,13 @@ import java.util.Objects;
  * the type the {@code =} operator resolves to ({@code int4} against {@code int8} is {@code int8}, {@code int4} against
  * {@code numeric} is {@code numeric}), so {@code 1} and {@code 1.0} are one key.
  *
- * <p>Three strategies, chosen by {@link JoinPlanner}:
+ * <p>Four strategies, chosen by {@link JoinPlanner}:
  * <ul>
+ * <li>{@link Strategy#TRAVERSE}: the right input is an edge table joined through {@code source_id} or {@code target_id} to the
+ * {@code id} of a vertex on the left (fork issue #8). For each left row the vertex is read by its record id and its stored
+ * edges of that edge type are walked ({@code Vertex.getEdges}, the call that openCypher's {@code ExpandAll} makes), so the
+ * work follows the degree of the vertex and not the size of the edge type. Each edge gives the row a scan of the edge table
+ * gives, so the rows are those of the equality join, parallel edges included.</li>
  * <li>{@link Strategy#HASH}: one input is read once into a hash table keyed on the join key (the build side), the other is read
  * once and probed (the probe side). The build side counts against the memory cap ({@link BuildMemory}); over the cap the join
  * stops with SQLSTATE {@code 53200}.</li>
@@ -64,7 +76,7 @@ import java.util.Objects;
 public final class JoinSource implements RelationSource {
 
   public enum Strategy {
-    HASH, INDEX_NESTED_LOOP, NESTED_LOOP
+    HASH, INDEX_NESTED_LOOP, NESTED_LOOP, TRAVERSE
   }
 
   /**
@@ -85,6 +97,26 @@ public final class JoinSource implements RelationSource {
   record IndexProbe(TableSource table, Column column, int key, Evaluable filter) {
   }
 
+  /**
+   * How a traversal reads the edges of one left vertex.
+   *
+   * @param database    the database, to read the vertex by its record id
+   * @param edges       the edge table; whatever access path a pushed term gave it, the walk reads the edges of the vertex
+   * @param direction   {@code OUT} when the join key is {@code source_id}, {@code IN} when it is {@code target_id}
+   * @param key         the position in the key list of the equality that joins the edge endpoint to the id
+   * @param filter      a condition on the edge rows that was pushed to the right side, {@code null} for none
+   * @param sourceGuard a type the out vertex of every edge has to be an instance of, {@code null} for none: the scan of an edge
+   *                    table that can hold lightweight edges walks the declared source table only, so an incoming walk must
+   *                    drop an edge from anywhere else to give the rows of the scan
+   * @param from        the left vertex table the walk starts at, for the plan line
+   */
+  record Traversal(Database database, TableSource edges, Vertex.DIRECTION direction, int key, Evaluable filter,
+                   String sourceGuard, TableSource from) {
+    String[] edgeTypes() {
+      return edges.edgeTypeNames();
+    }
+  }
+
   private final Strategy                  strategy;
   private final TableReference.JoinType   type;
   private final RelationSource            left;
@@ -93,6 +125,8 @@ public final class JoinSource implements RelationSource {
   private final Evaluable                 residual;
   private final boolean                   buildLeft;
   private final IndexProbe                probe;
+  private final Traversal                 traversal;
+  private final AtomicLong                edgesRead = new AtomicLong();
   private final long                      capBytes;
   private final String                    header;
   private final List<String>              rightLines;
@@ -101,8 +135,8 @@ public final class JoinSource implements RelationSource {
   private final List<Field>               columns;
 
   JoinSource(final Strategy strategy, final TableReference.JoinType type, final RelationSource left, final RelationSource right,
-      final List<Key> keys, final Evaluable residual, final boolean buildLeft, final IndexProbe probe, final long capBytes,
-      final String header, final List<String> rightLines, final JoinSupport support, final long estimatedRows) {
+      final List<Key> keys, final Evaluable residual, final boolean buildLeft, final IndexProbe probe, final Traversal traversal,
+      final long capBytes, final String header, final List<String> rightLines, final JoinSupport support, final long estimatedRows) {
     this.strategy = strategy;
     this.type = type;
     this.left = left;
@@ -111,6 +145,7 @@ public final class JoinSource implements RelationSource {
     this.residual = residual;
     this.buildLeft = buildLeft;
     this.probe = probe;
+    this.traversal = traversal;
     this.capBytes = capBytes;
     this.header = header;
     this.rightLines = List.copyOf(rightLines);
@@ -123,6 +158,24 @@ public final class JoinSource implements RelationSource {
 
   public Strategy strategy() {
     return strategy;
+  }
+
+  /** The left input of the join. */
+  RelationSource left() {
+    return left;
+  }
+
+  /** How the edges are walked when the strategy is {@link Strategy#TRAVERSE}, {@code null} for any other strategy. */
+  Traversal traversal() {
+    return traversal;
+  }
+
+  /**
+   * The edge entries a traversal took from the adjacency lists of vertices since this source was built, before any condition
+   * dropped one: what a test reads to tell the work of a walk from the size of the edge type. Zero for any other strategy.
+   */
+  public long edgesRead() {
+    return edgesRead.get();
   }
 
   /** What supports this join: an index, a link, an edge pattern, or nothing (fork issue #9 raises its warning from this). */
@@ -163,6 +216,8 @@ public final class JoinSource implements RelationSource {
       return buildLeft ? hashJoinBuildingLeft(memory) : hashJoinBuildingRight(memory);
     case INDEX_NESTED_LOOP:
       return indexNestedLoop();
+    case TRAVERSE:
+      return traverse();
     default:
       return nestedLoop(memory);
     }
@@ -287,6 +342,77 @@ public final class JoinSource implements RelationSource {
         return true;
       }
     };
+  }
+
+  /**
+   * For each left row, the edges of the vertex whose id the key holds, in the direction of the endpoint column. A key that is
+   * {@code NULL} or not the id of a vertex has no edges; a {@code LEFT} join pads such a row once. Every edge entry is checked
+   * against the whole key and the residual, so the rows are those of the equality join: one row per edge, so two parallel edges
+   * give two rows.
+   */
+  private Iterator<Object[]> traverse() {
+    final Traversal walk = traversal;
+    final Key lookupKey = keys.get(walk.key());
+    final Iterator<Object[]> outer = left.open();
+    return new Expanding() {
+      @Override
+      boolean produce(final ArrayDeque<Object[]> out) {
+        if (!outer.hasNext())
+          return false;
+        final Object[] l = outer.next();
+        boolean matched = false;
+        final Object key = keyOf(l, true);
+        final Object id = key == null ? null : lookupKey.left().eval(l);
+        final Vertex vertex = id instanceof String text ? vertexOf(walk, text) : null;
+        if (vertex != null) {
+          final Iterator<Edge> edges = vertex.getEdges(walk.direction(), walk.edgeTypes()).iterator();
+          while (edges.hasNext()) {
+            final Edge edge = edges.next();
+            edgesRead.incrementAndGet();
+            final Object[] r = edgeRow(walk, edge);
+            if (r == null || !Objects.equals(key, keyOf(r, false)))
+              continue;
+            final Object[] row = concat(l, r);
+            if (accepts(row)) {
+              out.add(row);
+              matched = true;
+            }
+          }
+        }
+        if (!matched && type == TableReference.JoinType.LEFT)
+          out.add(pad(l));
+        return true;
+      }
+    };
+  }
+
+  /** The vertex a record id names, {@code null} when it is not a record id, not a record, or not a vertex. */
+  private static Vertex vertexOf(final Traversal walk, final String id) {
+    try {
+      final Object found = walk.database().lookupByRID(new RID(id), true);
+      return found instanceof Vertex vertex ? vertex : null;
+    } catch (final RuntimeException e) {
+      // not a record id, or a record that does not exist: no edge starts or ends there
+      return null;
+    }
+  }
+
+  /** The row of the edge table for one edge, {@code null} when the edge is not a row of the table or fails the pushed condition. */
+  private static Object[] edgeRow(final Traversal walk, final Edge edge) {
+    try {
+      if (!walk.edges().holds(edge))
+        return null;
+      if (walk.sourceGuard() != null) {
+        final DocumentType from = walk.database().getSchema().getTypeByBucketId(edge.getOut().getBucketId());
+        if (from == null || !from.instanceOf(walk.sourceGuard()))
+          return null;
+      }
+      final Object[] row = walk.edges().rowOf(edge);
+      return walk.filter() == null || Boolean.TRUE.equals(walk.filter().eval(row)) ? row : null;
+    } catch (final RecordNotFoundException e) {
+      // an entry of an adjacency list whose edge record is gone: a scan of the edge table does not see it either
+      return null;
+    }
   }
 
   // ---- helpers ----
