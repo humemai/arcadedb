@@ -33,6 +33,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 /**
@@ -44,6 +45,8 @@ final class ArcadeSide implements AutoCloseable {
   private final Path            directory;
   private final DatabaseFactory factory;
   private final Database        database;
+  /** Real record ids of this database to the ids the fixture file gives the same rows, see {@link #setRidAliases(Map)}. */
+  private       Map<String, String> ridAliases = Map.of();
 
   ArcadeSide() throws IOException {
     directory = Files.createTempDirectory("pgparity-arcadedb");
@@ -51,6 +54,23 @@ final class ArcadeSide implements AutoCloseable {
     database = factory.create();
     SmallFixture.createSchema(database);
     SmallFixture.load(database);
+  }
+
+  /**
+   * The corpus is committed, so its record ids must not depend on which bucket a record landed in: the fixture file of the
+   * server numbers them {@code #<table number>:<row number>}, and the engine's real record ids are translated to those, in every
+   * text cell that is exactly one of them, before a result is compared.
+   */
+  void setRidAliases(final Map<String, String> aliases) {
+    this.ridAliases = Map.copyOf(aliases);
+  }
+
+  private Object alias(final Object value) {
+    if (value instanceof String text) {
+      final String mapped = ridAliases.get(text);
+      return mapped != null ? mapped : value;
+    }
+    return value;
   }
 
   /**
@@ -68,7 +88,7 @@ final class ArcadeSide implements AutoCloseable {
         final List<Object> row = new ArrayList<>(labels.size());
         for (final String label : labels) {
           final Object value = result.getProperty(label);
-          row.add(Values.normalize(value));
+          row.add(alias(Values.normalize(value)));
         }
         rows.add(row);
       }

@@ -35,11 +35,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * The answer parity harness of the PostgreSQL-style SQL prototype (fork issue #2): the same statement on ArcadeDB's
@@ -49,8 +52,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>
  * <b>The data.</b> PostgreSQL gets {@code engine/src/test/resources/postgresql/small-schema.sql}, the one file that describes the
  * {@code small} fixture for the server. ArcadeDB gets {@code SmallFixture} of the engine's test classes, reached through the
- * engine test-jar (a test dependency of this module). {@link #fixturesAgree()} compares the two builds (counts, sums and the
- * record ids) so they cannot drift.
+ * engine test-jar (a test dependency of this module). {@link #fixturesAgree()} compares the two builds (counts, sums, and the
+ * rows that a {@code buyer} or an edge points to) so they cannot drift. The file numbers record ids {@code #<table
+ * number>:<row number>} so that the committed corpus does not depend on ArcadeDB's buckets, and the harness translates the
+ * engine's real record ids to those ({@code ArcadeSide.setRidAliases}). While the file is not on the branch the class is skipped.
  * <p>
  * <b>The corpus.</b> {@code engine/src/test/resources/postgresql/corpus/answers.tsv} (this harness) and {@code syntax.tsv} (the
  * accept and reject differential of the grammar). The columns are described at the top of each file, and the engine tests read
@@ -88,6 +93,9 @@ class PgParityIT {
   static void start() throws Exception {
     regenerate = Boolean.getBoolean("pgparity.regenerate");
     resources = findResources();
+    final Path schema = resources.resolve("postgresql/small-schema.sql");
+    // the fixture file of the server is written by another step of the prototype (S2): without it there is nothing to compare
+    assumeTrue(Files.exists(schema), "engine/src/test/resources/postgresql/small-schema.sql is not on this branch yet");
     pg = PostgresServer.start();
     final String version = pg.version();
     REPORT.add("server: " + version);
@@ -95,8 +103,29 @@ class PgParityIT {
     REPORT.add("regenerate: " + regenerate);
     System.out.println("pgparity: " + version);
 
-    pg.load(Files.readString(resources.resolve("postgresql/small-schema.sql"), StandardCharsets.UTF_8));
+    pg.load(Files.readString(schema, StandardCharsets.UTF_8));
     arcade = new ArcadeSide();
+    arcade.setRidAliases(ridAliases());
+  }
+
+  /**
+   * The fixture file numbers its record ids {@code #<table number>:<row number>}; ArcadeDB's are real record ids, which depend
+   * on the buckets a type got. Both sides list the rows of each table in the order of a unique key, and the n-th real id gets
+   * the n-th fixture id.
+   */
+  private static Map<String, String> ridAliases() {
+    final String[][] keys = { { "person", "pid" }, { "company", "cid" }, { "orders", "oid" }, { "works_at", "since" } };
+    final Map<String, String> aliases = new HashMap<>();
+    for (final String[] key : keys) {
+      final Outcome server = pg.run("SELECT id FROM " + key[0] + " ORDER BY " + key[1]);
+      final Outcome engine = arcade.run("sql", "SELECT @rid AS id FROM " + key[0] + " ORDER BY " + key[1]);
+      assertTrue(!server.isRefusal() && !engine.isRefusal(), "record ids of " + key[0] + ": " + server.describe() + " / "
+          + engine.describe());
+      assertEquals(server.table.rows.size(), engine.table.rows.size(), "rows of " + key[0] + " on the two sides");
+      for (int i = 0; i < server.table.rows.size(); i++)
+        aliases.put((String) engine.table.rows.get(i).get(0), (String) server.table.rows.get(i).get(0));
+    }
+    return aliases;
   }
 
   @AfterAll
@@ -188,9 +217,6 @@ class PgParityIT {
         { "SELECT count(*), sum(cid) FROM company", "SELECT count(*), sum(cid) FROM company" },
         { "SELECT count(*), sum(since) FROM works_at", "SELECT count(*), sum(since) FROM works_at" },
         { "SELECT count(*), sum(oid), sum(total) FROM orders", "SELECT count(*), sum(oid), sum(total) FROM orders" },
-        { "SELECT id FROM person ORDER BY pid", "SELECT @rid AS id FROM person ORDER BY pid" },
-        { "SELECT id FROM company ORDER BY cid", "SELECT @rid AS id FROM company ORDER BY cid" },
-        { "SELECT id FROM orders ORDER BY oid", "SELECT @rid AS id FROM orders ORDER BY oid" },
         { "SELECT buyer FROM orders ORDER BY oid", "SELECT buyer FROM orders ORDER BY oid" },
         { "SELECT id, source_id, target_id FROM works_at ORDER BY since",
             "SELECT @rid AS id, @out AS source_id, @in AS target_id FROM works_at ORDER BY since" },
