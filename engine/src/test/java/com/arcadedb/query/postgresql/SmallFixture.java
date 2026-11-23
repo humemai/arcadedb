@@ -41,17 +41,19 @@ import java.util.Map;
  * {@link #createSchema(Database)} declares every property a statement reads (the relational view shows declared properties
  * only), the unique indexes on {@code person.pid}, {@code company.cid} and {@code orders.oid} (none on {@code orders.pid}), and
  * the endpoint tables of {@code works_at} as {@link EdgeEndpoints} reads them. {@link #load(Database)} adds the rows.
+ * <p>
+ * Public, so that the tests of the sub-packages ({@code parser}, {@code catalog}, {@code plan}) use the same database.
  */
-final class SmallFixture {
-  static final String PERSON   = "person";
-  static final String COMPANY  = "company";
-  static final String WORKS_AT = "works_at";
-  static final String ORDERS   = "orders";
+public final class SmallFixture {
+  public static final String PERSON   = "person";
+  public static final String COMPANY  = "company";
+  public static final String WORKS_AT = "works_at";
+  public static final String ORDERS   = "orders";
 
   private SmallFixture() {
   }
 
-  static void createSchema(final Database database) {
+  public static void createSchema(final Database database) {
     final Schema schema = database.getSchema();
 
     final VertexType person = schema.createVertexType(PERSON);
@@ -82,7 +84,7 @@ final class SmallFixture {
     schema.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, ORDERS, "oid");
   }
 
-  static void load(final Database database) {
+  public static void load(final Database database) {
     database.transaction(() -> {
       final MutableVertex ada = person(database, 1, "Ada", 36, "Delft");
       final MutableVertex bo = person(database, 2, "Bo", 41, "Delft");
