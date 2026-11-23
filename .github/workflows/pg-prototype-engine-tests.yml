@@ -1,0 +1,62 @@
+#
+# Copyright © 2021-present Arcade Data Ltd (info@arcadedata.com)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
+# SPDX-License-Identifier: Apache-2.0
+#
+
+# Fork only (humemai/arcadedb, PostgreSQL-style SQL prototype): the fast loop. mvn-test.yml builds a Docker image and runs the
+# whole suite, which takes the better part of an hour; this runs only the engine tests of the postgresql packages (a build of
+# the engine module and a few seconds of tests), on every push to a feat/pg-* branch and on every pull request into the
+# prototype branch. The full suite still runs on the pull request through mvn-test.yml. Drop this file when anything goes upstream.
+name: PostgreSQL prototype - engine tests
+
+on:
+  pull_request:
+    branches:
+      - feat/postgresql-prototype
+  push:
+    branches:
+      - "feat/pg-**"
+
+permissions:
+  contents: read
+
+# One run per branch: a push to a branch with an open pull request starts the run of the pull request too, and the newer one
+# cancels the older. head_ref is the branch of a pull request, ref_name the branch of a push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  engine-tests:
+    name: Engine tests of the postgresql packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: "temurin"
+          java-version: 21
+          cache: "maven"
+
+      # -am: the module is built from this tree, not resolved from ~/.m2 (CLAUDE.md, "Testing a subset of modules needs -am").
+      # The includes pattern selects the test classes of any directory named postgresql, the *IT.java exclusion of the
+      # surefire configuration still applies. A new test of the prototype goes in such a directory and runs here.
+      - name: Run the engine tests of the postgresql packages
+        run: ./mvnw test --batch-mode --errors --show-version -pl engine -am "-Dsurefire.includes=**/postgresql/**/*Test.java"

@@ -23,6 +23,7 @@ import com.arcadedb.database.DatabaseInternal;
 import com.arcadedb.log.LogManager;
 import com.arcadedb.query.java.JavaQueryEngine;
 import com.arcadedb.query.polyglot.PolyglotQueryEngine;
+import com.arcadedb.query.postgresql.PostgreSQLQueryEngine;
 import com.arcadedb.query.sql.SQLQueryEngine;
 import com.arcadedb.query.sql.SQLScriptQueryEngine;
 import com.arcadedb.utility.DedicatedThreadPool;
@@ -99,6 +100,8 @@ public class QueryEngineManager extends DedicatedThreadPool {
     register(new JavaQueryEngine.JavaQueryEngineFactory());
     register(new SQLQueryEngine.SQLQueryEngineFactory());
     register(new SQLScriptQueryEngine.SQLScriptQueryEngineFactory());
+    // THE postgresql LANGUAGE, REGISTERED DIRECTLY LIKE sql: IT NEEDS NO CLASSPATH LOOKUP AND NO NATIVE-IMAGE REFLECTION ENTRY
+    register(new PostgreSQLQueryEngine.PostgreSQLQueryEngineFactory());
 
     // REGISTER QUERY ENGINES IF AVAILABLE ON CLASSPATH AT RUN-TIME
     register("com.arcadedb.query.opencypher.query.OpenCypherQueryEngineFactory");
