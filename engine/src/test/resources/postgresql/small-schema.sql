@@ -63,4 +63,3 @@ INSERT INTO works_at (id, source_id, target_id, since) VALUES ('#4:1', '#2:0', '
 INSERT INTO works_at (id, source_id, target_id, since) VALUES ('#4:2', '#2:1', '#1:0', 2020);
 INSERT INTO works_at (id, source_id, target_id, since) VALUES ('#4:3', '#2:2', '#1:1', 2021);
 INSERT INTO works_at (id, source_id, target_id, since) VALUES ('#4:4', '#2:3', '#1:1', 2023);
-

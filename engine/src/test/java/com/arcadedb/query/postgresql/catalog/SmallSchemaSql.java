@@ -82,11 +82,15 @@ public final class SmallSchemaSql {
     if (normalizeIds)
       out.append("-- The record ids are renumbered #<table number>:<row number>. The real ones come from SmallSchemaSql.generate(db, false).\n");
     out.append('\n');
+    boolean first = true;
     for (final Table table : tables) {
+      // a blank line between the tables and none at the end of the file, which the end-of-file hook of pre-commit insists on
+      if (!first)
+        out.append('\n');
+      first = false;
       createTable(out, table);
       for (final Document row : rows.get(table.name()))
         insert(out, table, row, id);
-      out.append('\n');
     }
     return out.toString();
   }
