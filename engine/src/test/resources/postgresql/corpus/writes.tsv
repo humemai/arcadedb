@@ -69,4 +69,4 @@ delete-all-orders	ok	SELECT oid, pid, total, placed, buyer FROM orders	DELETE FR
 delete-company-without-edges	ok	SELECT cid, name FROM company ; SELECT since FROM works_at	DELETE FROM company WHERE cid = 30	pending-server
 delete-vertex-takes-its-edge	ok	SELECT pid, name, age, city FROM person ; SELECT since FROM works_at	DELETE FROM person WHERE pid = 3	pending-server
 delete-vertex-takes-both-edges	ok	SELECT cid, name FROM company ; SELECT since FROM works_at	DELETE FROM company WHERE cid = 20	pending-server
-delete-by-range	ok	SELECT pid, name, age, city FROM person ; SELECT since FROM works_at	DELETE FROM person WHERE age = 29 OR age IS NULL	pending-server
+delete-two-vertices	ok	SELECT pid, name, age, city FROM person ; SELECT since FROM works_at	DELETE FROM person WHERE age = 52 OR age IS NULL	pending-server
