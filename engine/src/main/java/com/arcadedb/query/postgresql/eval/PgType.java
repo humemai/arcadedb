@@ -40,6 +40,7 @@ import java.util.Locale;
  * <tr><td>{@code text}, {@code varchar}</td><td>{@link String}</td></tr>
  * <tr><td>{@code date}</td><td>{@link LocalDate}</td></tr>
  * <tr><td>{@code timestamp}</td><td>{@link LocalDateTime}</td></tr>
+ * <tr><td>{@code interval}</td><td>{@link PgInterval}, only as the operand of date and timestamp arithmetic</td></tr>
  * </table>
  *
  * SQL {@code NULL} is the Java {@code null} for every type. {@link #UNKNOWN} is the type of a string literal and of a bare
@@ -49,7 +50,7 @@ import java.util.Locale;
 public enum PgType {
   UNKNOWN("unknown"), BOOL("bool"), INT2("int2"), INT4("int4"), INT8("int8"), NUMERIC("numeric"), FLOAT4("float4"),
   FLOAT8("float8"), TEXT("text"), VARCHAR("varchar"), DATE("date"), TIMESTAMP("timestamp"), JSONB("jsonb"), BYTEA("bytea"),
-  ARRAY("array");
+  ARRAY("array"), INTERVAL("interval");
 
   private final String typeName;
 
@@ -177,6 +178,7 @@ public enum PgType {
       case "varchar" -> VARCHAR;
       case "date" -> DATE;
       case "timestamp" -> TIMESTAMP;
+      case "interval" -> INTERVAL;
       default -> null;
     };
   }

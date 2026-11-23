@@ -498,10 +498,48 @@ public final class ExpressionCompiler {
         return first == null || second == null ? null
             : (Object) (int) ChronoUnit.DAYS.between((LocalDate) second, (LocalDate) first);
       }, x, y);
+    if (a == PgType.INTERVAL || b == PgType.INTERVAL)
+      return intervalArithmetic(operator, x, y);
     if (a.isDateTime() || b.isDateTime())
       throw PostgreSQLEvaluationException.unsupported(
-          "The operator " + symbol + " on " + a.displayName() + " and " + b.displayName() + " is not supported (no interval type)");
+          "The operator " + symbol + " on " + a.displayName() + " and " + b.displayName() + " is not supported");
     throw PostgreSQLEvaluationException.noOperator(symbol, a, b);
+  }
+
+  /**
+   * {@code date + interval}, {@code date - interval}, {@code timestamp + interval}, {@code timestamp - interval} and
+   * {@code interval + date or timestamp}: the result is a {@code timestamp}, as in PostgreSQL ({@code date '1998-12-01' -
+   * interval '90' day} is {@code 1998-09-02 00:00:00}). Any other operator on an interval is refused with {@code 0A000}. An
+   * expression over constants is computed once.
+   */
+  private Evaluable intervalArithmetic(final Expression.BinaryOperator operator, final Evaluable left, final Evaluable right) {
+    final boolean plus = operator == Expression.BinaryOperator.ADD;
+    final boolean minus = operator == Expression.BinaryOperator.SUBTRACT;
+    final PgType a = left.type();
+    final PgType b = right.type();
+    final Evaluable moment;
+    final Evaluable span;
+    if ((plus || minus) && a.isDateTime() && b == PgType.INTERVAL) {
+      moment = left;
+      span = right;
+    } else if (plus && a == PgType.INTERVAL && b.isDateTime()) {
+      moment = right;
+      span = left;
+    } else
+      throw PostgreSQLEvaluationException.unsupported("The operator " + operator.symbol() + " on " + a.displayName() + " and "
+          + b.displayName() + " is not supported: an interval is added to or subtracted from a date or a timestamp only");
+    final boolean subtract = minus;
+    final Evaluable result = new Evaluable.Node(PgType.TIMESTAMP, row -> {
+      final Object when = moment.eval(row);
+      if (when == null)
+        return null;
+      final Object by = span.eval(row);
+      if (by == null)
+        return null;
+      final LocalDateTime start = when instanceof LocalDate date ? date.atStartOfDay() : (LocalDateTime) when;
+      return PgInterval.add(start, (PgInterval) by, subtract);
+    }, moment, span);
+    return result.isConstant() ? new Evaluable.Constant(PgType.TIMESTAMP, result.eval(new Object[0])) : result;
   }
 
   private static LocalDate shift(final LocalDate date, final long days) {
@@ -659,6 +697,8 @@ public final class ExpressionCompiler {
   private Evaluable cast(final Expression.Cast e) {
     final TypeName name = e.type();
     final PgType target = PgType.byName(name.name());
+    if (target == PgType.INTERVAL)
+      return intervalCast(e);
     if (target == null || name.arrayDimensions() > 0 || name.intervalFields() != null)
       throw PostgreSQLEvaluationException.unsupported("The type " + String.join(".", name.name())
           + (name.arrayDimensions() > 0 ? "[]" : "") + " is not supported by the postgresql language");
@@ -682,6 +722,32 @@ public final class ExpressionCompiler {
     if (operand instanceof Evaluable.Constant constant)
       return new Evaluable.Constant(target, Casts.cast(constant.value(), from, target, typmod));
     return new Evaluable.Node(target, row -> Casts.cast(operand.eval(row), from, target, typmod), operand);
+  }
+
+  /**
+   * {@code interval 'text'}, {@code interval 'N' day} and {@code CAST('text' AS interval)}: a string read by the input function
+   * of {@code interval}, with the single field restriction of the literal, if any. A precision, an array, a range of fields
+   * ({@code day to second}) and any operand that is not a string are refused.
+   */
+  private Evaluable intervalCast(final Expression.Cast e) {
+    final TypeName name = e.type();
+    final String field = name.intervalFields();
+    if (name.arrayDimensions() > 0 || !name.modifiers().isEmpty() || !PgInterval.isSupportedField(field))
+      throw PostgreSQLEvaluationException.unsupported("The type interval"
+          + (field != null ? " " + field : name.arrayDimensions() > 0 ? "[]" : "(p)")
+          + " is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read");
+    final Evaluable operand = compile(e.operand());
+    final PgType from = operand.type();
+    if (from == PgType.INTERVAL && field == null)
+      return operand;
+    if (from != PgType.UNKNOWN && !from.isString())
+      throw new PostgreSQLEvaluationException("42846", "cannot cast type " + from.displayName() + " to interval");
+    if (operand instanceof Evaluable.Constant constant)
+      return new Evaluable.Constant(PgType.INTERVAL, constant.value() == null ? null : PgInterval.parse((String) constant.value(), field));
+    return new Evaluable.Node(PgType.INTERVAL, row -> {
+      final Object value = operand.eval(row);
+      return value == null ? null : PgInterval.parse((String) value, field);
+    }, operand);
   }
 
   // ---- functions ----

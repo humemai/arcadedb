@@ -50,11 +50,20 @@ final class ArcadeSide implements AutoCloseable {
   private       Map<String, String> ridAliases = Map.of();
 
   ArcadeSide() throws IOException {
-    directory = Files.createTempDirectory("pgparity-arcadedb");
-    factory = new DatabaseFactory(directory.resolve("small").toString());
-    database = factory.create();
+    this("small");
     SmallFixture.createSchema(database);
     SmallFixture.load(database);
+  }
+
+  /** An empty database: the caller builds its own schema and rows in {@link #database()} (the TPC-H harness does). */
+  ArcadeSide(final String name) throws IOException {
+    directory = Files.createTempDirectory("pgparity-arcadedb");
+    factory = new DatabaseFactory(directory.resolve(name).toString());
+    database = factory.create();
+  }
+
+  Database database() {
+    return database;
   }
 
   /**
