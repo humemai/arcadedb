@@ -571,7 +571,7 @@ public class SelectPlanner {
     final Evaluable residualTest = test;
     final int outerWidth = outerLeaves.size();
 
-    final ExistsKeys probe = new ExistsKeys(kept, innerToCommon);
+    final ExistsKeys probe = new ExistsKeys(kept, innerToCommon, innerLeaves.size());
     return new Evaluable.Node(PgType.BOOL, row -> {
       final List<Object> key = new ArrayList<>(count);
       for (int i = 0; i < count; i++) {
@@ -636,11 +636,13 @@ public class SelectPlanner {
   private static final class ExistsKeys {
     private final MaterializedSource.Materialization rows;
     private final List<Function<Object, Object>>      toCommon;
+    private final int                                 leaves;
     private       Map<List<Object>, List<Object[]>>   buckets;
 
-    ExistsKeys(final MaterializedSource.Materialization rows, final List<Function<Object, Object>> toCommon) {
+    ExistsKeys(final MaterializedSource.Materialization rows, final List<Function<Object, Object>> toCommon, final int leaves) {
       this.rows = rows;
       this.toCommon = toCommon;
+      this.leaves = leaves;
     }
 
     synchronized Map<List<Object>, List<Object[]>> load() {
@@ -655,7 +657,7 @@ public class SelectPlanner {
             else
               key.add(toCommon.get(i).apply(row[i]));
           if (complete)
-            loaded.computeIfAbsent(key, k -> new ArrayList<>()).add(java.util.Arrays.copyOfRange(row, toCommon.size(), row.length));
+            loaded.computeIfAbsent(key, k -> new ArrayList<>()).add(java.util.Arrays.copyOfRange(row, toCommon.size(), toCommon.size() + leaves));
         }
         buckets = loaded;
       }
