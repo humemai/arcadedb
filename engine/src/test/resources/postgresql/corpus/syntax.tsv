@@ -1605,8 +1605,8 @@ g2-window-empty	ok	inside	-	SELECT count(*) OVER () FROM t	g2 (fork issue #56)	4
 g2-out-window-frame	ok	outside	-	SELECT sum(a) OVER (ORDER BY a ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t	g2 (fork issue #56)	42P01
 g2-out-window-named	ok	outside	-	SELECT sum(a) OVER w FROM t WINDOW w AS (ORDER BY a)	g2 (fork issue #56)	42P01
 g2-out-window-filter	ok	outside	-	SELECT count(*) FILTER (WHERE a > 1) OVER () FROM t	g2 (fork issue #56)	42P01
-g2-cross-join-chain	pending-server	inside	-	SELECT * FROM a CROSS JOIN b CROSS JOIN c	g2 (fork issue #61)	-
-g2-cross-join-then-inner	pending-server	inside	-	SELECT * FROM a CROSS JOIN b JOIN c ON a.x = c.x	g2 (fork issue #61)	-
-g2-cross-join-in-parens	pending-server	inside	-	SELECT * FROM a JOIN (b CROSS JOIN c) ON a.x = b.x	g2 (fork issue #61)	-
-g2-cross-join-on	pending-server	unknown	-	SELECT * FROM a CROSS JOIN b ON a.x = b.x	g2 (fork issue #61)	-
-g2-cross-join-using	pending-server	unknown	-	SELECT * FROM a CROSS JOIN b USING (x)	g2 (fork issue #61)	-
+g2-cross-join-chain	ok	inside	-	SELECT * FROM a CROSS JOIN b CROSS JOIN c	g2 (fork issue #61)	42P01
+g2-cross-join-then-inner	ok	inside	-	SELECT * FROM a CROSS JOIN b JOIN c ON a.x = c.x	g2 (fork issue #61)	42P01
+g2-cross-join-in-parens	ok	inside	-	SELECT * FROM a JOIN (b CROSS JOIN c) ON a.x = b.x	g2 (fork issue #61)	42P01
+g2-cross-join-on	syntax-error	unknown	-	SELECT * FROM a CROSS JOIN b ON a.x = b.x	g2 (fork issue #61)	42601
+g2-cross-join-using	syntax-error	unknown	-	SELECT * FROM a CROSS JOIN b USING (x)	g2 (fork issue #61)	42601
