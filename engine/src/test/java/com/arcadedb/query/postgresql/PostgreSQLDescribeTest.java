@@ -124,8 +124,10 @@ class PostgreSQLDescribeTest extends TestHelper {
       assertThat(PostgreSQLErrors.sqlState(e)).isEqualTo("42601");
       assertThat(PostgreSQLErrors.position(e, "SELECT name FROM FROM person")).isEqualTo(18);
     });
-    assertThatThrownBy(() -> describe("SELECT 1 / 0 FROM person"))
-        .satisfies(e -> assertThat(PostgreSQLErrors.sqlState(e)).isNull());
+    // an error of the evaluation is the run's: describing evaluates nothing
+    assertThat(describe("SELECT 1 / 0 FROM person")).containsExactly("?column?:int4");
+    assertThatThrownBy(() -> database.query("postgresql", "SELECT 1 / 0 FROM person").next())
+        .satisfies(e -> assertThat(PostgreSQLErrors.sqlState(e)).isEqualTo("22012"));
     assertThat(PostgreSQLErrors.sqlState(new IllegalStateException("x"))).isNull();
     assertThat(PostgreSQLErrors.position(new IllegalStateException("x"), "SELECT 1")).isZero();
   }
