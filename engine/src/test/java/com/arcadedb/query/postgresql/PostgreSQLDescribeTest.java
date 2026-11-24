@@ -79,7 +79,7 @@ class PostgreSQLDescribeTest extends TestHelper {
     assertThat(describe("EXPLAIN SELECT name FROM person")).containsExactly("QUERY PLAN:text");
 
     try (final ResultSet resultSet = database.command("postgresql", "UPDATE person SET age = 37 WHERE pid = 1")) {
-      assertThat(resultSet).isInstanceOf(PostgreSQLResultSet.class);
+      assertThat((Object) resultSet).isInstanceOf(PostgreSQLResultSet.class);
       assertThat(((PostgreSQLResultSet) resultSet).returnsRows()).isFalse();
       assertThat(((PostgreSQLResultSet) resultSet).affectedRows()).isEqualTo(1L);
     }

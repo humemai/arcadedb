@@ -20,7 +20,6 @@ package com.arcadedb.postgres;
 
 import com.arcadedb.GlobalConfiguration;
 import com.arcadedb.query.postgresql.SmallFixture;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.postgresql.util.PSQLException;
 
@@ -72,11 +71,11 @@ class PostgreSQLWireTest extends PostgresWireProtocolTestBase {
     GlobalConfiguration.POSTGRES_LANGUAGES.setValue("sqlscript,cypher,opencypher,postgresql");
   }
 
-  @BeforeEach
-  void loadTheSmallFixture() {
-    final var database = getServerDatabase(0, getDatabaseName());
-    SmallFixture.createSchema(database);
-    SmallFixture.load(database);
+  /** The database of every test is the small fixture and nothing else, so a catalog lists its four tables only. */
+  @Override
+  protected void populateDatabase() {
+    SmallFixture.createSchema(getDatabases()[0]);
+    SmallFixture.load(getDatabases()[0]);
   }
 
   private Connection connect(final String options, final boolean simpleQueryMode) throws SQLException {
