@@ -34,6 +34,7 @@ import com.arcadedb.query.postgresql.ast.TransactionStatement;
 import com.arcadedb.query.postgresql.ast.UpdateStatement;
 import com.arcadedb.query.postgresql.ast.WriteStatement;
 import com.arcadedb.query.postgresql.eval.Parameters;
+import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.parser.StatementParser;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
@@ -310,6 +311,30 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       result.add(row);
     }
     return result;
+  }
+
+  /**
+   * The columns of the answer of {@code query}, found by planning it: nothing is read and nothing is written. It is what a client
+   * asks with a Describe message before it binds values, a JDBC {@code PreparedStatement.getMetaData()} for one. Every name is
+   * bound and every expression typed, so a statement with an unknown table or column, or a type error, is refused here with the
+   * SQLSTATE that it would be refused with when it runs.
+   *
+   * @param parameterTypes the types of {@code $1}, {@code $2} and so on; a parameter with no type here, or {@link PgType#UNKNOWN},
+   *                       takes its type from the expression it is in, as it does in PostgreSQL
+   *
+   * @return the columns in order, empty for a statement that returns no rows: {@code BEGIN}, {@code COMMIT} and {@code ROLLBACK}, and
+   *     a write without {@code RETURNING}
+   */
+  public List<PostgreSQLResultSet.Column> describe(final String query, final PgType... parameterTypes) {
+    final Statement statement = parse(query);
+    final Parameters parameters = Parameters.describing(parameterTypes);
+    if (statement instanceof TransactionStatement)
+      return List.of();
+    if (statement instanceof ExplainStatement || statement instanceof ExplainWriteStatement)
+      return List.of(new PostgreSQLResultSet.Column(PLAN_COLUMN, "text"));
+    if (statement instanceof WriteStatement write)
+      return new WritePlanner(database, parameters).plan(write).columns();
+    return new SelectPlanner(database, parameters).planQuery(statement).columns();
   }
 
   /**

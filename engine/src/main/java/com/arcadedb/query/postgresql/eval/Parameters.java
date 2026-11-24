@@ -31,10 +31,36 @@ public final class Parameters {
 
   private final Object[]  values;
   private final boolean[] present;
+  /** The types of the parameters of a statement that is only described, {@code null} for values that are bound. */
+  private final PgType[]  described;
 
   private Parameters(final Object[] values, final boolean[] present) {
+    this(values, present, null);
+  }
+
+  private Parameters(final Object[] values, final boolean[] present, final PgType[] described) {
     this.values = values;
     this.present = present;
+    this.described = described;
+  }
+
+  /**
+   * The parameters of a statement that is described and not run: {@code $n} has the type {@code types[n - 1]} and no value, and
+   * {@link PgType#UNKNOWN} when {@code types} is shorter, so the planner types the statement as PostgreSQL does for a client that
+   * sends a Parse message with no parameter types. Nothing evaluates such a plan.
+   */
+  public static Parameters describing(final PgType... types) {
+    return new Parameters(new Object[0], new boolean[0], types == null ? new PgType[0] : types.clone());
+  }
+
+  /** True for the parameters of {@link #describing}: the statement is planned and never run. */
+  public boolean isDescribing() {
+    return described != null;
+  }
+
+  /** The type that {@link #describing} gave {@code $index}, counted from 1: {@link PgType#UNKNOWN} when it gave none. */
+  public PgType describedType(final int index) {
+    return index >= 1 && index <= described.length && described[index - 1] != null ? described[index - 1] : PgType.UNKNOWN;
   }
 
   /** {@code $1} is {@code values[0]}. */

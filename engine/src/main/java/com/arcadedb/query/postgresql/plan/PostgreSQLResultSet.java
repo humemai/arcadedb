@@ -113,6 +113,7 @@ public final class PostgreSQLResultSet extends InternalResultSet {
   private final List<Column> columns;
   private final List<String> warnings;
   private       long         affectedRows = -1;
+  private       boolean      returnsRows  = true;
 
   public PostgreSQLResultSet(final List<Column> columns, final Plan plan) {
     this(columns, plan, List.of());
@@ -143,6 +144,21 @@ public final class PostgreSQLResultSet extends InternalResultSet {
 
   public PostgreSQLResultSet withAffectedRows(final long affected) {
     this.affectedRows = affected;
+    return this;
+  }
+
+  /**
+   * False for the answer of an {@code INSERT}, {@code UPDATE} or {@code DELETE} without {@code RETURNING}: its one row
+   * {@code count} only repeats {@link #affectedRows()}, and PostgreSQL answers such a statement with a command tag and no row.
+   * True for every other answer.
+   */
+  public boolean returnsRows() {
+    return returnsRows;
+  }
+
+  /** Marks the answer as a write without {@code RETURNING}, see {@link #returnsRows()}. */
+  public PostgreSQLResultSet rowless() {
+    this.returnsRows = false;
     return this;
   }
 

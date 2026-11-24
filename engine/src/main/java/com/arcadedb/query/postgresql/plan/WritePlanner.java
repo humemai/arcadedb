@@ -239,7 +239,7 @@ public final class WritePlanner {
     final List<Slot[]> plannedRows = valueRows;
     final SelectPlan plannedSelect = selectPlan;
     final PgType[] plannedTypes = selectTypes;
-    return new WritePlan(steps, db -> {
+    return new WritePlan(steps, returning.present() ? returning.columns() : List.of(), db -> {
       // the rows are all found before the first is written, so INSERT INTO t SELECT ... FROM t sees the table as it was
       final List<Object[]> rows = new ArrayList<>();
       if (plannedRows != null) {
@@ -454,7 +454,7 @@ public final class WritePlanner {
     if (returning.present())
       steps.add("RETURNING " + returning.columns().size() + " column(s)");
 
-    return new WritePlan(steps, db -> {
+    return new WritePlan(steps, returning.present() ? returning.columns() : List.of(), db -> {
       // find the rows first and compute what each is set to from the row as it is now, so no row sees another's change
       final List<Match> matches = new ArrayList<>();
       final Iterator<Document> records = found.openRecords();
@@ -527,7 +527,7 @@ public final class WritePlanner {
     if (returning.present())
       steps.add("RETURNING " + returning.columns().size() + " column(s)");
 
-    return new WritePlan(steps, db -> {
+    return new WritePlan(steps, returning.present() ? returning.columns() : List.of(), db -> {
       final List<Document> matched = new ArrayList<>();
       final List<Object[]> returned = new ArrayList<>();
       final Iterator<Document> records = found.openRecords();
@@ -695,7 +695,7 @@ public final class WritePlanner {
         result.add(row);
       }
     } else {
-      result = new PostgreSQLResultSet(COUNT_COLUMN, new PostgreSQLResultSet.Plan(steps));
+      result = new PostgreSQLResultSet(COUNT_COLUMN, new PostgreSQLResultSet.Plan(steps)).rowless();
       final ResultInternal row = new ResultInternal(db);
       row.setProperty("count", count);
       result.add(row);

@@ -38,12 +38,19 @@ public final class WritePlan {
     PostgreSQLResultSet run(Database database);
   }
 
-  private final List<String> steps;
-  private final Body         body;
+  private final List<String>                       steps;
+  private final List<PostgreSQLResultSet.Column> columns;
+  private final Body                               body;
 
-  WritePlan(final List<String> steps, final Body body) {
+  WritePlan(final List<String> steps, final List<PostgreSQLResultSet.Column> columns, final Body body) {
     this.steps = List.copyOf(steps);
+    this.columns = List.copyOf(columns);
     this.body = body;
+  }
+
+  /** The columns of the rows of the {@code RETURNING} list, empty for a statement without one: it answers with a tag alone. */
+  public List<PostgreSQLResultSet.Column> columns() {
+    return columns;
   }
 
   /** One line per step: how the rows are found, then what is done to them. */

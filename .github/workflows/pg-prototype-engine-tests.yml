@@ -104,5 +104,8 @@ jobs:
           java-version: 21
           cache: "maven"
 
+      # The second pattern is the wire tests of the language (fork issue #12): they extend PostgresWireProtocolTestBase, which is package
+      # private, so they live in com.arcadedb.postgres and are named PostgreSQL*Test. They start an in-process server and connect with
+      # the JDBC driver of PostgreSQL.
       - name: Run the postgresw tests of the postgresql packages
-        run: ./mvnw test --batch-mode --errors --show-version -pl postgresw -am "-Dsurefire.includes=**/postgresql/**/*Test.java"
+        run: ./mvnw test --batch-mode --errors --show-version -pl postgresw -am "-Dsurefire.includes=**/postgresql/**/*Test.java,**/postgres/PostgreSQL*Test.java"

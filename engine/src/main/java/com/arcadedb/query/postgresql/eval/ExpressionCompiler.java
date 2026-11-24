@@ -283,6 +283,8 @@ public final class ExpressionCompiler {
   }
 
   private Evaluable parameter(final Expression.ParameterRef reference) {
+    if (parameters.isDescribing())
+      return new Evaluable.Constant(parameters.describedType(reference.index()), null);
     final Object value = parameters.get(reference.index());
     final PgType type = PgType.ofJavaValue(value);
     if (type == null)
