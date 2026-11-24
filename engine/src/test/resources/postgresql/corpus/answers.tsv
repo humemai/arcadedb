@@ -459,24 +459,24 @@ err-string-agg-int-delimiter	multiset	-	ok	SELECT string_agg(name, 1) FROM perso
 err-string-agg-in-where	multiset	-	ok	SELECT name FROM person WHERE string_agg(name, ',') = 'x'	{"error":"42803"}
 agg-string-agg-over-window	ordered	-	pending	SELECT pid, string_agg(name, ',') OVER (PARTITION BY city) AS names FROM person ORDER BY pid	{"columns":["pid","names"],"types":["int4","text"],"rows":[[1,"Ada,Bo"],[2,"Ada,Bo"],[3,"Cy,Di"],[4,"Cy,Di"],[5,"Ed"]]}
 agg-array-agg	multiset	-	pending	SELECT array_agg(pid) AS ids FROM person WHERE pid < 3	{"columns":["ids"],"types":["_int4"],"rows":[[[1,2]]]}
-corr-count-in-select-list	ordered	-	ok	SELECT p.name, (SELECT count(*) FROM orders o WHERE o.pid = p.pid) AS n FROM person p ORDER BY p.pid	pending-server
-corr-count-in-where	ordered	-	ok	SELECT p.name FROM person p WHERE (SELECT count(*) FROM orders o WHERE o.pid = p.pid) >= 2 ORDER BY p.pid	pending-server
-corr-edge-degree	ordered	-	ok	SELECT p.name, (SELECT count(*) FROM works_at w WHERE w.source_id = p.id) AS jobs FROM person p ORDER BY p.pid	pending-server
-corr-max-with-coalesce	ordered	-	ok	SELECT p.pid, coalesce((SELECT max(o.total) FROM orders o WHERE o.pid = p.pid), 0) AS biggest FROM person p ORDER BY p.pid	pending-server
-corr-older-than	ordered	-	ok	SELECT p.pid, (SELECT count(*) FROM person q WHERE q.age > p.age) AS older FROM person p ORDER BY p.pid	pending-server
-corr-running-sum	ordered	-	ok	SELECT o.oid, (SELECT sum(x.oid) FROM orders x WHERE x.oid <= o.oid) AS running FROM orders o ORDER BY o.oid	pending-server
-corr-newest-per-key-by-count	ordered	-	ok	SELECT o.oid FROM orders o WHERE (SELECT count(*) FROM orders x WHERE x.pid = o.pid AND x.placed > o.placed) = 0 ORDER BY o.oid	pending-server
-corr-top-one-per-key	ordered	-	ok	SELECT p.name, (SELECT o.oid FROM orders o WHERE o.pid = p.pid ORDER BY o.placed DESC LIMIT 1) AS latest FROM person p ORDER BY p.pid	pending-server
-corr-no-row-is-null	ordered	-	ok	SELECT p.name, (SELECT o.oid FROM orders o WHERE o.pid = p.pid AND o.total > 90) AS big FROM person p ORDER BY p.pid	pending-server
-err-corr-two-rows	multiset	-	ok	SELECT (SELECT o.oid FROM orders o WHERE o.pid = p.pid) FROM person p	pending-server
-corr-outer-column-in-select-list	ordered	-	ok	SELECT p.pid, (SELECT p.age + count(*) FROM orders o WHERE o.pid = p.pid) AS x FROM person p ORDER BY p.pid	pending-server
-corr-innermost-scope-wins	ordered	-	ok	SELECT p.name, (SELECT count(*) FROM orders o WHERE o.pid = pid) AS n FROM person p ORDER BY p.pid	pending-server
-corr-outer-only-unqualified-name	ordered	-	ok	SELECT c.name, (SELECT count(*) FROM person p WHERE p.pid * 10 = cid) AS n FROM company c ORDER BY c.cid	pending-server
-corr-two-levels	ordered	-	ok	SELECT p.pid, (SELECT count(*) FROM orders o WHERE o.pid = p.pid AND o.total > (SELECT avg(o2.total) FROM orders o2 WHERE o2.pid = p.pid)) AS above FROM person p ORDER BY p.pid	pending-server
-corr-in-subquery	ordered	-	ok	SELECT p.name FROM person p WHERE p.pid IN (SELECT o.pid FROM orders o WHERE o.total > p.age) ORDER BY p.pid	pending-server
-corr-not-in-subquery	ordered	-	ok	SELECT p.name FROM person p WHERE p.pid NOT IN (SELECT o.pid FROM orders o WHERE o.total > p.age AND o.pid IS NOT NULL) ORDER BY p.pid	pending-server
-corr-in-order-by	ordered	-	ok	SELECT p.name FROM person p ORDER BY (SELECT count(*) FROM orders o WHERE o.pid = p.pid) DESC, p.pid	pending-server
-corr-join-inside-the-subquery	ordered	-	ok	SELECT p.name, (SELECT count(*) FROM orders o JOIN works_at w ON w.source_id = p.id WHERE o.pid = p.pid) AS n FROM person p ORDER BY p.pid	pending-server
-err-corr-missing-relation	multiset	-	ok	SELECT (SELECT count(*) FROM orders o WHERE o.pid = zz.pid) FROM person p	pending-server
-err-corr-missing-outer-column	multiset	-	ok	SELECT (SELECT count(*) FROM orders o WHERE o.pid = p.nope) FROM person p	pending-server
-err-corr-two-columns	multiset	-	ok	SELECT (SELECT o.oid, o.pid FROM orders o WHERE o.pid = p.pid) FROM person p	pending-server
+corr-count-in-select-list	ordered	-	ok	SELECT p.name, (SELECT count(*) FROM orders o WHERE o.pid = p.pid) AS n FROM person p ORDER BY p.pid	{"columns":["name","n"],"types":["varchar","int8"],"rows":[["Ada",2],["Bo",1],["Cy",0],["Di",2],["Ed",0]]}
+corr-count-in-where	ordered	-	ok	SELECT p.name FROM person p WHERE (SELECT count(*) FROM orders o WHERE o.pid = p.pid) >= 2 ORDER BY p.pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Di"]]}
+corr-edge-degree	ordered	-	ok	SELECT p.name, (SELECT count(*) FROM works_at w WHERE w.source_id = p.id) AS jobs FROM person p ORDER BY p.pid	{"columns":["name","jobs"],"types":["varchar","int8"],"rows":[["Ada",2],["Bo",1],["Cy",1],["Di",1],["Ed",0]]}
+corr-max-with-coalesce	ordered	-	ok	SELECT p.pid, coalesce((SELECT max(o.total) FROM orders o WHERE o.pid = p.pid), 0) AS biggest FROM person p ORDER BY p.pid	{"columns":["pid","biggest"],"types":["int4","numeric"],"rows":[[1,25.50],[2,99.99],[3,0],[4,7.25],[5,0]]}
+corr-older-than	ordered	-	ok	SELECT p.pid, (SELECT count(*) FROM person q WHERE q.age > p.age) AS older FROM person p ORDER BY p.pid	{"columns":["pid","older"],"types":["int4","int8"],"rows":[[1,2],[2,1],[3,0],[4,3],[5,0]]}
+corr-running-sum	ordered	-	ok	SELECT o.oid, (SELECT sum(x.oid) FROM orders x WHERE x.oid <= o.oid) AS running FROM orders o ORDER BY o.oid	{"columns":["oid","running"],"types":["int4","int8"],"rows":[[100,100],[101,201],[102,303],[103,406],[104,510],[105,615]]}
+corr-newest-per-key-by-count	ordered	-	ok	SELECT o.oid FROM orders o WHERE (SELECT count(*) FROM orders x WHERE x.pid = o.pid AND x.placed > o.placed) = 0 ORDER BY o.oid	{"columns":["oid"],"types":["int4"],"rows":[[101],[102],[104],[105]]}
+corr-top-one-per-key	ordered	-	ok	SELECT p.name, (SELECT o.oid FROM orders o WHERE o.pid = p.pid ORDER BY o.placed DESC LIMIT 1) AS latest FROM person p ORDER BY p.pid	{"columns":["name","latest"],"types":["varchar","int4"],"rows":[["Ada",101],["Bo",102],["Cy",null],["Di",104],["Ed",null]]}
+corr-no-row-is-null	ordered	-	ok	SELECT p.name, (SELECT o.oid FROM orders o WHERE o.pid = p.pid AND o.total > 90) AS big FROM person p ORDER BY p.pid	{"columns":["name","big"],"types":["varchar","int4"],"rows":[["Ada",null],["Bo",102],["Cy",null],["Di",null],["Ed",null]]}
+err-corr-two-rows	multiset	-	ok	SELECT (SELECT o.oid FROM orders o WHERE o.pid = p.pid) FROM person p	{"error":"21000"}
+corr-outer-column-in-select-list	ordered	-	ok	SELECT p.pid, (SELECT p.age + count(*) FROM orders o WHERE o.pid = p.pid) AS x FROM person p ORDER BY p.pid	{"columns":["pid","x"],"types":["int4","int8"],"rows":[[1,38],[2,42],[3,null],[4,31],[5,52]]}
+corr-innermost-scope-wins	ordered	-	ok	SELECT p.name, (SELECT count(*) FROM orders o WHERE o.pid = pid) AS n FROM person p ORDER BY p.pid	{"columns":["name","n"],"types":["varchar","int8"],"rows":[["Ada",5],["Bo",5],["Cy",5],["Di",5],["Ed",5]]}
+corr-outer-only-unqualified-name	ordered	-	ok	SELECT c.name, (SELECT count(*) FROM person p WHERE p.pid * 10 = cid) AS n FROM company c ORDER BY c.cid	{"columns":["name","n"],"types":["varchar","int8"],"rows":[["Acme",1],["Birch",1],["Cedar",1]]}
+corr-two-levels	ordered	-	ok	SELECT p.pid, (SELECT count(*) FROM orders o WHERE o.pid = p.pid AND o.total > (SELECT avg(o2.total) FROM orders o2 WHERE o2.pid = p.pid)) AS above FROM person p ORDER BY p.pid	{"columns":["pid","above"],"types":["int4","int8"],"rows":[[1,1],[2,0],[3,0],[4,1],[5,0]]}
+corr-in-subquery	ordered	-	ok	SELECT p.name FROM person p WHERE p.pid IN (SELECT o.pid FROM orders o WHERE o.total > p.age) ORDER BY p.pid	{"columns":["name"],"types":["varchar"],"rows":[["Bo"]]}
+corr-not-in-subquery	ordered	-	ok	SELECT p.name FROM person p WHERE p.pid NOT IN (SELECT o.pid FROM orders o WHERE o.total > p.age AND o.pid IS NOT NULL) ORDER BY p.pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Cy"],["Di"],["Ed"]]}
+corr-in-order-by	ordered	-	ok	SELECT p.name FROM person p ORDER BY (SELECT count(*) FROM orders o WHERE o.pid = p.pid) DESC, p.pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Di"],["Bo"],["Cy"],["Ed"]]}
+corr-join-inside-the-subquery	ordered	-	ok	SELECT p.name, (SELECT count(*) FROM orders o JOIN works_at w ON w.source_id = p.id WHERE o.pid = p.pid) AS n FROM person p ORDER BY p.pid	{"columns":["name","n"],"types":["varchar","int8"],"rows":[["Ada",4],["Bo",1],["Cy",0],["Di",2],["Ed",0]]}
+err-corr-missing-relation	multiset	-	ok	SELECT (SELECT count(*) FROM orders o WHERE o.pid = zz.pid) FROM person p	{"error":"42P01"}
+err-corr-missing-outer-column	multiset	-	ok	SELECT (SELECT count(*) FROM orders o WHERE o.pid = p.nope) FROM person p	{"error":"42703"}
+err-corr-two-columns	multiset	-	ok	SELECT (SELECT o.oid, o.pid FROM orders o WHERE o.pid = p.pid) FROM person p	{"error":"42601"}
