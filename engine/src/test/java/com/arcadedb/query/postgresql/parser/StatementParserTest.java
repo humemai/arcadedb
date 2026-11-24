@@ -434,7 +434,7 @@ class StatementParserTest {
         new String[] { "SELECT ARRAY[1, 2]", "ARRAY is not supported" },
         new String[] { "SELECT ROW(1, 2)", "ROW is not supported" },
         new String[] { "SELECT (1, 2)", "A row constructor is not supported" },
-        new String[] { "SELECT count(*) OVER () FROM t", "OVER is not supported by the postgresql language (line 1, column 17)" },
+        new String[] { "SELECT count(*) OVER w FROM t", "OVER W is not supported by the postgresql language (line 1, column 17)" },
         new String[] { "SELECT count(*) FILTER (WHERE a) FROM t", "FILTER is not supported" },
         new String[] { "SELECT DISTINCT ON (a) a FROM t", "DISTINCT ON is not supported by the postgresql language (line 1, column 17)" },
         new String[] { "SELECT 1 INTO t", "SELECT INTO is not supported" },
