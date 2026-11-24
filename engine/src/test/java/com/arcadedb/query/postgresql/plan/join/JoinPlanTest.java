@@ -405,6 +405,71 @@ class JoinPlanTest extends TestHelper {
     }
     assertThat(rows("SELECT o.* FROM person p JOIN orders o ON o.pid = p.pid WHERE p.pid = 2").get(0)).hasSize(8);
   }
+  // ---- RIGHT and FULL JOIN (fork issue #57) ----
+
+  @Test
+  void aRightJoinKeepsTheRightRowsWithoutAPartnerAndIsTheMirrorOfALeftJoin() {
+    final String right = "SELECT p.name, o.oid FROM person p RIGHT JOIN orders o ON o.pid = p.pid ORDER BY o.oid";
+    assertThat(rows(right)).containsExactly(row("Ada", 100), row("Ada", 101), row("Bo", 102), row("Di", 103), row("Di", 104),
+        row(null, 105));
+    assertThat(plan(right)).contains("HASH JOIN RIGHT").contains("(build p)");
+    assertThat(rows("SELECT o.oid, p.name FROM orders o LEFT JOIN person p ON o.pid = p.pid ORDER BY o.oid"))
+        .as("the same rows as the mirrored LEFT join").containsExactly(row(100, "Ada"), row(101, "Ada"), row(102, "Bo"), row(103, "Di"),
+            row(104, "Di"), row(105, null));
+    assertThat(rows("SELECT p.name, o.oid FROM person p RIGHT JOIN orders o ON o.pid = p.pid WHERE p.city = 'Delft' ORDER BY o.oid"))
+        .as("a term on the null-supplying side stays above the join").containsExactly(row("Ada", 100), row("Ada", 101), row("Bo", 102));
+    assertThat(count("SELECT count(*) FROM person a RIGHT JOIN company c ON a.pid > c.cid / 10")).as("nested loop").isEqualTo(9);
+    assertThat(plan("SELECT count(*) FROM person a RIGHT JOIN company c ON a.pid > c.cid / 10")).contains("NESTED LOOP RIGHT");
+    assertThat(rows("SELECT pid, o.oid FROM person p RIGHT JOIN orders o USING (pid) ORDER BY o.oid")).as("the merged column is the right one")
+        .containsExactly(row(1, 100), row(1, 101), row(2, 102), row(4, 103), row(4, 104), row(null, 105));
+  }
+
+  @Test
+  void aFullJoinKeepsTheRowsOfBothSidesThatHaveNoPartner() {
+    final String full = "SELECT p.name, o.oid FROM person p FULL JOIN orders o ON o.pid = p.pid ORDER BY p.pid, o.oid";
+    assertThat(rows(full)).containsExactly(row("Ada", 100), row("Ada", 101), row("Bo", 102), row("Cy", null), row("Di", 103),
+        row("Di", 104), row("Ed", null), row(null, 105));
+    assertThat(plan(full)).contains("HASH JOIN FULL");
+    assertThat(rows("SELECT p.name, o.oid FROM person p FULL JOIN orders o ON o.pid = p.pid WHERE p.pid IS NULL OR o.oid IS NULL ORDER BY p.pid, o.oid"))
+        .containsExactly(row("Cy", null), row("Ed", null), row(null, 105));
+    assertThat(count("SELECT count(*) FROM orders a FULL JOIN orders b ON a.pid = b.pid")).as("two NULL keys do not match, both come out")
+        .isEqualTo(9 + 2);
+    assertThat(count("SELECT count(*) FROM person a FULL JOIN company c ON a.pid > c.cid / 10 + 3")).as("nested loop: 1 match, 4 and 2 alone")
+        .isEqualTo(7);
+    assertThat(plan("SELECT count(*) FROM person a FULL JOIN company c ON a.pid > c.cid / 10 + 3")).contains("NESTED LOOP FULL");
+    assertThat(count("SELECT count(*) FROM person p FULL JOIN (SELECT cid FROM company WHERE cid < 0) c ON p.pid = c.cid")).isEqualTo(5);
+    assertThat(rows("SELECT p.name, o.oid FROM person p FULL JOIN orders o ON o.pid = p.pid AND o.total > 9 ORDER BY p.pid, o.oid").size())
+        .as("a residual that fails leaves both rows alone: 3 pairs, 3 persons and 3 orders").isEqualTo(9);
+  }
+
+  @Test
+  void theMergedColumnOfAFullJoinWithUsingIsTheCoalesceOfBothSides() {
+    assertThat(rows("SELECT pid, p.name, oid FROM person p FULL JOIN orders o USING (pid) ORDER BY pid, oid")).containsExactly(
+        row(1, "Ada", 100), row(1, "Ada", 101), row(2, "Bo", 102), row(3, "Cy", null), row(4, "Di", 103), row(4, "Di", 104),
+        row(5, "Ed", null), row(null, null, 105));
+    assertThat(rows("SELECT * FROM (SELECT pid, name FROM person WHERE pid < 4) a FULL JOIN (SELECT pid, oid FROM orders WHERE oid > 102) b USING (pid) ORDER BY pid, oid"))
+        .containsExactly(row(1, "Ada", null), row(2, "Bo", null), row(3, "Cy", null), row(4, null, 103), row(4, null, 104),
+            row(null, null, 105));
+    assertThat(rows("SELECT a.pid, b.pid FROM person a FULL JOIN orders b USING (pid) WHERE oid IS NULL ORDER BY a.pid"))
+        .as("each side keeps its own column under its own name").containsExactly(row(3, null), row(5, null));
+  }
+
+  @Test
+  void aRightOrFullJoinHoldsItsBuildSideUnderTheCapAndTakesNoIndexLookup() {
+    for (final String kind : new String[] { "RIGHT", "FULL" }) {
+      final String hash = "SELECT count(*) FROM person p " + kind + " JOIN orders o ON o.pid = p.pid";
+      assertThatThrownBy(() -> planned(hash, 100L).execute(database).hasNext()).isInstanceOfSatisfying(PostgreSQLEvaluationException.class,
+          e -> assertThat(e.getSqlState()).isEqualTo("53200"));
+      final String nested = "SELECT count(*) FROM person p " + kind + " JOIN orders o ON o.pid < p.pid";
+      assertThatThrownBy(() -> planned(nested, 100L).execute(database).hasNext()).isInstanceOfSatisfying(PostgreSQLEvaluationException.class,
+          e -> assertThat(e.getSqlState()).isEqualTo("53200"));
+      assertThat(plan("SELECT count(*) FROM works_at w " + kind + " JOIN person p ON w.source_id = p.id")).doesNotContain("INDEX NESTED LOOP")
+          .doesNotContain("TRAVERSE");
+    }
+    assertThatThrownBy(() -> rows("SELECT 1 FROM person p FULL JOIN company c")).as("a FULL join needs ON or USING")
+        .isInstanceOf(com.arcadedb.query.postgresql.PostgreSQLSyntaxException.class);
+  }
+
   // ---- CROSS JOIN (fork issue #61) ----
 
   @Test

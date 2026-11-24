@@ -246,6 +246,11 @@ public final class JoinPlanner {
       this.using = using;
       final List<RelationSource.Field> all = new ArrayList<>(left.fields());
       all.addAll(right.fields());
+      // the merged column of a FULL join with USING is coalesce(left, right): a value that neither input holds, so the join
+      // appends it to its rows, after the columns of the two inputs, in a field that no relation name reaches
+      if (type == TableReference.JoinType.FULL)
+        for (final Using column : using)
+          all.add(new RelationSource.Field("", column.name(), column.type(), column.typeName()));
       this.fields = List.copyOf(all);
       final Set<String> names = new LinkedHashSet<>(left.relations());
       names.addAll(right.relations());
@@ -283,10 +288,15 @@ public final class JoinPlanner {
       final Set<Integer> usedLeft = new java.util.HashSet<>();
       final Set<Integer> usedRight = new java.util.HashSet<>();
       final List<RelationSource.Output> out = new ArrayList<>();
+      int appended = leftColumns + right.fields().size();
       for (final Using column : using) {
         usedLeft.add(column.leftOutput);
         usedRight.add(column.rightOutput);
-        out.add(new RelationSource.Output(column.name, leftOutputs.get(column.leftOutput).index(), column.type, column.typeName));
+        // the left value for INNER and LEFT, the right value for RIGHT (the preserved side), coalesce(left, right) for FULL
+        final int slot = type == TableReference.JoinType.FULL ? appended++
+            : type == TableReference.JoinType.RIGHT ? rightOutputs.get(column.rightOutput).index() + leftColumns
+            : leftOutputs.get(column.leftOutput).index();
+        out.add(new RelationSource.Output(column.name, slot, column.type, column.typeName));
       }
       for (int i = 0; i < leftOutputs.size(); i++)
         if (!usedLeft.contains(i))
@@ -302,6 +312,8 @@ public final class JoinPlanner {
     @Override
     Located locate(final int slot) {
       final int leftColumns = left.fields().size();
+      if (slot >= leftColumns + right.fields().size())
+        return null; // the merged column of a FULL join with USING has no table behind it
       return slot < leftColumns ? left.locate(slot) : right.locate(slot - leftColumns);
     }
   }
@@ -602,6 +614,8 @@ public final class JoinPlanner {
     final long rightRows = estimate(right);
     final JoinSupport support = support(join, candidates);
     final boolean inner = join.type == TableReference.JoinType.INNER;
+    // an index nested loop and a walk read the right input for each left row: only a join that keeps no unmatched right row
+    final boolean probesRight = join.type == TableReference.JoinType.INNER || join.type == TableReference.JoinType.LEFT;
 
     // fork issue #52: the rule applies only where the start of the join is a small set that the statement names
     final String start = traversalRule ? boundStart(left) : null;
@@ -611,7 +625,7 @@ public final class JoinPlanner {
     boolean buildLeft = false;
     // the shape of a walk is there (the first hop, or the read of the far end of an edge) and only the start decides
     boolean walkShape = false;
-    if (strategy == JoinSource.Strategy.HASH && traversalRule) {
+    if (strategy == JoinSource.Strategy.HASH && traversalRule && probesRight) {
       traversal = traversal(join, right, candidates);
       if (traversal != null) {
         walkShape = true;
@@ -622,12 +636,14 @@ public final class JoinPlanner {
       }
     }
     if (strategy == JoinSource.Strategy.HASH) {
-      probe = indexProbe(join, right, candidates, leftRows, start != null);
+      probe = probesRight ? indexProbe(join, right, candidates, leftRows, start != null) : null;
       if (probe != null)
         strategy = JoinSource.Strategy.INDEX_NESTED_LOOP;
       else
-        buildLeft = inner && leftRows < rightRows;
-      walkShape |= traversalRule && readsFarEnd(join, right, candidates);
+        // RIGHT builds the left input and probes with the preserved right one, the mirror of LEFT; FULL builds the smaller side
+        buildLeft = join.type == TableReference.JoinType.RIGHT
+            || ((inner || join.type == TableReference.JoinType.FULL) && leftRows < rightRows);
+      walkShape |= traversalRule && probesRight && readsFarEnd(join, right, candidates);
     }
     final boolean farEnd = strategy == JoinSource.Strategy.INDEX_NESTED_LOOP && start != null
         && edgeEnd(join, candidates.get(probe.key())) != null;
@@ -665,7 +681,8 @@ public final class JoinPlanner {
     if (keys.isEmpty())
       estimated = leftRows > Long.MAX_VALUE / Math.max(1L, rightRows) ? Long.MAX_VALUE : leftRows * Math.max(1L, rightRows);
     else
-      estimated = inner ? Math.max(leftRows, rightRows) : leftRows;
+      estimated = inner ? Math.max(leftRows, rightRows) : join.type == TableReference.JoinType.RIGHT ? rightRows
+          : join.type == TableReference.JoinType.FULL ? Math.max(leftRows, rightRows) : leftRows;
     final String reason;
     if (strategy == JoinSource.Strategy.TRAVERSE || farEnd)
       reason = " [traversal: start bound by " + start + "]";
@@ -673,9 +690,22 @@ public final class JoinPlanner {
       reason = " [" + (strategy == JoinSource.Strategy.HASH ? "hash join" : "index nested loop") + ": no bound start]";
     else
       reason = "";
+    // the merged column of FULL ... USING (a, b): coalesce(left, right) in the common type of each pair, read from the join keys
+    List<JoinSource.Merge> merges = List.of();
+    if (join.type == TableReference.JoinType.FULL && !join.using.isEmpty()) {
+      if (keys.size() != join.using.size())
+        throw new com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException(
+            "FULL JOIN with USING on columns of these types is not supported by the postgresql language");
+      final List<JoinSource.Merge> list = new ArrayList<>();
+      for (final JoinSource.Key key : keys)
+        list.add(new JoinSource.Merge(key.left(), key.right()));
+      merges = list;
+    }
+    final List<RelationSource.Field> hidden = join.fields().subList(join.left.fields().size() + join.right.fields().size(),
+        join.fields().size());
     final JoinSource source = new JoinSource(strategy, join.type, left, right, keys, residual, buildLeft, probe, traversal, capBytes,
         header + " [" + describe(support) + "]" + reason, rightLines, support,
-        warns(join, support) ? warningOf(join, condition) : null, estimated).withOutputs(join.outputs());
+        warns(join, support) ? warningOf(join, condition) : null, estimated, hidden, merges).withOutputs(join.outputs());
     if (strategy == JoinSource.Strategy.TRAVERSE || farEnd)
       boundStarts.put(source, start);
     return source;

@@ -60,8 +60,8 @@ nulls-order	ok	inside	-	SELECT name FROM person ORDER BY age DESC NULLS LAST, na
 limit-offset	ok	inside	-	SELECT name FROM person ORDER BY name LIMIT 2 OFFSET 1	written for the parser	-
 is-null	ok	inside	-	SELECT name FROM person WHERE age IS NULL OR age IS NOT NULL	written for the parser	-
 division	ok	inside	-	SELECT total / 2, oid / 2 FROM orders WHERE oid = 101	written for the parser	-
-right-join	ok	outside	-	SELECT * FROM a RIGHT JOIN b ON a.x = b.x	written for the parser	42P01
-full-join	ok	outside	-	SELECT * FROM a FULL OUTER JOIN b ON a.x = b.x	written for the parser	42P01
+right-join	ok	inside	-	SELECT * FROM a RIGHT JOIN b ON a.x = b.x	written for the parser	42P01
+full-join	ok	inside	-	SELECT * FROM a FULL OUTER JOIN b ON a.x = b.x	written for the parser	42P01
 cross-join	ok	inside	-	SELECT * FROM a CROSS JOIN b	written for the parser	42P01
 natural-join	ok	outside	-	SELECT * FROM a NATURAL JOIN b	written for the parser	42P01
 join-using	ok	inside	-	SELECT * FROM a JOIN b USING (x)	written for the parser	42P01
@@ -1437,8 +1437,8 @@ syn-underscore-literal	ok	unknown	-	SELECT 1_000	s3	-
 syn-escape-string	ok	unknown	-	SELECT E'a\\nb'	s3	-
 syn-dollar-quote	ok	unknown	-	SELECT $$dollar$$	s3	-
 syn-empty-select-list	ok	outside	-	SELECT FROM person	s3	-
-out-right-join	ok	outside	-	SELECT * FROM person p RIGHT JOIN company c ON p.pid = c.cid	s3	-
-out-full-join	ok	outside	-	SELECT * FROM person p FULL JOIN company c ON p.pid = c.cid	s3	-
+out-right-join	ok	inside	-	SELECT * FROM person p RIGHT JOIN company c ON p.pid = c.cid	s3	-
+out-full-join	ok	inside	-	SELECT * FROM person p FULL JOIN company c ON p.pid = c.cid	s3	-
 out-cross-join	ok	inside	-	SELECT * FROM person CROSS JOIN company	s3	-
 out-join-using	ok	inside	-	SELECT * FROM person p JOIN orders o USING (pid)	s3	-
 out-natural-join	ok	outside	-	SELECT * FROM person NATURAL JOIN orders	s3	-
@@ -1584,7 +1584,7 @@ c4-using-chain	ok	inside	-	SELECT * FROM a JOIN b USING (x) JOIN c USING (x)	wri
 c4-using-then-on	ok	inside	-	SELECT * FROM a JOIN b USING (x) JOIN c ON c.x = a.x	written for the parser	42P01
 c4-using-quoted	ok	inside	-	SELECT * FROM a JOIN b USING ("X")	written for the parser	42P01
 c4-using-alias	ok	outside	-	SELECT * FROM a JOIN b USING (x) AS j	written for the parser	42P01
-c4-using-right	ok	outside	-	SELECT * FROM a RIGHT JOIN b USING (x)	written for the parser	42P01
+c4-using-right	ok	inside	-	SELECT * FROM a RIGHT JOIN b USING (x)	written for the parser	42P01
 c4-using-empty-list	syntax-error	unknown	-	SELECT * FROM a JOIN b USING ()	written for the parser	42601
 c4-join-without-condition	syntax-error	unknown	-	SELECT * FROM a JOIN b	written for the parser	42601
 c5-exists-select-list	ok	inside	-	SELECT EXISTS (SELECT 1 FROM t WHERE t.a = u.a) FROM u	written for the parser	42P01
@@ -1610,3 +1610,8 @@ g2-cross-join-then-inner	ok	inside	-	SELECT * FROM a CROSS JOIN b JOIN c ON a.x 
 g2-cross-join-in-parens	ok	inside	-	SELECT * FROM a JOIN (b CROSS JOIN c) ON a.x = b.x	g2 (fork issue #61)	42P01
 g2-cross-join-on	syntax-error	unknown	-	SELECT * FROM a CROSS JOIN b ON a.x = b.x	g2 (fork issue #61)	42601
 g2-cross-join-using	syntax-error	unknown	-	SELECT * FROM a CROSS JOIN b USING (x)	g2 (fork issue #61)	42601
+g3-right-outer-join-using	pending-server	inside	-	SELECT * FROM a RIGHT OUTER JOIN b USING (x)	g3 (fork issue #57)	-
+g3-full-outer-join-using	pending-server	inside	-	SELECT * FROM a FULL OUTER JOIN b USING (x, y)	g3 (fork issue #57)	-
+g3-join-chain-all-kinds	pending-server	inside	-	SELECT * FROM a LEFT JOIN b ON a.x = b.x RIGHT JOIN c ON b.y = c.y FULL JOIN d ON c.z = d.z INNER JOIN e ON d.w = e.w	g3 (fork issue #57)	-
+g3-full-join-no-condition	pending-server	unknown	-	SELECT * FROM a FULL JOIN b	g3 (fork issue #57)	-
+g3-natural-full-join-stays-out	pending-server	outside	-	SELECT * FROM a NATURAL FULL JOIN b	g3 (fork issue #57)	-

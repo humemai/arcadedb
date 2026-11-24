@@ -126,7 +126,16 @@ public final class BuildMemory {
    * @throws PostgreSQLEvaluationException with SQLSTATE {@code 53200} when the rows kept so far are over the cap
    */
   public void charge(final Object[] row) {
-    used += sizeOf(row);
+    chargeBytes(sizeOf(row));
+  }
+
+  /**
+   * Charges bytes that a step keeps besides its rows (the matched flag of a build row of a {@code FULL} join).
+   *
+   * @throws PostgreSQLEvaluationException with SQLSTATE {@code 53200} when the bytes kept so far are over the cap
+   */
+  public void chargeBytes(final long bytes) {
+    used += bytes;
     if (used > cap)
       throw new PostgreSQLEvaluationException("53200",
           "out of memory: " + holder + " holds more than " + cap + " bytes of rows in memory (estimated). Hint: " + hint);
