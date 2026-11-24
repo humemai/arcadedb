@@ -1524,7 +1524,7 @@ w1-out-on-conflict	ok	inside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT 
 w1-out-overriding	ok	outside	-	INSERT INTO company OVERRIDING SYSTEM VALUE VALUES (1)	w1 (fork issue #29)	-
 w1-out-insert-with	ok	outside	-	INSERT INTO company WITH x AS (SELECT 1) SELECT * FROM x	w1 (fork issue #29)	-
 w1-out-insert-parenthesised	ok	outside	-	INSERT INTO company (SELECT 1, 'x')	w1 (fork issue #29)	22P02
-w1-out-update-from	ok	outside	-	UPDATE person SET age = 1 FROM company WHERE person.pid = company.cid	w1 (fork issue #29)	-
+w1-out-update-from	ok	inside	-	UPDATE person SET age = 1 FROM company WHERE person.pid = company.cid	w1 (fork issue #29)	-
 w1-out-update-multi	ok	outside	-	UPDATE person SET (age, name) = (1, 'x')	w1 (fork issue #29)	-
 w1-out-delete-using	ok	outside	-	DELETE FROM person USING company WHERE person.pid = company.cid	w1 (fork issue #29)	-
 w1-out-update-current-of	ok	outside	-	UPDATE person SET age = 1 WHERE CURRENT OF c	w1 (fork issue #29)	-
