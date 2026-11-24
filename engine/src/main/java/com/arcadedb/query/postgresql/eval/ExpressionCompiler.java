@@ -726,18 +726,22 @@ public final class ExpressionCompiler {
    */
   private Evaluable inSubquery(final Expression.InSubquery e) {
     final Evaluable operand = resolveOutput(compile(e.operand()));
-    final Subquery subquery = planSubquery(e.query());
-    if (subquery.types().size() != 1)
+    final SubqueryPlanner planner = scope.subqueries();
+    final SubqueryPlanner.CorrelatedRows correlated = planner == null ? null : planner.correlated(e.query(), this);
+    final Subquery subquery = correlated != null ? null : planSubquery(e.query());
+    final List<PgType> columnTypes = correlated != null ? correlated.types() : subquery.types();
+    final List<String> columnTypeNames = correlated != null ? correlated.typeNames() : subquery.typeNames();
+    if (columnTypes.size() != 1)
       throw new PostgreSQLEvaluationException("42601", "subquery has too many columns");
-    final PgType innerType = subquery.types().get(0);
+    final PgType innerType = columnTypes.get(0);
     final boolean negated = e.negated();
 
     // the comparison of the operand with a row, typed as PostgreSQL types "operand = value"
     final Evaluable equal = comparison(Expression.BinaryOperator.EQUAL, new Evaluable.Slot(operand.type(), operand.typeName(), 0),
-        new Evaluable.Slot(innerType, subquery.typeNames().get(0), 1));
+        new Evaluable.Slot(innerType, columnTypeNames.get(0), 1));
 
     final Function<Object, Object> key = hashKey(operand.type(), innerType);
-    if (key != null) {
+    if (key != null && correlated == null) {
       final InSet set = new InSet(subquery, key);
       return new Evaluable.Node(PgType.BOOL, row -> {
         final Object value = operand.eval(row);
@@ -754,7 +758,7 @@ public final class ExpressionCompiler {
 
     return new Evaluable.Node(PgType.BOOL, row -> {
       final Object value = operand.eval(row);
-      final List<Object[]> rows = subquery.rows();
+      final List<Object[]> rows = correlated != null ? correlated.rows(row) : subquery.rows();
       if (rows.isEmpty())
         return negated;
       boolean unknown = false;
@@ -784,6 +788,33 @@ public final class ExpressionCompiler {
    * row. It is run once, when the first row asks for it.
    */
   private Evaluable scalarSubquery(final Expression.ScalarSubquery e) {
+    final SubqueryPlanner planner = scope.subqueries();
+    final SubqueryPlanner.CorrelatedRows correlated = planner == null ? null : planner.correlated(e.query(), this);
+    if (correlated != null) {
+      if (correlated.types().size() != 1)
+        throw new PostgreSQLEvaluationException("42601", "subquery must return only one column");
+      final PgType type = correlated.types().get(0);
+      final String typeName = correlated.typeNames().get(0);
+      return new Evaluable() {
+        @Override
+        public PgType type() {
+          return type;
+        }
+
+        @Override
+        public String typeName() {
+          return typeName;
+        }
+
+        @Override
+        public Object eval(final Object[] row) {
+          final List<Object[]> rows = correlated.rows(row);
+          if (rows.size() > 1)
+            throw new PostgreSQLEvaluationException("21000", "more than one row returned by a subquery used as an expression");
+          return rows.isEmpty() ? null : rows.get(0)[0];
+        }
+      };
+    }
     final Subquery subquery = planSubquery(e.query());
     if (subquery.types().size() != 1)
       throw new PostgreSQLEvaluationException("42601", "subquery must return only one column");

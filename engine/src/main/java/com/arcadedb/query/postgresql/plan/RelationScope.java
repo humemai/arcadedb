@@ -55,6 +55,7 @@ public final class RelationScope implements ExpressionCompiler.Scope {
   private final RelationalCatalog          catalog;
   private final SubqueryPlanner            subqueries;
   private final List<RelationSource.Output> outputs;
+  private final ExpressionCompiler.Scope   outer;
 
   public RelationScope(final List<RelationSource.Field> fields, final RelationalCatalog catalog) {
     this(fields, catalog, null);
@@ -73,10 +74,20 @@ public final class RelationScope implements ExpressionCompiler.Scope {
    */
   public RelationScope(final List<RelationSource.Field> fields, final RelationalCatalog catalog, final SubqueryPlanner subqueries,
       final List<RelationSource.Output> outputs) {
+    this(fields, catalog, subqueries, outputs, null);
+  }
+
+  /**
+   * @param outer the scope of the query around a correlated subquery, asked for a name that this scope does not have; {@code null}
+   *              for a query that is not inside another one
+   */
+  public RelationScope(final List<RelationSource.Field> fields, final RelationalCatalog catalog, final SubqueryPlanner subqueries,
+      final List<RelationSource.Output> outputs, final ExpressionCompiler.Scope outer) {
     this.fields = List.copyOf(fields);
     this.catalog = catalog;
     this.subqueries = subqueries;
     this.outputs = outputs == null ? null : List.copyOf(outputs);
+    this.outer = outer;
   }
 
   /** The output that an unqualified name stands for: the exact name first, then the one that differs in case (not for a quoted name). */
@@ -110,8 +121,30 @@ public final class RelationScope implements ExpressionCompiler.Scope {
     return fields;
   }
 
+  /**
+   * The column of this query, or else of the query around it. The innermost scope wins, as in PostgreSQL: the outer one is asked only
+   * when the relation of a qualified name is not in this {@code FROM} clause ({@code 42P01}) or an unqualified name is no column of
+   * it ({@code 42703}); a name that is ambiguous here, or a column that a relation of this scope lacks, stays an error.
+   */
   @Override
   public Evaluable column(final Expression.ColumnRef reference) {
+    if (outer == null)
+      return own(reference);
+    try {
+      return own(reference);
+    } catch (final PostgreSQLReferenceException notHere) {
+      if (!(reference.qualifier().isEmpty() ? "42703" : "42P01").equals(notHere.getSqlState()))
+        throw notHere;
+      try {
+        return outer.column(reference);
+      } catch (final PostgreSQLReferenceException notThereEither) {
+        // the relation is the outer query's but has no such column (42703) says more than that this scope lacks the relation
+        throw "42P01".equals(notThereEither.getSqlState()) ? notHere : notThereEither;
+      }
+    }
+  }
+
+  private Evaluable own(final Expression.ColumnRef reference) {
     final List<Name> qualifier = reference.qualifier();
     Name relation = null;
     if (qualifier.size() == 2) {

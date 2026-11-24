@@ -137,6 +137,11 @@ public final class JoinPlanner {
     /** Plans the subqueries of the expressions of the join conditions and of the terms placed below the joins. */
     SubqueryPlanner subqueries();
 
+    /** The scope of the query around this one when it is a correlated subquery: names that the join does not have are read there. */
+    default ExpressionCompiler.Scope outer() {
+      return null;
+    }
+
     /** The source of a subquery in the {@code FROM} clause: its rows, computed once. */
     RelationSource derived(TableReference.Subquery reference);
 
@@ -376,7 +381,7 @@ public final class JoinPlanner {
   // ---- the tree ----
 
   private RelationScope scope(final Node node) {
-    return new RelationScope(node.fields(), catalog, tables.subqueries(), node.outputs());
+    return new RelationScope(node.fields(), catalog, tables.subqueries(), node.outputs(), tables.outer());
   }
 
   private ExpressionCompiler compiler(final Node node) {
