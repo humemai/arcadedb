@@ -22,21 +22,23 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * {@code UPDATE [ONLY] table [[AS] alias] SET column = value [, ...] [WHERE condition] [RETURNING ...]}: {@code UpdateStmt} of
- * {@code gram.y} without {@code FROM}, a multiple-column assignment and {@code WHERE CURRENT OF}, which are refused with SQLSTATE
- * 0A000.
+ * {@code UPDATE [ONLY] table [[AS] alias] SET column = value [, ...] [FROM item [, ...]] [WHERE condition] [RETURNING ...]}:
+ * {@code UpdateStmt} of {@code gram.y} without a multiple-column assignment and {@code WHERE CURRENT OF}, which are refused with
+ * SQLSTATE 0A000.
  *
  * @param table       the table; {@code only} is true for {@code UPDATE ONLY t}: the rows of the table itself, without its subtypes
  * @param assignments one per {@code SET} item, in the order written
+ * @param from        the {@code FROM} items, which the {@code SET} values and the condition may read; empty when there is none
  * @param where       the condition, or {@code null} when every row is updated
  * @param returning   the {@code RETURNING} list, empty when there is none
  */
-public record UpdateStatement(SourcePosition position, TableReference.Table table, List<Assignment> assignments, Expression where,
-                              List<SelectItem> returning) implements WriteStatement {
+public record UpdateStatement(SourcePosition position, TableReference.Table table, List<Assignment> assignments,
+                              List<TableReference> from, Expression where, List<SelectItem> returning) implements WriteStatement {
   public UpdateStatement {
     Objects.requireNonNull(position, "position");
     Objects.requireNonNull(table, "table");
     assignments = List.copyOf(assignments);
+    from = List.copyOf(from);
     returning = List.copyOf(returning);
     if (assignments.isEmpty())
       throw new IllegalArgumentException("An UPDATE has at least one assignment");
