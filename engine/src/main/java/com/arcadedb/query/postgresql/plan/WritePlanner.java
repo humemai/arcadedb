@@ -124,9 +124,14 @@ public final class WritePlanner {
   private final RelationalCatalog  catalog;
 
   public WritePlanner(final Database database, final Parameters parameters) {
+    this(database, RelationalCatalog.of(database), parameters);
+  }
+
+  /** A planner over a catalog that the caller keeps while the schema does not change (fork issue #88). */
+  public WritePlanner(final Database database, final RelationalCatalog catalog, final Parameters parameters) {
     this.database = database;
     this.parameters = parameters;
-    this.selectPlanner = new SelectPlanner(database, parameters);
+    this.selectPlanner = new SelectPlanner(database, catalog, parameters);
     this.catalog = selectPlanner.catalog();
   }
 

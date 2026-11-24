@@ -106,6 +106,11 @@ public class SelectPlanner {
     this(database, RelationalCatalog.of(database), parameters, joinMemoryCap, Map.of());
   }
 
+  /** A planner over a catalog that the caller keeps while the schema does not change (fork issue #88). */
+  public SelectPlanner(final Database database, final RelationalCatalog catalog, final Parameters parameters) {
+    this(database, catalog, parameters, BuildMemory.configuredCapBytes(), Map.of());
+  }
+
   private SelectPlanner(final Database database, final RelationalCatalog catalog, final Parameters parameters,
       final long joinMemoryCap, final Map<String, Cte> ctes) {
     this(database, catalog, parameters, joinMemoryCap, ctes, null);
