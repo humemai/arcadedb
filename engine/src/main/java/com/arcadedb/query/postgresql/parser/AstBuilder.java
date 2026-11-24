@@ -426,8 +426,10 @@ final class AstBuilder {
     if (context instanceof JoinRefContext join) {
       final TableReference left = tableReference(join.tableRef(0));
       final TableReference right = tableReference(join.tableRef(1));
-      final TableReference.JoinType type = join.joinKind() != null && has(join.joinKind(), PostgreSQLParser.LEFT)
-          ? TableReference.JoinType.LEFT : TableReference.JoinType.INNER;
+      final TableReference.JoinType type = join.joinKind() == null ? TableReference.JoinType.INNER
+          : has(join.joinKind(), PostgreSQLParser.LEFT) ? TableReference.JoinType.LEFT
+          : has(join.joinKind(), PostgreSQLParser.RIGHT) ? TableReference.JoinType.RIGHT
+          : has(join.joinKind(), PostgreSQLParser.FULL) ? TableReference.JoinType.FULL : TableReference.JoinType.INNER;
       final JoinQualContext qualification = join.joinQual();
       if (qualification.aExpr() != null)
         return new TableReference.Join(position(context.getStart()), left, type, right, expression(qualification.aExpr()));
