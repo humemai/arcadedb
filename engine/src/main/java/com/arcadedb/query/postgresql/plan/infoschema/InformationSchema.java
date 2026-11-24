@@ -54,7 +54,8 @@ import static com.arcadedb.query.postgresql.plan.infoschema.InfoType.YES_OR_NO;
  *
  * <p><b>What is NULL because the engine has no such information:</b> {@code schemata.schema_owner} and the default character set
  * columns, {@code columns.column_default} (the engine's property defaults are not part of the relational view), the collation,
- * character set, domain, scope, interval and identity columns of a column of a table, {@code columns.maximum_cardinality}, and
+ * character set, domain, scope and interval columns of a column of a table, the start, increment, maximum and minimum of an identity
+ * column, {@code columns.maximum_cardinality}, and
  * {@code tables.self_referencing_column_name}, {@code reference_generation}, the user-defined type columns and
  * {@code commit_action}. What is a constant: {@code is_deferrable} and {@code initially_deferred} are {@code NO} (the keys are
  * declared, nothing checks them and nothing defers them), {@code enforced} is {@code YES}, {@code match_option} is {@code NONE}
@@ -206,10 +207,14 @@ public final class InformationSchema {
       for (final Column column : table.columns()) {
         ++position;
         final ColumnAttributes a = ColumnAttributes.of(column.type());
+        // the record id and the id of an edge are given by the engine and cannot be chosen: GENERATED ALWAYS AS IDENTITY, as
+        // PostgreSQL reports a column of that kind (the start, increment, maximum and minimum of a sequence do not apply)
+        final boolean generated = column.isGeneratedAlways();
         rows.add(row(view, db, RelationalCatalog.SCHEMA, table.name(), column.name(), position, null, yesNo(column.nullable()),
             a.dataType(), null, a.characterOctetLength(), a.numericPrecision(), a.numericPrecisionRadix(), a.numericScale(),
             a.datetimePrecision(), null, null, null, null, null, null, null, null, null, null, null, db, PG_CATALOG, a.udtName(), null,
-            null, null, null, Integer.toString(position), "NO", "NO", null, null, null, null, null, "NO", "NEVER", null, "YES"));
+            null, null, null, Integer.toString(position), "NO", yesNo(generated), generated ? "ALWAYS" : null, null, null, null, null,
+            "NO", "NEVER", null, "YES"));
       }
     }
     for (final View own : VIEWS) {

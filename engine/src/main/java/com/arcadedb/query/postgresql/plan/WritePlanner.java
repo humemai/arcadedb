@@ -481,7 +481,8 @@ public final class WritePlanner {
         throw new PostgreSQLFeatureNotSupportedException("UPDATE of the column " + column.name() + " of the edge table " + table.name()
             + " is not supported: delete the edge and insert it again (" + assignment.position() + ")");
       if (column.isSynthetic() && !assignment.value().isDefault())
-        throw new PostgreSQLEvaluationException("428C9", "column \"" + column.name() + "\" can only be updated to DEFAULT");
+        throw new PostgreSQLEvaluationException("428C9", "column \"" + column.name() + "\" can only be updated to DEFAULT. Detail: Column \""
+            + column.name() + "\" is an identity column defined as GENERATED ALWAYS.");
       Evaluable value = null;
       PgType type = PgType.UNKNOWN;
       if (!assignment.value().isDefault()) {
@@ -537,7 +538,9 @@ public final class WritePlanner {
     if (value == null)
       return;
     if (column.kind() == Column.Kind.IDENTITY)
-      throw new PostgreSQLEvaluationException("428C9", "cannot insert a non-DEFAULT value into column \"" + column.name() + "\": the record id is generated");
+      throw new PostgreSQLEvaluationException("428C9", "cannot insert a non-DEFAULT value into column \"" + column.name()
+          + "\". Detail: Column \"" + column.name() + "\" is an identity column defined as GENERATED ALWAYS. Hint: leave the column"
+          + " out of the column list or write DEFAULT: the engine gives the record id of the new row");
     if (value instanceof Evaluable.Constant constant && constant.value() == null)
       return;
     Assignments.check(type, column);
