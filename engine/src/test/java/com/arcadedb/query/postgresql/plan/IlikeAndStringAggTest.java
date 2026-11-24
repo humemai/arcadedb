@@ -97,8 +97,9 @@ class IlikeAndStringAggTest extends TestHelper {
         .containsExactly(row("true", "false", "true"));
     assertThat(rows("SELECT 'a_b' ILIKE 'A\\_B', 'axb' ILIKE 'A\\_B', 'A\\B' ILIKE 'a\\b' ESCAPE ''"))
         .containsExactly(row("true", "false", "true"));
-    assertState("SELECT 'a' ILIKE 'a\\'", "22025");
-    assertState("SELECT 'a' ILIKE 'a' ESCAPE 'ab'", "22019");
+    assertThat(rows("SELECT 'a' ILIKE 'a\\'")).containsExactly(row("false"));
+    assertState("SELECT 'ab' ILIKE 'a\\'", "22025");
+    assertState("SELECT 'a' ILIKE 'a' ESCAPE 'ab'", "22025");
   }
 
   @Test

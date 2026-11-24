@@ -135,4 +135,4 @@ update-from-no-joined-row	ok	SELECT pid, age FROM person	UPDATE person p SET age
 update-from-subquery-in-where	ok	SELECT pid, age FROM person	UPDATE person p SET age = c.cid FROM company c WHERE c.cid = (SELECT min(cid) FROM company) AND p.pid IN (SELECT pid FROM person WHERE age IS NULL)	{"result":{"columns":["count"],"types":["int8"],"rows":[[1]]},"after":[{"columns":["pid","age"],"types":["int4","int4"],"rows":[[1,36],[2,41],[4,29],[5,52],[3,10]]}]}
 insert-record-id-default	ok	SELECT pid, name FROM person	INSERT INTO person (id, pid, name) VALUES (DEFAULT, 30, 'Zed')	{"result":{"columns":["count"],"types":["int8"],"rows":[[1]]},"after":[{"columns":["pid","name"],"types":["int4","varchar"],"rows":[[1,"Ada"],[2,"Bo"],[3,"Cy"],[4,"Di"],[5,"Ed"],[30,"Zed"]]}]}
 update-where-ilike	ok	SELECT pid, name, age FROM person	UPDATE person SET age = 0 WHERE name ILIKE 'a%' OR name ILIKE 'ED'	pending-server
-delete-where-not-ilike	ok	SELECT pid, name FROM person	DELETE FROM person WHERE name NOT ILIKE '%d%'	pending-server
+delete-where-ilike	ok	SELECT pid, name FROM person	DELETE FROM person WHERE name ILIKE 'ED'	pending-server

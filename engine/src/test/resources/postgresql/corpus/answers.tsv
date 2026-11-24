@@ -439,7 +439,9 @@ ilike-default-backslash-escape	multiset	-	ok	SELECT 'a_b' ILIKE 'A\\_B' AS a, 'a
 ilike-join-filter	ordered	-	ok	SELECT o.oid FROM orders o JOIN person p ON p.pid = o.pid WHERE p.name ILIKE 'ADA' ORDER BY o.oid	pending-server
 err-ilike-int-operand	multiset	-	ok	SELECT pid FROM person WHERE pid ILIKE '1%'	pending-server
 err-ilike-escape-too-long	multiset	-	ok	SELECT 'a' ILIKE 'a' ESCAPE 'ab'	pending-server
-err-ilike-pattern-ends-with-escape	multiset	-	ok	SELECT 'a' ILIKE 'a\\'	pending-server
+ilike-pattern-ends-with-escape-without-text-left	multiset	-	ok	SELECT 'a' ILIKE 'a\\' AS a, 'b' ILIKE 'a\\' AS b	pending-server
+err-ilike-pattern-ends-with-escape-with-text-left	multiset	-	ok	SELECT 'ab' ILIKE 'a\\'	pending-server
+err-like-pattern-ends-with-escape-after-percent	multiset	-	ok	SELECT 'abc' LIKE '%\\'	pending-server
 agg-string-agg-all	multiset	-	ok	SELECT string_agg(name, ', ') AS names FROM person	pending-server
 agg-string-agg-group-by	ordered	-	ok	SELECT city, string_agg(name, '+') AS names FROM person GROUP BY city ORDER BY city	pending-server
 agg-string-agg-expression-argument	multiset	-	ok	SELECT string_agg(name || ':' || city, ' | ') AS pairs FROM person WHERE pid < 3	pending-server

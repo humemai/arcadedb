@@ -61,8 +61,10 @@ class TextCastsAndFunctionsTest {
     assertThat(Text.like("ABC", "abc", null, true)).isTrue();
     assertThat(Text.like("ABC", "a%", null, true)).isTrue();
     assertThat(Text.like("ABC", "abc", null, false)).isFalse();
-    assertThat(sqlState(() -> Text.like("a", "a\\", null, false))).as("pattern ends with the escape").isEqualTo("22025");
-    assertThat(sqlState(() -> Text.like("a", "a", "ab", false))).isEqualTo("22019");
+    assertThat(sqlState(() -> Text.like("ab", "a\\", null, false))).as("pattern ends with the escape, text is left").isEqualTo("22025");
+    assertThat(Text.like("a", "a\\", null, false)).as("PostgreSQL raises it only when the match gets there").isFalse();
+    assertThat(Text.like("b", "a\\", null, false)).isFalse();
+    assertThat(sqlState(() -> Text.like("a", "a", "ab", false))).isEqualTo("22025");
   }
 
   @Test
