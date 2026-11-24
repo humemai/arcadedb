@@ -1593,8 +1593,8 @@ c5-exists-with-set-operation	ok	inside	-	SELECT a FROM u WHERE EXISTS (SELECT 1 
 c5-exists-parenthesised-twice	ok	inside	-	SELECT a FROM u WHERE EXISTS ((SELECT 1))	written for the parser	42P01
 c5-exists-values	ok	outside	-	SELECT EXISTS (VALUES (1))	written for the parser	-
 c5-exists-unclosed	syntax-error	unknown	-	SELECT EXISTS (SELECT 1	written for the parser	42601
-g2-window-partition-order	pending-server	inside	-	SELECT row_number() OVER (PARTITION BY a ORDER BY b DESC NULLS LAST) FROM t	g2 (fork issue #56)	-
-g2-window-empty	pending-server	inside	-	SELECT count(*) OVER () FROM t	g2 (fork issue #56)	-
-g2-out-window-frame	pending-server	outside	-	SELECT sum(a) OVER (ORDER BY a ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t	g2 (fork issue #56)	-
-g2-out-window-named	pending-server	outside	-	SELECT sum(a) OVER w FROM t WINDOW w AS (ORDER BY a)	g2 (fork issue #56)	-
-g2-out-window-filter	pending-server	outside	-	SELECT count(*) FILTER (WHERE a > 1) OVER () FROM t	g2 (fork issue #56)	-
+g2-window-partition-order	ok	inside	-	SELECT row_number() OVER (PARTITION BY a ORDER BY b DESC NULLS LAST) FROM t	g2 (fork issue #56)	42P01
+g2-window-empty	ok	inside	-	SELECT count(*) OVER () FROM t	g2 (fork issue #56)	42P01
+g2-out-window-frame	ok	outside	-	SELECT sum(a) OVER (ORDER BY a ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t	g2 (fork issue #56)	42P01
+g2-out-window-named	ok	outside	-	SELECT sum(a) OVER w FROM t WINDOW w AS (ORDER BY a)	g2 (fork issue #56)	42P01
+g2-out-window-filter	ok	outside	-	SELECT count(*) FILTER (WHERE a > 1) OVER () FROM t	g2 (fork issue #56)	42P01
