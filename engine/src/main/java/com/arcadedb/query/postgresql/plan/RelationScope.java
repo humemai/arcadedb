@@ -33,6 +33,7 @@ import com.arcadedb.query.postgresql.eval.SubqueryPlanner;
 import com.arcadedb.query.postgresql.plan.infoschema.InformationSchema;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 
 /**
@@ -56,6 +57,10 @@ public final class RelationScope implements ExpressionCompiler.Scope {
   private final SubqueryPlanner            subqueries;
   private final List<RelationSource.Output> outputs;
   private final ExpressionCompiler.Scope   outer;
+  /** The positions of the row that the expressions compiled with this scope read (fork issue #85). */
+  private final BitSet                     used = new BitSet();
+  /** True once an expression of this scope asked for a subquery: what such an expression reads of the row is not tracked here. */
+  private boolean                          subqueryAsked;
 
   public RelationScope(final List<RelationSource.Field> fields, final RelationalCatalog catalog) {
     this(fields, catalog, null);
@@ -114,7 +119,21 @@ public final class RelationScope implements ExpressionCompiler.Scope {
 
   @Override
   public SubqueryPlanner subqueries() {
+    subqueryAsked = true;
     return subqueries;
+  }
+
+  /**
+   * The positions of the row that the expressions compiled with this scope so far read: every column reference goes through this
+   * scope, and each one marks its position. A copy.
+   */
+  public BitSet usedColumns() {
+    return (BitSet) used.clone();
+  }
+
+  /** Whether an expression of this scope has a subquery, which can read the row of the query around it by a path this scope does not mark. */
+  public boolean askedForSubquery() {
+    return subqueryAsked;
   }
 
   public List<RelationSource.Field> fields() {
@@ -155,6 +174,7 @@ public final class RelationScope implements ExpressionCompiler.Scope {
     if (relation == null && outputs != null) {
       final RelationSource.Output output = output(reference.column());
       final RelationSource.Field source = fields.get(output.index());
+      used.set(output.index());
       if (output.type() == source.type())
         return new Evaluable.Slot(source.type(), source.typeName(), output.index());
       // a merged column of two types is read in the common type
@@ -164,6 +184,7 @@ public final class RelationScope implements ExpressionCompiler.Scope {
       return new Evaluable.Node(to, row -> SetTypes.convert(row[position], from, to));
     }
     final int index = resolve(relation, reference.column());
+    used.set(index);
     final RelationSource.Field field = fields.get(index);
     return new Evaluable.Slot(field.type(), field.typeName(), index);
   }
