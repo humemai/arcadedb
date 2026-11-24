@@ -50,6 +50,11 @@ import com.arcadedb.log.LogManager;
 import com.arcadedb.network.binary.ChannelBinaryServer;
 import com.arcadedb.network.binary.ServerIsNotTheLeaderException;
 import com.arcadedb.query.RunningQuery;
+import com.arcadedb.query.postgresql.PostgreSQLErrors;
+import com.arcadedb.query.postgresql.PostgreSQLQueryEngine;
+import com.arcadedb.query.postgresql.eval.PgType;
+import com.arcadedb.query.postgresql.eval.UnknownText;
+import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.sql.SQLQueryEngine;
 import com.arcadedb.query.sql.executor.BasicCommandContext;
 import com.arcadedb.query.sql.executor.CommandContext;
@@ -228,6 +233,15 @@ public class PostgresNetworkExecutor extends Thread {
   private final boolean                     DEBUG;
   private final boolean                     QUOTED_IDENTIFIERS;
   private final PostgresQueryLanguages      languages;
+  // The language that a simple-query message selected with a marker on its first statement, for the statements after it that
+  // carry none: the messages of the postgresql language are split on their ; as SQL's are (fork issue #12). Null between messages.
+  private       String                      messageLanguage       = null;
+  // Where the statement being read starts in the text the client sent, for the position of an error (the P field), and what the
+  // engine of the postgresql language was handed with where it starts. -1: not known, no position is sent (fork issue #12).
+  private       int                         statementBase         = 0;
+  private       String                      errorQueryText        = null;
+  private       int                         errorQueryOffset      = -1;
+  private       int                         pendingErrorPosition  = 0;
   // What this connection's SET commands and startup packet established, and what SHOW answers (issue #8217). Per
   // connection, as a PostgreSQL SET is session-scoped: nothing a client sets here reaches the schema or another session.
   private final PostgresSessionSettings     sessionSettings       = new PostgresSessionSettings();
@@ -320,6 +334,7 @@ public class PostgresNetworkExecutor extends Thread {
     this.DEBUG = server.getConfiguration().getValueAsBoolean(GlobalConfiguration.POSTGRES_DEBUG);
     this.QUOTED_IDENTIFIERS = server.getConfiguration().getValueAsBoolean(GlobalConfiguration.POSTGRES_QUOTED_IDENTIFIERS);
     this.languages = new PostgresQueryLanguages(server.getConfiguration().getValueAsString(GlobalConfiguration.POSTGRES_LANGUAGES));
+    this.sessionSettings.setLanguageCheck(languages::refusalOfSessionLanguage);
 
     // Bound the pre-authentication window (issue #6377). One thread and one file descriptor are committed
     // per accepted connection, before anyone has proved who they are, and the listener caps neither; without
@@ -753,10 +768,10 @@ public class PostgresNetworkExecutor extends Thread {
                 final RunningStatement ignoredStatement = startStatement(portal.language, portal.query)) {
               portal.fullResultSet = browseAndCacheBoundedResultSet(runPortalQuery(portal));
               portal.executed = true;
-              if (!isRowlessWrite(portal.sqlStatement))
+              if (!isRowless(portal))
                 resolvePortalColumns(portal, true);
             }
-          if (isRowlessWrite(portal.sqlStatement))
+          if (isRowless(portal))
             // PostgreSQL describes a write with no RETURN as NoData, and Execute answers it with a bare tag (issue #11017)
             writeNoData();
           else {
@@ -779,7 +794,7 @@ public class PostgresNetworkExecutor extends Thread {
         } finally {
           CommandTimeoutOverride.clear();
         }
-      } else if (portal.isExpectingResult && portal.columns != null && !isRowlessWrite(portal.sqlStatement)) {
+      } else if (portal.isExpectingResult && portal.columns != null && !isRowless(portal)) {
         // Already materialized: a synthetic answer fixed at PARSE (SHOW/system/catalog), or a portal a
         // previous Describe/Execute already ran. Its columns are answered as they stand rather than
         // re-derived: the rows they came from cannot have changed - the portal is run exactly once - so a
@@ -802,11 +817,24 @@ public class PostgresNetworkExecutor extends Thread {
     } else if (type == 'S') {
       // Describe Statement: send ParameterDescription followed by RowDescription/NoData
       // This tells the client how many parameters the prepared statement expects
+      final boolean languagePortal = PostgresQueryLanguages.POSTGRESQL.equals(portal.language);
+      if (languagePortal && portal.isExpectingResult && portal.columns == null && !portal.catalogQuery && !portal.ignoreExecution
+          && !portal.emptyQuery) {
+        // The postgresql language plans the statement and names its columns without running it (fork issue #12). Before the
+        // ParameterDescription, so that a statement it refuses is answered with the error alone
+        try {
+          portal.columns = describeLanguageColumns(portal);
+        } catch (final RuntimeException e) {
+          setExtendedProtocolError();
+          writeError(ERROR_SEVERITY.ERROR, clientMessage("Error on describing query: " + e.getMessage(), e), sqlStateFor(e));
+          return;
+        }
+      }
       writeParameterDescription(portal);
 
       // Now send RowDescription or NoData
       // For SELECT queries, we need to determine the columns from the type schema
-      if (portal.isExpectingResult && portal.columns == null) {
+      if (portal.isExpectingResult && portal.columns == null && !languagePortal) {
         if (!portal.catalogQuery)
           portal.columns = getColumnsFromQuerySchema(portal.query, portal.sqlStatement);
         else {
@@ -891,10 +919,21 @@ public class PostgresNetworkExecutor extends Thread {
           (catalogAnswer != null ? catalogAnswer.rows() : Collections.<Result>emptyList()).iterator());
     }
 
-    if (portal.sqlStatement == null)
+    if (portal.sqlStatement == null) {
       // No parsed statement: a non-"sql" language (cypher/gremlin/graphql) goes straight to its own engine.
-      return database.command(portal.language, toEngineText(portal.language, portal.query), server.getConfiguration(),
-          getParams(portal));
+      errorQueryText = portal.query;
+      errorQueryOffset = portal.queryOffset;
+      final ResultSet engineAnswer = database.command(portal.language, toEngineText(portal.language, portal.query),
+          server.getConfiguration(), getParams(portal));
+      // The postgresql language says what its columns are and whether the statement answers with a tag alone (fork issue #12)
+      final PostgresLanguageAnswer languageAnswer = PostgresLanguageAnswer.of(engineAnswer, database);
+      if (languageAnswer == null)
+        return engineAnswer;
+      portal.languageColumns = languageAnswer.languageColumns();
+      portal.languageRowless = languageAnswer.rowless();
+      portal.languageAffected = languageAnswer.affected();
+      return languageAnswer.rows();
+    }
 
     final Object[] parameters = portal.parameterValues != null ? portal.parameterValues.toArray() : new Object[0];
     final long metricsStart = QueryMetricsRecorder.Holder.startNanos();
@@ -978,6 +1017,11 @@ public class PostgresNetworkExecutor extends Thread {
    */
   private void resolvePortalColumns(final PostgresPortal portal, final boolean announced) {
     final List<Result> rows = portal.fullResultSet != null ? portal.fullResultSet : Collections.emptyList();
+    if (portal.languageColumns != null) {
+      // The postgresql language names and types its columns, also when it has no row: nothing to infer, nothing to probe
+      portal.columns = PostgresLanguageAnswer.wireColumns(portal.languageColumns);
+      return;
+    }
     if (!portal.catalogQuery || portal.columns == null)
       portal.columns = getColumns(rows, resolveQueryTargetType(portal), resolveAliasToSourceProperty(portal),
           announced && portal.statement != null && portal.statement.namedStatement);
@@ -1148,7 +1192,7 @@ public class PostgresNetworkExecutor extends Thread {
 
         // A write with no RETURN is answered as PostgreSQL does on every path, whatever Describe preceded this Execute
         // (issue #11017): no DataRow, and a tag carrying the number of records it changed
-        if (portal.isExpectingResult && portal.fullResultSet != null && isRowlessWrite(portal.sqlStatement)) {
+        if (portal.isExpectingResult && portal.fullResultSet != null && isRowless(portal)) {
           answerRowlessWrite(portal);
           return;
         }
@@ -1215,13 +1259,13 @@ public class PostgresNetworkExecutor extends Thread {
           if (portal.suspended)
             portalSuspendedResponse();
           else
-            writeCommandComplete(portal.sqlStatement, portal.query, portal.resultCursor);
+            writePortalCommandComplete(portal, portal.resultCursor);
           profile.addSerializationNanos(System.nanoTime() - serStart);
         } else {
           final long serStart = System.nanoTime();
           // Query doesn't return data (INSERT/UPDATE/DELETE without RETURNING) or empty result
           final int affectedRows = portal.cachedResultSet != null ? portal.cachedResultSet.size() : 0;
-          writeCommandComplete(portal.sqlStatement, portal.query, affectedRows);
+          writePortalCommandComplete(portal, affectedRows);
           profile.addSerializationNanos(System.nanoTime() - serStart);
         }
       }
@@ -1257,7 +1301,24 @@ public class PostgresNetworkExecutor extends Thread {
   private void answerRowlessWrite(final PostgresPortal portal) {
     portal.resultCursor = portal.fullResultSet.size();
     portal.suspended = false;
-    writeCommandComplete(portal.sqlStatement, portal.query, affectedRecords(portal.sqlStatement, portal.fullResultSet));
+    writePortalCommandComplete(portal,
+        portal.languageColumns != null ? portal.languageAffected : affectedRecords(portal.sqlStatement, portal.fullResultSet));
+  }
+
+  /**
+   * The CommandComplete of a portal that ran: a portal of the postgresql language is tagged from the first word of its statement
+   * ({@link PostgresLanguageAnswer#commandTag}), every other from the statement the server parsed (issues #11312, #11313).
+   */
+  private void writePortalCommandComplete(final PostgresPortal portal, final long count) {
+    if (portal.languageColumns != null)
+      writeCommandCompleteTag(PostgresLanguageAnswer.commandTag(portal.query, count));
+    else
+      writeCommandComplete(portal.sqlStatement, portal.query, count);
+  }
+
+  /** True for a write that answers with a command tag and no row: a SQL one with no RETURN, or one of the postgresql language with no RETURNING. */
+  private static boolean isRowless(final PostgresPortal portal) {
+    return isRowlessWrite(portal.sqlStatement) || portal.languageRowless;
   }
 
   /**
@@ -1328,8 +1389,10 @@ public class PostgresNetworkExecutor extends Thread {
     final long deserStart = System.nanoTime();
     try {
       final List<String> statements;
+      final String message;
       try {
-        statements = splitSimpleQuery(readString());
+        message = readString();
+        statements = splitSimpleQuery(message);
       } catch (final Exception e) {
         failSimpleQuery(clientMessage("Error on executing query: " + e.getMessage(), e), sqlStateFor(e));
         return;
@@ -1337,6 +1400,7 @@ public class PostgresNetworkExecutor extends Thread {
 
       final int count = statements.size();
       if (count <= 1) {
+        statementBase = 0;
         executeSimpleStatement(count == 0 ? "" : statements.get(0), deserStart);
         return;
       }
@@ -1347,13 +1411,20 @@ public class PostgresNetworkExecutor extends Thread {
       // explicit one (the statements before it included), a COMMIT/ROLLBACK ends it and the next write opens another.
       multiStatementQuery = true;
       long statementStart = deserStart;
+      int cursor = 0;
       for (int i = 0; i < count; i++) {
         simpleQueryBlockContinues = i < count - 1;
+        // where this statement starts in the message, for the position of an error: -1 when the splitter changed its text
+        final int at = message.indexOf(statements.get(i), cursor);
+        statementBase = at;
+        if (at >= 0)
+          cursor = at + statements.get(i).length();
         if (!executeSimpleStatement(statements.get(i), statementStart))
           break;
         statementStart = System.nanoTime();
       }
     } finally {
+      messageLanguage = null;
       multiStatementQuery = false;
       simpleQueryBlockContinues = false;
       if (!explicitTransactionStarted)
@@ -1372,9 +1443,15 @@ public class PostgresNetworkExecutor extends Thread {
    * empty list for a text with no statement at all (only separators, whitespace and comments), the empty query.
    */
   private List<String> splitSimpleQuery(final String text) {
+    messageLanguage = null;
     try {
-      if (!PostgresQueryLanguages.SQL.equals(languages.select(text).language()))
+      // The postgresql language is PostgreSQL's own syntax, so a message of it is split like SQL's, whether the connection chose it
+      // or the first statement did with a marker (fork issue #12); the statements after the marker go to it too
+      final String language = languages.select(text, sessionSettings.language()).language();
+      if (!PostgresQueryLanguages.isWireLanguage(language))
         return List.of(text);
+      if (PostgresQueryLanguages.POSTGRESQL.equals(language))
+        messageLanguage = language;
     } catch (final PostgresQueryLanguages.Refusal refusal) {
       // Refused again, and answered, by the statement itself
       return List.of(text);
@@ -1416,12 +1493,18 @@ public class PostgresNetworkExecutor extends Thread {
     Query query = null;
     String queryText = null;
     CatalogAnswer catalogAnswer = null;
+    // What the postgresql language answered, null for every other language (fork issue #12)
+    PostgresLanguageAnswer languageAnswer = null;
     // HELD FROM THE MOMENT THE STATEMENT STARTS UNTIL ITS ROWS AND COLUMNS ARE RESOLVED, NOT WHILE THEY ARE WRITTEN (ISSUE #9518)
     QueryAdmissionGate.Ticket admission = null;
     // The registry entry a CancelRequest stops, over the same window as the slot (issue #9689)
     RunningStatement statement = null;
     try {
       queryText = normalizeStatementText(rawText);
+      if (statementBase >= 0)
+        statementBase += leadingBlanks(rawText);
+      errorQueryText = null;
+      errorQueryOffset = -1;
 
       if (errorInTransaction) {
         profile.addDeserializationNanos(System.nanoTime() - deserStart);
@@ -1465,6 +1548,7 @@ public class PostgresNetworkExecutor extends Thread {
       // DataRow, so it shares nothing below but the query inside it. Recognised ahead of everything else because
       // "COPY" is no SQL production of this server, exactly like SET/SHOW.
       if (PostgresCopyStatement.isCopy(query.query)) {
+        refuseCopyInLanguage(query.language);
         final PostgresCopyStatement copy = PostgresCopyStatement.parse(query.query);
         final Statement inner = "sql".equalsIgnoreCase(query.language) ? parseStatement(copy.getQuery()) : null;
         beginSimpleQueryBlock();
@@ -1514,7 +1598,7 @@ public class PostgresNetworkExecutor extends Thread {
         applySettingCommand(query.query);
         answersNoRows = true;
         resultSet = new IteratorResultSet(Collections.emptyIterator());
-      } else if ("sql".equalsIgnoreCase(query.language) && PostgresSessionCommand.isSessionCommand(upperCaseText)) {
+      } else if (PostgresQueryLanguages.isWireLanguage(query.language) && PostgresSessionCommand.isSessionCommand(upperCaseText)) {
         // DISCARD ALL is what a connection pooler runs between two client sessions (issue #9328); none of these is a
         // production of the SQL grammar, so the engine would refuse them with a parse error
         final PostgresSessionCommand sessionCommand = PostgresSessionCommand.parse(query.query);
@@ -1561,7 +1645,10 @@ public class PostgresNetworkExecutor extends Thread {
             beginSimpleQueryBlock();
             admission = QueryAdmissionGate.getInstance().admit();
             statement = startStatement(query.language, query.query);
-            resultSet = database.command(query.language, toEngineText(query.language, query.query), server.getConfiguration());
+            final ResultSet engineAnswer = database.command(query.language, toEngineText(query.language, query.query),
+                server.getConfiguration());
+            languageAnswer = PostgresLanguageAnswer.of(engineAnswer, database);
+            resultSet = languageAnswer != null ? languageAnswer.rows() : engineAnswer;
           }
         }
       }
@@ -1573,11 +1660,13 @@ public class PostgresNetworkExecutor extends Thread {
 
       final long serStart = System.nanoTime();
       // A write with no RETURN is answered with the bare tag PostgreSQL gives it, whichever path it arrives on (issue #11017)
-      final boolean rowlessWrite = isRowlessWrite(parsedStatement);
+      final boolean rowlessWrite = isRowlessWrite(parsedStatement) || languageAnswer != null && languageAnswer.rowless();
       if (!answersNoRows && !rowlessWrite) {
+        // The postgresql language names and types its columns itself: they are announced, not inferred from the rows (issue #12)
         Map<String, PostgresType> columns = catalogAnswer != null ? catalogAnswer.columns()
-            : getColumns(cachedResultSet, resolveQueryTargetType(parsedStatement), resolveAliasToSourceProperty(parsedStatement));
-        if (catalogAnswer == null)
+            : languageAnswer != null ? languageAnswer.wireColumns()
+                : getColumns(cachedResultSet, resolveQueryTargetType(parsedStatement), resolveAliasToSourceProperty(parsedStatement));
+        if (catalogAnswer == null && languageAnswer == null)
           applyDeclaredColumns(parsedStatement, cachedResultSet, columns);
         if (columns.isEmpty() && cachedResultSet.isEmpty()) {
           final Map<String, PostgresType> schemaColumns = resolveEmptyResultSchemaColumns(query.query, query.language, NO_PARAMETERS,
@@ -1597,8 +1686,11 @@ public class PostgresNetworkExecutor extends Thread {
       // queryText still carries a "{sql}" prefix when the client sends one, which the tag doesn't recognise and answers
       // with an empty command tag instead of e.g. "BEGIN". A statement the engine ran is tagged from what it parsed, not its
       // text (issue #11313); one answered with a canonical tag (transaction control, SET, a session command) keeps that tag
-      writeCommandComplete(answersNoRows ? null : parsedStatement, commandTag,
-          rowlessWrite ? affectedRecords(parsedStatement, cachedResultSet) : cachedResultSet.size());
+      if (languageAnswer != null && !answersNoRows)
+        writeCommandCompleteTag(PostgresLanguageAnswer.commandTag(query.query, rowlessWrite ? languageAnswer.affected() : cachedResultSet.size()));
+      else
+        writeCommandComplete(answersNoRows ? null : parsedStatement, commandTag,
+            rowlessWrite ? affectedRecords(parsedStatement, cachedResultSet) : cachedResultSet.size());
       profile.addSerializationNanos(System.nanoTime() - serStart);
       return true;
 
@@ -1726,6 +1818,14 @@ public class PostgresNetworkExecutor extends Thread {
 
   private Object[] getParams(PostgresPortal portal) {
     Object[] parameters = portal.parameterValues != null ? portal.parameterValues.toArray() : new Object[0];
+
+    if (PostgresQueryLanguages.POSTGRESQL.equals(portal.language)) {
+      // a text value of a parameter the client declared no type for is unknown to the language, which types it from its context
+      for (int i = 0; i < parameters.length && portal.parameterTypes != null && i < portal.parameterTypes.size(); i++)
+        if (portal.parameterTypes.get(i) == 0L && parameters[i] instanceof String text)
+          parameters[i] = new UnknownText(text);
+      return parameters;
+    }
 
     if ("cypher".equals(portal.language) || "opencypher".equals(portal.language)) {
       Object[] parametersCypher = new Object[parameters.length * 2];
@@ -3715,7 +3815,8 @@ public class PostgresNetworkExecutor extends Thread {
       // Execute while the protocol's own block state - explicitTransactionStarted, errorInTransaction, the
       // ReadyForQuery status byte - never moved, so a statement pipelined after a failure inside the block still
       // ran and was committed. The same normalization queryCommand() applies to its own text.
-      final String statementText = normalizeStatementText(readString());
+      final String sentText = readString();
+      final String statementText = normalizeStatementText(sentText);
       // The whole message is read before anything about the statement can be refused (its language marker below): a
       // refusal answered with the declared parameter types still unread would leave them to be read as the next message
       final int paramCount = channel.readUnsignedShort();
@@ -3725,6 +3826,7 @@ public class PostgresNetworkExecutor extends Thread {
 
       final Query query;
       try {
+        statementBase = leadingBlanks(sentText);
         query = getLanguageAndQuery(statementText);
       } catch (final PostgresQueryLanguages.Refusal refusal) {
         // A pipeline that already failed, or an aborted block, discards this Parse unanswered, as it discards every
@@ -3735,6 +3837,7 @@ public class PostgresNetworkExecutor extends Thread {
       }
 
       final PostgresPortal portal = new PostgresPortal(query.query, query.language);
+      portal.queryOffset = errorQueryOffset;
       // Counted on the text the engine lexes, where a $N is resolved: the wire text still carries PostgreSQL's literals, whose
       // backslashes mean something else under standard_conforming_strings (issue #11018 review). Reused for the parse below
       final String engineText = toEngineText(query.language, query.query);
@@ -3755,7 +3858,8 @@ public class PostgresNetworkExecutor extends Thread {
         // VARCHAR (OID 1043) rather than 0 (unspecified) keeps asyncpg from introspecting unknown types via pg_type.
         portal.parameterTypes = new ArrayList<>(highestPlaceholder);
         for (int i = 0; i < highestPlaceholder; i++)
-          portal.parameterTypes.add((long) PostgresType.VARCHAR.code);
+          // the postgresql language types a value of no declared type from the expression it is in, as PostgreSQL does
+          portal.parameterTypes.add(PostgresQueryLanguages.POSTGRESQL.equals(portal.language) ? 0L : (long) PostgresType.VARCHAR.code);
       }
 
       final int actualParamCount = portal.parameterTypes != null ? portal.parameterTypes.size() : 0;
@@ -3864,7 +3968,7 @@ public class PostgresNetworkExecutor extends Thread {
         return;
       }
 
-      if (PostgresQueryLanguages.SQL.equals(query.language)
+      if (PostgresQueryLanguages.isWireLanguage(query.language)
           && PostgresQuotedIdentifierRewriter.splitStatements(statementText, sessionSettings.standardConformingStrings(), QUOTED_IDENTIFIERS)
           .size() > 1) {
         // Only a simple query may hold several statements (issue #11483): PostgreSQL's exec_parse_message() refuses them
@@ -3911,7 +4015,7 @@ public class PostgresNetworkExecutor extends Thread {
         // nothing (issue #8392). The catch arms below answer the ErrorResponse and register no statement.
         portal.setting = resolveSetCommand(portal.query);
         portal.ignoreExecution = true;
-      } else if ("sql".equalsIgnoreCase(portal.language) && PostgresSessionCommand.isSessionCommand(upperCaseText)) {
+      } else if (PostgresQueryLanguages.isWireLanguage(portal.language) && PostgresSessionCommand.isSessionCommand(upperCaseText)) {
         // Parsed here, applied at Execute like a SET (issue #9328). The text becomes the command tag, which is what
         // PostgresCommandTag reads at Execute, and a statement this server cannot parse is refused here, at Parse
         portal.sessionCommand = PostgresSessionCommand.parse(portal.query);
@@ -3935,6 +4039,7 @@ public class PostgresNetworkExecutor extends Thread {
         // (PQexecParams), so it is a portal like any other, except that Describe answers NoData and Execute
         // streams CopyData. The query INSIDE the COPY is what the SQL engine parses, so a syntax error in it is
         // reported here, at Parse, the way it is for a plain statement.
+        refuseCopyInLanguage(portal.language);
         portal.copyStatement = PostgresCopyStatement.parse(portal.query);
         if ("sql".equalsIgnoreCase(portal.language)) {
           final SQLQueryEngine sqlEngine = (SQLQueryEngine) database.getQueryEngine("sql");
@@ -4013,6 +4118,22 @@ public class PostgresNetworkExecutor extends Thread {
               }
             }
             break;
+
+          case "postgresql": {
+            // PostgreSQL's own statements are the wire's, as for SQL: transaction control is recognized here and applied at Execute
+            final PostgresTransactionStatement languageTransaction = PostgresTransactionStatement.parse(upperCaseText);
+            if (languageTransaction != null) {
+              languageTransaction.checkSupported();
+              portal.transactionControl = languageTransaction.control;
+              portal.isolationLevel = languageTransaction.isolation;
+              portal.query = languageTransaction.tag;
+              portal.ignoreExecution = true;
+            } else
+              // Refused here, at Parse, with the SQLSTATE and the position of the language, as PostgreSQL refuses a statement it
+              // cannot read: a text that is no PostgreSQL syntax is 42601, one outside the subset 0A000
+              database.getQueryEngine(PostgresQueryLanguages.POSTGRESQL).analyze(engineText);
+            break;
+          }
 
           default:
             //nooop
@@ -4657,6 +4778,14 @@ public class PostgresNetworkExecutor extends Thread {
         final byte[] body = new byte[(int) (len - 8)];
         channel.readBytes(body);
         readStartupParameters(body);
+        // The language this connection starts with (-c arcadedb.language=...) must be one it can use: a client that asked for a
+        // language and got SQL would run its statements in the wrong one (fork issue #12)
+        final String languageRefusal = languages.refusalOfSessionLanguage(sessionSettings.language());
+        if (languageRefusal != null) {
+          writeError(ERROR_SEVERITY.FATAL,
+              "invalid value for parameter \"" + PostgresSessionSettings.LANGUAGE + "\": " + languageRefusal, "22023");
+          return false;
+        }
       }
     } catch (final IOException e) {
       setErrorInTx();
@@ -4724,6 +4853,10 @@ public class PostgresNetworkExecutor extends Thread {
    * 42, syntax error or access rule violation - carries the client-vs-server verdict either way.
    */
   static String sqlStateFor(final Throwable error) {
+    // The postgresql language gives each of its errors the SQLSTATE PostgreSQL gives it (fork issue #12)
+    final String languageState = PostgreSQLErrors.sqlState(error);
+    if (languageState != null)
+      return languageState;
     if (error instanceof PostgresCopyStatement.CopyException copy)
       return copy.sqlState;
     if (error instanceof PostgresSessionSettings.SettingException setting)
@@ -4844,6 +4977,14 @@ public class PostgresNetworkExecutor extends Thread {
    * {@link #withLeaderRedirect}.
    */
   private String clientMessage(final String message, final Throwable cause) {
+    if (PostgreSQLErrors.sqlState(cause) != null) {
+      // An error of the postgresql language: worded as PostgreSQL words it, with no prefix of ours and without the (line, column)
+      // that the parser ends its messages with, which goes in the field PostgreSQL has for it, the position (fork issue #12). The text
+      // is about the statement the client wrote, so it is shown in production mode too, as the refusal of a marker is
+      final int position = errorQueryText != null && errorQueryOffset >= 0 ? PostgreSQLErrors.position(cause, errorQueryText) : 0;
+      pendingErrorPosition = position > 0 ? position + errorQueryOffset : 0;
+      return withLeaderRedirect(PostgreSQLErrors.message(cause), cause);
+    }
     return withLeaderRedirect(concealableMessage(message, cause), cause);
   }
 
@@ -4880,11 +5021,16 @@ public class PostgresNetworkExecutor extends Thread {
   private void writeError(final ERROR_SEVERITY severity, final String errorMessage, final String errorCode) {
     try {
       final String sev = severity.toString();
+      // The character position of the error in the statement the client sent, counted from 1, for an error of the postgresql
+      // language that the parser or the binder could place (fork issue #12): read once, so it belongs to this error alone
+      final String position = pendingErrorPosition > 0 ? Integer.toString(pendingErrorPosition) : null;
+      pendingErrorPosition = 0;
 
       final int length = 4 + //
           1 + errorMessage.getBytes(StandardCharsets.UTF_8).length + 1 +//
           1 + sev.getBytes(StandardCharsets.UTF_8).length + 1 +//
           1 + errorCode.getBytes(StandardCharsets.UTF_8).length + 1 +//
+          (position != null ? 1 + position.length() + 1 : 0) +//
           1;
 
       channel.writeByte((byte) 'E');
@@ -4898,6 +5044,11 @@ public class PostgresNetworkExecutor extends Thread {
 
       channel.writeByte((byte) 'C');
       writeString(errorCode);
+
+      if (position != null) {
+        channel.writeByte((byte) 'P');
+        writeString(position);
+      }
 
       channel.writeByte((byte) 0);
       channel.flush();
@@ -5218,15 +5369,66 @@ public class PostgresNetworkExecutor extends Thread {
    * @throws PostgresQueryLanguages.Refusal for a leading marker this protocol does not honour
    */
   private Query getLanguageAndQuery(final String query) {
-    final PostgresQueryLanguages.Selection selection = languages.select(query);
+    // A statement with no marker goes to the language its message selected, else the one the connection chose with the setting
+    // arcadedb.language, else SQL (fork issue #12). Read here, per statement: a SET earlier in the same message counts
+    final PostgresQueryLanguages.Selection selection = languages.select(query,
+        messageLanguage != null ? messageLanguage : sessionSettings.language());
     final String language = selection.language();
     String queryText = selection.text();
 
+    // What a position in an error of this statement is counted against: the text the engine is handed, and where it starts in what
+    // the client sent
+    errorQueryText = queryText;
+    errorQueryOffset = statementBase >= 0 ? statementBase + selection.offset() : -1;
+
+    // Only SQL is rewritten: the postgresql language reads double quotes and string literals as PostgreSQL does, as written
     if (QUOTED_IDENTIFIERS && ("sql".equals(language) || "sqlscript".equals(language)) && !isSessionCommand(queryText))
       // POSTGRES CLIENTS QUOTE IDENTIFIERS WITH DOUBLE QUOTES, WHILE ARCADEDB SQL USES BACK-TICKS (ISSUE #5369)
       queryText = PostgresQuotedIdentifierRewriter.rewrite(queryText, sessionSettings.standardConformingStrings());
 
-    return new Query(language, queryText);
+    return new Query(language, queryText, selection.offset());
+  }
+
+  /**
+   * The columns of a prepared statement of the postgresql language, from the language: it plans the statement with the types the
+   * client declared for its parameters, and the types of the other ones come from the expressions they are in. Null for a statement
+   * that returns no rows, which a Describe answers with NoData.
+   */
+  private Map<String, PostgresType> describeLanguageColumns(final PostgresPortal portal) {
+    errorQueryText = portal.query;
+    errorQueryOffset = portal.queryOffset;
+    final int count = portal.parameterTypes == null ? 0 : portal.parameterTypes.size();
+    final PgType[] types = new PgType[count];
+    for (int i = 0; i < count; i++)
+      types[i] = PostgresLanguageAnswer.parameterType(portal.parameterTypes.get(i));
+    final PostgreSQLQueryEngine engine = (PostgreSQLQueryEngine) database.getQueryEngine(PostgresQueryLanguages.POSTGRESQL);
+    final List<PostgreSQLResultSet.Column> columns = engine.describe(portal.query, types);
+    return columns.isEmpty() ? null : PostgresLanguageAnswer.wireColumns(columns);
+  }
+
+  /** The number of characters that {@link #normalizeStatementText} takes off the front of {@code text}. */
+  private static int leadingBlanks(final String text) {
+    int blanks = 0;
+    while (blanks < text.length() && text.charAt(blanks) <= ' ')
+      ++blanks;
+    return blanks;
+  }
+
+  /**
+   * {@code COPY} is the wire's own statement, which hands the query inside it to an engine and streams the rows: the postgresql language
+   * has no such query to hand over (fork issue #12, out of the first step: {@code COPY} is a later one).
+   *
+   * @throws PostgresCopyStatement.CopyException for a statement of that language
+   */
+  private static void refuseCopyInLanguage(final String language) {
+    if (PostgresQueryLanguages.POSTGRESQL.equalsIgnoreCase(language))
+      throw new PostgresCopyStatement.CopyException("COPY is not supported by the postgresql language",
+          PostgresCopyStatement.SQLSTATE_FEATURE_NOT_SUPPORTED);
+  }
+
+  /** A CommandComplete with this tag. */
+  private void writeCommandCompleteTag(final String tag) {
+    writeMessage("command complete", () -> writeString(tag), 'C', 4 + tag.length() + 1);
   }
 
   /**
@@ -5875,7 +6077,7 @@ public class PostgresNetworkExecutor extends Thread {
     writeError(ERROR_SEVERITY.ERROR, "portal \"" + name + "\" does not exist", "34000");
   }
 
-  private record Query(String language, String query) {
+  private record Query(String language, String query, int offset) {
   }
 
 }

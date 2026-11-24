@@ -98,6 +98,13 @@
             <scope>test</scope>
             <type>test-jar</type>
         </dependency>
+        <!-- psql and psycopg in containers that connect to the in-process server (PostgreSQLClientsTest, fork issue #12) -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.apache.tomcat</groupId>
             <artifactId>tomcat-jdbc</artifactId>

@@ -286,7 +286,12 @@ public final class ExpressionCompiler {
   }
 
   private Evaluable parameter(final Expression.ParameterRef reference) {
+    if (parameters.isDescribing())
+      return new Evaluable.Constant(parameters.describedType(reference.index()), null);
     final Object value = parameters.get(reference.index());
+    // a value of a parameter whose type the client did not declare is typed by the expression it is in, as a string literal is
+    if (value instanceof UnknownText unknown)
+      return new Evaluable.Constant(PgType.UNKNOWN, unknown.text());
     final PgType type = PgType.ofJavaValue(value);
     if (type == null)
       throw PostgreSQLEvaluationException.unsupported(

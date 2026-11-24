@@ -20,6 +20,7 @@ package com.arcadedb.postgres;
 
 import com.arcadedb.GlobalConfiguration;
 import com.arcadedb.query.QueryEngineManager;
+import com.arcadedb.query.postgresql.PostgreSQLQueryEngine;
 
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -44,6 +45,7 @@ import java.util.Set;
  */
 final class PostgresQueryLanguages {
   static final String SQL                            = "sql";
+  static final String POSTGRESQL                     = PostgreSQLQueryEngine.ENGINE_NAME;
   static final String SQLSTATE_FEATURE_NOT_SUPPORTED = "0A000";
 
   private final Set<String> permitted;
@@ -77,16 +79,28 @@ final class PostgresQueryLanguages {
    * @throws Refusal when the leading marker names a language this protocol does not permit, or no engine answers
    */
   Selection select(final String statement) {
+    return select(statement, null);
+  }
+
+  /**
+   * The language of {@code statement}: the one its leading marker names, else {@code defaultLanguage}, else SQL. The default is the
+   * language a session or a simple-query message chose, as the setting {@code arcadedb.language} does (fork issue #12): a
+   * statement with no marker goes to it, and a marker, {@code {sql}} included, still wins.
+   *
+   * @throws Refusal when the leading marker names a language this protocol does not permit, or no engine answers
+   */
+  Selection select(final String statement, final String defaultLanguage) {
+    final String fallback = defaultLanguage == null ? SQL : defaultLanguage;
     final int start = firstTokenOffset(statement);
     if (start >= statement.length() || statement.charAt(start) != '{')
-      return new Selection(SQL, statement);
+      return new Selection(fallback, statement);
 
     int end = start + 1;
     while (end < statement.length() && isMarkerChar(statement.charAt(end)))
       ++end;
     if (end == start + 1 || end >= statement.length() || statement.charAt(end) != '}')
-      // Not a marker: the statement is handed to SQL as it is, whose parser answers for it
-      return new Selection(SQL, statement);
+      // Not a marker: the statement is handed to the default language as it is, whose parser answers for it
+      return new Selection(fallback, statement);
 
     final String name = statement.substring(start + 1, end);
     final String language = name.toLowerCase(Locale.ENGLISH);
@@ -98,7 +112,37 @@ final class PostgresQueryLanguages {
       throw new Refusal("Query language '" + name + "' is permitted on the PostgreSQL protocol (setting '"
           + GlobalConfiguration.POSTGRES_LANGUAGES.getKey() + "') but no query engine of this server answers it");
 
-    return new Selection(language, statement.substring(end + 1).trim());
+    final String rest = statement.substring(end + 1);
+    int skipped = 0;
+    while (skipped < rest.length() && Character.isWhitespace(rest.charAt(skipped)))
+      ++skipped;
+    return new Selection(language, rest.trim(), end + 1 + skipped);
+  }
+
+  /**
+   * True for the languages that speak PostgreSQL's own statements, which this module answers {@code SET}, {@code SHOW},
+   * {@code DISCARD ALL}, transaction control and the catalog for itself: SQL, and the {@code postgresql} language. Every other
+   * language gets a statement as the client wrote it and answers for it.
+   */
+  static boolean isWireLanguage(final String language) {
+    return SQL.equalsIgnoreCase(language) || POSTGRESQL.equalsIgnoreCase(language);
+  }
+
+  /**
+   * @return why {@code language} cannot be the language of a session, or {@code null} when it can: it must be one that a marker
+   *     may select, and one that a query engine of this server answers. {@code null} and the empty name are the default, SQL.
+   */
+  String refusalOfSessionLanguage(final String language) {
+    if (language == null || language.isBlank())
+      return null;
+    final String name = language.trim().toLowerCase(Locale.ENGLISH);
+    if (!permitted.contains(name))
+      return "Query language '" + language.trim() + "' is not permitted on the PostgreSQL protocol, which accepts " + permitted
+          + " (setting '" + GlobalConfiguration.POSTGRES_LANGUAGES.getKey() + "')";
+    if (!SQL.equals(name) && !QueryEngineManager.getInstance().isLanguageRegistered(name))
+      return "Query language '" + language.trim() + "' is permitted on the PostgreSQL protocol (setting '"
+          + GlobalConfiguration.POSTGRES_LANGUAGES.getKey() + "') but no query engine of this server answers it";
+    return null;
   }
 
   /**
@@ -149,7 +193,11 @@ final class PostgresQueryLanguages {
   /**
    * The language a statement runs in and the text handed to its engine.
    */
-  record Selection(String language, String text) {
+  record Selection(String language, String text, int offset) {
+    /** A selection whose text is the statement from its first character. */
+    Selection(final String language, final String text) {
+      this(language, text, 0);
+    }
   }
 
   /**

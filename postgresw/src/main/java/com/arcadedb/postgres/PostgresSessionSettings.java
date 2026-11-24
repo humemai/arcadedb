@@ -35,6 +35,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.regex.Matcher;
@@ -95,6 +96,12 @@ final class PostgresSessionSettings {
   static final String STATEMENT_TIMEOUT = "statement_timeout";
   static final String SEARCH_PATH       = "search_path";
   static final String STANDARD_CONFORMING_STRINGS = "standard_conforming_strings";
+  /**
+   * The query language of the statements of this connection that carry no {@code {language}} marker (fork issue #12, decision 24
+   * of #1): a custom setting, set by the startup parameter {@code options} ({@code -c arcadedb.language=postgresql}) or by
+   * {@code SET arcadedb.language = 'postgresql'}, and read back by {@code SHOW}. Unset, or {@code sql}, it is SQL.
+   */
+  static final String LANGUAGE = "arcadedb.language";
 
   /**
    * The parameters PostgreSQL marks {@code GUC_REPORT} and this server answers, spelled as PostgreSQL spells them in
@@ -163,6 +170,8 @@ final class PostgresSessionSettings {
   // The custom (dotted) parameters this connection has set, which SHOW answers from then on, as PostgreSQL does once
   // a placeholder exists; null until the first one.
   private       Set<String>         placeholders   = null;
+  // What refuses a value of arcadedb.language (a message, or null when it is a language this connection can use), set by the executor
+  private       Function<String, String> languageCheck = value -> null;
   private       boolean             superuser      = false;
   private       String              sessionUser    = "";
   // The one namespace this server resolves names in, which search_path answers (issue #9329)
@@ -210,6 +219,12 @@ final class PostgresSessionSettings {
    */
   void set(final String name, final String value, final boolean local) {
     final String key = name.toLowerCase(Locale.ENGLISH);
+    if (LANGUAGE.equals(key) && value != null) {
+      final String refusal = languageCheck.apply(value);
+      if (refusal != null)
+        throw new SettingException("invalid value for parameter \"" + LANGUAGE + "\": \"" + value + "\". " + refusal,
+            SQLSTATE_INVALID_VALUE);
+    }
     if (!isStored(key, value, false))
       return;
     if (isPlaceholder(key) && value != null) {
@@ -302,6 +317,22 @@ final class PostgresSessionSettings {
       if (equals > 0)
         setFromStartup(assignment.substring(0, equals).replace('-', '_'), assignment.substring(equals + 1));
     }
+  }
+
+  /**
+   * Sets what refuses a value of {@link #LANGUAGE} in a {@code SET}: the message of the refusal, or {@code null} for a language
+   * the connection can use. The startup packet is not asked, the executor checks the language it ends with.
+   */
+  void setLanguageCheck(final Function<String, String> languageCheck) {
+    this.languageCheck = languageCheck;
+  }
+
+  /**
+   * The language of the statements that carry no marker, lower case: {@code null} when the connection chose none, which is SQL.
+   */
+  String language() {
+    final String value = current(LANGUAGE);
+    return value == null || value.isBlank() ? null : value;
   }
 
   /**
@@ -458,6 +489,7 @@ final class PostgresSessionSettings {
           yield value;
         yield switch (key) {
           case "timezone" -> "UTC";
+          case LANGUAGE -> PostgresQueryLanguages.SQL;
           case STATEMENT_TIMEOUT -> "0";
           case "intervalstyle" -> "postgres";
           default -> "";
@@ -561,7 +593,7 @@ final class PostgresSessionSettings {
    */
   private boolean isKnown(final String key) {
     return KNOWN_PARAMETERS.containsKey(key) || switch (key) {
-      case "role", "session_authorization", "is_superuser" -> true;
+      case "role", "session_authorization", "is_superuser", LANGUAGE -> true;
       default -> resetValues.containsKey(key);
     };
   }
@@ -697,6 +729,7 @@ final class PostgresSessionSettings {
       case DATESTYLE -> parseDateOrder(value);
       case "intervalstyle" -> parseIntervalStyle(value);
       case STANDARD_CONFORMING_STRINGS -> parseBoolean(key, value) ? "on" : "off";
+      case LANGUAGE -> value.trim().toLowerCase(Locale.ENGLISH);
       case STATEMENT_TIMEOUT -> {
         parseDurationMillis(key, value);
         yield value.trim();

@@ -20,6 +20,7 @@ package com.arcadedb.postgres;
 
 import com.arcadedb.database.Database;
 import com.arcadedb.query.RunningQuery;
+import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
 import com.arcadedb.query.sql.parser.Statement;
@@ -32,6 +33,16 @@ import java.util.Map;
 public class PostgresPortal {
   public String                    query;
   public String                    language;
+  /** Where {@link #query} starts in the text the client sent: what a {@code {language}} marker took off the front (fork issue #12). */
+  public int                       queryOffset          = 0;
+  /**
+   * What the {@code postgresql} language said about the answer of this portal when it ran, which no row carries: the label and the
+   * type of every column, whether the statement answers with a command tag alone, and the number of rows it changed. Null until the
+   * portal has run, and for every other language.
+   */
+  public List<PostgreSQLResultSet.Column> languageColumns;
+  public boolean                   languageRowless      = false;
+  public long                      languageAffected     = 0;
   public Statement                 sqlStatement;
   public List<Long>                parameterTypes;
   public List<Integer>             parameterFormats;
@@ -214,6 +225,7 @@ public class PostgresPortal {
    */
   public static PostgresPortal bindFrom(final PostgresPortal template) {
     final PostgresPortal portal = new PostgresPortal(template.query, template.language);
+    portal.queryOffset = template.queryOffset;
     portal.sqlStatement = template.sqlStatement;
     portal.parameterTypes = template.parameterTypes;
     portal.ignoreExecution = template.ignoreExecution;

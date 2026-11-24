@@ -3518,9 +3518,11 @@ public enum GlobalConfiguration {
       Comma-separated query languages a statement received through the Postgres wire protocol may select with a \
       leading {language} marker, as in '{cypher}MATCH (n) RETURN n'. The marker is only read as the first token of the \
       statement (leading whitespace and comments aside). A statement without a marker is SQL, which is always \
-      permitted. A marker naming any other language, or one no query engine of this server answers, is refused. \
-      Leave empty to accept SQL only. Default is 'sqlscript,cypher,opencypher,gremlin,graphql,mongo'""", String.class,
-      "sqlscript,cypher,opencypher,gremlin,graphql,mongo"),
+      permitted, unless the connection chose another language of this list for itself with the setting \
+      'arcadedb.language' (the startup parameter 'options' of the client, or SET). A marker naming any other language, or one \
+      no query engine of this server answers, is refused. \
+      Leave empty to accept SQL only. Default is 'sqlscript,cypher,opencypher,gremlin,graphql,mongo,postgresql'""", String.class,
+      "sqlscript,cypher,opencypher,gremlin,graphql,mongo,postgresql"),
 
   POSTGRES_QUOTED_IDENTIFIERS("arcadedb.postgres.quotedIdentifiers", SCOPE.SERVER, """
       Interprets double-quoted tokens in SQL statements received through the Postgres wire protocol as identifiers, as \
