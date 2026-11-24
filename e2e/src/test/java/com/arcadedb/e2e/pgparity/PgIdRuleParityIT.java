@@ -18,6 +18,7 @@
  */
 package com.arcadedb.e2e.pgparity;
 
+import com.arcadedb.query.postgresql.GeneratedColumnsFixture;
 import com.arcadedb.query.postgresql.IdRuleFixture;
 import com.arcadedb.query.postgresql.catalog.SmallSchemaSql;
 import com.arcadedb.query.postgresql.corpus.Corpus;
@@ -153,7 +154,30 @@ class PgIdRuleParityIT {
   @Test
   @Order(2)
   void idRuleStatements() throws Exception {
-    final Path path = resources.resolve("postgresql/corpus").resolve(Corpus.IDRULE_FILE);
+    answerFile(Corpus.IDRULE_FILE, arcade, "idrule");
+  }
+
+  /**
+   * The statements of {@code generated.tsv}: what {@code information_schema.columns} says about the columns that the engine
+   * generates, against a server whose tables declare real {@code GENERATED ALWAYS AS
+   * IDENTITY} columns ({@code generated-columns.sql}). The record id of the engine is text and an identity column of the server is
+   * an integer, so the statements read the flags and never the type or a value of the column.
+   */
+  @Test
+  @Order(4)
+  void generatedColumns() throws Exception {
+    pg.load(Files.readString(resources.resolve("postgresql/generated-columns.sql"), StandardCharsets.UTF_8));
+    final ArcadeSide generated = new ArcadeSide("generated");
+    try {
+      GeneratedColumnsFixture.createSchema(generated.database());
+      answerFile(Corpus.GENERATED_FILE, generated, "generated");
+    } finally {
+      generated.close();
+    }
+  }
+
+  private void answerFile(final String fileName, final ArcadeSide side, final String label) throws Exception {
+    final Path path = resources.resolve("postgresql/corpus").resolve(fileName);
     final CorpusFile file = CorpusFile.read(path);
     final List<String> corpusFailures = new ArrayList<>();
     final List<String> engineFailures = new ArrayList<>();
@@ -179,13 +203,13 @@ class PgIdRuleParityIT {
           corpusFailures.add(c.id() + ": the server no longer answers what the corpus says: " + drift);
       }
 
-      final Outcome engine = arcade.run(LANGUAGE, c.statement());
+      final Outcome engine = side.run(LANGUAGE, c.statement());
       final String difference = ResultComparator.compare(server, engine, c.ordered(), c.tolerance());
       final String verdict;
       if (difference == null && c.pending()) {
         verdict = "pending, but equal: flip the status to ok";
         ++flip;
-        engineFailures.add(c.id() + ": pending, yet the engine answers like the server: flip status to ok in idrule.tsv");
+        engineFailures.add(c.id() + ": pending, yet the engine answers like the server: flip status to ok in " + fileName);
       } else if (difference == null) {
         verdict = "equal";
         ++equal;
@@ -197,10 +221,10 @@ class PgIdRuleParityIT {
         ++different;
         engineFailures.add(c.id() + ": " + difference);
       }
-      line(c.id(), verdict);
+      line(label, c.id(), verdict);
     }
 
-    final String summary = "idrule: " + file.rows.size() + " statements, " + equal + " equal, " + pending + " pending, " + different
+    final String summary = label + ": " + file.rows.size() + " statements, " + equal + " equal, " + pending + " pending, " + different
         + " different, " + flip + " to flip";
     REPORT.add(summary);
     System.out.println("pgparity: " + summary);
@@ -268,7 +292,7 @@ class PgIdRuleParityIT {
         ++different;
         engineFailures.add(c.id() + ": " + difference);
       }
-      line("writes-" + c.id(), verdict);
+      line("idrule", "writes-" + c.id(), verdict);
     }
 
     final String summary = "idrule writes: " + file.rows.size() + " statements, " + equal + " equal, " + pending + " pending, "
@@ -287,8 +311,8 @@ class PgIdRuleParityIT {
       assertTrue(engineFailures.isEmpty(), "the engine and the server disagree on writes:\n" + String.join("\n", engineFailures));
   }
 
-  private static void line(final String id, final String verdict) {
-    final String text = "pgparity idrule " + id + " " + LANGUAGE + " " + verdict;
+  private static void line(final String label, final String id, final String verdict) {
+    final String text = "pgparity " + label + " " + id + " " + LANGUAGE + " " + verdict;
     REPORT.add(text);
     System.out.println(text);
   }
