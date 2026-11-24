@@ -73,8 +73,8 @@ public sealed interface TableReference extends Node {
    * {@code table_ref join_type JOIN table_ref join_qual}: {@code joined_table} of {@code gram.y}, with an {@code ON} condition
    * ({@code ON a_expr} of {@code join_qual}). Joins group to the left as in PostgreSQL: {@code a JOIN b ON x JOIN c ON y} is a
    * join whose left side is the join of {@code a} and {@code b}; a parenthesised join on the right keeps its own shape. A
-   * parenthesis leaves no node. {@code CROSS}, {@code NATURAL}, {@code RIGHT}, {@code FULL} and {@code USING} are not in the
-   * subset.
+   * parenthesis leaves no node. {@code a CROSS JOIN b} is this record with the type {@code INNER} and the condition {@code true},
+   * as a comma list is planned. {@code NATURAL}, {@code RIGHT}, {@code FULL} and a join alias are not in the subset.
    *
    * @param condition the {@code ON} expression, {@code null} for a join with {@code USING}
    * @param using     the column names of {@code USING (a, b)}, empty for a join with {@code ON}

@@ -421,7 +421,6 @@ class StatementParserTest {
         new String[] { "EXPLAIN CREATE TABLE t (a int)", "CREATE is not supported" },
         new String[] { "SELECT * FROM a RIGHT JOIN b ON a.x = b.x", "RIGHT JOIN is not supported by the postgresql language (line 1, column 17)" },
         new String[] { "SELECT * FROM a FULL OUTER JOIN b ON a.x = b.x", "FULL OUTER JOIN is not supported" },
-        new String[] { "SELECT * FROM a CROSS JOIN b", "CROSS JOIN is not supported" },
         new String[] { "SELECT * FROM a NATURAL JOIN b", "NATURAL JOIN is not supported" },
         new String[] { "SELECT * FROM a JOIN b USING (x) AS j", "A join alias (USING ... AS name) is not supported" },
         new String[] { "SELECT * FROM (VALUES (1)) s", "VALUES is not supported by the postgresql language (line 1, column 16)" },

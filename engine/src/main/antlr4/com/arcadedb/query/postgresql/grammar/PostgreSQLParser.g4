@@ -352,6 +352,7 @@ fromClause
 tableRef
   : relationExpr aliasClause? unsupportedTablesample?     # tableNameRef
   | tableRef joinKind? JOIN tableRef joinQual             # joinRef
+  | tableRef CROSS JOIN tableRef                          # crossJoinRef
   | tableRef unsupportedJoinKind JOIN tableRef joinQual?  # unsupportedJoinRef
   | LPAREN selectStmt RPAREN derivedAlias?                # derivedRef
   | LPAREN tableRef RPAREN                                # parenRef
@@ -374,8 +375,7 @@ unsupportedJoinUsingAlias
   ;
 
 unsupportedJoinKind
-  : CROSS
-  | NATURAL (INNER | LEFT | RIGHT | FULL)? OUTER?
+  : NATURAL (INNER | LEFT | RIGHT | FULL)? OUTER?
   | RIGHT OUTER?
   | FULL OUTER?
   ;

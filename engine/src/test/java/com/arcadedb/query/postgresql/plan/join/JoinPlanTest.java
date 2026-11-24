@@ -405,4 +405,31 @@ class JoinPlanTest extends TestHelper {
     }
     assertThat(rows("SELECT o.* FROM person p JOIN orders o ON o.pid = p.pid WHERE p.pid = 2").get(0)).hasSize(8);
   }
+  // ---- CROSS JOIN (fork issue #61) ----
+
+  @Test
+  void aCrossJoinIsEveryPairAndTheNestedLoopHoldsItsRightSideUnderTheCap() {
+    final String all = "SELECT count(*) FROM person CROSS JOIN company";
+    assertThat(count(all)).isEqualTo(15);
+    assertThat(plan(all)).contains("NESTED LOOP INNER");
+    assertThat(count("SELECT count(*) FROM person p CROSS JOIN company c CROSS JOIN works_at w")).isEqualTo(75);
+    assertThat(count("SELECT count(*) FROM person p CROSS JOIN company c WHERE p.pid < c.cid")).as("a WHERE term over both sides").isEqualTo(15);
+    assertThat(count("SELECT count(*) FROM person p CROSS JOIN company c WHERE p.pid = c.cid / 10")).as("an equality becomes a key").isEqualTo(3);
+    assertThat(plan("SELECT count(*) FROM person p CROSS JOIN company c WHERE p.pid = c.cid / 10")).contains("HASH JOIN INNER");
+    assertThat(rows("SELECT p.name, c.name FROM person p CROSS JOIN company c WHERE p.pid = 1 AND c.cid > 10 ORDER BY c.cid"))
+        .containsExactly(row("Ada", "Birch"), row("Ada", "Cedar"));
+    assertThatThrownBy(() -> planned(all, 100L).execute(database).hasNext()).isInstanceOfSatisfying(PostgreSQLEvaluationException.class,
+        e -> assertThat(e.getSqlState()).as("the same cap as every other join").isEqualTo("53200"));
+    assertThat(planned(all, BuildMemory.configuredCapBytes()).execute(database).hasNext()).isTrue();
+  }
+
+  @Test
+  void aCrossJoinTakesNeitherOnNorUsingAndNaturalStaysRefused() {
+    assertThatThrownBy(() -> rows("SELECT 1 FROM person p CROSS JOIN company c ON p.pid = c.cid"))
+        .isInstanceOf(com.arcadedb.query.postgresql.PostgreSQLSyntaxException.class);
+    assertThatThrownBy(() -> rows("SELECT 1 FROM person p CROSS JOIN company c USING (pid)"))
+        .isInstanceOf(com.arcadedb.query.postgresql.PostgreSQLSyntaxException.class);
+    assertThat(state("SELECT 1 FROM person NATURAL JOIN company")).isEqualTo("0A000");
+    assertThat(state("SELECT name FROM person CROSS JOIN company")).as("two columns of that name").isEqualTo("42702");
+  }
 }

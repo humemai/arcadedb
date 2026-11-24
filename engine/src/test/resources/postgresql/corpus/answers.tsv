@@ -371,3 +371,15 @@ win-frame-rows	ordered	-	pending	SELECT pid, sum(pid) OVER (ORDER BY pid ROWS BE
 win-ntile	ordered	-	pending	SELECT pid, ntile(2) OVER (ORDER BY pid) AS t FROM person ORDER BY pid	{"columns":["pid","t"],"types":["int4","int4"],"rows":[[1,1],[2,1],[3,1],[4,2],[5,2]]}
 win-named-window	ordered	-	pending	SELECT pid, sum(pid) OVER w AS s FROM person WINDOW w AS (ORDER BY pid) ORDER BY pid	{"columns":["pid","s"],"types":["int4","int8"],"rows":[[1,1],[2,3],[3,6],[4,10],[5,15]]}
 win-over-group-by	ordered	-	pending	SELECT city, count(*) AS c, rank() OVER (ORDER BY count(*) DESC, city) AS r FROM person GROUP BY city ORDER BY city	{"columns":["city","c","r"],"types":["varchar","int8","int8"],"rows":[["Delft",2,1],["Leiden",2,2],["Utrecht",1,3]]}
+g2-cross-join-all-pairs	ordered	-	ok	SELECT p.name, c.name AS company FROM person p CROSS JOIN company c ORDER BY p.pid, c.cid	pending-server
+g2-cross-join-count	multiset	-	ok	SELECT count(*) FROM person CROSS JOIN company	pending-server
+g2-cross-join-where	ordered	-	ok	SELECT p.name, c.name AS company FROM person p CROSS JOIN company c WHERE c.cid = 10 AND p.age > 30 AND p.pid < c.cid ORDER BY p.pid	pending-server
+g2-cross-join-chain	multiset	-	ok	SELECT count(*) FROM person p CROSS JOIN company c CROSS JOIN works_at w	pending-server
+g2-cross-join-then-inner	ordered	-	ok	SELECT p.name, c.name AS company, w.since FROM person p CROSS JOIN company c JOIN works_at w ON w.source_id = p.id AND w.target_id = c.id ORDER BY p.pid, w.since	pending-server
+g2-cross-join-then-left	ordered	-	ok	SELECT p.name, c.name AS company, w.since FROM person p CROSS JOIN company c LEFT JOIN works_at w ON w.source_id = p.id AND w.target_id = c.id ORDER BY p.pid, c.cid, w.since	pending-server
+g2-cross-join-empty-side	multiset	-	ok	SELECT count(*) FROM person p CROSS JOIN (SELECT cid FROM company WHERE cid < 0) c	pending-server
+g2-cross-join-star	ordered	-	ok	SELECT * FROM (SELECT pid FROM person WHERE pid < 3) a CROSS JOIN (SELECT cid FROM company WHERE cid < 30) b ORDER BY pid, cid	pending-server
+g2-cross-join-in-parens	ordered	-	ok	SELECT p.name, c.name AS company FROM person p JOIN (company c CROSS JOIN orders o) ON o.pid = p.pid AND c.cid = 10 AND o.oid = 100 ORDER BY p.pid	pending-server
+g2-cross-join-comma-too	ordered	-	ok	SELECT p.name, c.name AS company FROM person p, company c WHERE p.pid = 1 AND c.cid > 10 ORDER BY c.cid	pending-server
+err-g2-cross-join-ambiguous-column	multiset	-	ok	SELECT name FROM person CROSS JOIN company	pending-server
+err-g2-cross-join-on	multiset	-	ok	SELECT 1 FROM person p CROSS JOIN company c ON p.pid = c.cid	pending-server
