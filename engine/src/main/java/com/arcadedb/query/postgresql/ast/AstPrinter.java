@@ -200,6 +200,15 @@ public final class AstPrinter {
         + (item.nulls() == SortItem.Nulls.DEFAULT ? "" : " NULLS " + item.nulls());
   }
 
+  private static String printWindow(final Expression.Window window) {
+    final List<String> parts = new java.util.ArrayList<>();
+    if (!window.partitionBy().isEmpty())
+      parts.add("PARTITION BY " + printAll(window.partitionBy()));
+    if (!window.orderBy().isEmpty())
+      parts.add("ORDER BY " + window.orderBy().stream().map(AstPrinter::print).collect(Collectors.joining(", ")));
+    return String.join(" ", parts);
+  }
+
   private static String printAll(final List<Expression> expressions) {
     return expressions.stream().map(AstPrinter::print).collect(Collectors.joining(", "));
   }
@@ -266,7 +275,8 @@ public final class AstPrinter {
       }
       case Expression.Cast cast -> "CAST(" + print(cast.operand()) + " AS " + print(cast.type()) + ")";
       case Expression.FunctionCall call -> call.name().stream().map(AstPrinter::print).collect(Collectors.joining("."))
-          + (call.star() ? "(*)" : "(" + (call.distinct() ? "DISTINCT " : "") + printAll(call.args()) + ")");
+          + (call.star() ? "(*)" : "(" + (call.distinct() ? "DISTINCT " : "") + printAll(call.args()) + ")")
+          + (call.over() == null ? "" : " OVER (" + printWindow(call.over()) + ")");
       case Expression.SpecialFunction function -> function.args().isEmpty() ? function.kind().name()
           : function.kind().name() + "(" + printAll(function.args()) + ")";
     };

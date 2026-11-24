@@ -40,7 +40,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The work of a traversal follows the degree of the vertex (fork issue #8): on a generated graph of 10,000 people, 10 companies
  * and 20,000 {@code works_at} edges, the statement that asks for one person reads the edges of that one vertex. The test counts
- * the edge entries the step took from the adjacency lists ({@link JoinSource#edgesRead()}), not the time.
+ * the edge entries the step took from the adjacency lists ({@link JoinSource#edgesRead()}), not the time. A statement for all
+ * people is not a walk (fork issue #52): the hash join reads the edge type once and is cheaper than 10,000 walks.
  */
 class TraversalDegreeTest extends TestHelper {
   private static final int PEOPLE    = 10_000;
@@ -102,17 +103,25 @@ class TraversalDegreeTest extends TestHelper {
   }
 
   @Test
-  void aStatementForAllPeopleReadsEveryEdgeOnceAndTheRuleOffGivesTheSameCount() {
+  void aStatementForAllPeopleIsAHashJoinAndTheRuleOffGivesTheSameCount() {
     final String sql = "SELECT count(*) FROM person p JOIN works_at w ON w.source_id = p.id";
     final SelectPlan plan = planned(sql);
-    final JoinSource walk = walkOf(plan.source());
+    assertThat(plan.steps()).noneMatch(line -> line.contains("TRAVERSE")).anyMatch(line -> line.contains("HASH JOIN"))
+        .anyMatch(line -> line.contains("[hash join: no bound start]"));
     assertThat(drain(plan)).containsExactly(List.of(20_000L));
-    assertThat(walk.edgesRead()).isEqualTo(20_000L);
 
     database.getConfiguration().setValue(GlobalConfiguration.POSTGRESQL_TRAVERSAL_RULE, false);
     final SelectPlan control = planned(sql);
-    assertThat(control.steps()).noneMatch(line -> line.contains("TRAVERSE"));
+    assertThat(control.steps()).noneMatch(line -> line.contains("TRAVERSE")).noneMatch(line -> line.contains("no bound start"));
     assertThat(drain(control)).containsExactly(List.of(20_000L));
+  }
+
+  @Test
+  void aListOfThreePeopleReadsTheEdgesOfThoseThreeVerticesOnly() {
+    final SelectPlan plan = planned("SELECT count(*) FROM person p JOIN works_at w ON w.source_id = p.id WHERE p.pid IN (1, 2, 3)");
+    final JoinSource walk = walkOf(plan.source());
+    assertThat(drain(plan)).containsExactly(List.of(6L));
+    assertThat(walk.edgesRead()).as("the six edges of three vertices, of 20,000 in the type").isEqualTo(6L);
   }
 
   @Test

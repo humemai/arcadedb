@@ -256,6 +256,15 @@ public class SelectPlanner {
       outputCompiler = new ExpressionCompiler(groupingScope, parameters);
     }
 
+    // window functions: the select list and ORDER BY compile one to a slot after the input row, which the window stage fills;
+    // WHERE, GROUP BY and HAVING refuse it (42P20), and a grouping query refuses it with 0A000
+    WindowScope windowScope = null;
+    ExpressionCompiler listCompiler = outputCompiler;
+    if (!grouping) {
+      windowScope = new WindowScope(scope, compiler, source.columns().size());
+      listCompiler = new ExpressionCompiler(windowScope, parameters);
+    }
+
     // the select list
     final List<Evaluable> outputs = new ArrayList<>();
     final List<String> names = new ArrayList<>();
@@ -263,13 +272,13 @@ public class SelectPlanner {
     for (final SelectItem item : select.items()) {
       if (item instanceof SelectItem.Star star) {
         for (final Expression.ColumnRef reference : scope.expand(star)) {
-          outputs.add(outputCompiler.compile(reference));
+          outputs.add(listCompiler.compile(reference));
           names.add(reference.column().value());
           asts.add(reference);
         }
       } else if (item instanceof SelectItem.Projection projection) {
-        final Evaluable compiled = outputCompiler.compile(projection.expression());
-        final Evaluable output = keepUnknown ? compiled : outputCompiler.resolveOutput(compiled);
+        final Evaluable compiled = listCompiler.compile(projection.expression());
+        final Evaluable output = keepUnknown ? compiled : listCompiler.resolveOutput(compiled);
         if (output.type() == PgType.INTERVAL)
           throw new PostgreSQLFeatureNotSupportedException(
               "A result column of type interval is not supported: an interval is read only as an operand of date arithmetic");
@@ -298,7 +307,7 @@ public class SelectPlanner {
       } else {
         if (select.distinct())
           throw PostgreSQLReferenceException.invalidReference("for SELECT DISTINCT, ORDER BY expressions must appear in select list");
-        key = outputCompiler.resolveOutput(outputCompiler.compile(item.expression()));
+        key = listCompiler.resolveOutput(listCompiler.compile(item.expression()));
         position = outputs.size() + extras.size();
         extras.add(key);
       }
@@ -351,6 +360,9 @@ public class SelectPlanner {
       steps.add("AGGREGATE " + group.keyCount() + " group key(s), " + group.aggregateCount() + " aggregate(s)");
     if (having != null)
       steps.add("FILTER HAVING");
+    final WindowStage windows = windowScope == null || windowScope.isEmpty() ? null : windowScope.stage();
+    if (windows != null)
+      steps.add("WINDOW " + windows.count() + " function(s)");
     steps.add("PROJECT " + outputs.size() + " column(s)");
     if (select.distinct())
       steps.add("DISTINCT");
@@ -366,7 +378,7 @@ public class SelectPlanner {
       steps.add("WARNING: " + warning);
 
     return new SelectPlan(source, where, group, having, outputs.toArray(new Evaluable[0]), extras.toArray(new Evaluable[0]), columns,
-        select.distinct(), sortKeys, limit, offset, steps, warnings);
+        select.distinct(), sortKeys, limit, offset, steps, warnings, windows);
   }
 
   // ---- queries inside queries ----
@@ -855,6 +867,9 @@ public class SelectPlanner {
 
     @Override
     public Evaluable intercept(final Expression expression, final ExpressionCompiler compiler) {
+      if (expression instanceof Expression.FunctionCall window && window.over() != null)
+        throw new PostgreSQLFeatureNotSupportedException(
+            "A window function in a query with GROUP BY, HAVING or an aggregate is not supported");
       for (int i = 0; i < groupAsts.size(); i++)
         if (groupAsts.get(i).equals(expression)) {
           final Evaluable key = groupEvaluables.get(i);
@@ -880,6 +895,13 @@ public class SelectPlanner {
     }
 
     private SelectPlan.AggregateSpec specOf(final Expression.FunctionCall call) {
+      return aggregateSpec(call, inputCompiler);
+    }
+  }
+
+  /** Types an aggregate call (a grouping query's, or a window aggregate's) against the compiler of its input row. */
+  static SelectPlan.AggregateSpec aggregateSpec(final Expression.FunctionCall call, final ExpressionCompiler inputCompiler) {
+    {
       final String name = call.name().get(call.name().size() - 1).value();
       Evaluable argument = null;
       PgType argumentType = PgType.UNKNOWN;
@@ -922,6 +944,57 @@ public class SelectPlanner {
         break;
       }
       return new SelectPlan.AggregateSpec(name, argumentType, result, argument, call.distinct());
+    }
+  }
+
+  /**
+   * The scope of the select list and {@code ORDER BY} of a query without grouping: a call with {@code OVER} is typed here and
+   * becomes a slot after the columns of the input row, which {@link WindowStage} fills; everything else is the scope of the input.
+   */
+  private static final class WindowScope implements ExpressionCompiler.Scope {
+    private final ExpressionCompiler.Scope     base;
+    private final ExpressionCompiler           input;
+    private final int                          width;
+    private final List<Expression.FunctionCall> seen  = new ArrayList<>();
+    private final List<WindowStage.Call>       calls = new ArrayList<>();
+
+    WindowScope(final ExpressionCompiler.Scope base, final ExpressionCompiler input, final int width) {
+      this.base = base;
+      this.input = input;
+      this.width = width;
+    }
+
+    boolean isEmpty() {
+      return calls.isEmpty();
+    }
+
+    WindowStage stage() {
+      return new WindowStage(width, calls);
+    }
+
+    @Override
+    public Evaluable column(final Expression.ColumnRef reference) {
+      return base.column(reference);
+    }
+
+    @Override
+    public SubqueryPlanner subqueries() {
+      return base.subqueries();
+    }
+
+    @Override
+    public Evaluable intercept(final Expression expression, final ExpressionCompiler compiler) {
+      if (expression instanceof Expression.FunctionCall call && call.over() != null) {
+        int known = seen.indexOf(call);
+        if (known < 0) {
+          calls.add(WindowStage.call(call, input));
+          seen.add(call);
+          known = calls.size() - 1;
+        }
+        final WindowStage.Call typed = calls.get(known);
+        return new Evaluable.Slot(typed.resultType(), typed.resultTypeName(), width + known);
+      }
+      return base.intercept(expression, compiler);
     }
   }
 

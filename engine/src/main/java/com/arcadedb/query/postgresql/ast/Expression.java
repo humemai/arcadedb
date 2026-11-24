@@ -344,7 +344,7 @@ public sealed interface Expression extends Node {
    * @param distinct true for {@code f(DISTINCT x)}
    * @param star     true for {@code count(*)}
    */
-  record FunctionCall(SourcePosition position, List<Name> name, List<Expression> args, boolean distinct, boolean star)
+  record FunctionCall(SourcePosition position, List<Name> name, List<Expression> args, boolean distinct, boolean star, Window over)
       implements Expression {
     public FunctionCall {
       Objects.requireNonNull(position, "position");
@@ -354,6 +354,26 @@ public sealed interface Expression extends Node {
         throw new IllegalArgumentException("A function has a name");
       if (star && (!args.isEmpty() || distinct))
         throw new IllegalArgumentException("f(*) has no arguments and no DISTINCT");
+    }
+
+    public FunctionCall(final SourcePosition position, final List<Name> name, final List<Expression> args, final boolean distinct,
+        final boolean star) {
+      this(position, name, args, distinct, star, null);
+    }
+  }
+
+  /**
+   * {@code OVER (PARTITION BY ... ORDER BY ...)} of a window function call: {@code window_specification} of {@code gram.y} without
+   * a window name and a frame clause, which are refused with SQLSTATE 0A000.
+   *
+   * @param partitionBy the {@code PARTITION BY} expressions, empty when there are none
+   * @param orderBy     the {@code ORDER BY} items of the window, empty when there are none
+   */
+  record Window(SourcePosition position, List<Expression> partitionBy, List<SortItem> orderBy) implements Node {
+    public Window {
+      Objects.requireNonNull(position, "position");
+      partitionBy = List.copyOf(partitionBy);
+      orderBy = List.copyOf(orderBy);
     }
   }
 
