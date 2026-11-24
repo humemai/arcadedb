@@ -349,8 +349,12 @@ fromClause
   : FROM items+=tableRef (COMMA items+=tableRef)*
   ;
 
+// The order of the join alternatives is their precedence, and a rule that does not end in tableRef is a suffix whose right operand
+// takes everything it can: crossJoinRef is first so that a CROSS JOIN (which has no qualifier to end it) takes only its own
+// right operand and the joins group to the left, as in PostgreSQL: a CROSS JOIN b JOIN c ON x is (a CROSS JOIN b) JOIN c ON x.
 tableRef
   : relationExpr aliasClause? unsupportedTablesample?     # tableNameRef
+  | tableRef CROSS JOIN tableRef                          # crossJoinRef
   | tableRef joinKind? JOIN tableRef joinQual             # joinRef
   | tableRef unsupportedJoinKind JOIN tableRef joinQual?  # unsupportedJoinRef
   | LPAREN selectStmt RPAREN derivedAlias?                # derivedRef
@@ -374,8 +378,7 @@ unsupportedJoinUsingAlias
   ;
 
 unsupportedJoinKind
-  : CROSS
-  | NATURAL (INNER | LEFT | RIGHT | FULL)? OUTER?
+  : NATURAL (INNER | LEFT | RIGHT | FULL)? OUTER?
   | RIGHT OUTER?
   | FULL OUTER?
   ;

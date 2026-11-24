@@ -62,7 +62,7 @@ is-null	ok	inside	-	SELECT name FROM person WHERE age IS NULL OR age IS NOT NULL
 division	ok	inside	-	SELECT total / 2, oid / 2 FROM orders WHERE oid = 101	written for the parser	-
 right-join	ok	outside	-	SELECT * FROM a RIGHT JOIN b ON a.x = b.x	written for the parser	42P01
 full-join	ok	outside	-	SELECT * FROM a FULL OUTER JOIN b ON a.x = b.x	written for the parser	42P01
-cross-join	ok	outside	-	SELECT * FROM a CROSS JOIN b	written for the parser	42P01
+cross-join	ok	inside	-	SELECT * FROM a CROSS JOIN b	written for the parser	42P01
 natural-join	ok	outside	-	SELECT * FROM a NATURAL JOIN b	written for the parser	42P01
 join-using	ok	inside	-	SELECT * FROM a JOIN b USING (x)	written for the parser	42P01
 insert	ok	inside	-	INSERT INTO a VALUES (1)	written for the parser	42P01
@@ -1439,7 +1439,7 @@ syn-dollar-quote	ok	unknown	-	SELECT $$dollar$$	s3	-
 syn-empty-select-list	ok	outside	-	SELECT FROM person	s3	-
 out-right-join	ok	outside	-	SELECT * FROM person p RIGHT JOIN company c ON p.pid = c.cid	s3	-
 out-full-join	ok	outside	-	SELECT * FROM person p FULL JOIN company c ON p.pid = c.cid	s3	-
-out-cross-join	ok	outside	-	SELECT * FROM person CROSS JOIN company	s3	-
+out-cross-join	ok	inside	-	SELECT * FROM person CROSS JOIN company	s3	-
 out-join-using	ok	inside	-	SELECT * FROM person p JOIN orders o USING (pid)	s3	-
 out-natural-join	ok	outside	-	SELECT * FROM person NATURAL JOIN orders	s3	-
 out-lateral	ok	outside	-	SELECT * FROM person p, LATERAL (SELECT 1) AS l	s3	-
@@ -1605,3 +1605,8 @@ g2-window-empty	ok	inside	-	SELECT count(*) OVER () FROM t	g2 (fork issue #56)	4
 g2-out-window-frame	ok	outside	-	SELECT sum(a) OVER (ORDER BY a ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t	g2 (fork issue #56)	42P01
 g2-out-window-named	ok	outside	-	SELECT sum(a) OVER w FROM t WINDOW w AS (ORDER BY a)	g2 (fork issue #56)	42P01
 g2-out-window-filter	ok	outside	-	SELECT count(*) FILTER (WHERE a > 1) OVER () FROM t	g2 (fork issue #56)	42P01
+g2-cross-join-chain	ok	inside	-	SELECT * FROM a CROSS JOIN b CROSS JOIN c	g2 (fork issue #61)	42P01
+g2-cross-join-then-inner	ok	inside	-	SELECT * FROM a CROSS JOIN b JOIN c ON a.x = c.x	g2 (fork issue #61)	42P01
+g2-cross-join-in-parens	ok	inside	-	SELECT * FROM a JOIN (b CROSS JOIN c) ON a.x = b.x	g2 (fork issue #61)	42P01
+g2-cross-join-on	syntax-error	unknown	-	SELECT * FROM a CROSS JOIN b ON a.x = b.x	g2 (fork issue #61)	42601
+g2-cross-join-using	syntax-error	unknown	-	SELECT * FROM a CROSS JOIN b USING (x)	g2 (fork issue #61)	42601

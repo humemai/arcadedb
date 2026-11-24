@@ -416,6 +416,13 @@ final class AstBuilder {
       final Name alias = table.aliasClause() == null ? null : name(table.aliasClause().alias);
       return new TableReference.Table(position(context.getStart()), parts, has(relation, PostgreSQLParser.ONLY), alias);
     }
+    if (context instanceof CrossJoinRefContext cross) {
+      // a CROSS JOIN is an INNER join whose condition is true, as PostgreSQL plans it and as a comma list is planned here
+      final TableReference left = tableReference(cross.tableRef(0));
+      final TableReference right = tableReference(cross.tableRef(1));
+      return new TableReference.Join(position(context.getStart()), left, TableReference.JoinType.INNER, right,
+          new Expression.BooleanLiteral(position(cross.CROSS().getSymbol()), true));
+    }
     if (context instanceof JoinRefContext join) {
       final TableReference left = tableReference(join.tableRef(0));
       final TableReference right = tableReference(join.tableRef(1));
