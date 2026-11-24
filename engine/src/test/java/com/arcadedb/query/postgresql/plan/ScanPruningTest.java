@@ -148,8 +148,8 @@ class ScanPruningTest extends TestHelper {
     assertThat(columnsRead("SELECT age FROM pr")).isEqualTo(N);
     // a count reads no column at all
     assertThat(columnsRead("SELECT count(*) AS n FROM pr")).isZero();
-    // a subquery reads whole rows: six columns (the record id and five properties) of every record
-    assertThat(columnsRead("SELECT id FROM pr WHERE age IN (SELECT 1)")).isEqualTo(6L * N);
+    // a subquery keeps the scan from filtering first, and it reads the columns that the statement names anywhere: id and age
+    assertThat(columnsRead("SELECT id FROM pr WHERE age IN (SELECT 1)")).isEqualTo(2L * N);
   }
 
   @Test
