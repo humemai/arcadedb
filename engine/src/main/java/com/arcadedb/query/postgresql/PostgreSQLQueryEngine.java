@@ -33,6 +33,7 @@ import com.arcadedb.query.postgresql.ast.Statement;
 import com.arcadedb.query.postgresql.ast.TransactionStatement;
 import com.arcadedb.query.postgresql.ast.UpdateStatement;
 import com.arcadedb.query.postgresql.ast.WriteStatement;
+import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
@@ -133,6 +134,29 @@ public class PostgreSQLQueryEngine implements QueryEngine {
     this.statements = new StatementCache(database.getConfiguration().getValueAsInteger(GlobalConfiguration.POSTGRESQL_STATEMENT_CACHE));
   }
 
+  /** The catalog as it was built, and the number of schema changes of the database that it was built after. */
+  private record CatalogSnapshot(long schemaChanges, RelationalCatalog catalog) {
+  }
+
+  private volatile CatalogSnapshot catalogSnapshot;
+
+  /**
+   * The relational catalog of the schema as it is now (fork issue #88). It is a function of the schema alone, so it is kept and
+   * given back until the schema changes. Every schema change of the database (a type, a property, an index, a custom value of a type,
+   * from any thread, or applied from another server) ends by emptying the plan cache of {@code sql}, which counts the times it is
+   * emptied; the count is read before the catalog is built, so a change that happens meanwhile leaves a catalog that is never given
+   * back. The catalog of an older count that a slow thread stores late is replaced at the next call, which sees a count that differs.
+   */
+  RelationalCatalog catalog() {
+    final long schemaChanges = database.getExecutionPlanCache().getInvalidationEpoch();
+    final CatalogSnapshot kept = catalogSnapshot;
+    if (kept != null && kept.schemaChanges() == schemaChanges)
+      return kept.catalog();
+    final RelationalCatalog built = RelationalCatalog.of(database);
+    catalogSnapshot = new CatalogSnapshot(schemaChanges, built);
+    return built;
+  }
+
   /** The parsed statements this engine keeps (fork issue #76), for the tests. */
   StatementCache statements() {
     return statements;
@@ -229,10 +253,10 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       if (statement instanceof TransactionStatement transaction)
         return transaction(transaction.kind(), state);
       if (statement instanceof ExplainWriteStatement explain)
-        return explain(new WritePlanner(database, parameters).plan(explain.statement()).steps());
+        return explain(new WritePlanner(database, catalog(), parameters).plan(explain.statement()).steps());
       if (statement instanceof WriteStatement write)
-        return new WritePlanner(database, parameters).plan(write).execute(database);
-      final SelectPlanner planner = new SelectPlanner(database, parameters);
+        return new WritePlanner(database, catalog(), parameters).plan(write).execute(database);
+      final SelectPlanner planner = new SelectPlanner(database, catalog(), parameters);
       if (statement instanceof ExplainStatement explain) {
         final QueryPlan explained = planner.planQuery(explain.select());
         return explain(explained.steps(), explained.warnings());
@@ -340,8 +364,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
     if (statement instanceof ExplainStatement || statement instanceof ExplainWriteStatement)
       return List.of(new PostgreSQLResultSet.Column(PLAN_COLUMN, "text"));
     if (statement instanceof WriteStatement write)
-      return new WritePlanner(database, parameters).plan(write).columns();
-    return new SelectPlanner(database, parameters).planQuery(statement).columns();
+      return new WritePlanner(database, catalog(), parameters).plan(write).columns();
+    return new SelectPlanner(database, catalog(), parameters).planQuery(statement).columns();
   }
 
   /**
