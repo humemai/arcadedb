@@ -578,6 +578,7 @@ cExpr
   | LPAREN aExpr unsupportedRowComma RPAREN                                   # unsupportedRowExpr
   | caseExpr                                                                   # caseExprAlt
   | CAST LPAREN aExpr AS typename RPAREN                                       # castExpr
+  | funcApplication overClause                                                 # windowCallExpr
   | funcApplication unsupportedFunctionSuffix?                                 # functionCallExpr
   | fn=(COALESCE | GREATEST | LEAST) LPAREN exprList RPAREN                    # variadicSpecialExpr
   | NULLIF LPAREN l=aExpr COMMA r=aExpr RPAREN                                 # nullIfExpr
@@ -601,9 +602,14 @@ unsupportedRowComma
   : COMMA balancedTokens
   ;
 
+// OVER (PARTITION BY ... ORDER BY ...): a window with a frame clause, a window name or a FILTER is read by unsupportedFunctionSuffix
+overClause
+  : OVER LPAREN (PARTITION BY partition+=aExpr (COMMA partition+=aExpr)*)? sortClause? RPAREN
+  ;
+
 unsupportedFunctionSuffix
   : WITHIN GROUP parenGroup
-  | FILTER parenGroup
+  | FILTER parenGroup (OVER (parenGroup | colId))?
   | OVER (parenGroup | colId)
   ;
 

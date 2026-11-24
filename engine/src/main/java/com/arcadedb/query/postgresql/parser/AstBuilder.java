@@ -575,6 +575,19 @@ final class AstBuilder {
       return new Expression.Cast(position(e.getStart()), expression(e.aExpr()), typeName(e.typename()));
     if (context instanceof FunctionCallExprContext e)
       return functionCall(e.funcApplication());
+    if (context instanceof WindowCallExprContext e) {
+      final Expression.FunctionCall call = (Expression.FunctionCall) functionCall(e.funcApplication());
+      final OverClauseContext over = e.overClause();
+      final List<Expression> partition = new ArrayList<>();
+      for (final AExprContext item : over.partition)
+        partition.add(expression(item));
+      final List<SortItem> order = new ArrayList<>();
+      if (over.sortClause() != null)
+        for (final SortByContext item : over.sortClause().items)
+          order.add(sortItem((SortKeyContext) item));
+      return new Expression.FunctionCall(call.position(), call.name(), call.args(), call.distinct(), call.star(),
+          new Expression.Window(position(over.getStart()), partition, order));
+    }
     if (context instanceof VariadicSpecialExprContext e) {
       final SpecialFunctionKind kind = switch (e.fn.getType()) {
         case PostgreSQLParser.COALESCE -> SpecialFunctionKind.COALESCE;

@@ -333,3 +333,29 @@ c5-exists-over-a-set-operation	multiset	-	ok	SELECT count(*) FROM person WHERE E
 c5-not-exists-over-a-derived-table-in-the-subquery	ordered	-	ok	SELECT name FROM person p WHERE NOT EXISTS (SELECT 1 FROM (SELECT pid FROM orders WHERE total > 20) t WHERE t.pid = p.pid) ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[["Cy"],["Di"],["Ed"]]}
 err-c5-exists-unknown-column	multiset	-	ok	SELECT 1 WHERE EXISTS (SELECT 1 FROM person WHERE nosuch = 1)	{"error":"42703"}
 err-c5-exists-type-mismatch	multiset	-	ok	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.name)	{"error":"42883"}
+win-row-number	ordered	-	ok	SELECT pid, row_number() OVER (ORDER BY pid) AS rn FROM person ORDER BY pid	pending-server
+win-row-number-partition	ordered	-	ok	SELECT name, row_number() OVER (PARTITION BY city ORDER BY age DESC) AS rn FROM person ORDER BY pid	pending-server
+win-rank-dense-rank	ordered	-	ok	SELECT pid, rank() OVER (ORDER BY city) AS r, dense_rank() OVER (ORDER BY city) AS d FROM person ORDER BY pid	pending-server
+win-rank-no-order	ordered	-	ok	SELECT pid, rank() OVER () AS r FROM person ORDER BY pid	pending-server
+win-lag-lead	ordered	-	ok	SELECT pid, lag(name) OVER (ORDER BY pid) AS p, lead(age, 2, -1) OVER (ORDER BY pid) AS n FROM person ORDER BY pid	pending-server
+win-lag-default-text	ordered	-	ok	SELECT pid, lag(name, 2, 'none') OVER (PARTITION BY city ORDER BY pid) AS p FROM person ORDER BY pid	pending-server
+win-running-sum	ordered	-	ok	SELECT pid, sum(age) OVER (ORDER BY pid) AS s FROM person ORDER BY pid	pending-server
+win-running-sum-peers	ordered	-	ok	SELECT pid, sum(pid) OVER (ORDER BY city) AS s FROM person ORDER BY pid	pending-server
+win-running-count-min	ordered	-	ok	SELECT pid, count(*) OVER (ORDER BY pid) AS c, min(name) OVER (ORDER BY pid) AS m FROM person ORDER BY pid	pending-server
+win-partition-count-max	ordered	-	ok	SELECT pid, count(*) OVER (PARTITION BY city) AS c, max(age) OVER () AS m FROM person ORDER BY pid	pending-server
+win-avg-whole	ordered	-	ok	SELECT pid, avg(age) OVER () AS a FROM person ORDER BY pid	pending-server
+win-sum-numeric	ordered	-	ok	SELECT oid, sum(total) OVER (ORDER BY oid) AS s FROM orders ORDER BY oid	pending-server
+win-first-last-value	ordered	-	ok	SELECT pid, first_value(name) OVER (PARTITION BY city ORDER BY pid) AS f, last_value(name) OVER (PARTITION BY city ORDER BY pid) AS l FROM person ORDER BY pid	pending-server
+win-latest-per-group	ordered	-	ok	SELECT name FROM (SELECT name, row_number() OVER (PARTITION BY city ORDER BY pid DESC) AS rn FROM person) t WHERE rn = 1 ORDER BY name	pending-server
+win-order-by-window	ordered	-	ok	SELECT name FROM person ORDER BY row_number() OVER (ORDER BY age DESC NULLS LAST) LIMIT 2	pending-server
+win-operand	ordered	-	ok	SELECT pid, row_number() OVER (ORDER BY pid) * 10 AS x FROM person ORDER BY pid	pending-server
+win-distinct-rows	ordered	-	ok	SELECT DISTINCT city, count(*) OVER (PARTITION BY city) AS c FROM person ORDER BY city	pending-server
+win-partition-expression	ordered	-	ok	SELECT pid, count(*) OVER (PARTITION BY age > 30) AS c FROM person ORDER BY pid	pending-server
+err-win-where	multiset	-	ok	SELECT pid FROM person WHERE row_number() OVER () = 1	pending-server
+err-win-group-by	multiset	-	ok	SELECT pid FROM person GROUP BY pid, row_number() OVER ()	pending-server
+err-win-unknown-function	multiset	-	ok	SELECT nope() OVER () FROM person	pending-server
+err-win-distinct	multiset	-	ok	SELECT count(DISTINCT pid) OVER () FROM person	pending-server
+win-frame-rows	ordered	-	pending	SELECT pid, sum(pid) OVER (ORDER BY pid ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS s FROM person ORDER BY pid	pending-server
+win-ntile	ordered	-	pending	SELECT pid, ntile(2) OVER (ORDER BY pid) AS t FROM person ORDER BY pid	pending-server
+win-named-window	ordered	-	pending	SELECT pid, sum(pid) OVER w AS s FROM person WINDOW w AS (ORDER BY pid) ORDER BY pid	pending-server
+win-over-group-by	ordered	-	pending	SELECT city, count(*) AS c, rank() OVER (ORDER BY count(*) DESC, city) AS r FROM person GROUP BY city ORDER BY city	pending-server

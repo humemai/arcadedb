@@ -73,11 +73,13 @@ public final class SelectPlan implements QueryPlan {
   private final Evaluable      offset;
   private final List<String>   steps;
   private final List<String>   warnings;
+  private final WindowStage    windows;
 
   SelectPlan(final RelationSource source, final Evaluable where, final GroupStage group, final Evaluable having,
       final Evaluable[] outputs, final Evaluable[] extras, final List<PostgreSQLResultSet.Column> columns, final boolean distinct,
       final List<SortKey> sortKeys, final Evaluable limit, final Evaluable offset, final List<String> steps,
-      final List<String> warnings) {
+      final List<String> warnings, final WindowStage windows) {
+    this.windows = windows;
     this.source = source;
     this.where = where;
     this.group = group;
@@ -199,12 +201,13 @@ public final class SelectPlan implements QueryPlan {
     Iterator<Object[]> rows = source.open();
     if (where != null)
       rows = filter(rows, where);
-    if (group == null)
-      return rows;
-    final List<Object[]> groups = group.groups(rows);
-    if (having != null)
-      groups.removeIf(row -> !Boolean.TRUE.equals(having.eval(row)));
-    return groups.iterator();
+    if (group != null) {
+      final List<Object[]> groups = group.groups(rows);
+      if (having != null)
+        groups.removeIf(row -> !Boolean.TRUE.equals(having.eval(row)));
+      rows = groups.iterator();
+    }
+    return windows == null ? rows : windows.apply(rows).iterator();
   }
 
   private static Iterator<Object[]> filter(final Iterator<Object[]> rows, final Evaluable condition) {

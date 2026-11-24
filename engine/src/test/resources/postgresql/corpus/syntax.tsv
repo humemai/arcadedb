@@ -74,7 +74,7 @@ values	ok	outside	-	VALUES (1), (2)	written for the parser	-
 subquery-from	ok	inside	-	SELECT * FROM (SELECT 1) s	written for the parser	-
 subquery-in	ok	inside	-	SELECT name FROM person WHERE pid IN (SELECT pid FROM orders)	written for the parser	-
 exists	ok	inside	-	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid)	written for the parser	-
-window	ok	outside	-	SELECT name, row_number() OVER (ORDER BY name) FROM person	written for the parser	-
+window	ok	inside	-	SELECT name, row_number() OVER (ORDER BY name) FROM person	written for the parser	-
 distinct-on	ok	outside	-	SELECT DISTINCT ON (city) city, name FROM person	written for the parser	-
 ilike	ok	outside	-	SELECT name FROM person WHERE name ILIKE 'a%'	written for the parser	-
 is-distinct-from	ok	outside	-	SELECT 1 IS DISTINCT FROM 2	written for the parser	-
@@ -1459,7 +1459,7 @@ out-subquery-from	ok	inside	-	SELECT * FROM (SELECT 1) AS s	s3	-
 out-subquery-scalar	ok	inside	-	SELECT (SELECT 1)	s3	-
 out-with	ok	inside	-	WITH t AS (SELECT 1) SELECT * FROM t	s3	-
 out-intersect	ok	inside	-	SELECT 1 INTERSECT SELECT 1	s3	-
-out-window	ok	outside	-	SELECT row_number() OVER (ORDER BY pid) FROM person	s3	-
+out-window	ok	inside	-	SELECT row_number() OVER (ORDER BY pid) FROM person	s3	-
 out-distinct-on	ok	outside	-	SELECT DISTINCT ON (city) city, name FROM person ORDER BY city, pid	s3	-
 out-for-update	ok	outside	-	SELECT name FROM person FOR UPDATE	s3	-
 out-tablesample	ok	outside	-	SELECT * FROM person TABLESAMPLE SYSTEM (10)	s3	-
@@ -1593,3 +1593,8 @@ c5-exists-with-set-operation	ok	inside	-	SELECT a FROM u WHERE EXISTS (SELECT 1 
 c5-exists-parenthesised-twice	ok	inside	-	SELECT a FROM u WHERE EXISTS ((SELECT 1))	written for the parser	42P01
 c5-exists-values	ok	outside	-	SELECT EXISTS (VALUES (1))	written for the parser	-
 c5-exists-unclosed	syntax-error	unknown	-	SELECT EXISTS (SELECT 1	written for the parser	42601
+g2-window-partition-order	pending-server	inside	-	SELECT row_number() OVER (PARTITION BY a ORDER BY b DESC NULLS LAST) FROM t	g2 (fork issue #56)	-
+g2-window-empty	pending-server	inside	-	SELECT count(*) OVER () FROM t	g2 (fork issue #56)	-
+g2-out-window-frame	pending-server	outside	-	SELECT sum(a) OVER (ORDER BY a ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t	g2 (fork issue #56)	-
+g2-out-window-named	pending-server	outside	-	SELECT sum(a) OVER w FROM t WINDOW w AS (ORDER BY a)	g2 (fork issue #56)	-
+g2-out-window-filter	pending-server	outside	-	SELECT count(*) FILTER (WHERE a > 1) OVER () FROM t	g2 (fork issue #56)	-

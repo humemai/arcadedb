@@ -151,6 +151,9 @@ public final class ExpressionCompiler {
   }
 
   public static boolean isAggregate(final Expression.FunctionCall call) {
+    // an aggregate with OVER is a window function: the window stage computes it
+    if (call.over() != null)
+      return false;
     if (call.name().size() > 2 || (call.name().size() == 2 && !"pg_catalog".equals(call.name().get(0).value())))
       return false;
     return switch (call.name().get(call.name().size() - 1).value()) {
@@ -1001,6 +1004,8 @@ public final class ExpressionCompiler {
   }
 
   private Evaluable function(final Expression.FunctionCall call) {
+    if (call.over() != null)
+      throw new PostgreSQLEvaluationException("42P20", "window functions are not allowed in this context");
     if (call.name().size() > 2 || (call.name().size() == 2 && !"pg_catalog".equals(call.name().get(0).value())))
       throw PostgreSQLEvaluationException.unsupported("The function " + call.name().get(0).value() + "." + call.name().get(1).value()
           + " is not supported");
