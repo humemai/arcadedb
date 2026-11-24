@@ -777,7 +777,7 @@ public class PostgresCatalog {
       tokens.remove(tokens.size() - 1);
 
     substituteParameters(tokens, parameters);
-    tokens = plainSpellings(tokens);
+    tokens = withoutPartitionAncestors(plainSpellings(tokens));
 
     // the information_schema of a statement of the language is the language's own, one source for the columns and the keys
     if (relational && namesInformationSchema(tokens))
@@ -793,6 +793,51 @@ public class PostgresCatalog {
     }
 
     return textOfVectors(resolveBounded(tokens, context(database, userName, settings, relational), false));
+  }
+
+  /**
+   * psql lists the constraints that refer to a table (the "Referenced by" of {@code \d}) with
+   * {@code confrelid IN (SELECT pg_partition_ancestors('oid') UNION ALL VALUES ('oid'::regclass))}. No relation of this catalog is a
+   * partition, so the first arm has no row: it is dropped, and the {@code VALUES} of one column is read as the {@code SELECT} of
+   * its expression, which this catalog evaluates. Without it the filter was unreadable, which keeps every row, and the list had every
+   * foreign key of the database (a foreign key is the first constraint of kind {@code f} to be listed).
+   */
+  private static List<PostgresCatalogToken> withoutPartitionAncestors(final List<PostgresCatalogToken> tokens) {
+    final List<PostgresCatalogToken> result = new ArrayList<>(tokens.size());
+    int i = 0;
+    while (i < tokens.size()) {
+      // the function name follows SELECT, with or without its schema
+      final int name = i + 3 < tokens.size() && tokens.get(i + 1).isKeyword("pg_catalog") && tokens.get(i + 2).isSymbol(".") ? i + 3 : i + 1;
+      if (tokens.get(i).isKeyword("SELECT") && name + 1 < tokens.size() && tokens.get(name).isKeyword("pg_partition_ancestors")
+          && tokens.get(name + 1).isSymbol("(")) {
+        final int close = closingParenthesis(tokens, name + 1);
+        if (close > 0 && close + 3 < tokens.size() && tokens.get(close + 1).isKeyword("UNION") && tokens.get(close + 2).isKeyword("ALL")
+            && tokens.get(close + 3).isKeyword("VALUES") && close + 4 < tokens.size() && tokens.get(close + 4).isSymbol("(")) {
+          final int valuesClose = closingParenthesis(tokens, close + 4);
+          if (valuesClose > 0) {
+            result.add(tokens.get(i));
+            result.addAll(tokens.subList(close + 5, valuesClose));
+            i = valuesClose + 1;
+            continue;
+          }
+        }
+      }
+      result.add(tokens.get(i));
+      ++i;
+    }
+    return result;
+  }
+
+  /** The position of the parenthesis that closes the one at {@code open}, or -1. */
+  private static int closingParenthesis(final List<PostgresCatalogToken> tokens, final int open) {
+    int depth = 0;
+    for (int i = open; i < tokens.size(); i++) {
+      if (tokens.get(i).isSymbol("("))
+        ++depth;
+      else if (tokens.get(i).isSymbol(")") && --depth == 0)
+        return i;
+    }
+    return -1;
   }
 
   private static Context context(final Database database, final String userName, final PostgresSessionSettings settings,
