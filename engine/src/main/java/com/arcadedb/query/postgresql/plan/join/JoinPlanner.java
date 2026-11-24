@@ -48,8 +48,10 @@ import com.arcadedb.schema.Schema;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -83,18 +85,43 @@ import java.util.Set;
  * The row estimates use the type counts of the schema API and nothing else: a pushed condition divides the estimate by four and
  * an index lookup by ten, constants and not statistics.
  *
- * <p><b>Traversal (fork issue #8).</b> One hop through an edge table reads as
+ * <p><b>Traversal (fork issue #8, bound start fork issue #52).</b> One hop through an edge table reads as
  * {@code v1 JOIN e ON e.source_id = v1.id JOIN v2 ON e.target_id = v2.id}, or the same with the two ends the other way round
  * ({@code e.target_id = v1.id} first), {@code INNER} or {@code LEFT}. Planned as two value joins it throws away what the vertex
- * holds, its edges. When the setting {@code arcadedb.postgresql.traversalRule} is on (the default) the join planner plans each of
- * the two joins as the step it is: the join of an edge table to a vertex id on the left is a {@link JoinSource.Strategy#TRAVERSE}
- * (for each left vertex, read it by its id and walk its stored edges of that type), and the join of an edge endpoint on the left
- * to the id of a vertex table on the right is a read of that vertex by its record id for each edge row, whatever the sizes of the
- * two inputs. The rule applies only where it gives the rows of the equality join: the edge table has declared endpoint tables
+ * holds, its edges. When the setting {@code arcadedb.postgresql.traversalRule} is on (the default) and the start is bound (see
+ * below) the join planner plans each of the two joins as the step it is: the join of an edge table to a vertex id on the left is
+ * a {@link JoinSource.Strategy#TRAVERSE} (for each left vertex, read it by its id and walk its stored edges of that type), and
+ * the join of an edge endpoint on the left to the id of a vertex table on the right is a read of that vertex by its record id
+ * for each edge row, whatever the sizes of the two inputs. The rule applies only where it gives the rows of the equality join:
+ * the edge table has declared endpoint tables
  * ({@code EdgeEndpoints}) that the vertex table on the walked side matches (it is the declared table, a subtype of it, or a
  * supertype of it), an incoming walk needs the edge type and its subtypes to store the incoming side (a unidirectional type does
  * not), and an edge table that can hold lightweight edges is walked only from its declared source table, as its scan is. Anything
  * else keeps the hash join or the index nested loop of S5. The plan line names the step and the equivalent pattern.
+ *
+ * <p><b>The start has to be bound (fork issue #52).</b> A walk reads each start vertex by its record id and then its edges, so it
+ * costs for each start vertex what the hash join costs once for all of them, and a join from every vertex of a table is slower
+ * as a walk (the timed run of fork issue #13 measured 256 ms against 106 ms for one hop from all vertices). So the rule applies
+ * only where the start is a small set that the statement names. The <i>start</i> of a join is its left input. It is <i>bound</i>
+ * when:
+ * <ul>
+ * <li>the left input is a table that a term of the {@code WHERE} clause (or of an {@code ON} clause that the planner moves below
+ * the join, see {@link Pushdown}) restricts to the rows of a key: {@code key = constant} or {@code key IN (constant, ...)}, where
+ * the key is a column that is a primary key or a unique key of the table alone (the {@code id} of a table, a property with a
+ * unique index on it alone), and a constant is a literal, a parameter or an expression of them. {@code NOT IN}, {@code OR},
+ * ranges, an equality on a column that is not a key (an index that allows duplicates may return half of the table) and a term
+ * that reads another table do not bind. The start is then at most as many vertices as there are constants;</li>
+ * <li>or the left input is a join that is itself a walk from a bound start (a traversal, or the read of the far end of its
+ * edges), possibly with terms applied on top: the second hop of a chain starts from the vertices the first hop reached, and a
+ * chain of hops from one vertex stays a chain of walks.</li>
+ * </ul>
+ * Anything else is not bound, and the join is planned exactly as with the setting off: a table of all vertices, a start that is
+ * only bound by a term on the far end ({@code WHERE c.cid = 10} on the table of the second join; the planner does not reorder),
+ * a start that is bound by a join with another table ({@code orders o JOIN person p ON o.buyer = p.id JOIN works_at w ON
+ * w.source_id = p.id WHERE o.oid = 102}: the left input is a join of two tables, not a walk), a start with a term on a column
+ * that is not a key. The plan line of a join that the rule would have changed says why it did not, {@code [hash join: no bound
+ * start]}, and the line of a walk says {@code [traversal: start bound by p.pid = 1]}. With the setting off the plan lines are
+ * those of the plain joins, with no reason added.
  *
  * <p><b>Seams.</b> {@link #support} is the decision "an index, a link or an edge pattern supports this join, or nothing does",
  * with its reason; it is shown in the plan line of the join and is the place fork issue #9 raises its warning. The nodes of the
@@ -285,6 +312,8 @@ public final class JoinPlanner {
   private final Tables            tables;
   private final long              capBytes;
   private final boolean           traversalRule;
+  /** The sources whose rows come from a bound start (fork issue #52), with the text of the term that binds it. */
+  private final Map<RelationSource, String> boundStarts = new IdentityHashMap<>();
 
   /**
    * @param capBytes the memory cap of every join, see {@link BuildMemory}
@@ -445,7 +474,88 @@ public final class JoinPlanner {
     final List<Expression> terms = new ArrayList<>();
     for (final Conjunct term : pushed)
       terms.add(term.expression());
-    return filtered(leaf, tables.narrow(leaf.table, terms, compiler(leaf)), pushed);
+    final RelationSource source = filtered(leaf, tables.narrow(leaf.table, terms, compiler(leaf)), pushed);
+    if (traversalRule) {
+      final String key = boundKey(leaf, terms);
+      if (key != null)
+        boundStarts.put(source, key);
+    }
+    return source;
+  }
+
+  // ---- the bound start (fork issue #52) ----
+
+  /**
+   * The text of the term that binds the rows of a table to the rows of a key, or {@code null} when no term of {@code terms} does:
+   * {@code key = constant} (either side) or {@code key IN (constant, ...)}, where the key is a column that is alone a primary key
+   * or a unique key of the table, and a constant is a literal, a parameter or an expression of them (the same constants the
+   * single-table plan takes for an index lookup).
+   */
+  private String boundKey(final Leaf leaf, final List<Expression> terms) {
+    final ExpressionCompiler compiler = compiler(leaf);
+    for (final Expression term : terms) {
+      boolean bound = false;
+      if (term instanceof Expression.BinaryOp op && op.operator() == Expression.BinaryOperator.EQUAL)
+        bound = (isKey(leaf, op.left(), compiler) && isConstant(op.right(), compiler))
+            || (isKey(leaf, op.right(), compiler) && isConstant(op.left(), compiler));
+      else if (term instanceof Expression.InList in && !in.negated() && isKey(leaf, in.operand(), compiler)) {
+        bound = true;
+        for (final Expression value : in.values())
+          bound &= isConstant(value, compiler);
+      }
+      if (bound) {
+        final String text = AstPrinter.print(term);
+        final String bare = text.startsWith("(") && text.endsWith(")") ? text.substring(1, text.length() - 1) : text;
+        return bare.length() > 80 ? bare.substring(0, 77) + "..." : bare;
+      }
+    }
+    return null;
+  }
+
+  /** Whether the expression is a column of the table that is a primary key or a unique key of the table alone. */
+  private static boolean isKey(final Leaf leaf, final Expression expression, final ExpressionCompiler compiler) {
+    if (!(expression instanceof Expression.ColumnRef) || !(compiler.compile(expression) instanceof Evaluable.Slot slot))
+      return false;
+    final Table table = leaf.table.table();
+    return table.keyOn(List.of(table.columns().get(slot.index()).name())) != null;
+  }
+
+  /**
+   * Whether the expression is a constant of the statement: made of literals, parameters, operators and casts only (a subquery or a
+   * function call is never taken for one, so the check plans nothing twice) and constant once compiled.
+   */
+  private static boolean isConstant(final Expression expression, final ExpressionCompiler compiler) {
+    return fixed(expression) && compiler.compile(expression).isConstant();
+  }
+
+  private static boolean fixed(final Expression expression) {
+    return switch (expression) {
+      case Expression.IntegerLiteral e -> true;
+      case Expression.DecimalLiteral e -> true;
+      case Expression.StringLiteral e -> true;
+      case Expression.ParameterRef e -> true;
+      case Expression.UnaryOp e -> fixed(e.operand());
+      case Expression.BinaryOp e -> fixed(e.left()) && fixed(e.right());
+      case Expression.Cast e -> fixed(e.operand());
+      default -> false;
+    };
+  }
+
+  /**
+   * The text of the term that binds the start of a join whose left input is {@code left}, {@code null} when the start is not
+   * bound: the left input is a table restricted to the rows of a key, or a walk that began there, under any filters.
+   */
+  private String boundStart(final RelationSource left) {
+    RelationSource current = left;
+    while (true) {
+      final String key = boundStarts.get(current);
+      if (key != null)
+        return key;
+      if (current instanceof FilteredSource filteredSource)
+        current = filteredSource.inner();
+      else
+        return null;
+    }
   }
 
   private RelationSource filtered(final Node node, final RelationSource source, final List<Conjunct> terms) {
@@ -493,22 +603,34 @@ public final class JoinPlanner {
     final JoinSupport support = support(join, candidates);
     final boolean inner = join.type == TableReference.JoinType.INNER;
 
+    // fork issue #52: the rule applies only where the start of the join is a small set that the statement names
+    final String start = traversalRule ? boundStart(left) : null;
     JoinSource.Strategy strategy = strategyOf(keys);
     JoinSource.IndexProbe probe = null;
     JoinSource.Traversal traversal = null;
     boolean buildLeft = false;
+    // the shape of a walk is there (the first hop, or the read of the far end of an edge) and only the start decides
+    boolean walkShape = false;
     if (strategy == JoinSource.Strategy.HASH && traversalRule) {
       traversal = traversal(join, right, candidates);
-      if (traversal != null)
-        strategy = JoinSource.Strategy.TRAVERSE;
+      if (traversal != null) {
+        walkShape = true;
+        if (start != null)
+          strategy = JoinSource.Strategy.TRAVERSE;
+        else
+          traversal = null;
+      }
     }
     if (strategy == JoinSource.Strategy.HASH) {
-      probe = indexProbe(join, right, candidates, leftRows);
+      probe = indexProbe(join, right, candidates, leftRows, start != null);
       if (probe != null)
         strategy = JoinSource.Strategy.INDEX_NESTED_LOOP;
       else
         buildLeft = inner && leftRows < rightRows;
+      walkShape |= traversalRule && readsFarEnd(join, right, candidates);
     }
+    final boolean farEnd = strategy == JoinSource.Strategy.INDEX_NESTED_LOOP && start != null
+        && edgeEnd(join, candidates.get(probe.key())) != null;
 
     final String header;
     final List<String> rightLines = new ArrayList<>(right.describeTree());
@@ -521,10 +643,10 @@ public final class JoinPlanner {
           + traversal.edges().table().name() + " AS " + traversal.edges().relation() + " of each left row");
       break;
     case INDEX_NESTED_LOOP: {
-      final Located edgeEnd = traversalRule ? edgeEnd(join, candidates.get(probe.key())) : null;
-      if (edgeEnd != null)
+      if (farEnd)
         header = "TRAVERSE TO " + names(join.right) + " " + join.type + " ON " + condition + " (read " + names(join.right)
-            + " by " + probe.column().name() + " from the edge) = " + secondHopPattern(left, edgeEnd, probe.table());
+            + " by " + probe.column().name() + " from the edge) = "
+            + secondHopPattern(left, edgeEnd(join, candidates.get(probe.key())), probe.table());
       else
         header = "INDEX NESTED LOOP " + join.type + " ON " + condition + " (probe " + names(join.right) + " by "
             + probe.column().name() + ")";
@@ -544,9 +666,19 @@ public final class JoinPlanner {
       estimated = leftRows > Long.MAX_VALUE / Math.max(1L, rightRows) ? Long.MAX_VALUE : leftRows * Math.max(1L, rightRows);
     else
       estimated = inner ? Math.max(leftRows, rightRows) : leftRows;
-    return new JoinSource(strategy, join.type, left, right, keys, residual, buildLeft, probe, traversal, capBytes,
-        header + " [" + describe(support) + "]", rightLines, support, warns(join, support) ? warningOf(join, condition) : null,
-        estimated).withOutputs(join.outputs());
+    final String reason;
+    if (strategy == JoinSource.Strategy.TRAVERSE || farEnd)
+      reason = " [traversal: start bound by " + start + "]";
+    else if (walkShape)
+      reason = " [" + (strategy == JoinSource.Strategy.HASH ? "hash join" : "index nested loop") + ": no bound start]";
+    else
+      reason = "";
+    final JoinSource source = new JoinSource(strategy, join.type, left, right, keys, residual, buildLeft, probe, traversal, capBytes,
+        header + " [" + describe(support) + "]" + reason, rightLines, support,
+        warns(join, support) ? warningOf(join, condition) : null, estimated).withOutputs(join.outputs());
+    if (strategy == JoinSource.Strategy.TRAVERSE || farEnd)
+      boundStarts.put(source, start);
+    return source;
   }
 
   /** The strategy a join without any key cannot avoid, and the one an equality join starts from. */
@@ -630,7 +762,7 @@ public final class JoinPlanner {
    * two strings, and the left input is not larger than the right table.
    */
   private JoinSource.IndexProbe indexProbe(final JoinNode join, final RelationSource right, final List<Candidate> candidates,
-      final long leftRows) {
+      final long leftRows, final boolean startBound) {
     RelationSource base = right;
     Evaluable filter = null;
     if (right instanceof FilteredSource filteredRight) {
@@ -645,8 +777,9 @@ public final class JoinPlanner {
       if (!(candidate.rawRight() instanceof Evaluable.Slot slot))
         continue;
       final Column column = table.table().columns().get(slot.index());
-      // the end vertex of an edge row is read by its record id whatever the sizes (the traversal rule): the edge says where it is
-      final boolean followsAnEdge = traversalRule && table.table().kind() == Table.Kind.VERTEX
+      // the end vertex of an edge row is read by its record id whatever the sizes (the traversal rule): the edge says where it is.
+      // Only where the start is bound (fork issue #52): the edge rows of a table of all vertices are joined by the sizes
+      final boolean followsAnEdge = traversalRule && startBound && table.table().kind() == Table.Kind.VERTEX
           && column.kind() == Column.Kind.IDENTITY && edgeEnd(join, candidate) != null;
       if (!smaller && !followsAnEdge)
         continue;
@@ -659,6 +792,22 @@ public final class JoinPlanner {
         return new JoinSource.IndexProbe(table, column, i, filter);
     }
     return null;
+  }
+
+  /**
+   * Whether the join has the shape of the read of the far end of an edge: the right input is a plain scan of a vertex table, and a
+   * key joins its {@code id} to an endpoint of an edge table on the left. The rule reads the vertex by its record id for each edge
+   * row when the start is bound; the plan line of a join that has the shape and not the start says so.
+   */
+  private boolean readsFarEnd(final JoinNode join, final RelationSource right, final List<Candidate> candidates) {
+    final RelationSource base = right instanceof FilteredSource filteredRight ? filteredRight.inner() : right;
+    if (!(base instanceof TableSource table) || table.access() != TableSource.Access.SCAN || table.table().kind() != Table.Kind.VERTEX)
+      return false;
+    for (final Candidate candidate : candidates)
+      if (candidate.rawRight() instanceof Evaluable.Slot slot
+          && table.table().columns().get(slot.index()).kind() == Column.Kind.IDENTITY && edgeEnd(join, candidate) != null)
+        return true;
+    return false;
   }
 
   // ---- traversal (fork issue #8) ----

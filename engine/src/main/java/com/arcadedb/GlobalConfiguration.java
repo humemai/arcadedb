@@ -3552,7 +3552,11 @@ public enum GlobalConfiguration {
   POSTGRESQL_TRAVERSAL_RULE("arcadedb.postgresql.traversalRule", SCOPE.DATABASE, """
       Lets the planner of the postgresql query language run a join through an edge table as a traversal: for \
       person JOIN works_at ON works_at.source_id = person.id JOIN company ON works_at.target_id = company.id it walks the \
-      stored edges of each person instead of joining the three tables by value. The rows are the same with the rule on and off; \
+      stored edges of each person instead of joining the three tables by value. The walk is used only where its start is bound: \
+      the first table of the join is restricted by a term to the rows of a key (key = constant, or key IN (constants), where \
+      the key is the id or a unique key of the table alone and a constant is a literal or a parameter), or it is the continuation \
+      of such a walk. A join that reads all the rows of a table, or whose start is bound by a join with another table, stays the \
+      plain hash join, which is cheaper there; the plan line says so. The rows are the same with the rule on and off; \
       only the cost and the plan differ. Set to false to plan every such join as a plain equality join, which is the control of \
       a measurement. Default is true""", Boolean.class, true),
 

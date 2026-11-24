@@ -296,17 +296,24 @@ class JoinPlanTest extends TestHelper {
   }
 
   @Test
-  void anEdgeEndJoinedToAnIdIsReadByRecordIdAndWithTheRuleOffIsAPlainEquality() {
-    final String sql = "SELECT count(*) FROM works_at w JOIN person p ON w.source_id = p.id";
-    assertThat(count(sql)).isEqualTo(5);
-    // the far end of an edge row is read by record id for each edge; with the traversal rule off (fork issue #8) the join is the
-    // plain equality of two columns, and the rows are the same
-    assertThat(plan(sql)).contains("supported by edge:").contains("TRAVERSE TO p");
+  void anEdgeEndJoinedToAnIdIsReadByRecordIdFromABoundStartAndOtherwiseIsAPlainEquality() {
+    final String all = "SELECT count(*) FROM works_at w JOIN person p ON w.source_id = p.id";
+    assertThat(count(all)).isEqualTo(5);
+    // all the edges (fork issue #52): no bound start, so the plan is the one of the plain equality, with the reason
+    assertThat(plan(all)).contains("supported by edge:").contains("no bound start").doesNotContain("TRAVERSE");
+
+    // the far end of one edge, named by the key of the edge table (its record id): read by record id for each edge row
+    final String rid = (String) rows("SELECT id FROM works_at WHERE since = 2020").get(0).get(0);
+    final String sql = "SELECT count(*) FROM works_at w JOIN person p ON w.source_id = p.id WHERE w.id = '" + rid + "'";
+    assertThat(count(sql)).isEqualTo(1);
+    assertThat(plan(sql)).contains("supported by edge:").contains("TRAVERSE TO p").contains("[traversal: start bound by w.id = '" + rid + "']");
+    // with the traversal rule off (fork issue #8) the join is the plain equality of two columns, and the rows are the same
     database.getConfiguration().setValue(GlobalConfiguration.POSTGRESQL_TRAVERSAL_RULE, false);
-    assertThat(plan(sql)).contains("supported by edge:").doesNotContain("TRAVERSE");
-    assertThat(count(sql)).isEqualTo(5);
+    assertThat(plan(sql)).contains("supported by edge:").doesNotContain("TRAVERSE").doesNotContain("start bound").doesNotContain("no bound start");
+    assertThat(count(sql)).isEqualTo(1);
+    assertThat(count(all)).isEqualTo(5);
     database.getConfiguration().setValue(GlobalConfiguration.POSTGRESQL_TRAVERSAL_RULE, true);
-    final SelectPlan select = planned(sql, BuildMemory.DEFAULT_CAP_BYTES);
+    final SelectPlan select = planned(all, BuildMemory.DEFAULT_CAP_BYTES);
     assertThat(select.source()).isInstanceOf(JoinSource.class);
     assertThat(((JoinSource) select.source()).support().kind()).isEqualTo(JoinSupport.Kind.EDGE);
   }
