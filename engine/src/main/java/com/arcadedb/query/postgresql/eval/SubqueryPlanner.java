@@ -20,6 +20,8 @@ package com.arcadedb.query.postgresql.eval;
 
 import com.arcadedb.query.postgresql.ast.Statement;
 
+import java.util.List;
+
 /** What the expression compiler asks the planner when it meets a subquery: plan it with the names that are visible here. */
 public interface SubqueryPlanner {
   /**
@@ -37,4 +39,29 @@ public interface SubqueryPlanner {
    * @param outer the compiler of the outer query, which types the outer side of each correlation
    */
   Evaluable exists(Statement query, ExpressionCompiler outer);
+
+  /**
+   * A subquery that reads columns of the query around it ({@code (SELECT count(*) FROM t WHERE t.k = outer.k)}), as PostgreSQL runs
+   * it: once for each row of the outer query, with the outer columns it reads fixed to that row's values. A row with the same values
+   * as an earlier one gets the earlier answer.
+   *
+   * @param query a {@code SelectStatement}, a {@code SetOperationStatement} or a {@code WithStatement}
+   * @param outer the compiler of the outer query, which types and reads the outer columns
+   * @return {@code null} when the subquery reads no column of the outer query: {@link #plan} serves it
+   */
+  default CorrelatedRows correlated(final Statement query, final ExpressionCompiler outer) {
+    return null;
+  }
+
+  /** The answer of a correlated subquery as a function of the row of the outer query. */
+  interface CorrelatedRows {
+    /** The type of each column of the answer. */
+    List<PgType> types();
+
+    /** The type name of each column of the answer, as the client sees it. */
+    List<String> typeNames();
+
+    /** The rows of the answer for this row of the outer query. The rows are held in memory under the cap of the planner ({@code 53200}). */
+    List<Object[]> rows(Object[] outerRow);
+  }
 }

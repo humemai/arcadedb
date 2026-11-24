@@ -85,6 +85,8 @@ public class SelectPlanner {
   private final long               joinMemoryCap;
   /** The common table expressions that are visible here, by name; a query that has a {@code WITH} gets a planner of its own. */
   private final Map<String, Cte>   ctes;
+  /** The scope of the query around this one when this is a correlated subquery run for one row of it; {@code null} otherwise. */
+  private final ExpressionCompiler.Scope outerScope;
   private       int                unnamedSubqueries;
 
   /** A common table expression of a {@code WITH}: its kept rows, and the names and types its readers see. */
@@ -105,11 +107,22 @@ public class SelectPlanner {
 
   private SelectPlanner(final Database database, final RelationalCatalog catalog, final Parameters parameters,
       final long joinMemoryCap, final Map<String, Cte> ctes) {
+    this(database, catalog, parameters, joinMemoryCap, ctes, null);
+  }
+
+  private SelectPlanner(final Database database, final RelationalCatalog catalog, final Parameters parameters,
+      final long joinMemoryCap, final Map<String, Cte> ctes, final ExpressionCompiler.Scope outerScope) {
     this.database = database;
     this.catalog = catalog;
     this.parameters = parameters;
     this.joinMemoryCap = joinMemoryCap;
     this.ctes = ctes;
+    this.outerScope = outerScope;
+  }
+
+  /** A planner for a query inside this one that reads columns of the query around it through {@code outer}. */
+  private SelectPlanner inside(final ExpressionCompiler.Scope outer) {
+    return new SelectPlanner(database, catalog, parameters, joinMemoryCap, ctes, outer);
   }
 
   public RelationalCatalog catalog() {
@@ -154,6 +167,11 @@ public class SelectPlanner {
       @Override
       public RelationSource derived(final TableReference.Subquery reference) {
         return planDerived(reference);
+      }
+
+      @Override
+      public ExpressionCompiler.Scope outer() {
+        return outerScope;
       }
 
       @Override
@@ -232,7 +250,7 @@ public class SelectPlanner {
       source = joined.source();
     } else
       source = planFrom(select.from());
-    final RelationScope scope = new RelationScope(source.columns(), catalog, subqueryPlanner(), source.outputs());
+    final RelationScope scope = new RelationScope(source.columns(), catalog, subqueryPlanner(), source.outputs(), outerScope);
     final ExpressionCompiler compiler = new ExpressionCompiler(scope, parameters);
 
     Evaluable where = null;
@@ -403,8 +421,106 @@ public class SelectPlanner {
       public Evaluable exists(final Statement query, final ExpressionCompiler outer) {
         return planExists(query, outer);
       }
+
+      @Override
+      public CorrelatedRows correlated(final Statement query, final ExpressionCompiler outer) {
+        return planCorrelated(query, outer);
+      }
     };
   }
+
+  /**
+   * A subquery that reads columns of the query around it: planned once with placeholders to learn which columns it reads (none:
+   * it is no correlated subquery, {@code null}), then planned again for each different row of values of those columns, run, and
+   * remembered under the values. Each plan is the plan of a query whose outer columns are constants, so a key equality on an
+   * indexed column is an index lookup. The answers kept are bounded in number; a subquery that reads many different rows of the
+   * outer query costs one plan and one run for each.
+   */
+  private SubqueryPlanner.CorrelatedRows planCorrelated(final Statement query, final ExpressionCompiler outer) {
+    final OuterBindings discovery = OuterBindings.discovering(outer);
+    final QueryPlan probe = inside(discovery).planQuery(query, false);
+    if (discovery.isEmpty())
+      return null;
+    if (query instanceof SelectStatement select)
+      refuseAggregatesOfTheOuterQuery(select, discovery);
+    final List<Evaluable> readers = discovery.readers();
+    final List<PgType> types = probe.outputTypes();
+    final List<String> typeNames = new ArrayList<>();
+    for (final PostgreSQLResultSet.Column column : probe.columns())
+      typeNames.add(column.typeName());
+    final Map<List<Object>, List<Object[]>> answers = new java.util.LinkedHashMap<>(16, 0.75f, true) {
+      @Override
+      protected boolean removeEldestEntry(final Map.Entry<List<Object>, List<Object[]>> eldest) {
+        return size() > MAX_REMEMBERED_ANSWERS;
+      }
+    };
+    return new SubqueryPlanner.CorrelatedRows() {
+      @Override
+      public List<PgType> types() {
+        return types;
+      }
+
+      @Override
+      public List<String> typeNames() {
+        return typeNames;
+      }
+
+      @Override
+      public synchronized List<Object[]> rows(final Object[] outerRow) {
+        final List<Object> key = new ArrayList<>(readers.size());
+        for (final Evaluable reader : readers)
+          key.add(SelectPlan.normalize(reader.eval(outerRow)));
+        List<Object[]> rows = answers.get(key);
+        if (rows == null) {
+          final QueryPlan plan = inside(discovery.bind(outerRow)).planQuery(query, false);
+          rows = new MaterializedSource.Materialization(plan, joinMemoryCap, "a correlated subquery").rows();
+          answers.put(key, rows);
+        }
+        return rows;
+      }
+    };
+  }
+
+  /**
+   * An aggregate whose arguments read only columns of the outer query ({@code (SELECT max(p.pid))}) is computed by the outer query in
+   * PostgreSQL, over the rows of its group. Here the subquery would compute it over its own rows, which is another answer, so the
+   * statement is refused.
+   */
+  private static void refuseAggregatesOfTheOuterQuery(final SelectStatement select, final OuterBindings outer) {
+    final List<Expression> expressions = new ArrayList<>();
+    for (final SelectItem item : select.items())
+      if (item instanceof SelectItem.Projection projection)
+        expressions.add(projection.expression());
+    if (select.having() != null)
+      expressions.add(select.having());
+    for (final SortItem item : select.orderBy())
+      expressions.add(item.expression());
+    for (final Expression expression : expressions)
+      if (aggregateOfTheOuterQuery(expression, outer))
+        throw new PostgreSQLFeatureNotSupportedException(
+            "An aggregate over columns of the outer query only, inside a subquery, is not supported");
+  }
+
+  private static boolean aggregateOfTheOuterQuery(final Expression expression, final OuterBindings outer) {
+    if (expression instanceof Expression.FunctionCall call && ExpressionCompiler.isAggregate(call)) {
+      final List<Expression.ColumnRef> references = new ArrayList<>();
+      for (final Expression argument : call.args())
+        referencesIn(argument, references);
+      if (references.isEmpty())
+        return false;
+      for (final Expression.ColumnRef reference : references)
+        if (!outer.reads(reference))
+          return false;
+      return true;
+    }
+    for (final Expression child : ExpressionCompiler.children(expression))
+      if (aggregateOfTheOuterQuery(child, outer))
+        return true;
+    return false;
+  }
+
+  /** How many answers of a correlated subquery are kept, by the values of the outer columns it reads. */
+  private static final int MAX_REMEMBERED_ANSWERS = 10_000;
 
   private Subquery planSubquery(final Statement query) {
     final QueryPlan plan = planQuery(query, false);
@@ -714,7 +830,7 @@ public class SelectPlanner {
   /** {@code WITH}: each name is planned in order, and the ones after it can read it; the body reads all of them. */
   private QueryPlan planWith(final WithStatement with, final boolean operand) {
     final Map<String, Cte> scope = new HashMap<>(ctes);
-    final SelectPlanner scoped = new SelectPlanner(database, catalog, parameters, joinMemoryCap, scope);
+    final SelectPlanner scoped = new SelectPlanner(database, catalog, parameters, joinMemoryCap, scope, outerScope);
     final Set<String> defined = new HashSet<>();
     for (final WithStatement.Cte definition : with.ctes()) {
       final String name = definition.name().value();
@@ -950,6 +1066,13 @@ public class SelectPlanner {
 
     @Override
     public Evaluable column(final Expression.ColumnRef reference) {
+      // a column of the query around a correlated subquery is a constant for it, grouped or not
+      try {
+        if (inputCompiler.compile(reference) instanceof Evaluable.Constant outer)
+          return outer;
+      } catch (final PostgreSQLReferenceException notAColumn) {
+        // the error below is the one this scope has always given
+      }
       throw new PostgreSQLEvaluationException("42803", "column \"" + reference.column().value()
           + "\" must appear in the GROUP BY clause or be used in an aggregate function");
     }
