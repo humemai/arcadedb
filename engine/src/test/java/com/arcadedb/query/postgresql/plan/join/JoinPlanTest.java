@@ -313,7 +313,7 @@ class JoinPlanTest extends TestHelper {
     assertThat(count(sql)).isEqualTo(1);
     assertThat(count(all)).isEqualTo(5);
     database.getConfiguration().setValue(GlobalConfiguration.POSTGRESQL_TRAVERSAL_RULE, true);
-    final SelectPlan select = planned(all, BuildMemory.DEFAULT_CAP_BYTES);
+    final SelectPlan select = planned(all, BuildMemory.FLOOR_CAP_BYTES);
     assertThat(select.source()).isInstanceOf(JoinSource.class);
     assertThat(((JoinSource) select.source()).support().kind()).isEqualTo(JoinSupport.Kind.EDGE);
   }
@@ -331,7 +331,7 @@ class JoinPlanTest extends TestHelper {
   }
 
   private JoinSupport supportOf(final String sql) {
-    return ((JoinSource) planned(sql, BuildMemory.DEFAULT_CAP_BYTES).source()).support();
+    return ((JoinSource) planned(sql, BuildMemory.FLOOR_CAP_BYTES).source()).support();
   }
 
   @Test
@@ -359,7 +359,7 @@ class JoinPlanTest extends TestHelper {
     final String nested = "SELECT a.name FROM person a JOIN person b ON a.pid < b.pid";
     assertThatThrownBy(() -> planned(nested, 1000L).execute(database)).isInstanceOfSatisfying(PostgreSQLEvaluationException.class,
         e -> assertThat(e.getSqlState()).isEqualTo("53200"));
-    assertThat(planned(hash, BuildMemory.DEFAULT_CAP_BYTES).execute(database).hasNext()).as("the default cap holds the small fixture")
+    assertThat(planned(hash, BuildMemory.FLOOR_CAP_BYTES).execute(database).hasNext()).as("the default cap holds the small fixture")
         .isTrue();
   }
 
