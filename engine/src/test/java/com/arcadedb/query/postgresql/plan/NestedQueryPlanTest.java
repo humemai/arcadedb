@@ -112,15 +112,23 @@ class NestedQueryPlanTest extends TestHelper {
   @Test
   void aCorrelationThatIsNotAnEqualityIsRefused() {
     for (final String sql : new String[] {
-        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.total > p.age)",
-        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid OR o.oid = 1)",
-        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid + o.oid)",
-        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE p.age = 36)",
+        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid AND abs(o.oid - p.age) > 3)",
         "SELECT name FROM person p WHERE EXISTS (SELECT count(*) FROM orders o WHERE o.pid = p.pid)",
         "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid LIMIT 1)" })
       assertThatThrownBy(() -> planned(sql, BuildMemory.FLOOR_CAP_BYTES)).as(sql)
           .isInstanceOfSatisfying(com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException.class,
               e -> assertThat(e.getSqlState()).isEqualTo("0A000"));
+  }
+
+  /** A term that is no key equality is tested on the rows that the equalities select (fork issue #72); the answers are the corpus's. */
+  @Test
+  void aCorrelationThatIsNotAnEqualityIsTestedOnTheCandidateRows() {
+    for (final String sql : new String[] {
+        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.total > p.age)",
+        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid OR o.oid = 1)",
+        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid + o.oid)",
+        "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE p.age = 36)" })
+      assertThat(planned(sql, BuildMemory.FLOOR_CAP_BYTES)).as(sql).isNotNull();
   }
 
   @Test

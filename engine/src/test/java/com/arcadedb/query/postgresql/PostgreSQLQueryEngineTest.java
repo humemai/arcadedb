@@ -84,7 +84,7 @@ class PostgreSQLQueryEngineTest extends TestHelper {
   @ParameterizedTest
   @ValueSource(strings = { "CREATE TABLE t (a int)", "DROP TABLE person", "WITH RECURSIVE x AS (SELECT 1) SELECT * FROM x", "(VALUES (1))",
       "SET search_path = x", "SAVEPOINT a", "ROLLBACK TO a", "INSERT INTO person VALUES (1) ON CONFLICT ON CONSTRAINT c DO NOTHING",
-      "UPDATE person SET age = 1 FROM orders", "DELETE FROM person USING orders", "", "   " })
+      "DELETE FROM person USING orders", "", "   " })
   void analyzeRefusesEverythingOutsideTheLanguageWithFeatureNotSupported(final String statement) {
     assertThatThrownBy(() -> engine().analyze(statement)).as(statement)
         .isInstanceOfSatisfying(PostgreSQLFeatureNotSupportedException.class,

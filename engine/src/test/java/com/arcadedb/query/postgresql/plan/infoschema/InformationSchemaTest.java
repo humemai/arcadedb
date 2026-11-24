@@ -119,6 +119,22 @@ class InformationSchemaTest extends TestHelper {
   }
 
   @Test
+  void theRecordIdAndTheIdOfAnEdgeAreGeneratedAlwaysIdentityColumns() {
+    // what PostgreSQL says of a GENERATED ALWAYS AS IDENTITY column: a client that reads it leaves the column out of an INSERT
+    assertThat(rows("SELECT table_name, column_name, is_nullable, column_default, is_identity, identity_generation, identity_start,"
+        + " is_generated FROM information_schema.columns WHERE table_schema = 'public' AND is_identity = 'YES'"
+        + " ORDER BY table_name")).containsExactly(
+        row("company", "id", "NO", null, "YES", "ALWAYS", null, "NEVER"), row("orders", "id", "NO", null, "YES", "ALWAYS", null, "NEVER"),
+        row("person", "id", "NO", null, "YES", "ALWAYS", null, "NEVER"),
+        row("works_at", "id", "NO", null, "YES", "ALWAYS", null, "NEVER"));
+    // the ends of an edge and the properties are ordinary columns, and so are the columns of the views themselves
+    assertThat(rows("SELECT count(*) FROM information_schema.columns WHERE is_identity = 'NO' AND identity_generation IS NULL"
+        + " AND table_name = 'works_at' AND column_name IN ('source_id', 'target_id', 'since')")).containsExactly(row(3L));
+    assertThat(rows("SELECT count(*) FROM information_schema.columns WHERE table_schema = 'information_schema'"
+        + " AND is_identity <> 'NO'")).containsExactly(row(0L));
+  }
+
+  @Test
   void aTypeCreatedLaterIsInTheNextStatement() {
     database.getSchema().createDocumentType("fresh");
     assertThat(rows("SELECT table_name FROM information_schema.tables WHERE table_name = 'fresh'")).containsExactly(row("fresh"));
