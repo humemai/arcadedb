@@ -408,3 +408,13 @@ g3-full-join-using	ordered	-	ok	SELECT pid, p.name, oid FROM person p FULL JOIN 
 g3-full-join-using-star	ordered	-	ok	SELECT * FROM (SELECT pid, name FROM person WHERE pid < 4) a FULL JOIN (SELECT pid, oid FROM orders WHERE oid > 102) b USING (pid) ORDER BY pid, oid	{"columns":["pid","name","oid"],"types":["int4","varchar","int4"],"rows":[[1,"Ada",null],[2,"Bo",null],[3,"Cy",null],[4,null,103],[4,null,104],[null,null,105]]}
 g3-full-join-chain	ordered	-	ok	SELECT p.name, w.since, c.name AS company FROM person p FULL JOIN works_at w ON w.source_id = p.id FULL JOIN company c ON w.target_id = c.id ORDER BY p.pid, w.since, c.cid	{"columns":["name","since","company"],"types":["varchar","int4","varchar"],"rows":[["Ada",2019,"Acme"],["Ada",2022,"Acme"],["Bo",2020,"Acme"],["Cy",2021,"Birch"],["Di",2023,"Birch"],["Ed",null,null],[null,null,"Cedar"]]}
 err-g3-full-join-no-condition	multiset	-	ok	SELECT 1 FROM person p FULL JOIN company c	{"error":"42601"}
+is-distinct-from-null-and-value	ordered	-	ok	SELECT pid FROM person WHERE city IS DISTINCT FROM 'Delft' ORDER BY pid	pending-server
+is-not-distinct-from-null	ordered	-	ok	SELECT pid FROM person WHERE age IS NOT DISTINCT FROM NULL ORDER BY pid	pending-server
+is-distinct-from-literals	multiset	-	ok	SELECT NULL IS DISTINCT FROM NULL AS a, 1 IS DISTINCT FROM NULL AS b, 1 IS NOT DISTINCT FROM 1 AS c, NULL IS NOT DISTINCT FROM NULL AS d	pending-server
+is-not-distinct-from-join	ordered	-	ok	SELECT a.pid, b.pid AS other FROM person a JOIN person b ON a.age IS NOT DISTINCT FROM b.age AND a.pid < b.pid ORDER BY a.pid, b.pid	pending-server
+is-distinct-from-is-never-null	multiset	-	ok	SELECT count(*) AS n FROM person WHERE (age IS DISTINCT FROM age) IS NULL	pending-server
+ex-residual-is-not-distinct-from	ordered	-	ok	SELECT p.pid FROM person p WHERE EXISTS (SELECT 1 FROM person q WHERE q.city IS NOT DISTINCT FROM p.city AND q.pid > p.pid) ORDER BY p.pid	pending-server
+err-is-distinct-from-types	multiset	-	ok	SELECT 1 IS DISTINCT FROM 'a'::text	pending-server
+win-rows-unbounded-preceding-running-sum	ordered	-	ok	SELECT pid, sum(pid) OVER (ORDER BY city ROWS UNBOUNDED PRECEDING) AS s FROM person ORDER BY pid	pending-server
+win-rows-between-unbounded-preceding-and-current-row	ordered	-	ok	SELECT pid, count(*) OVER (PARTITION BY city ORDER BY pid ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS c, last_value(pid) OVER (PARTITION BY city ORDER BY age ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS l FROM person ORDER BY pid	pending-server
+win-default-frame-with-peers-for-contrast	ordered	-	ok	SELECT pid, sum(pid) OVER (ORDER BY city) AS s FROM person ORDER BY pid	pending-server

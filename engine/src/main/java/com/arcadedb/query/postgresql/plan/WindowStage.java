@@ -46,7 +46,8 @@ import java.util.Set;
  * peer of the current row; the whole partition when there is no {@code ORDER BY}): {@code row_number}, {@code rank},
  * {@code dense_rank}, {@code lag}, {@code lead}, {@code first_value}, {@code last_value}, and {@code count}, {@code sum},
  * {@code avg}, {@code min}, {@code max} as running aggregates. Two rows are peers when no {@code ORDER BY} key tells them apart.
- * An explicit frame, a named window, {@code FILTER}, {@code DISTINCT} and the other window functions are {@code 0A000}. The rows
+ * The frame {@code ROWS UNBOUNDED PRECEDING} (also written {@code ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW}) ends at the current
+ * row instead of its last peer. Any other frame, a named window, {@code FILTER}, {@code DISTINCT} and the other window functions are {@code 0A000}. The rows
  * of a partition keep their input order for ties, as a stable sort does.
  */
 final class WindowStage {
@@ -56,7 +57,18 @@ final class WindowStage {
   /** One window function call, typed. */
   record Call(String name, PgType resultType, String resultTypeName, Evaluable[] partition, Evaluable[] orderKeys,
               List<Comparator<Object>> orderings, Evaluable argument, Evaluable offset, Evaluable fallback, PgType fallbackTo,
-              SelectPlan.AggregateSpec aggregate) {
+              SelectPlan.AggregateSpec aggregate, boolean rowsFrame) {
+    Call(final String name, final PgType resultType, final String resultTypeName, final Evaluable[] partition,
+        final Evaluable[] orderKeys, final List<Comparator<Object>> orderings, final Evaluable argument, final Evaluable offset,
+        final Evaluable fallback, final PgType fallbackTo, final SelectPlan.AggregateSpec aggregate) {
+      this(name, resultType, resultTypeName, partition, orderKeys, orderings, argument, offset, fallback, fallbackTo, aggregate, false);
+    }
+
+    /** The same call with the frame {@code ROWS UNBOUNDED PRECEDING}: it ends at the current row, whatever its peers are. */
+    Call withRowsFrame() {
+      return new Call(name, resultType, resultTypeName, partition, orderKeys, orderings, argument, offset, fallback, fallbackTo,
+          aggregate, true);
+    }
   }
 
   private final int        width;
@@ -75,6 +87,11 @@ final class WindowStage {
 
   /** Types a call with an {@code OVER} clause against the columns of the input row; {@code input} compiles over that row. */
   static Call call(final Expression.FunctionCall call, final ExpressionCompiler input) {
+    final Call typed = typedCall(call, input);
+    return call.over().rowsFrame() ? typed.withRowsFrame() : typed;
+  }
+
+  private static Call typedCall(final Expression.FunctionCall call, final ExpressionCompiler input) {
     final String name = call.name().get(call.name().size() - 1).value().toLowerCase(java.util.Locale.ROOT);
     final Expression.Window over = call.over();
     if (call.distinct())
@@ -218,6 +235,10 @@ final class WindowStage {
           groups++;
           start = p;
         }
+
+      if (call.rowsFrame())
+        for (int q = 0; q < m; q++)
+          last[q] = q;
 
       switch (call.name()) {
       case "row_number":

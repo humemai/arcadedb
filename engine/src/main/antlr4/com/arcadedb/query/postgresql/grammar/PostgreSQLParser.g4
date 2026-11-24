@@ -539,7 +539,7 @@ aExpr
   | l=aExpr op=(LT | GT | EQ | LE | GE | NE) r=aExpr                          # comparisonExpr
   | aExpr IS NOT? NULL                                                        # isNullExpr
   | aExpr op=(ISNULL | NOTNULL)                                               # isNullPostfixExpr
-  | aExpr unsupportedIsDistinct                                               # unsupportedIsDistinctExpr
+  | l=aExpr IS NOT? DISTINCT FROM r=aExpr                                     # isDistinctExpr
   | aExpr unsupportedIsForm                                                   # unsupportedIsExpr
   | NOT aExpr                                                                 # notExpr
   | l=aExpr AND r=aExpr                                                       # andExpr
@@ -617,9 +617,15 @@ unsupportedRowComma
   : COMMA balancedTokens
   ;
 
-// OVER (PARTITION BY ... ORDER BY ...): a window with a frame clause, a window name or a FILTER is read by unsupportedFunctionSuffix
+// OVER (PARTITION BY ... ORDER BY ... [ROWS UNBOUNDED PRECEDING | ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW]): any other frame,
+// a window name or a FILTER is read by unsupportedFunctionSuffix
 overClause
-  : OVER LPAREN (PARTITION BY partition+=aExpr (COMMA partition+=aExpr)*)? sortClause? RPAREN
+  : OVER LPAREN (PARTITION BY partition+=aExpr (COMMA partition+=aExpr)*)? sortClause? rowsFrame? RPAREN
+  ;
+
+rowsFrame
+  : ROWS UNBOUNDED PRECEDING
+  | ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
   ;
 
 unsupportedFunctionSuffix
@@ -889,10 +895,6 @@ unsupportedCollate
 unsupportedAtTimeZone
   : AT LOCAL
   | AT TIME ZONE aExpr
-  ;
-
-unsupportedIsDistinct
-  : IS NOT? DISTINCT FROM aExpr
   ;
 
 unsupportedStarArg

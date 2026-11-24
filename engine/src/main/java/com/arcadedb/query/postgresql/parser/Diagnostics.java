@@ -75,7 +75,6 @@ final class Diagnostics {
       Map.entry("unsupportedSetof", "SETOF"),
       Map.entry("unsupportedCollate", "COLLATE"),
       Map.entry("unsupportedAtTimeZone", "AT TIME ZONE"),
-      Map.entry("unsupportedIsDistinct", "IS DISTINCT FROM"),
       Map.entry("unsupportedStarArg", "A whole-row reference such as t.*"),
       Map.entry("unsupportedUnicodeIdent", "A Unicode escape identifier"),
       Map.entry("unsupportedTableAlias", "An alias after a subquery or a function in FROM"),

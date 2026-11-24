@@ -77,7 +77,7 @@ exists	ok	inside	-	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders 
 window	ok	inside	-	SELECT name, row_number() OVER (ORDER BY name) FROM person	written for the parser	-
 distinct-on	ok	outside	-	SELECT DISTINCT ON (city) city, name FROM person	written for the parser	-
 ilike	ok	outside	-	SELECT name FROM person WHERE name ILIKE 'a%'	written for the parser	-
-is-distinct-from	ok	outside	-	SELECT 1 IS DISTINCT FROM 2	written for the parser	-
+is-distinct-from	ok	inside	-	SELECT 1 IS DISTINCT FROM 2	written for the parser	-
 any-array	ok	outside	-	SELECT 1 = ANY (ARRAY[1, 2])	written for the parser	-
 lateral	ok	outside	-	SELECT * FROM person p, LATERAL (SELECT 1) s	written for the parser	-
 for-update	ok	outside	-	SELECT * FROM person FOR UPDATE	written for the parser	-
@@ -1615,3 +1615,7 @@ g3-full-outer-join-using	ok	inside	-	SELECT * FROM a FULL OUTER JOIN b USING (x,
 g3-join-chain-all-kinds	ok	inside	-	SELECT * FROM a LEFT JOIN b ON a.x = b.x RIGHT JOIN c ON b.y = c.y FULL JOIN d ON c.z = d.z INNER JOIN e ON d.w = e.w	g3 (fork issue #57)	42P01
 g3-full-join-no-condition	syntax-error	unknown	-	SELECT * FROM a FULL JOIN b	g3 (fork issue #57)	42601
 g3-natural-full-join-stays-out	ok	outside	-	SELECT * FROM a NATURAL FULL JOIN b	g3 (fork issue #57)	42P01
+is-not-distinct-from	ok	inside	-	SELECT 1 IS NOT DISTINCT FROM 2	written for the parser	-
+over-rows-unbounded-preceding	ok	inside	-	SELECT sum(pid) OVER (ORDER BY pid ROWS UNBOUNDED PRECEDING) FROM person	written for the parser	-
+over-rows-between-unbounded-preceding-and-current-row	ok	inside	-	SELECT sum(pid) OVER (ORDER BY pid ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM person	written for the parser	-
+over-rows-between-unbounded-following	ok	outside	-	SELECT sum(pid) OVER (ORDER BY pid ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM person	written for the parser	-
