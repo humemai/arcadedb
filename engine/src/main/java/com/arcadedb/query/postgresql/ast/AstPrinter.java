@@ -97,6 +97,8 @@ public final class AstPrinter {
     final StringBuilder text = new StringBuilder("UPDATE ").append(print(update.table())).append(" SET ");
     text.append(update.assignments().stream().map(assignment -> print(assignment.column()) + " = " + print(assignment.value()))
         .collect(Collectors.joining(", ")));
+    if (!update.from().isEmpty())
+      text.append(" FROM ").append(update.from().stream().map(AstPrinter::print).collect(Collectors.joining(", ")));
     if (update.where() != null)
       text.append(" WHERE ").append(print(update.where()));
     return text.append(printReturning(update.returning())).toString();

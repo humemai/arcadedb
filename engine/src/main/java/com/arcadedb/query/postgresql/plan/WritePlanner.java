@@ -34,6 +34,7 @@ import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.InsertStatement;
 import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.SelectItem;
+import com.arcadedb.query.postgresql.ast.SelectStatement;
 import com.arcadedb.query.postgresql.ast.TableReference;
 import com.arcadedb.query.postgresql.ast.UpdateStatement;
 import com.arcadedb.query.postgresql.ast.WriteStatement;
@@ -161,7 +162,7 @@ public final class WritePlanner {
   private WritePlan insert(final InsertStatement insert) {
     final Table table = resolveTable(insert.table(), "INSERT");
     final TableSource shape = new TableSource(database, table, relationOf(insert.table(), table), false);
-    final ExpressionCompiler constants = new ExpressionCompiler(new RelationScope(List.of(), catalog), parameters);
+    final ExpressionCompiler constants = new ExpressionCompiler(new RelationScope(List.of(), catalog, selectPlanner.subqueries()), parameters);
 
     final List<Column> targets = new ArrayList<>();
     for (final Name name : insert.columns()) {
@@ -369,7 +370,7 @@ public final class WritePlanner {
         proposed = new TableSource(database, table, "excluded", false);
         final List<RelationSource.Field> fields = new ArrayList<>(shape.columns());
         fields.addAll(proposed.columns());
-        final ExpressionCompiler compiler = new ExpressionCompiler(new RelationScope(fields, catalog), parameters);
+        final ExpressionCompiler compiler = new ExpressionCompiler(new RelationScope(fields, catalog, selectPlanner.subqueries()), parameters);
         set = setList(clause.assignments(), table, compiler);
         where = clause.where() == null ? null : compiler.compileCondition(clause.where(), "WHERE");
       }
@@ -636,10 +637,104 @@ public final class WritePlanner {
 
   // ------------------------------------------------------------------------------------------------ UPDATE
 
+  /**
+   * {@code UPDATE t SET ... FROM items WHERE ...}: the join of the target with the {@code FROM} items is a {@code SELECT} of the
+   * record id of the target and of each {@code SET} value, planned by the select planner (so joins, derived tables and subqueries
+   * are those of a query). A target row that no joined row reaches is not changed. A row reached by several is changed once, by the
+   * first, as PostgreSQL does (it says that which one is used is not predictable). The values are all found before the first row is
+   * written, so no row sees another's change. {@code RETURNING}, an edge table and a table without a record id column are refused.
+   */
+  private WritePlan updateFrom(final UpdateStatement update, final Table table) {
+    if (table.kind() == Table.Kind.EDGE)
+      throw new PostgreSQLFeatureNotSupportedException("UPDATE ... FROM on the edge table " + table.name() + " is not supported");
+    if (!update.returning().isEmpty())
+      throw new PostgreSQLFeatureNotSupportedException("RETURNING with UPDATE ... FROM is not supported");
+    Column identity = null;
+    for (final Column candidate : table.columns())
+      if (candidate.kind() == Column.Kind.IDENTITY)
+        identity = candidate;
+    if (identity == null)
+      throw new PostgreSQLFeatureNotSupportedException("UPDATE ... FROM needs the record id column, which " + table.name()
+          + " does not have");
+
+    final var position = update.position();
+    final String relation = relationOf(update.table(), table);
+    final List<SelectItem> items = new ArrayList<>();
+    items.add(new SelectItem.Projection(position, new Expression.ColumnRef(position, List.of(new Name(position, relation, true)),
+        new Name(position, identity.name(), true)), new Name(position, "__rid", true)));
+    final List<Column> columns = new ArrayList<>();
+    final List<Boolean> defaults = new ArrayList<>();
+    for (final UpdateStatement.Assignment assignment : update.assignments()) {
+      final Column column = table.column(identifier(assignment.column()));
+      if (columns.contains(column))
+        throw new PostgreSQLEvaluationException("42601", "multiple assignments to the same column \"" + column.name() + "\"");
+      if (column.isSynthetic() && !assignment.value().isDefault())
+        throw new PostgreSQLEvaluationException("428C9", "column \"" + column.name() + "\" can only be updated to DEFAULT. Detail: Column \""
+            + column.name() + "\" is an identity column defined as GENERATED ALWAYS.");
+      columns.add(column);
+      defaults.add(assignment.value().isDefault());
+      if (!assignment.value().isDefault())
+        items.add(new SelectItem.Projection(position, assignment.value().expression(),
+            new Name(position, "__set" + (items.size() - 1), true)));
+    }
+    final List<TableReference> from = new ArrayList<>();
+    from.add(update.table());
+    from.addAll(update.from());
+    final SelectPlan selectPlan = selectPlanner.plan(new SelectStatement(position, false, items, from, update.where(), List.of(), null,
+        List.of(), null, null));
+
+    final PgType[] types = new PgType[columns.size()];
+    int next = 1;
+    for (int i = 0; i < types.length; i++) {
+      if (defaults.get(i))
+        continue;
+      final PgType type = PgType.byName(List.of(selectPlan.columns().get(next++).typeName()));
+      types[i] = type != null ? type : PgType.ARRAY;
+      Assignments.check(types[i], columns.get(i));
+    }
+    final List<String> steps = new ArrayList<>();
+    steps.add("UPDATE " + table.name() + " SET " + columns.size() + " column(s) FROM");
+    for (final String line : selectPlan.steps())
+      steps.add("  " + line);
+
+    return new WritePlan(steps, List.of(), db -> {
+      final Map<RID, Object[]> chosen = new LinkedHashMap<>();
+      final List<String> keys = PostgreSQLResultSet.uniqueKeys(selectPlan.columns());
+      try (final ResultSet resultSet = selectPlan.execute(db)) {
+        while (resultSet.hasNext()) {
+          final Result result = resultSet.next();
+          final Object id = result.getProperty(keys.get(0));
+          if (id == null)
+            continue;
+          final RID rid = new RID(id.toString());
+          if (chosen.containsKey(rid))
+            continue;
+          final Object[] set = new Object[columns.size()];
+          int slot = 1;
+          for (int i = 0; i < set.length; i++)
+            set[i] = defaults.get(i) ? DEFAULT : Assignments.convert(result.getProperty(keys.get(slot++)), types[i], columns.get(i));
+          chosen.put(rid, set);
+        }
+      }
+      for (final Map.Entry<RID, Object[]> match : chosen.entrySet()) {
+        final MutableDocument record = db.lookupByRID(match.getKey(), true).asDocument().modify();
+        final Set<String> changed = applySet(db, table, record, columns, match.getValue());
+        requireValues(table, record);
+        record.validate();
+        checkUnique(db, record, changed);
+        record.save();
+      }
+      return answer(db, new Returning(List.of(), List.of()), List.of(), chosen.size(), steps);
+    });
+  }
+
   private WritePlan update(final UpdateStatement update) {
     final Table table = resolveTable(update.table(), "UPDATE");
+    if (!update.from().isEmpty())
+      return updateFrom(update, table);
     TableSource source = new TableSource(database, table, relationOf(update.table(), table), update.table().only());
-    final ExpressionCompiler compiler = new ExpressionCompiler(new RelationScope(source.columns(), catalog), parameters);
+    final ExpressionCompiler compiler = new ExpressionCompiler(new RelationScope(source.columns(), catalog, selectPlanner.subqueries()),
+        parameters);
 
     final Expression whereClause = OrFactoring.factor(update.where());
     final Evaluable where = whereClause == null ? null : compiler.compileCondition(whereClause, "WHERE");
@@ -696,7 +791,8 @@ public final class WritePlanner {
   private WritePlan delete(final DeleteStatement delete) {
     final Table table = resolveTable(delete.table(), "DELETE");
     TableSource source = new TableSource(database, table, relationOf(delete.table(), table), delete.table().only());
-    final ExpressionCompiler compiler = new ExpressionCompiler(new RelationScope(source.columns(), catalog), parameters);
+    final ExpressionCompiler compiler = new ExpressionCompiler(new RelationScope(source.columns(), catalog, selectPlanner.subqueries()),
+        parameters);
 
     final Expression whereClause = OrFactoring.factor(delete.where());
     final Evaluable where = whereClause == null ? null : compiler.compileCondition(whereClause, "WHERE");

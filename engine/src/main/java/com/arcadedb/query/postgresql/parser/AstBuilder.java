@@ -177,8 +177,11 @@ final class AstBuilder {
         throw new IllegalStateException("A multiple-column assignment should have been refused");
       assignments.add(new UpdateStatement.Assignment(position(single.getStart()), name(single.column), writeValue(single.value)));
     }
+    final List<TableReference> from = new ArrayList<>();
+    for (final TableRefContext table : context.fromItems)
+      from.add(tableReference(table));
     final Expression where = context.writeWhereClause() == null ? null : expression(context.writeWhereClause().aExpr());
-    return new UpdateStatement(position(context.getStart()), writeTarget(context.target), assignments, where,
+    return new UpdateStatement(position(context.getStart()), writeTarget(context.target), assignments, from, where,
         returning(context.returningClause()));
   }
 

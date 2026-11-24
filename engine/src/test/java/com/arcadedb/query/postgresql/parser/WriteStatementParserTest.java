@@ -204,7 +204,6 @@ class WriteStatementParserTest {
         new String[] { "INSERT INTO t (SELECT 1)", "A parenthesised query is not supported", "(SELECT" },
         new String[] { "INSERT INTO t (a.b) VALUES (1)", "A field selection or a subscript is not supported", ".b" },
         new String[] { "UPDATE t SET (a, b) = (1, 2)", "A multiple-column assignment is not supported", "(a, b)" },
-        new String[] { "UPDATE t SET a = 1 FROM u", "UPDATE with FROM is not supported", "FROM" },
         new String[] { "UPDATE t SET a = 1 WHERE CURRENT OF c", "WHERE CURRENT OF is not supported", "CURRENT" },
         new String[] { "DELETE FROM t USING u", "DELETE with USING is not supported", "USING" },
         new String[] { "DELETE FROM t WHERE CURRENT OF c", "WHERE CURRENT OF is not supported", "CURRENT" },

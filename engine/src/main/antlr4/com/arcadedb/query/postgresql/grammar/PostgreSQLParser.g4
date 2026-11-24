@@ -164,8 +164,8 @@ returningClause
   ;
 
 updateStmt
-  : UPDATE target=updateTarget SET items+=setClause (COMMA items+=setClause)* (unsupportedUpdateFrom skipRest)?
-    writeWhereClause? returningClause?
+  : UPDATE target=updateTarget SET items+=setClause (COMMA items+=setClause)*
+    (FROM fromItems+=tableRef (COMMA fromItems+=tableRef)*)? writeWhereClause? returningClause?
   ;
 
 updateTarget
@@ -179,10 +179,6 @@ setClause
 
 unsupportedMultiAssign
   : LPAREN
-  ;
-
-unsupportedUpdateFrom
-  : FROM
   ;
 
 deleteStmt

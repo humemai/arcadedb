@@ -133,6 +133,11 @@ public class SelectPlanner {
     return from.size() > 1 || (from.size() == 1 && from.get(0) instanceof TableReference.Join);
   }
 
+  /** What an expression of a write asks for a subquery ({@code WHERE}, {@code SET}, {@code VALUES}): the planner of a {@code SELECT}. */
+  public SubqueryPlanner subqueries() {
+    return subqueryPlanner();
+  }
+
   /** What the join planner needs from this planner: the source of one table, and the access path for the terms pushed to it. */
   private JoinPlanner.Tables joinTables() {
     return new JoinPlanner.Tables() {
@@ -467,6 +472,7 @@ public class SelectPlanner {
     final List<Expression> local = new ArrayList<>();
     final List<Expression> innerKeys = new ArrayList<>();
     final List<Expression> outerKeys = new ArrayList<>();
+    final List<Expression> residual = new ArrayList<>();
     for (final Expression term : conjuncts(select.where())) {
       if (hasExists(term)) {
         local.add(term);
@@ -491,11 +497,11 @@ public class SelectPlanner {
           continue;
         }
       }
-      throw new PostgreSQLFeatureNotSupportedException("A correlated subquery is supported in EXISTS and NOT EXISTS when each term of its "
-          + "WHERE clause that reads a column of the outer query is an equality between an expression of the subquery and an "
-          + "expression of the outer query");
+      // any other term that reads the outer query (a comparison, an OR, a term of the outer query alone) is tested on the rows that
+      // the equalities select
+      residual.add(term);
     }
-    if (outerKeys.isEmpty())
+    if (outerKeys.isEmpty() && residual.isEmpty())
       return null;
 
     if (!select.groupBy().isEmpty() || select.having() != null || select.limit() != null || select.offset() != null)
@@ -504,10 +510,23 @@ public class SelectPlanner {
       if (item instanceof SelectItem.Projection projection && ExpressionCompiler.containsAggregate(projection.expression()))
         throw new PostgreSQLFeatureNotSupportedException("A correlated EXISTS with an aggregate is not supported");
 
-    // the subquery that gives the keys: its own terms, and for each correlation the expression of its side
+    // the residual terms, with each maximal expression of the subquery's side and of the outer side taken out as a column of a
+    // combined row: the outer ones first, then the subquery's
+    final List<Expression> innerLeaves = new ArrayList<>();
+    final List<Expression> outerLeaves = new ArrayList<>();
+    final List<Expression> tests = new ArrayList<>();
+    for (final Expression term : residual)
+      tests.add(splitResidual(term, innerScope, outer, innerLeaves, outerLeaves));
+
+    // the subquery that gives the keys and the columns that the residual terms read: its own terms
     final List<SelectItem> items = new ArrayList<>();
     for (int i = 0; i < innerKeys.size(); i++)
       items.add(new SelectItem.Projection(select.position(), innerKeys.get(i), new Name(select.position(), "k" + i, true)));
+    for (int i = 0; i < innerLeaves.size(); i++)
+      items.add(new SelectItem.Projection(select.position(), innerLeaves.get(i), new Name(select.position(), "l" + i, true)));
+    if (items.isEmpty())
+      items.add(new SelectItem.Projection(select.position(), new Expression.IntegerLiteral(select.position(), java.math.BigInteger.ONE),
+          new Name(select.position(), "one", true)));
     Expression rest = null;
     for (final Expression term : local)
       rest = rest == null ? term : new Expression.BinaryOp(select.position(), Expression.BinaryOperator.AND, rest, term);
@@ -532,6 +551,26 @@ public class SelectPlanner {
       outerToCommon.add(value -> SelectPlan.normalize(SetTypes.convert(value, outerType, common)));
     }
 
+    // the terms that are not equalities, compiled over the combined row [outer leaves..., subquery leaves...]
+    Evaluable test = null;
+    final Evaluable[] outerLeafValues = new Evaluable[outerLeaves.size()];
+    if (!tests.isEmpty()) {
+      final List<RelationSource.Field> fields = new ArrayList<>();
+      for (int i = 0; i < outerLeaves.size(); i++) {
+        outerLeafValues[i] = outer.resolveOutput(outer.compile(outerLeaves.get(i)));
+        fields.add(new RelationSource.Field("__exists", "__o" + i, outerLeafValues[i].type(), outerLeafValues[i].typeName()));
+      }
+      for (int i = 0; i < innerLeaves.size(); i++)
+        fields.add(new RelationSource.Field("__exists", "__i" + i, plan.outputTypes().get(count + i),
+            plan.columns().get(count + i).typeName()));
+      Expression whole = null;
+      for (final Expression term : tests)
+        whole = whole == null ? term : new Expression.BinaryOp(select.position(), Expression.BinaryOperator.AND, whole, term);
+      test = new ExpressionCompiler(new RelationScope(fields, catalog), parameters).compileCondition(whole, "WHERE");
+    }
+    final Evaluable residualTest = test;
+    final int outerWidth = outerLeaves.size();
+
     final ExistsKeys probe = new ExistsKeys(kept, innerToCommon);
     return new Evaluable.Node(PgType.BOOL, row -> {
       final List<Object> key = new ArrayList<>(count);
@@ -541,24 +580,72 @@ public class SelectPlanner {
           return Boolean.FALSE;
         key.add(outerToCommon.get(i).apply(value));
       }
-      return probe.load().contains(key);
+      final List<Object[]> candidates = probe.load().get(key);
+      if (candidates == null)
+        return Boolean.FALSE;
+      if (residualTest == null)
+        return Boolean.TRUE;
+      final Object[] combined = new Object[outerWidth + innerLeaves.size()];
+      for (int i = 0; i < outerWidth; i++)
+        combined[i] = outerLeafValues[i].eval(row);
+      for (final Object[] leaves : candidates) {
+        System.arraycopy(leaves, 0, combined, outerWidth, leaves.length);
+        if (Boolean.TRUE.equals(residualTest.eval(combined)))
+          return Boolean.TRUE;
+      }
+      return Boolean.FALSE;
     });
   }
 
-  /** The keys of the rows of a correlated subquery, loaded on the first probe; a row with a {@code NULL} key matches nothing. */
+  /**
+   * A term of the {@code WHERE} clause of an {@code EXISTS} subquery that reads the outer query and is no key equality, rewritten
+   * so that it reads columns of a combined row: each maximal expression that reads only the subquery's columns becomes {@code __i<k>}
+   * (collected in {@code innerLeaves}), each that reads only the outer query's becomes {@code __o<j>} ({@code outerLeaves}), and the
+   * operators between them stay: comparisons, {@code AND}, {@code OR}, {@code NOT}, {@code IS NULL}.
+   *
+   * @throws PostgreSQLFeatureNotSupportedException for a term that mixes both sides inside any other expression
+   */
+  private Expression splitResidual(final Expression term, final RelationScope inner, final ExpressionCompiler outer,
+      final List<Expression> innerLeaves, final List<Expression> outerLeaves) {
+    final Side side = sideOf(term, inner, outer);
+    final var position = term.position();
+    if (side == Side.NONE)
+      return term;
+    if (side == Side.INNER || side == Side.OUTER) {
+      final List<Expression> leaves = side == Side.INNER ? innerLeaves : outerLeaves;
+      leaves.add(term);
+      return new Expression.ColumnRef(position, List.of(), new Name(position, (side == Side.INNER ? "__i" : "__o")
+          + (leaves.size() - 1), true));
+    }
+    if (term instanceof Expression.BinaryOp binary)
+      return new Expression.BinaryOp(position, binary.operator(), splitResidual(binary.left(), inner, outer, innerLeaves, outerLeaves),
+          splitResidual(binary.right(), inner, outer, innerLeaves, outerLeaves));
+    if (term instanceof Expression.UnaryOp unary)
+      return new Expression.UnaryOp(position, unary.operator(), splitResidual(unary.operand(), inner, outer, innerLeaves, outerLeaves));
+    if (term instanceof Expression.IsNull isNull)
+      return new Expression.IsNull(position, splitResidual(isNull.operand(), inner, outer, innerLeaves, outerLeaves), isNull.negated());
+    throw new PostgreSQLFeatureNotSupportedException("A correlated subquery is supported in EXISTS and NOT EXISTS when a term of its "
+        + "WHERE clause that reads a column of the outer query is a comparison, AND, OR or NOT of expressions that each read the "
+        + "subquery or the outer query, not both");
+  }
+
+  /**
+   * The rows of a correlated subquery by their key, loaded on the first probe: for each key the values of the columns that the
+   * residual terms read. A row with a {@code NULL} key matches nothing. Without key equalities every row is under the empty key.
+   */
   private static final class ExistsKeys {
     private final MaterializedSource.Materialization rows;
     private final List<Function<Object, Object>>      toCommon;
-    private       Set<List<Object>>                   keys;
+    private       Map<List<Object>, List<Object[]>>   buckets;
 
     ExistsKeys(final MaterializedSource.Materialization rows, final List<Function<Object, Object>> toCommon) {
       this.rows = rows;
       this.toCommon = toCommon;
     }
 
-    synchronized Set<List<Object>> load() {
-      if (keys == null) {
-        final Set<List<Object>> loaded = new HashSet<>();
+    synchronized Map<List<Object>, List<Object[]>> load() {
+      if (buckets == null) {
+        final Map<List<Object>, List<Object[]>> loaded = new HashMap<>();
         for (final Object[] row : rows.rows()) {
           final List<Object> key = new ArrayList<>(toCommon.size());
           boolean complete = true;
@@ -568,11 +655,11 @@ public class SelectPlanner {
             else
               key.add(toCommon.get(i).apply(row[i]));
           if (complete)
-            loaded.add(key);
+            loaded.computeIfAbsent(key, k -> new ArrayList<>()).add(java.util.Arrays.copyOfRange(row, toCommon.size(), row.length));
         }
-        keys = loaded;
+        buckets = loaded;
       }
-      return keys;
+      return buckets;
     }
   }
 

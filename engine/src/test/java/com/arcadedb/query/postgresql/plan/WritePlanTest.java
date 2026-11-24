@@ -126,6 +126,63 @@ class WritePlanTest extends TestHelper {
     assertThat(value("SELECT count(*) FROM company")).isEqualTo(10L);
   }
 
+  // ---- subqueries in writes, UPDATE ... FROM (fork issue #72) ----
+
+  @Test
+  void aSubqueryInTheWhereOfAnUpdateAndADelete() {
+    // IN, NOT IN, a scalar subquery, EXISTS with an equality, all over the table as it was before the statement
+    assertThat(command("UPDATE person SET age = 0 WHERE city IN (SELECT city FROM person WHERE pid = 1)")).isGreaterThan(0);
+    assertThat(command("DELETE FROM person WHERE pid NOT IN (SELECT min(pid) FROM person GROUP BY city)")).isGreaterThan(0);
+    assertThat(command("UPDATE company SET name = 'x' WHERE cid = (SELECT max(cid) FROM company)")).isEqualTo(1);
+    assertThat(command("DELETE FROM company WHERE EXISTS (SELECT 1 FROM works_at w WHERE w.target_id = company.id)")).isGreaterThan(0);
+    assertThat(command("UPDATE person SET age = (SELECT max(age) FROM person) WHERE pid = 1")).isEqualTo(1);
+  }
+
+  @Test
+  void aScalarSubqueryInValuesGivesTheEndsOfAnEdge() {
+    assertThat(command("INSERT INTO works_at (source_id, target_id, since) VALUES ((SELECT id FROM person WHERE pid = 5),"
+        + " (SELECT id FROM company WHERE cid = 30), 2024)")).isEqualTo(1);
+    assertThat(value("SELECT count(*) FROM works_at WHERE since = 2024")).isEqualTo(1L);
+  }
+
+  @Test
+  void anExistsWithAnInequalityOrAnOrAmongItsEqualities() {
+    // the oldest of each city: no other person of the city is older (the residual term is tested on the rows the equality selects)
+    assertThat(query("SELECT pid FROM person p WHERE NOT EXISTS (SELECT 1 FROM person q WHERE q.city = p.city AND q.age > p.age)"
+        + " ORDER BY pid")).isNotEmpty();
+    assertThat(command("DELETE FROM person p WHERE EXISTS (SELECT 1 FROM person q WHERE q.city = p.city AND (q.age > p.age OR"
+        + " (q.age = p.age AND q.pid > p.pid)))")).isGreaterThan(0);
+    // no equality at all, a term of the outer query alone, an OR of two columns
+    assertThat(command("UPDATE company c SET name = 'k' WHERE EXISTS (SELECT 1 FROM works_at w WHERE w.target_id = c.id OR"
+        + " w.source_id = c.id)")).isGreaterThanOrEqualTo(0);
+    assertThat(value("SELECT count(*) FROM company c WHERE EXISTS (SELECT 1 FROM person q WHERE c.cid > 10 AND q.pid = 1)"))
+        .isInstanceOf(Long.class);
+    // a term that mixes both sides inside a function is refused, not answered wrongly
+    assertState(() -> query("SELECT pid FROM person p WHERE EXISTS (SELECT 1 FROM person q WHERE q.city = p.city AND"
+        + " abs(q.age - p.age) > 3)"), "0A000");
+  }
+
+  @Test
+  void updateFromAJoinedTableAndFromADerivedTable() {
+    command("INSERT INTO company (cid, name) VALUES (7, 'Seven')");
+    assertThat(command("UPDATE person SET city = c.name FROM company c WHERE person.pid = c.cid / 10")).isGreaterThanOrEqualTo(0);
+    assertThat(command("UPDATE person p SET age = t.n FROM (SELECT pid, row_number() OVER (ORDER BY pid) AS n FROM person) t"
+        + " WHERE p.pid = t.pid")).isEqualTo(5);
+    assertThat(value("SELECT age FROM person WHERE pid = 3")).isEqualTo(3);
+    // a target row that no joined row reaches is not changed, one that several reach is changed once
+    assertThat(command("UPDATE person p SET age = 99 FROM company c WHERE c.cid = 7 AND p.pid = 1")).isEqualTo(1);
+    assertThat(command("UPDATE person p SET age = 98 FROM company c WHERE p.pid = 2")).isEqualTo(1);
+    assertThat(value("SELECT age FROM person WHERE pid = 2")).isEqualTo(98);
+    assertThat(command("UPDATE person p SET age = 1 FROM company c WHERE c.cid = 12345 AND p.pid = 1")).isEqualTo(0);
+  }
+
+  @Test
+  void updateFromRefusesWhatItDoesNotDo() {
+    assertState(() -> command("UPDATE person p SET age = 1 FROM company c WHERE p.pid = c.cid RETURNING p.pid"), "0A000");
+    assertState(() -> command("UPDATE works_at SET since = 1 FROM person p WHERE p.pid = 1"), "0A000");
+    assertState(() -> command("UPDATE person p SET id = '#1:1' FROM company c WHERE p.pid = c.cid"), "428C9");
+  }
+
   @Test
   void insertDefaultValuesAndTheWholeRowWithoutAColumnList() {
     assertThat(command("INSERT INTO company DEFAULT VALUES")).isEqualTo(1);
