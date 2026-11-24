@@ -56,8 +56,17 @@ class NestedQueryPlanTest extends TestHelper {
       assertThat(e.getSqlState()).isEqualTo("53200");
       assertThat(e.getMessage()).contains("out of memory").contains(holder).contains("Hint:").contains(BuildMemory.CAP_PROPERTY);
     });
-    assertThat(planned(sql, BuildMemory.DEFAULT_CAP_BYTES).execute(database).hasNext()).as("the default cap holds the small fixture")
+    assertThat(planned(sql, BuildMemory.FLOOR_CAP_BYTES).execute(database).hasNext()).as("the default cap holds the small fixture")
         .isTrue();
+  }
+
+  @Test
+  void theSymmetricListOfAnEdgeTypeRunsUnderTheDefaultCapAndStopsUnderASmallOne() {
+    // fork issue #50: the shape that the correctness arm wrote over the friendship list, here over works_at
+    final String sql = "WITH sym AS (SELECT source_id AS a, target_id AS b FROM works_at UNION ALL SELECT target_id, source_id FROM works_at) "
+        + "SELECT count(*) FROM sym s JOIN person p ON p.id = s.a";
+    assertCapStops(sql, "holds more than");
+    assertThat(planned(sql, BuildMemory.configuredCapBytes()).execute(database).next().<Long>getProperty("count")).isEqualTo(5L);
   }
 
   @Test
@@ -90,9 +99,9 @@ class NestedQueryPlanTest extends TestHelper {
 
   @Test
   void aScalarSubqueryHasThePostgreSQLColumnName() {
-    assertThat(planned("SELECT (SELECT max(age) FROM person)", BuildMemory.DEFAULT_CAP_BYTES).columns().get(0).name()).isEqualTo("max");
-    assertThat(planned("SELECT (SELECT 1 AS x)", BuildMemory.DEFAULT_CAP_BYTES).columns().get(0).name()).isEqualTo("x");
-    assertThat(planned("SELECT (SELECT 1)", BuildMemory.DEFAULT_CAP_BYTES).columns().get(0).name()).isEqualTo("?column?");
+    assertThat(planned("SELECT (SELECT max(age) FROM person)", BuildMemory.FLOOR_CAP_BYTES).columns().get(0).name()).isEqualTo("max");
+    assertThat(planned("SELECT (SELECT 1 AS x)", BuildMemory.FLOOR_CAP_BYTES).columns().get(0).name()).isEqualTo("x");
+    assertThat(planned("SELECT (SELECT 1)", BuildMemory.FLOOR_CAP_BYTES).columns().get(0).name()).isEqualTo("?column?");
   }
 
   @Test
@@ -109,7 +118,7 @@ class NestedQueryPlanTest extends TestHelper {
         "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE p.age = 36)",
         "SELECT name FROM person p WHERE EXISTS (SELECT count(*) FROM orders o WHERE o.pid = p.pid)",
         "SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid LIMIT 1)" })
-      assertThatThrownBy(() -> planned(sql, BuildMemory.DEFAULT_CAP_BYTES)).as(sql)
+      assertThatThrownBy(() -> planned(sql, BuildMemory.FLOOR_CAP_BYTES)).as(sql)
           .isInstanceOfSatisfying(com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException.class,
               e -> assertThat(e.getSqlState()).isEqualTo("0A000"));
   }
@@ -142,7 +151,7 @@ class NestedQueryPlanTest extends TestHelper {
 
   private List<String> types(final String sql) {
     final List<String> out = new ArrayList<>();
-    for (final PostgreSQLResultSet.Column column : planned(sql, BuildMemory.DEFAULT_CAP_BYTES).columns())
+    for (final PostgreSQLResultSet.Column column : planned(sql, BuildMemory.FLOOR_CAP_BYTES).columns())
       out.add(column.name() + ":" + column.typeName());
     return out;
   }
@@ -157,15 +166,15 @@ class NestedQueryPlanTest extends TestHelper {
 
   @Test
   void theExplainOfANestedQueryShowsItsParts() {
-    final List<String> union = planned("SELECT 1 UNION ALL SELECT 2 ORDER BY 1 LIMIT 1", BuildMemory.DEFAULT_CAP_BYTES).steps();
+    final List<String> union = planned("SELECT 1 UNION ALL SELECT 2 ORDER BY 1 LIMIT 1", BuildMemory.FLOOR_CAP_BYTES).steps();
     assertThat(union).first().isEqualTo("UNION ALL of 2 inputs");
     assertThat(union).contains("SORT 1 key(s)", "LIMIT");
 
     final List<String> cte = planned("WITH d AS (SELECT pid FROM person) SELECT a.pid FROM d a JOIN d b ON a.pid = b.pid",
-        BuildMemory.DEFAULT_CAP_BYTES).steps();
+        BuildMemory.FLOOR_CAP_BYTES).steps();
     assertThat(String.join("\n", cte)).contains("SCAN CTE d AS a").contains("SCAN CTE d AS b").contains("HASH JOIN INNER");
 
-    final List<String> derived = planned("SELECT * FROM (SELECT pid FROM person) t", BuildMemory.DEFAULT_CAP_BYTES).steps();
+    final List<String> derived = planned("SELECT * FROM (SELECT pid FROM person) t", BuildMemory.FLOOR_CAP_BYTES).steps();
     assertThat(derived).first().isEqualTo("SCAN SUBQUERY t");
   }
 
