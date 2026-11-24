@@ -105,7 +105,9 @@ jobs:
           cache: "maven"
 
       # The second pattern is the wire tests of the language (fork issue #12): they extend PostgresWireProtocolTestBase, which is package
-      # private, so they live in com.arcadedb.postgres and are named PostgreSQL*Test. They start an in-process server and connect with
-      # the JDBC driver of PostgreSQL.
+      # private, so they live in com.arcadedb.postgres and are named PostgreSQL*Test. They start an in-process server, which discovers
+      # the Gremlin plugin on its class path, and that plugin needs the TinkerPop classes of the shaded gremlin jar: so this step is a
+      # package-phase build (the earlier note about the test phase held for tests that start no server). They connect with the JDBC
+      # driver of PostgreSQL, and psql and psycopg run in containers.
       - name: Run the postgresw tests of the postgresql packages
-        run: ./mvnw test --batch-mode --errors --show-version -pl postgresw -am "-Dsurefire.includes=**/postgresql/**/*Test.java,**/postgres/PostgreSQL*Test.java"
+        run: ./mvnw package --batch-mode --errors --show-version -pl postgresw -am "-Dsurefire.includes=**/postgresql/**/*Test.java,**/postgres/PostgreSQL*Test.java"
