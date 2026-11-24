@@ -103,7 +103,7 @@ final class EvalSupport {
   }
 
   static Expression like(final Expression operand, final Expression pattern, final Expression escape, final boolean negated) {
-    return new Expression.Like(P, operand, pattern, escape, negated);
+    return new Expression.Like(P, operand, pattern, escape, negated, false);
   }
 
   static Expression cast(final Expression operand, final String type, final int... modifiers) {

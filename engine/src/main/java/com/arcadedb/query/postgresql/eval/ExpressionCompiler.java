@@ -157,10 +157,16 @@ public final class ExpressionCompiler {
     if (call.name().size() > 2 || (call.name().size() == 2 && !"pg_catalog".equals(call.name().get(0).value())))
       return false;
     return switch (call.name().get(call.name().size() - 1).value()) {
-      case "count", "sum", "avg", "min", "max" -> true;
+      case "count", "sum", "avg", "min", "max", "string_agg" -> true;
       default -> false;
     };
   }
+
+  /** Aggregates of PostgreSQL that the language does not have: refused with {@code 0A000}, not reported as unknown functions. */
+  private static final java.util.Set<String> UNSUPPORTED_AGGREGATES = java.util.Set.of("array_agg", "json_agg", "jsonb_agg",
+      "json_object_agg", "jsonb_object_agg", "bool_and", "bool_or", "every", "bit_and", "bit_or", "bit_xor", "stddev",
+      "stddev_pop", "stddev_samp", "variance", "var_pop", "var_samp", "corr", "covar_pop", "covar_samp", "mode",
+      "percentile_cont", "percentile_disc");
 
   /** Whether the expression has an aggregate function call anywhere in it. */
   public static boolean containsAggregate(final Expression expression) {
@@ -863,10 +869,12 @@ public final class ExpressionCompiler {
   }
 
   private Evaluable like(final Expression.Like e) {
-    final Evaluable operand = likeOperand(compile(e.operand()));
-    final Evaluable pattern = likeOperand(compile(e.pattern()));
-    final Evaluable escape = e.escape() == null ? null : likeOperand(compile(e.escape()));
+    final String operator = (e.negated() ? "!~~" : "~~") + (e.ignoreCase() ? "*" : "");
+    final Evaluable operand = likeOperand(compile(e.operand()), operator);
+    final Evaluable pattern = likeOperand(compile(e.pattern()), operator);
+    final Evaluable escape = e.escape() == null ? null : likeOperand(compile(e.escape()), operator);
     final boolean negated = e.negated();
+    final boolean ignoreCase = e.ignoreCase();
     final Evaluable[] inputs = escape == null ? new Evaluable[] { operand, pattern } : new Evaluable[] { operand, pattern, escape };
     return new Evaluable.Node(PgType.BOOL, row -> {
       final Object text = operand.eval(row);
@@ -882,14 +890,14 @@ public final class ExpressionCompiler {
           return null;
         escapeText = (String) value;
       }
-      return Text.like((String) text, (String) regex, escapeText, false) != negated;
+      return Text.like((String) text, (String) regex, escapeText, ignoreCase) != negated;
     }, inputs);
   }
 
-  private static Evaluable likeOperand(final Evaluable expression) {
+  private static Evaluable likeOperand(final Evaluable expression, final String operator) {
     final Evaluable text = implicit(expression, PgType.TEXT);
     if (text == null)
-      throw PostgreSQLEvaluationException.noOperator("~~", expression.type(), PgType.TEXT);
+      throw PostgreSQLEvaluationException.noOperator(operator, expression.type(), PgType.TEXT);
     return text;
   }
 
@@ -1029,6 +1037,8 @@ public final class ExpressionCompiler {
     final String name = call.name().get(call.name().size() - 1).value().toLowerCase(Locale.ROOT);
     if (isAggregate(call))
       throw new PostgreSQLEvaluationException("42803", "aggregate functions are not allowed in this context");
+    if (UNSUPPORTED_AGGREGATES.contains(name))
+      throw PostgreSQLEvaluationException.unsupported("The aggregate function " + name + " is not supported");
     if (call.distinct() || call.star())
       throw PostgreSQLEvaluationException.noFunction(name);
     final Evaluable[] args = compileArguments(call.args());

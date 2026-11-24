@@ -167,7 +167,7 @@ final class WindowStage {
           spec);
     }
     default:
-      if (OTHER_WINDOW_FUNCTIONS.contains(name))
+      if (OTHER_WINDOW_FUNCTIONS.contains(name) || name.equals("string_agg"))
         throw new PostgreSQLFeatureNotSupportedException("The window function " + name + " is not supported");
       throw PostgreSQLEvaluationException.noFunction(name);
     }

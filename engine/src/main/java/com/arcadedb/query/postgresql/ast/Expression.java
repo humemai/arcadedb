@@ -30,7 +30,7 @@ import java.util.Objects;
  * {@code *}, and parentheses leave no node.
  *
  * <p>The nodes below are the whole subset. A construct of PostgreSQL that is not here (a subquery, {@code ROW}, an array, a
- * window function, {@code ILIKE}, {@code SIMILAR TO}, {@code IS DISTINCT FROM}, {@code IS TRUE}, an operator the subset does not
+ * window function, {@code SIMILAR TO}, {@code IS DISTINCT FROM}, {@code IS TRUE}, an operator the subset does not
  * name, and the others the parser lists) is refused with SQLSTATE 0A000 before a tree exists.
  */
 public sealed interface Expression extends Node {
@@ -274,13 +274,14 @@ public sealed interface Expression extends Node {
   }
 
   /**
-   * {@code a_expr [NOT] LIKE a_expr [ESCAPE a_expr]}. {@code ILIKE} and {@code SIMILAR TO} are not in the subset.
+   * {@code a_expr [NOT] (LIKE | ILIKE) a_expr [ESCAPE a_expr]}. {@code SIMILAR TO} is not in the subset.
    *
-   * @param escape the escape character expression, or {@code null} for the default
-   * @param negated true for {@code NOT LIKE}
+   * @param escape     the escape character expression, or {@code null} for the default
+   * @param negated    true for {@code NOT LIKE} and {@code NOT ILIKE}
+   * @param ignoreCase true for {@code ILIKE}
    */
-  record Like(SourcePosition position, Expression operand, Expression pattern, Expression escape, boolean negated)
-      implements Expression {
+  record Like(SourcePosition position, Expression operand, Expression pattern, Expression escape, boolean negated,
+              boolean ignoreCase) implements Expression {
     public Like {
       Objects.requireNonNull(position, "position");
       Objects.requireNonNull(operand, "operand");

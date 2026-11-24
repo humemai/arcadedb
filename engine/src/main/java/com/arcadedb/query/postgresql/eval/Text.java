@@ -75,20 +75,23 @@ public final class Text {
       else if (escape.codePointCount(0, escape.length()) == 1)
         escapeCodePoint = escape.codePointAt(0);
       else
-        throw new PostgreSQLEvaluationException("22019", "invalid escape string. Hint: Escape string must be empty or one character.");
+        throw new PostgreSQLEvaluationException("22025", "invalid escape string. Hint: Escape string must be empty or one character.");
     }
 
     // the pattern as tokens: a literal code point, or one of two wildcards
     final int any = -2;
     final int one = -3;
+    // an escape character that ends the pattern: PostgreSQL raises the error only when the match reaches it with text left (like_match.c)
+    final int endsWithEscape = -4;
     final List<Integer> tokens = new ArrayList<>();
     final int[] patternCodePoints = pattern.codePoints().toArray();
     for (int i = 0; i < patternCodePoints.length; i++) {
       final int cp = patternCodePoints[i];
       if (cp == escapeCodePoint) {
         if (i + 1 >= patternCodePoints.length)
-          throw new PostgreSQLEvaluationException("22025", "LIKE pattern must not end with escape character");
-        tokens.add(fold(patternCodePoints[++i], ignoreCase));
+          tokens.add(endsWithEscape);
+        else
+          tokens.add(fold(patternCodePoints[++i], ignoreCase));
       } else if (cp == '%')
         tokens.add(any);
       else if (cp == '_')
@@ -106,6 +109,8 @@ public final class Text {
       if (p < tokens.size() && tokens.get(p) == any) {
         starToken = p++;
         starInput = t;
+      } else if (p < tokens.size() && tokens.get(p) == endsWithEscape) {
+        throw new PostgreSQLEvaluationException("22025", "LIKE pattern must not end with escape character");
       } else if (p < tokens.size() && (tokens.get(p) == one || tokens.get(p) == input[t])) {
         ++p;
         ++t;

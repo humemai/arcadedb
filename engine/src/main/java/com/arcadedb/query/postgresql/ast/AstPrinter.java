@@ -265,7 +265,7 @@ public final class AstPrinter {
           "(" + print(in.operand()) + (in.negated() ? " NOT IN (" : " IN (") + print(in.query()) + "))";
       case Expression.Between between -> "(" + print(between.operand()) + (between.negated() ? " NOT BETWEEN " : " BETWEEN ")
           + print(between.low()) + " AND " + print(between.high()) + ")";
-      case Expression.Like like -> "(" + print(like.operand()) + (like.negated() ? " NOT LIKE " : " LIKE ") + print(like.pattern())
+      case Expression.Like like -> "(" + print(like.operand()) + (like.negated() ? " NOT " : " ") + (like.ignoreCase() ? "ILIKE " : "LIKE ") + print(like.pattern())
           + (like.escape() == null ? "" : " ESCAPE " + print(like.escape())) + ")";
       case Expression.Case caseExpression -> {
         final StringBuilder text = new StringBuilder("CASE");

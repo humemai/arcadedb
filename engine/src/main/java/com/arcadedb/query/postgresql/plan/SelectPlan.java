@@ -24,6 +24,7 @@ import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.Numbers;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.query.postgresql.eval.Text;
 import com.arcadedb.query.postgresql.plan.join.BuildMemory;
 import com.arcadedb.query.sql.executor.ResultInternal;
 
@@ -57,7 +58,13 @@ public final class SelectPlan implements QueryPlan {
   }
 
   /** An aggregate function call of a grouping query. */
-  record AggregateSpec(String name, PgType argumentType, PgType resultType, Evaluable argument, boolean distinct) {
+  /**
+   * One aggregate of a grouping query.
+   *
+   * @param delimiter the second argument of {@code string_agg}, evaluated per row; {@code null} for the aggregates of one argument
+   */
+  record AggregateSpec(String name, PgType argumentType, PgType resultType, Evaluable argument, boolean distinct,
+                       Evaluable delimiter) {
   }
 
   private final RelationSource source;
@@ -304,7 +311,8 @@ public final class SelectPlan implements QueryPlan {
         }
         for (int a = 0; a < specs.size(); a++) {
           final AggregateSpec spec = specs.get(a);
-          group[a].add(spec.argument() == null ? Boolean.TRUE : spec.argument().eval(row));
+          group[a].add(spec.argument() == null ? Boolean.TRUE : spec.argument().eval(row),
+              spec.delimiter() == null ? null : spec.delimiter().eval(row));
         }
       }
       if (keys.length == 0 && accumulators.isEmpty()) {
@@ -335,6 +343,11 @@ public final class SelectPlan implements QueryPlan {
     /** @param value the argument for a row, {@code TRUE} for {@code count(*)}; {@code null} is skipped by every aggregate */
     void add(Object value);
 
+    /** The row of an aggregate of two arguments: {@code string_agg(value, delimiter)}. The others ignore the second one. */
+    default void add(final Object value, final Object second) {
+      add(value);
+    }
+
     Object result();
 
     static Accumulator create(final AggregateSpec spec) {
@@ -351,6 +364,31 @@ public final class SelectPlan implements QueryPlan {
           @Override
           public Object result() {
             return count;
+          }
+        };
+        case "string_agg" -> new Accumulator() {
+          private StringBuilder joined;
+
+          @Override
+          public void add(final Object value) {
+            add(value, null);
+          }
+
+          /** A null value is skipped and brings no delimiter; a null delimiter joins without one. The first value has none before it. */
+          @Override
+          public void add(final Object value, final Object delimiter) {
+            if (value == null)
+              return;
+            if (joined == null)
+              joined = new StringBuilder();
+            else if (delimiter != null)
+              joined.append((String) delimiter);
+            joined.append((String) value);
+          }
+
+          @Override
+          public Object result() {
+            return joined == null ? null : joined.toString();
           }
         };
         case "sum" -> new Accumulator() {
@@ -417,6 +455,8 @@ public final class SelectPlan implements QueryPlan {
       };
       if (!spec.distinct())
         return accumulator;
+      if (spec.name().equals("string_agg"))
+        return new DistinctStringAgg();
       final Set<Object> seen = new HashSet<>();
       return new Accumulator() {
         @Override
@@ -430,6 +470,48 @@ public final class SelectPlan implements QueryPlan {
           return accumulator.result();
         }
       };
+    }
+  }
+
+  /**
+   * {@code string_agg(DISTINCT value, delimiter)}. PostgreSQL implements DISTINCT in an aggregate by sorting the argument rows
+   * and skipping a row equal to the one before, so the pieces come in the order of the values (the {@code C} collation for text,
+   * a {@code NULL} delimiter after the others), and not in the order of the input.
+   */
+  private static final class DistinctStringAgg implements Accumulator {
+    private final Set<List<Object>> seen = new HashSet<>();
+    private final List<String[]>    rows = new ArrayList<>();
+
+    @Override
+    public void add(final Object value) {
+      add(value, null);
+    }
+
+    @Override
+    public void add(final Object value, final Object delimiter) {
+      if (value != null && seen.add(Arrays.asList(value, delimiter)))
+        rows.add(new String[] { (String) value, (String) delimiter });
+    }
+
+    @Override
+    public Object result() {
+      if (rows.isEmpty())
+        return null;
+      rows.sort((a, b) -> {
+        final int order = Text.compare(a[0], b[0]);
+        if (order != 0)
+          return order;
+        if (a[1] == null)
+          return b[1] == null ? 0 : 1;
+        return b[1] == null ? -1 : Text.compare(a[1], b[1]);
+      });
+      final StringBuilder joined = new StringBuilder();
+      for (int i = 0; i < rows.size(); i++) {
+        if (i > 0 && rows.get(i)[1] != null)
+          joined.append(rows.get(i)[1]);
+        joined.append(rows.get(i)[0]);
+      }
+      return joined.toString();
     }
   }
 
