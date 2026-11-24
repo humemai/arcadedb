@@ -23,6 +23,7 @@ import com.arcadedb.query.postgresql.PostgreSQLSyntaxException;
 import com.arcadedb.query.postgresql.ast.Statement;
 import com.arcadedb.query.postgresql.grammar.PostgreSQLLexer;
 import com.arcadedb.query.postgresql.grammar.PostgreSQLParser;
+import org.antlr.v4.runtime.BailErrorStrategy;
 import org.antlr.v4.runtime.BaseErrorListener;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
@@ -30,6 +31,8 @@ import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
 import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.atn.PredictionMode;
+import org.antlr.v4.runtime.misc.ParseCancellationException;
 import org.antlr.v4.runtime.tree.ErrorNode;
 import org.antlr.v4.runtime.tree.ParseTreeListener;
 import org.antlr.v4.runtime.tree.TerminalNode;
@@ -58,6 +61,50 @@ public final class StatementParser {
    * @throws PostgreSQLFeatureNotSupportedException when the text is PostgreSQL syntax the subset does not cover
    */
   public static Statement parse(final String text) {
+    final Statement fast = parseFast(text);
+    return fast != null ? fast : parseFull(text);
+  }
+
+  /**
+   * The first of two stages (fork issue #92, the strategy the ANTLR documentation gives for a grammar with a costly prediction):
+   * the parser predicts with SLL, which does not make the full-context closure of LL, and stops at the first error with no message.
+   * A text that passes this stage gives the tree that {@link #parseFull} gives (SLL differs from LL only where it reports a conflict
+   * that LL resolves, and then it ends in an error here). Every other text, a text that is not PostgreSQL, one outside the subset,
+   * and one that a later check refuses, answers {@code null}: {@link #parseFull} reads it again and says what it says.
+   */
+  static Statement parseFast(final String text) {
+    try {
+      final PostgreSQLLexer lexer = new PostgreSQLLexer(CharStreams.fromString(text));
+      lexer.removeErrorListeners();
+      lexer.addErrorListener(new BailListener());
+      final CommonTokenStream stream = new CommonTokenStream(lexer);
+      final PostgreSQLParser parser = new PostgreSQLParser(stream);
+      parser.removeErrorListeners();
+      parser.setErrorHandler(new BailErrorStrategy());
+      parser.getInterpreter().setPredictionMode(PredictionMode.SLL);
+      final UnsupportedCollector collector = new UnsupportedCollector(parser.getRuleNames());
+      parser.addParseListener(collector);
+      final PostgreSQLParser.RootContext root = parser.root();
+      if (collector.first != null)
+        return null;
+      StatementChecks.run(root, stream);
+      return new AstBuilder().build(root);
+    } catch (final RuntimeException e) {
+      return null;
+    }
+  }
+
+  /** Any error of the lexer or the parser ends the first stage. */
+  private static final class BailListener extends BaseErrorListener {
+    @Override
+    public void syntaxError(final Recognizer<?, ?> recognizer, final Object offendingSymbol, final int line, final int charPositionInLine,
+        final String message, final RecognitionException exception) {
+      throw new ParseCancellationException(message);
+    }
+  }
+
+  /** The full parse, with the messages and the positions of the errors: what {@link #parse} did before the first stage existed. */
+  static Statement parseFull(final String text) {
     final ThrowingListener errors = new ThrowingListener();
 
     final PostgreSQLLexer lexer = new PostgreSQLLexer(CharStreams.fromString(text));
