@@ -527,8 +527,8 @@ aExpr
   | aExpr NOT? IN unsupportedInSubquery                                       # unsupportedInExpr
   | aExpr NOT? BETWEEN ASYMMETRIC? low=bExpr AND high=aExpr                   # betweenExpr
   | aExpr NOT? BETWEEN unsupportedSymmetric low=bExpr AND high=aExpr          # unsupportedBetweenExpr
-  | aExpr NOT? LIKE pattern=aExpr ESCAPE escape=aExpr                         # likeEscapeExpr
-  | aExpr NOT? LIKE pattern=aExpr                                             # likeExpr
+  | aExpr NOT? op=(LIKE | ILIKE) pattern=bExpr ESCAPE escape=aExpr           # likeEscapeExpr
+  | aExpr NOT? op=(LIKE | ILIKE) pattern=aExpr                                # likeExpr
   | l=aExpr unsupportedPatternOperator pattern=aExpr ESCAPE escape=aExpr    # unsupportedPatternEscapeExpr
   | l=aExpr unsupportedPatternOperator r=aExpr                                # unsupportedPatternExpr
   | aExpr unsupportedQuantifiedComparison                                     # unsupportedQuantifiedExpr
@@ -568,7 +568,7 @@ unsupportedSymmetric
   ;
 
 unsupportedPatternOperator
-  : NOT? (ILIKE | SIMILAR TO)
+  : NOT? SIMILAR TO
   ;
 
 unsupportedQuantifiedComparison

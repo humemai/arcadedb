@@ -992,6 +992,8 @@ public class SelectPlanner {
   static SelectPlan.AggregateSpec aggregateSpec(final Expression.FunctionCall call, final ExpressionCompiler inputCompiler) {
     {
       final String name = call.name().get(call.name().size() - 1).value();
+      if (name.equals("string_agg"))
+        return stringAggSpec(call, inputCompiler);
       Evaluable argument = null;
       PgType argumentType = PgType.UNKNOWN;
       if (call.star()) {
@@ -1032,8 +1034,31 @@ public class SelectPlanner {
         result = argumentType.isString() ? PgType.TEXT : argumentType;
         break;
       }
-      return new SelectPlan.AggregateSpec(name, argumentType, result, argument, call.distinct());
+      return new SelectPlan.AggregateSpec(name, argumentType, result, argument, call.distinct(), null);
     }
+  }
+
+  /**
+   * {@code string_agg(value, delimiter)}: {@code text}. PostgreSQL has the two overloads {@code (text, text)} and
+   * {@code (bytea, bytea)}; an {@code unknown} literal resolves to the string category, so {@code string_agg(name, ', ')} is the
+   * text one. There is no implicit cast from a number to text: {@code string_agg(pid, ',')} is {@code 42883}, as in PostgreSQL.
+   */
+  private static SelectPlan.AggregateSpec stringAggSpec(final Expression.FunctionCall call, final ExpressionCompiler inputCompiler) {
+    if (call.star() || call.args().size() != 2) {
+      final List<PgType> types = new ArrayList<>();
+      for (final Expression argument : call.args())
+        types.add(inputCompiler.compile(argument).type());
+      throw PostgreSQLEvaluationException.noFunction("string_agg", types.toArray(new PgType[0]));
+    }
+    final Evaluable value = inputCompiler.compile(call.args().get(0));
+    final Evaluable delimiter = inputCompiler.compile(call.args().get(1));
+    if (value.type() == PgType.BYTEA || delimiter.type() == PgType.BYTEA)
+      throw PostgreSQLEvaluationException.unsupported("string_agg over bytea is not supported");
+    final Evaluable text = inputCompiler.coerce(value, PgType.TEXT);
+    final Evaluable separator = inputCompiler.coerce(delimiter, PgType.TEXT);
+    if (text == null || separator == null)
+      throw PostgreSQLEvaluationException.noFunction("string_agg", value.type(), delimiter.type());
+    return new SelectPlan.AggregateSpec("string_agg", PgType.TEXT, PgType.TEXT, text, call.distinct(), separator);
   }
 
   /**

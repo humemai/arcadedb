@@ -490,11 +490,11 @@ final class AstBuilder {
       return new Expression.Between(position(e.getStart()), expression(e.aExpr(0)), bExpression(e.low), expression(e.high),
           has(e, PostgreSQLParser.NOT));
     if (context instanceof LikeEscapeExprContext e)
-      return new Expression.Like(position(e.getStart()), expression(e.aExpr(0)), expression(e.pattern), expression(e.escape),
-          has(e, PostgreSQLParser.NOT));
+      return new Expression.Like(position(e.getStart()), expression(e.aExpr(0)), bExpression(e.pattern), expression(e.escape),
+          has(e, PostgreSQLParser.NOT), e.op.getType() == PostgreSQLParser.ILIKE);
     if (context instanceof LikeExprContext e)
       return new Expression.Like(position(e.getStart()), expression(e.aExpr(0)), expression(e.pattern), null,
-          has(e, PostgreSQLParser.NOT));
+          has(e, PostgreSQLParser.NOT), e.op.getType() == PostgreSQLParser.ILIKE);
     if (context instanceof ComparisonExprContext e) {
       // the comparison operators do not associate: a < b < c is a syntax error in PostgreSQL
       if (e.l instanceof ComparisonExprContext)

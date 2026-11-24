@@ -76,7 +76,7 @@ subquery-in	ok	inside	-	SELECT name FROM person WHERE pid IN (SELECT pid FROM or
 exists	ok	inside	-	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid)	written for the parser	-
 window	ok	inside	-	SELECT name, row_number() OVER (ORDER BY name) FROM person	written for the parser	-
 distinct-on	ok	outside	-	SELECT DISTINCT ON (city) city, name FROM person	written for the parser	-
-ilike	ok	outside	-	SELECT name FROM person WHERE name ILIKE 'a%'	written for the parser	-
+ilike	ok	inside	-	SELECT name FROM person WHERE name ILIKE 'a%'	written for the parser	-
 is-distinct-from	ok	inside	-	SELECT 1 IS DISTINCT FROM 2	written for the parser	-
 any-array	ok	outside	-	SELECT 1 = ANY (ARRAY[1, 2])	written for the parser	-
 lateral	ok	outside	-	SELECT * FROM person p, LATERAL (SELECT 1) s	written for the parser	-
@@ -1619,3 +1619,10 @@ is-not-distinct-from	ok	inside	-	SELECT 1 IS NOT DISTINCT FROM 2	written for the
 over-rows-unbounded-preceding	ok	inside	-	SELECT sum(pid) OVER (ORDER BY pid ROWS UNBOUNDED PRECEDING) FROM person	written for the parser	-
 over-rows-between-unbounded-preceding-and-current-row	ok	inside	-	SELECT sum(pid) OVER (ORDER BY pid ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM person	written for the parser	-
 over-rows-between-unbounded-following	ok	outside	-	SELECT sum(pid) OVER (ORDER BY pid ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM person	written for the parser	-
+not-ilike	pending-server	inside	-	SELECT name FROM person WHERE name NOT ILIKE 'a%'	written for the parser	-
+ilike-escape	pending-server	inside	-	SELECT name FROM person WHERE name ILIKE 'a!%' ESCAPE '!'	written for the parser	-
+not-similar-to	pending-server	outside	-	SELECT name FROM person WHERE name NOT SIMILAR TO 'a%'	written for the parser	-
+string-agg	pending-server	inside	-	SELECT string_agg(name, ',') FROM person	written for the parser	-
+string-agg-distinct	pending-server	inside	-	SELECT string_agg(DISTINCT city, ',') FROM person	written for the parser	-
+string-agg-order-by-inside-stays-out	pending-server	outside	-	SELECT string_agg(name, ',' ORDER BY name) FROM person	written for the parser	-
+array-agg-parses	pending-server	inside	-	SELECT array_agg(name) FROM person	written for the parser	-
