@@ -196,7 +196,7 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
   void getIndexInfoListsThePrimaryKeyAndTheUniqueIndex() throws Exception {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
       assertThat(rows(connection.getMetaData().getIndexInfo(null, null, "person", false, false), "INDEX_NAME", "COLUMN_NAME",
-          "NON_UNIQUE")).containsExactlyInAnyOrder("person_pid_key|pid|false", "person_pkey|id|false");
+          "NON_UNIQUE")).containsExactlyInAnyOrder("person_pid_key|pid|f", "person_pkey|id|f");
     }
   }
 

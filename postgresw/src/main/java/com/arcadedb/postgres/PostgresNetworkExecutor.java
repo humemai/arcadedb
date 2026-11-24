@@ -1881,10 +1881,16 @@ public class PostgresNetworkExecutor extends Thread {
     if (types != null)
       return new CatalogAnswer(toResults(types.rows), types.columns);
 
+    // A value of a parameter the client declared no type for reaches the language as UnknownText; the catalog reads it as the text
+    // it is, as for every other language (psycopg's lookup of a type, to_regtype($1), binds one)
+    final Object[] catalogParameters = new Object[parameters.length];
+    for (int i = 0; i < parameters.length; i++)
+      catalogParameters[i] = parameters[i] instanceof UnknownText unknown ? unknown.text() : parameters[i];
+
     // The relational names are seen per statement, by the language it runs in (fork issue #10): a statement of the postgresql
     // language sees the tables, columns and keys of the relational view, and reads information_schema from the language
     final PostgresCatalog.Answer answer = PostgresCatalog.resolveForStatement(query, database, userName, sessionSettings,
-        PostgresQueryLanguages.POSTGRESQL.equals(language), parameters);
+        PostgresQueryLanguages.POSTGRESQL.equals(language), catalogParameters);
     if (answer != null) {
       if (answer.rows != null)
         return new CatalogAnswer(toResults(answer.rows), answer.columns);
@@ -1900,7 +1906,7 @@ public class PostgresNetworkExecutor extends Thread {
     // name, in an INSERT - goes to the engine like any other (issue #10695)
     // A probe this catalog cannot evaluate is refused like a declined catalog query, not answered with no row: PostgreSQL answers
     // a FROM-less SELECT with exactly one row or an error (issue #10883)
-    final PostgresCatalog.Answer probe = PostgresCatalog.resolveProbe(query, database, userName, sessionSettings, parameters);
+    final PostgresCatalog.Answer probe = PostgresCatalog.resolveProbe(query, database, userName, sessionSettings, catalogParameters);
     if (probe == PostgresCatalog.DECLINED)
       return refuseCatalogQuery(query, parameters, true);
     if (probe != null)

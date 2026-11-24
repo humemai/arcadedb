@@ -131,6 +131,8 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
 
   private static final String REFLECTION_SCRIPT = """
       import json
+      import logging
+      import sys
 
       from sqlalchemy import create_engine, inspect
       from sqlalchemy.engine import URL
@@ -138,6 +140,9 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
       url = URL.create("postgresql+psycopg", username="root", password="@PASSWORD@", host="host.testcontainers.internal",
                        port=@PORT@, database="@DATABASE@",
                        query={"sslmode": "disable", "options": "-c arcadedb.language=postgresql"})
+      # the statements SQLAlchemy sends, on stderr, which the test shows when a check fails
+      logging.basicConfig(stream=sys.stderr)
+      logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
       engine = create_engine(url)
       inspector = inspect(engine)
 
@@ -175,7 +180,7 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
           "psycopg[binary]", "python", "-I", "/work/reflect.py");
       assertThat(result.getExitCode()).as(result.getStderr()).isZero();
 
-      assertThat(Arrays.stream(result.getStdout().strip().split("\\R")).toList()).contains(
+      assertThat(Arrays.stream(result.getStdout().strip().split("\\R")).toList()).as(result.getStderr()).contains(
           "tables|[\"company\", \"orders\", \"person\", \"works_at\"]",
           "columns|[[\"id\", \"TEXT\", false], [\"source_id\", \"TEXT\", false], [\"target_id\", \"TEXT\", false], [\"since\", \"INTEGER\", true]]",
           "pk|[[\"id\"], \"works_at_pkey\"]",
