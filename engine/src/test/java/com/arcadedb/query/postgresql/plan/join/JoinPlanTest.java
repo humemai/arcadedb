@@ -352,12 +352,12 @@ class JoinPlanTest extends TestHelper {
   @Test
   void aJoinOverTheCapStopsWithOutOfMemoryAndNeverAnswersFromPartOfItsInput() {
     final String hash = "SELECT p.name FROM person p LEFT JOIN orders o ON o.pid = p.pid";
-    assertThatThrownBy(() -> planned(hash, 1000L).execute(database)).isInstanceOfSatisfying(PostgreSQLEvaluationException.class, e -> {
+    assertThatThrownBy(() -> planned(hash, 100L).execute(database)).isInstanceOfSatisfying(PostgreSQLEvaluationException.class, e -> {
       assertThat(e.getSqlState()).isEqualTo("53200");
       assertThat(e.getMessage()).contains("out of memory").contains("Hint:");
     });
     final String nested = "SELECT a.name FROM person a JOIN person b ON a.pid < b.pid";
-    assertThatThrownBy(() -> planned(nested, 1000L).execute(database)).isInstanceOfSatisfying(PostgreSQLEvaluationException.class,
+    assertThatThrownBy(() -> planned(nested, 100L).execute(database)).isInstanceOfSatisfying(PostgreSQLEvaluationException.class,
         e -> assertThat(e.getSqlState()).isEqualTo("53200"));
     assertThat(planned(hash, BuildMemory.FLOOR_CAP_BYTES).execute(database).hasNext()).as("the default cap holds the small fixture")
         .isTrue();

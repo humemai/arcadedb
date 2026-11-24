@@ -42,7 +42,9 @@ import java.util.BitSet;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 /**
  * The rows of one table. How it reads them is its access path, chosen by the planner from the {@code WHERE} clause:
@@ -149,6 +151,18 @@ public final class TableSource implements RelationSource {
         conditionColumns.stream().toArray());
   }
 
+  /**
+   * The same source, whose rows hold only the columns that have one of these names (lower case), the others {@code null}: for a
+   * table that a join reads, when the statement names no other column (fork issue #90, {@link ColumnNames}).
+   */
+  public TableSource withColumnNames(final Set<String> names) {
+    final BitSet columns = new BitSet();
+    for (int i = 0; i < catalogColumns.size(); i++)
+      if (names.contains(catalogColumns.get(i).name().toLowerCase(Locale.ROOT)))
+        columns.set(i);
+    return new TableSource(database, table, relation, only, access, keyColumn, key, columns.stream().toArray(), null, null);
+  }
+
   /** The column values read from records since this source was built (for the tests). */
   public long columnsRead() {
     return columnsRead;
@@ -176,7 +190,7 @@ public final class TableSource implements RelationSource {
    * planner reads the edges of a vertex and turns each into the row a scan of the edge table gives.
    */
   public Object[] rowOf(final Document record) {
-    return row(record);
+    return readColumns == null ? row(record) : row(record, readColumns);
   }
 
   /** Whether a record is a row of this table: of the type, or of a subtype unless the read is {@code ONLY}. */
@@ -191,12 +205,12 @@ public final class TableSource implements RelationSource {
 
   /** The same table read through the index on the property of {@code column}, for the rows where it equals {@code key}. */
   public TableSource withIndexLookup(final Column column, final Evaluable key) {
-    return new TableSource(database, table, relation, only, Access.INDEX, column, key);
+    return new TableSource(database, table, relation, only, Access.INDEX, column, key, readColumns, null, null);
   }
 
   /** The same table read as one record, the one whose id is {@code key}. */
   public TableSource withIdLookup(final Column column, final Evaluable key) {
-    return new TableSource(database, table, relation, only, Access.ID, column, key);
+    return new TableSource(database, table, relation, only, Access.ID, column, key, readColumns, null, null);
   }
 
   /**

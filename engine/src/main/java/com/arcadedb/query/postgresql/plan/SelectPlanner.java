@@ -209,8 +209,12 @@ public class SelectPlanner {
     final Table table = name.size() == 1 ? catalog.table(identifier(name.get(0)))
         : catalog.table(identifier(name.get(0)), identifier(name.get(1)));
     final String relation = reference.alias() != null ? reference.alias().value() : table.name();
-    return new TableSource(database, table, relation, reference.only());
+    final TableSource source = new TableSource(database, table, relation, reference.only());
+    return namedColumns == null ? source : source.withColumnNames(namedColumns);
   }
+
+  /** The column names of the query being planned, {@code null} when its tables read every column (fork issue #90). */
+  private Set<String> namedColumns;
 
   private static Identifier identifier(final Name name) {
     return new Identifier(name.value(), name.quoted());
@@ -254,6 +258,17 @@ public class SelectPlanner {
   }
 
   private SelectPlan plan(final SelectStatement select, final boolean keepUnknown) {
+    // the tables of this query read only the columns that it names anywhere (fork issue #90); a nested query sets its own
+    final Set<String> outerNames = namedColumns;
+    namedColumns = ColumnNames.of(select);
+    try {
+      return planSelect(select, keepUnknown);
+    } finally {
+      namedColumns = outerNames;
+    }
+  }
+
+  private SelectPlan planSelect(final SelectStatement select, final boolean keepUnknown) {
     // PostgreSQL takes the terms that every branch of an OR has in common out of it before it plans (prepqual.c)
     final Expression whereClause = OrFactoring.factor(select.where());
     final boolean grouping = !select.groupBy().isEmpty() || select.having() != null || hasAggregate(select);
