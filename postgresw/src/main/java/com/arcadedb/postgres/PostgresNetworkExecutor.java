@@ -53,6 +53,7 @@ import com.arcadedb.query.RunningQuery;
 import com.arcadedb.query.postgresql.PostgreSQLErrors;
 import com.arcadedb.query.postgresql.PostgreSQLQueryEngine;
 import com.arcadedb.query.postgresql.eval.PgType;
+import com.arcadedb.query.postgresql.eval.UnknownText;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.sql.SQLQueryEngine;
 import com.arcadedb.query.sql.executor.BasicCommandContext;
@@ -1817,6 +1818,14 @@ public class PostgresNetworkExecutor extends Thread {
 
   private Object[] getParams(PostgresPortal portal) {
     Object[] parameters = portal.parameterValues != null ? portal.parameterValues.toArray() : new Object[0];
+
+    if (PostgresQueryLanguages.POSTGRESQL.equals(portal.language)) {
+      // a text value of a parameter the client declared no type for is unknown to the language, which types it from its context
+      for (int i = 0; i < parameters.length && portal.parameterTypes != null && i < portal.parameterTypes.size(); i++)
+        if (portal.parameterTypes.get(i) == 0L && parameters[i] instanceof String text)
+          parameters[i] = new UnknownText(text);
+      return parameters;
+    }
 
     if ("cypher".equals(portal.language) || "opencypher".equals(portal.language)) {
       Object[] parametersCypher = new Object[parameters.length * 2];
@@ -3849,7 +3858,8 @@ public class PostgresNetworkExecutor extends Thread {
         // VARCHAR (OID 1043) rather than 0 (unspecified) keeps asyncpg from introspecting unknown types via pg_type.
         portal.parameterTypes = new ArrayList<>(highestPlaceholder);
         for (int i = 0; i < highestPlaceholder; i++)
-          portal.parameterTypes.add((long) PostgresType.VARCHAR.code);
+          // the postgresql language types a value of no declared type from the expression it is in, as PostgreSQL does
+          portal.parameterTypes.add(PostgresQueryLanguages.POSTGRESQL.equals(portal.language) ? 0L : (long) PostgresType.VARCHAR.code);
       }
 
       final int actualParamCount = portal.parameterTypes != null ? portal.parameterTypes.size() : 0;

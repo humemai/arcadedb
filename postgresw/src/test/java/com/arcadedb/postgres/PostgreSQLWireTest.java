@@ -230,6 +230,32 @@ class PostgreSQLWireTest extends PostgresWireProtocolTestBase {
   }
 
   @Test
+  void aParameterOfNoDeclaredTypeIsTypedByItsContext() throws Exception {
+    final Properties props = new Properties();
+    props.setProperty("user", "root");
+    props.setProperty("password", DEFAULT_PASSWORD_FOR_TESTS);
+    props.setProperty("ssl", "false");
+    props.setProperty("options", LANGUAGE_OPTION);
+    // every setString goes out with no type, as node-postgres and libpq's PQexecParams send their values
+    props.setProperty("stringtype", "unspecified");
+    try (final Connection connection = DriverManager.getConnection(getServerPostgresJdbcUrl(), props);
+        final PreparedStatement ps = connection.prepareStatement("SELECT name FROM person WHERE pid = ? AND age > ?")) {
+      ps.setString(1, "2");
+      ps.setString(2, "40");
+      try (final ResultSet rs = ps.executeQuery()) {
+        assertThat(rows(rs)).containsExactly("Bo");
+      }
+    }
+    // a value that is declared a varchar is a varchar, which PostgreSQL does not compare with an integer
+    try (final Connection connection = connect(LANGUAGE_OPTION, false);
+        final PreparedStatement ps = connection.prepareStatement("SELECT name FROM person WHERE pid = ?")) {
+      ps.setString(1, "2");
+      assertThatThrownBy(ps::executeQuery).isInstanceOf(PSQLException.class)
+          .satisfies(e -> assertThat(((PSQLException) e).getSQLState()).isEqualTo("42883"));
+    }
+  }
+
+  @Test
   void quotedIdentifiersAndStringLiteralsReachTheLanguageAsWritten() throws Exception {
     try (final Connection connection = connect(LANGUAGE_OPTION, false)) {
       assertThat(query(connection, "SELECT \"name\" FROM \"person\" WHERE city = 'Delft' ORDER BY \"name\"")).containsExactly("Ada", "Bo");

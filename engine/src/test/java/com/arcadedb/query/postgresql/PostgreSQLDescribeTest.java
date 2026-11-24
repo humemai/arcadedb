@@ -21,6 +21,7 @@ package com.arcadedb.query.postgresql;
 import com.arcadedb.TestHelper;
 import com.arcadedb.database.DatabaseInternal;
 import com.arcadedb.query.postgresql.eval.PgType;
+import com.arcadedb.query.postgresql.eval.UnknownText;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.sql.executor.ResultSet;
 import org.junit.jupiter.api.Test;
@@ -86,6 +87,20 @@ class PostgreSQLDescribeTest extends TestHelper {
     try (final ResultSet resultSet = database.command("postgresql", "UPDATE person SET age = 38 WHERE pid = 1 RETURNING age")) {
       assertThat(((PostgreSQLResultSet) resultSet).returnsRows()).isTrue();
     }
+  }
+
+  @Test
+  void aParameterOfNoDeclaredTypeIsTypedByItsContextAsAStringLiteralIs() {
+    try (final ResultSet resultSet = database.query("postgresql", "SELECT name FROM person WHERE pid = $1", new UnknownText("2"))) {
+      assertThat(resultSet.next().<String>getProperty("name")).isEqualTo("Bo");
+      assertThat(resultSet.hasNext()).isFalse();
+    }
+    try (final ResultSet resultSet = database.query("postgresql", "SELECT $1 AS v", new UnknownText("x"))) {
+      assertThat(resultSet.next().<String>getProperty("v")).isEqualTo("x");
+    }
+    // a text parameter is text, which PostgreSQL does not coerce to an integer
+    assertThatThrownBy(() -> database.query("postgresql", "SELECT name FROM person WHERE pid = $1", "2"))
+        .satisfies(e -> assertThat(PostgreSQLErrors.sqlState(e)).isEqualTo("42883"));
   }
 
   @Test
