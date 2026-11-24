@@ -1,0 +1,12 @@
+                   List of indexes
+ Schema |      Name       | Type  | Owner |  Table   
+--------+-----------------+-------+-------+----------
+ public | company_cid_key | index | root  | company
+ public | company_pkey    | index | root  | company
+ public | orders_oid_key  | index | root  | orders
+ public | orders_pkey     | index | root  | orders
+ public | person_pid_key  | index | root  | person
+ public | person_pkey     | index | root  | person
+ public | works_at_pkey   | index | root  | works_at
+(7 rows)
+

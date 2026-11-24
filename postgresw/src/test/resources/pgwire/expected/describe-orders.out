@@ -1,0 +1,17 @@
+               Table "public.orders"
+ Column  |  Type   | Collation | Nullable | Default 
+---------+---------+-----------+----------+---------
+ id      | text    |           | not null | 
+ address | jsonb   |           |          | 
+ buyer   | text    |           |          | 
+ oid     | integer |           |          | 
+ pid     | integer |           |          | 
+ placed  | date    |           |          | 
+ tags    | text[]  |           |          | 
+ total   | numeric |           |          | 
+Indexes:
+    "orders_pkey" PRIMARY KEY, btree (id)
+    "orders_oid_key" UNIQUE CONSTRAINT, btree (oid)
+Foreign-key constraints:
+    "orders_buyer_fkey" FOREIGN KEY (buyer) REFERENCES person(id)
+

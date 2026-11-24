@@ -1,0 +1,6 @@
+    Index "public.person_pid_key"
+ Column |  Type   | Key? | Definition 
+--------+---------+------+------------
+ pid    | integer | yes  | pid
+unique, btree, for table "public.person"
+

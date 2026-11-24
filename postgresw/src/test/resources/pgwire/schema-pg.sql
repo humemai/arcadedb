@@ -13,4 +13,8 @@ INSERT INTO company VALUES ('c10', 10, 'Acme'), ('c20', 20, 'Birch'), ('c30', 30
 INSERT INTO works_at VALUES ('w1', 'p1', 'c10', 2019), ('w2', 'p1', 'c10', 2022), ('w3', 'p2', 'c10', 2020), ('w4', 'p3', 'c20', 2021), ('w5', 'p4', 'c20', 2023);
 INSERT INTO orders (id, address, buyer, oid, pid, total, placed, tags) VALUES
   ('o100', '{"city": "Delft", "zip": "1000AA"}', 'p1', 100, 1, 25.50, '2026-01-05', '{gift,express}'),
-  ('o101', '{"city": "Delft", "zip": "1000AA"}', 'p1', 101, 1, 10.00, '2026-01-07', '{gift}');
+  ('o101', '{"city": "Delft", "zip": "1000AA"}', 'p1', 101, 1, 10.00, '2026-01-07', '{gift}'),
+  ('o102', '{"city": "Delft", "zip": "1000AA"}', 'p2', 102, 2, 99.99, '2026-02-01', '{express}'),
+  ('o103', '{"city": "Leiden", "zip": "1000AA"}', 'p4', 103, 4, 5.00, '2026-02-03', '{}'),
+  ('o104', '{"city": "Leiden", "zip": "1000AA"}', 'p4', 104, 4, 7.25, '2026-03-09', '{gift}'),
+  ('o105', '{"city": "Delft", "zip": "1000AA"}', NULL, 105, NULL, 1.00, '2026-03-10', '{}');

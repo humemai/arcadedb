@@ -1,0 +1,6 @@
+    Index "public.person_pkey"
+ Column | Type | Key? | Definition 
+--------+------+------+------------
+ id     | text | yes  | id
+primary key, btree, for table "public.person"
+

@@ -1,0 +1,6 @@
+          List of tables
+ Schema |   Name   | Type  | Owner 
+--------+----------+-------+-------
+ public | works_at | table | root
+(1 row)
+
