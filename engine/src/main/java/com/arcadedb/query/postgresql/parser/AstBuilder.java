@@ -501,6 +501,10 @@ final class AstBuilder {
         throw Diagnostics.syntaxError(e.op);
       return binary(comparison(e.op), e.op, expression(e.l), expression(e.r));
     }
+    if (context instanceof IsDistinctExprContext e)
+      return new Expression.BinaryOp(position(e.getStart()),
+          has(e, PostgreSQLParser.NOT) ? Expression.BinaryOperator.IS_NOT_DISTINCT_FROM : Expression.BinaryOperator.IS_DISTINCT_FROM,
+          expression(e.l), expression(e.r));
     if (context instanceof IsNullExprContext e)
       return new Expression.IsNull(position(e.getStart()), expression(e.aExpr()), has(e, PostgreSQLParser.NOT));
     if (context instanceof IsNullPostfixExprContext e)
@@ -632,7 +636,7 @@ final class AstBuilder {
         for (final SortByContext item : over.sortClause().items)
           order.add(sortItem((SortKeyContext) item));
       return new Expression.FunctionCall(call.position(), call.name(), call.args(), call.distinct(), call.star(),
-          new Expression.Window(position(over.getStart()), partition, order));
+          new Expression.Window(position(over.getStart()), partition, order, over.rowsFrame() != null));
     }
     if (context instanceof VariadicSpecialExprContext e) {
       final SpecialFunctionKind kind = switch (e.fn.getType()) {

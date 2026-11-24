@@ -443,6 +443,8 @@ public final class ExpressionCompiler {
     case LESS_OR_EQUAL:
     case GREATER:
     case GREATER_OR_EQUAL:
+    case IS_DISTINCT_FROM:
+    case IS_NOT_DISTINCT_FROM:
       return comparison(operator, compile(e.left()), compile(e.right()));
     case CONCAT:
       return concat(compile(e.left()), compile(e.right()));
@@ -497,6 +499,16 @@ public final class ExpressionCompiler {
     final PgType type = unified.type();
     final Evaluable l = unified.left();
     final Evaluable r = unified.right();
+    if (operator == Expression.BinaryOperator.IS_DISTINCT_FROM || operator == Expression.BinaryOperator.IS_NOT_DISTINCT_FROM) {
+      // two NULLs are the same, a NULL and a value are not, and the answer is never NULL
+      final boolean wantSame = operator == Expression.BinaryOperator.IS_NOT_DISTINCT_FROM;
+      return new Evaluable.Node(PgType.BOOL, row -> {
+        final Object x = l.eval(row);
+        final Object y = r.eval(row);
+        final boolean same = x == null || y == null ? x == null && y == null : Comparison.compare(type, x, y) == 0;
+        return same == wantSame;
+      }, l, r);
+    }
     return new Evaluable.Node(PgType.BOOL, row -> {
       final Object x = l.eval(row);
       if (x == null)

@@ -150,6 +150,8 @@ public sealed interface Expression extends Node {
   enum BinaryOperator {
     OR("OR"), AND("AND"),
     EQUAL("="), NOT_EQUAL("<>"), LESS("<"), LESS_OR_EQUAL("<="), GREATER(">"), GREATER_OR_EQUAL(">="),
+    /** {@code a IS DISTINCT FROM b}: {@code <>} that treats two NULLs as equal and a NULL and a value as different, never NULL. */
+    IS_DISTINCT_FROM("IS DISTINCT FROM"), IS_NOT_DISTINCT_FROM("IS NOT DISTINCT FROM"),
     CONCAT("||"),
     ADD("+"), SUBTRACT("-"), MULTIPLY("*"), DIVIDE("/"), MODULO("%"), POWER("^"),
     /** pgvector {@code <->}, the Euclidean (L2) distance. */
@@ -368,8 +370,15 @@ public sealed interface Expression extends Node {
    *
    * @param partitionBy the {@code PARTITION BY} expressions, empty when there are none
    * @param orderBy     the {@code ORDER BY} items of the window, empty when there are none
+   * @param rowsFrame   true for {@code ROWS UNBOUNDED PRECEDING} or {@code ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW}: the
+   *                    frame ends at the current row and not at its last peer
    */
-  record Window(SourcePosition position, List<Expression> partitionBy, List<SortItem> orderBy) implements Node {
+  record Window(SourcePosition position, List<Expression> partitionBy, List<SortItem> orderBy, boolean rowsFrame) implements Node {
+    /** A window with the default frame: to the last peer of the row, the whole partition without an {@code ORDER BY}. */
+    public Window(final SourcePosition position, final List<Expression> partitionBy, final List<SortItem> orderBy) {
+      this(position, partitionBy, orderBy, false);
+    }
+
     public Window {
       Objects.requireNonNull(position, "position");
       partitionBy = List.copyOf(partitionBy);

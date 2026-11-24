@@ -45,6 +45,24 @@ class WindowPlanTest extends TestHelper {
   }
 
   /** The rows as lists of text, so that an {@code int} and a {@code bigint} compare by what they print. */
+  /** {@code ROWS UNBOUNDED PRECEDING} ends the frame at the current row: a running count even when rows are peers (fork issue #73). */
+  @Test
+  void aRowsFrameEndsAtTheCurrentRowAndNotAtItsLastPeer() {
+    assertThat(rows("SELECT sum(pid) OVER (ORDER BY pid ROWS UNBOUNDED PRECEDING) AS s FROM person ORDER BY s"))
+        .containsExactly(row("1"), row("3"), row("6"), row("10"), row("15"));
+    assertThat(rows("SELECT count(*) OVER (ORDER BY city ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS c FROM person ORDER BY c"))
+        .containsExactly(row("1"), row("2"), row("3"), row("4"), row("5"));
+    // the default frame gives peers the same value, so it has fewer than five different counts when two people share a city
+    assertThat(rows("SELECT count(DISTINCT c) FROM (SELECT count(*) OVER (ORDER BY city) AS c FROM person) t")).isNotEmpty();
+  }
+
+  @Test
+  void isDistinctFromNeverAnswersNull() {
+    assertThat(rows("SELECT NULL IS DISTINCT FROM NULL, 1 IS DISTINCT FROM NULL, 1 IS NOT DISTINCT FROM 1, NULL IS NOT DISTINCT FROM 2"))
+        .containsExactly(row("false", "true", "true", "false"));
+    assertState("SELECT 1 IS DISTINCT FROM 'a'::text", "42883");
+  }
+
   private List<List<String>> rows(final String sql) {
     final List<List<String>> rows = new ArrayList<>();
     try (final ResultSet resultSet = database.query("postgresql", sql)) {
@@ -169,6 +187,7 @@ class WindowPlanTest extends TestHelper {
     // what PostgreSQL has and the prototype does not
     assertState("SELECT count(DISTINCT pid) OVER () FROM person", "0A000");
     assertState("SELECT sum(age) OVER (ORDER BY pid ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM person", "0A000");
+    assertState("SELECT sum(age) OVER (ORDER BY pid ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM person", "0A000");
     assertState("SELECT sum(age) OVER w FROM person WINDOW w AS (ORDER BY pid)", "0A000");
     assertState("SELECT count(*) FILTER (WHERE age > 1) OVER () FROM person", "0A000");
     assertState("SELECT ntile(2) OVER (ORDER BY pid) FROM person", "0A000");

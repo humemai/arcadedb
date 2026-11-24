@@ -445,7 +445,6 @@ class StatementParserTest {
         new String[] { "SELECT a ILIKE b", "ILIKE is not supported by the postgresql language (line 1, column 10)" },
         new String[] { "SELECT a NOT ILIKE b", "NOT ILIKE is not supported" },
         new String[] { "SELECT a SIMILAR TO b", "SIMILAR TO is not supported" },
-        new String[] { "SELECT 1 IS DISTINCT FROM 2", "IS DISTINCT FROM is not supported" },
         new String[] { "SELECT a IS TRUE", "IS TRUE is not supported" },
         new String[] { "SELECT 1 = ANY (ARRAY[1])", "A comparison with ANY, SOME or ALL is not supported" },
         new String[] { "SELECT a BETWEEN SYMMETRIC 1 AND 2", "BETWEEN SYMMETRIC is not supported" },

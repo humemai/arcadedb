@@ -208,6 +208,8 @@ public final class AstPrinter {
       parts.add("PARTITION BY " + printAll(window.partitionBy()));
     if (!window.orderBy().isEmpty())
       parts.add("ORDER BY " + window.orderBy().stream().map(AstPrinter::print).collect(Collectors.joining(", ")));
+    if (window.rowsFrame())
+      parts.add("ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW");
     return String.join(" ", parts);
   }
 
