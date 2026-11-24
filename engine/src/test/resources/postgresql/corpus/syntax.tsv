@@ -70,7 +70,7 @@ update	ok	inside	-	UPDATE a SET x = 1	written for the parser	42P01
 delete	ok	inside	-	DELETE FROM a	written for the parser	42P01
 with	ok	inside	-	WITH x AS (SELECT 1) SELECT * FROM x	written for the parser	-
 union	ok	inside	-	SELECT 1 UNION SELECT 2	written for the parser	-
-values	ok	outside	-	VALUES (1), (2)	written for the parser	-
+values	ok	inside	-	VALUES (1), (2)	written for the parser	-
 subquery-from	ok	inside	-	SELECT * FROM (SELECT 1) s	written for the parser	-
 subquery-in	ok	inside	-	SELECT name FROM person WHERE pid IN (SELECT pid FROM orders)	written for the parser	-
 exists	ok	inside	-	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid)	written for the parser	-
@@ -1454,7 +1454,7 @@ out-commit	ok	inside	-	COMMIT	s3	-
 out-set	ok	outside	-	SET search_path = public	s3	-
 out-show	ok	outside	-	SHOW search_path	s3	-
 out-explain	ok	inside	-	EXPLAIN SELECT 1	s3	-
-out-values	ok	outside	-	VALUES (1)	s3	-
+out-values	ok	inside	-	VALUES (1)	s3	-
 out-subquery-from	ok	inside	-	SELECT * FROM (SELECT 1) AS s	s3	-
 out-subquery-scalar	ok	inside	-	SELECT (SELECT 1)	s3	-
 out-with	ok	inside	-	WITH t AS (SELECT 1) SELECT * FROM t	s3	-
@@ -1551,7 +1551,7 @@ c1-set-order-limit	ok	inside	-	SELECT a FROM t UNION SELECT b FROM u ORDER BY 1 
 c1-set-parenthesised	ok	inside	-	(SELECT a FROM t ORDER BY a LIMIT 1) UNION ALL (SELECT b FROM u ORDER BY b DESC LIMIT 1)	written for the parser	42P01
 c1-set-nested-parentheses	ok	inside	-	((SELECT 1))	written for the parser	-
 c1-set-three	ok	inside	-	SELECT 1 UNION SELECT 2 INTERSECT SELECT 3 EXCEPT SELECT 4	written for the parser	-
-c1-set-with-values	ok	outside	-	SELECT 1 UNION VALUES (2)	written for the parser	-
+c1-set-with-values	ok	inside	-	SELECT 1 UNION VALUES (2)	written for the parser	-
 c1-derived-column-list	ok	inside	-	SELECT x FROM (SELECT a FROM t) AS s (x)	written for the parser	42P01
 c1-derived-no-alias	ok	inside	-	SELECT count(*) FROM (SELECT 1)	written for the parser	-
 c1-derived-in-join	ok	inside	-	SELECT * FROM a JOIN (SELECT x FROM b UNION SELECT y FROM c) s ON a.x = s.x	written for the parser	42P01
@@ -1568,14 +1568,14 @@ c2-in-subquery	ok	inside	-	SELECT a FROM t WHERE a IN (SELECT b FROM u)	written 
 c2-not-in-subquery	ok	inside	-	SELECT a FROM t WHERE a NOT IN (SELECT b FROM u UNION SELECT c FROM v)	written for the parser	42P01
 c2-in-subquery-parenthesised	ok	inside	-	SELECT a FROM t WHERE a IN ((SELECT b FROM u))	written for the parser	42P01
 c2-in-subquery-with	ok	inside	-	SELECT a FROM t WHERE a IN (WITH x AS (SELECT 1) SELECT * FROM x)	written for the parser	42P01
-c2-in-values	ok	outside	-	SELECT a FROM t WHERE a IN (VALUES (1), (2))	written for the parser	42P01
+c2-in-values	ok	inside	-	SELECT a FROM t WHERE a IN (VALUES (1), (2))	written for the parser	42P01
 c2-in-subquery-missing-paren	syntax-error	unknown	-	SELECT a FROM t WHERE a IN (SELECT b FROM u	written for the parser	42601
 c3-scalar-subquery-select-list	ok	inside	-	SELECT (SELECT max(a) FROM t) AS m, b FROM u	written for the parser	42P01
 c3-scalar-subquery-comparison	ok	inside	-	SELECT a FROM t WHERE a = (SELECT max(a) FROM t)	written for the parser	42P01
 c3-scalar-subquery-arithmetic	ok	inside	-	SELECT (SELECT 1) + (SELECT 2)	written for the parser	-
 c3-scalar-subquery-set-operation	ok	inside	-	SELECT (SELECT 1 UNION SELECT 2 ORDER BY 1 LIMIT 1)	written for the parser	-
 c3-scalar-subquery-parenthesised-twice	ok	inside	-	SELECT ((SELECT 1))	written for the parser	-
-c3-scalar-subquery-values	ok	outside	-	SELECT (VALUES (1))	written for the parser	-
+c3-scalar-subquery-values	ok	inside	-	SELECT (VALUES (1))	written for the parser	-
 c3-scalar-subquery-unclosed	syntax-error	unknown	-	SELECT (SELECT 1	written for the parser	42601
 c4-using-two-columns	ok	inside	-	SELECT * FROM a JOIN b USING (x, y)	written for the parser	42P01
 c4-using-left	ok	inside	-	SELECT * FROM a LEFT JOIN b USING (x)	written for the parser	42P01
@@ -1591,7 +1591,7 @@ c5-exists-select-list	ok	inside	-	SELECT EXISTS (SELECT 1 FROM t WHERE t.a = u.a
 c5-not-exists	ok	inside	-	SELECT a FROM u WHERE NOT EXISTS (SELECT 1 FROM t WHERE t.a = u.a)	written for the parser	42P01
 c5-exists-with-set-operation	ok	inside	-	SELECT a FROM u WHERE EXISTS (SELECT 1 UNION SELECT 2)	written for the parser	42P01
 c5-exists-parenthesised-twice	ok	inside	-	SELECT a FROM u WHERE EXISTS ((SELECT 1))	written for the parser	42P01
-c5-exists-values	ok	outside	-	SELECT EXISTS (VALUES (1))	written for the parser	-
+c5-exists-values	ok	inside	-	SELECT EXISTS (VALUES (1))	written for the parser	-
 c5-exists-unclosed	syntax-error	unknown	-	SELECT EXISTS (SELECT 1	written for the parser	42601
 g1-on-conflict-target-do-nothing	ok	inside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT (cid) DO NOTHING	g1 (fork issue #55)	-
 g1-on-conflict-do-update	ok	inside	-	INSERT INTO company (cid, name) VALUES (1, 'x') ON CONFLICT (cid) DO UPDATE SET name = EXCLUDED.name WHERE company.cid > 0 RETURNING cid	g1 (fork issue #55)	-
@@ -1626,3 +1626,7 @@ string-agg	ok	inside	-	SELECT string_agg(name, ',') FROM person	written for the 
 string-agg-distinct	ok	inside	-	SELECT string_agg(DISTINCT city, ',') FROM person	written for the parser	-
 string-agg-order-by-inside-stays-out	ok	outside	-	SELECT string_agg(name, ',' ORDER BY name) FROM person	written for the parser	-
 array-agg-parses	ok	inside	-	SELECT array_agg(name) FROM person	written for the parser	-
+values-from-alias-list	ok	inside	-	SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(a, b)	written for the parser	-
+values-in-list-subquery	ok	inside	-	SELECT name FROM person WHERE pid IN (VALUES (1), (2))	written for the parser	-
+values-with-order-limit	ok	inside	-	VALUES (2), (1) ORDER BY 1 LIMIT 1	written for the parser	-
+values-table-form-stays-out	ok	outside	-	TABLE person	written for the parser	-

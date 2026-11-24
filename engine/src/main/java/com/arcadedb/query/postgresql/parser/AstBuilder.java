@@ -302,7 +302,44 @@ final class AstBuilder {
       return simpleSelect(simple.simpleSelect());
     if (context instanceof ParenQueryContext paren)
       return query(paren.selectStmt());
+    if (context instanceof ValuesQueryPrimaryContext values)
+      return valuesQuery(values.valuesQuery());
     throw new IllegalStateException("A query the parser did not refuse has no tree: " + context.getText());
+  }
+
+  /** The most rows of a {@code VALUES} query: each row is a branch of the {@code UNION ALL} that stands for the list. */
+  private static final int MAX_VALUES_ROWS = 500;
+
+  /**
+   * {@code VALUES (a, b), (c, d)} is the query {@code SELECT a AS column1, b AS column2 UNION ALL SELECT c, d}: PostgreSQL types
+   * each column of a {@code VALUES} list with the rules of {@code UNION} (an unknown literal is text unless the rows unify), and
+   * names the columns {@code column1}, {@code column2}. The planner needs no node of its own for it.
+   */
+  private Statement valuesQuery(final ValuesQueryContext context) {
+    if (context.rows.size() > MAX_VALUES_ROWS)
+      throw Diagnostics.notSupported("A VALUES list of more than " + MAX_VALUES_ROWS + " rows", context.getStart());
+    Statement result = null;
+    int width = -1;
+    for (final ValuesQueryRowContext row : context.rows) {
+      if (width >= 0 && row.items.size() != width)
+        throw Diagnostics.syntaxError("VALUES lists must all be the same length", row.getStart());
+      final List<SelectItem> items = new ArrayList<>();
+      for (final WriteValueContext item : row.items) {
+        final WriteValue value = writeValue(item);
+        if (value.isDefault())
+          throw Diagnostics.syntaxError("DEFAULT is not allowed in this context", item.getStart());
+        final SourcePosition position = position(item.getStart());
+        items.add(new SelectItem.Projection(position, value.expression(),
+            width < 0 ? new Name(position, "column" + (items.size() + 1), true) : null));
+      }
+      width = items.size();
+      final SelectStatement select = new SelectStatement(position(row.getStart()), false, items, List.of(), null, List.of(), null,
+          List.of(), null, null);
+      result = result == null ? select
+          : new SetOperationStatement(position(row.getStart()), SetOperationStatement.Kind.UNION, true, result, select, List.of(), null,
+              null);
+    }
+    return result;
   }
 
   /** The order, the offset and the limit of a select clause, which must not have its own. */

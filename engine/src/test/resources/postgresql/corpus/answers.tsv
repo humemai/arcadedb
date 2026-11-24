@@ -480,3 +480,23 @@ corr-join-inside-the-subquery	ordered	-	ok	SELECT p.name, (SELECT count(*) FROM 
 err-corr-missing-relation	multiset	-	ok	SELECT (SELECT count(*) FROM orders o WHERE o.pid = zz.pid) FROM person p	{"error":"42P01"}
 err-corr-missing-outer-column	multiset	-	ok	SELECT (SELECT count(*) FROM orders o WHERE o.pid = p.nope) FROM person p	{"error":"42703"}
 err-corr-two-columns	multiset	-	ok	SELECT (SELECT o.oid, o.pid FROM orders o WHERE o.pid = p.pid) FROM person p	{"error":"42601"}
+values-from-with-aliases	ordered	-	ok	SELECT a, b FROM (VALUES (1, 'x'), (2, 'y')) AS t(a, b) ORDER BY a	{"columns":["a","b"],"types":["int4","text"],"rows":[[1,"x"],[2,"y"]]}
+values-from-default-column-names	ordered	-	ok	SELECT * FROM (VALUES (1, 'x'), (2, 'y')) AS t ORDER BY column1	{"columns":["column1","column2"],"types":["int4","text"],"rows":[[1,"x"],[2,"y"]]}
+values-standalone	multiset	-	ok	VALUES (1, 'x'), (2, 'y')	{"columns":["column1","column2"],"types":["int4","text"],"rows":[[1,"x"],[2,"y"]]}
+values-standalone-order-limit	ordered	-	ok	VALUES (2), (1), (3) ORDER BY 1 DESC LIMIT 2	{"columns":["column1"],"types":["int4"],"rows":[[3],[2]]}
+values-types-numeric-wins	ordered	-	ok	SELECT a FROM (VALUES (1), (2.5)) v(a) ORDER BY a	{"columns":["a"],"types":["numeric"],"rows":[[1],[2.5]]}
+values-unknown-literals-are-text	multiset	-	ok	SELECT a, b FROM (VALUES ('x', 'y'), ('z', 'w')) v(a, b)	{"columns":["a","b"],"types":["text","text"],"rows":[["x","y"],["z","w"]]}
+values-all-null-column	multiset	-	ok	SELECT a FROM (VALUES (NULL), (NULL)) v(a)	{"columns":["a"],"types":["text"],"rows":[[null],[null]]}
+values-join-text-column	ordered	-	ok	SELECT p.name FROM person p JOIN (VALUES ('Ada'), ('Ed')) v(n) ON v.n = p.name ORDER BY p.pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Ed"]]}
+values-join-int-column	ordered	-	ok	SELECT p.name, v.tag FROM person p JOIN (VALUES (1, 'one'), (3, 'three')) v(k, tag) ON v.k = p.pid ORDER BY p.pid	{"columns":["name","tag"],"types":["varchar","text"],"rows":[["Ada","one"],["Cy","three"]]}
+values-in-subquery	ordered	-	ok	SELECT name FROM person WHERE pid IN (VALUES (1), (2)) ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"]]}
+values-in-with	multiset	-	ok	WITH v(a) AS (VALUES (1), (2), (3)) SELECT sum(a) AS s FROM v	{"columns":["s"],"types":["int8"],"rows":[[6]]}
+values-union-all	multiset	-	ok	VALUES (1) UNION ALL VALUES (1)	{"columns":["column1"],"types":["int4"],"rows":[[1],[1]]}
+values-expressions	multiset	-	ok	SELECT * FROM (VALUES (1 + 1, upper('a'))) v(a, b)	{"columns":["a","b"],"types":["int4","text"],"rows":[[2,"A"]]}
+values-left-join-keeps-unmatched	ordered	-	ok	SELECT v.k, p.name FROM (VALUES (1), (9)) v(k) LEFT JOIN person p ON p.pid = v.k ORDER BY v.k	{"columns":["k","name"],"types":["int4","varchar"],"rows":[[1,"Ada"],[9,null]]}
+values-aggregate-over-list	multiset	-	ok	SELECT count(*) AS n, min(a) AS lo, max(a) AS hi FROM (VALUES (3), (1), (2)) v(a)	{"columns":["n","lo","hi"],"types":["int8","int4","int4"],"rows":[[3,1,3]]}
+err-values-different-widths	multiset	-	ok	SELECT * FROM (VALUES (1, 2), (3)) v(a, b)	{"error":"42601"}
+err-values-int-and-text-literal-mix	multiset	-	ok	SELECT * FROM (VALUES (1), ('x')) v(a)	{"error":"22P02"}
+err-values-default-keyword	multiset	-	ok	SELECT * FROM (VALUES (DEFAULT)) v(a)	{"error":"42601"}
+err-values-text-key-against-int-column	multiset	-	ok	SELECT p.name FROM person p JOIN (VALUES ('1'::text), ('3'::text)) v(k) ON v.k = p.pid	{"error":"42883"}
+values-lateral-stays-out	multiset	-	pending	SELECT * FROM person p, LATERAL (VALUES (p.pid)) v(a) ORDER BY p.pid	{"columns":["id","age","city","name","pid","a"],"types":["text","int4","varchar","varchar","int4","int4"],"rows":[["#2:0",36,"Delft","Ada",1,1],["#2:1",41,"Delft","Bo",2,2],["#2:2",null,"Leiden","Cy",3,3],["#2:3",29,"Leiden","Di",4,4],["#2:4",52,"Utrecht","Ed",5,5]]}

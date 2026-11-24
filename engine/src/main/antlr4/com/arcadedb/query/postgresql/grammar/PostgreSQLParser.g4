@@ -289,12 +289,23 @@ setQuantifier
 queryPrimary
   : simpleSelect                         # simpleQuery
   | LPAREN selectStmt RPAREN             # parenQuery
+  | valuesQuery                          # valuesQueryPrimary
   | unsupportedQueryForm skipRest        # unsupportedQuery
   ;
 
+// VALUES as a query (values_clause of gram.y): the rows of constants and expressions that a FROM item, an IN list, a WITH query or a
+// statement of its own reads. INSERT ... VALUES is the separate rule valuesClause (its items may be DEFAULT)
+valuesQuery
+  : VALUES rows+=valuesQueryRow (COMMA rows+=valuesQueryRow)*
+  ;
+
+// the items are writeValue so that DEFAULT parses and is refused with PostgreSQL's own error (42601), not as a subquery in FROM
+valuesQueryRow
+  : LPAREN items+=writeValue (COMMA items+=writeValue)* RPAREN
+  ;
+
 unsupportedQueryForm
-  : VALUES
-  | TABLE
+  : TABLE
   ;
 
 simpleSelect
