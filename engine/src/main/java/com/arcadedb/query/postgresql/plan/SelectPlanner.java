@@ -52,6 +52,7 @@ import com.arcadedb.query.postgresql.plan.join.JoinPlanner;
 import com.arcadedb.query.postgresql.plan.join.JoinWarnings;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -274,6 +275,9 @@ public class SelectPlanner {
       } else if (source instanceof TableSource tableSource)
         source = chooseAccessPath(tableSource, whereClause, compiler);
     }
+    // the columns the WHERE clause reads, now that nothing else is compiled (fork issue #85)
+    final BitSet whereColumns = scope.usedColumns();
+    final boolean whereAskedForSubquery = scope.askedForSubquery();
 
     // grouping: the select list, HAVING and ORDER BY are then typed over the group rows
     SelectPlan.GroupStage group = null;
@@ -409,7 +413,20 @@ public class SelectPlanner {
     for (final String warning : warnings)
       steps.add("WARNING: " + warning);
 
-    return new SelectPlan(source, where, group, having, outputs.toArray(new Evaluable[0]), extras.toArray(new Evaluable[0]), columns,
+    // A scan of one table reads only the columns that the compiled expressions read, and applies the WHERE clause to a row that holds
+    // only its own columns, reading the rest for the records that pass (fork issue #85). The plan lines above are those of the
+    // statement, whatever the scan does. Not for a join, a subquery (either way), a window function or a source that is not a scan.
+    Evaluable filter = where;
+    if (joined == null && outerScope == null && windows == null && !scope.askedForSubquery() && source instanceof TableSource scan
+        && scan.access() == TableSource.Access.SCAN) {
+      if (where != null && !whereAskedForSubquery) {
+        source = scan.withScanFilter(where, whereColumns, scope.usedColumns());
+        filter = null;
+      } else
+        source = scan.withReadColumns(scope.usedColumns());
+    }
+
+    return new SelectPlan(source, filter, group, having, outputs.toArray(new Evaluable[0]), extras.toArray(new Evaluable[0]), columns,
         select.distinct(), sortKeys, limit, offset, steps, warnings, windows);
   }
 

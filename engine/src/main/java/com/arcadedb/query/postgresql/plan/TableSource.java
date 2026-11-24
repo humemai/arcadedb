@@ -38,6 +38,7 @@ import com.arcadedb.schema.Type;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -78,6 +79,14 @@ public final class TableSource implements RelationSource {
   private final Access         access;
   private final Column         keyColumn;
   private final Evaluable      key;
+  /** The columns a row holds, {@code null} for all of them; the others stay {@code null} (fork issue #85). */
+  private final int[]          readColumns;
+  /** The condition the scan applies before it reads the rest of a row, with the columns it needs, or {@code null}. */
+  private final Evaluable      scanFilter;
+  private final int[]          filterColumns;
+  private final int[]          restColumns;
+  /** The column values read from records since this source was built, for the tests. Not thread safe. */
+  private long                 columnsRead;
 
   public TableSource(final Database database, final Table table, final String relation, final boolean only) {
     this(database, table, relation, only, Access.SCAN, null, null);
@@ -85,6 +94,11 @@ public final class TableSource implements RelationSource {
 
   private TableSource(final Database database, final Table table, final String relation, final boolean only, final Access access,
       final Column keyColumn, final Evaluable key) {
+    this(database, table, relation, only, access, keyColumn, key, null, null, null);
+  }
+
+  private TableSource(final Database database, final Table table, final String relation, final boolean only, final Access access,
+      final Column keyColumn, final Evaluable key, final int[] readColumns, final Evaluable scanFilter, final int[] filterColumns) {
     this.database = database;
     this.table = table;
     this.relation = relation;
@@ -102,6 +116,42 @@ public final class TableSource implements RelationSource {
     this.access = access;
     this.keyColumn = keyColumn;
     this.key = key;
+    this.readColumns = readColumns;
+    this.scanFilter = scanFilter;
+    this.filterColumns = filterColumns;
+    if (scanFilter == null)
+      this.restColumns = null;
+    else {
+      final BitSet rest = new BitSet();
+      for (final int column : readColumns)
+        rest.set(column);
+      for (final int column : filterColumns)
+        rest.clear(column);
+      this.restColumns = rest.stream().toArray();
+    }
+  }
+
+  /**
+   * The same scan, whose rows hold only these columns, the others {@code null}: for a statement whose expressions read no other
+   * column (fork issue #85). Only a scan is changed; the planner calls it when it knows every position its expressions read.
+   */
+  public TableSource withReadColumns(final BitSet columns) {
+    return new TableSource(database, table, relation, only, access, keyColumn, key, columns.stream().toArray(), null, null);
+  }
+
+  /**
+   * The same scan, which evaluates {@code condition} on a row that holds only {@code conditionColumns} and reads the rest of the
+   * row, up to {@code columns}, only for a record that passes. The condition is true or the record is dropped, as in a {@code WHERE};
+   * the caller leaves the condition out of the rows it takes from this source.
+   */
+  public TableSource withScanFilter(final Evaluable condition, final BitSet conditionColumns, final BitSet columns) {
+    return new TableSource(database, table, relation, only, access, keyColumn, key, columns.stream().toArray(), condition,
+        conditionColumns.stream().toArray());
+  }
+
+  /** The column values read from records since this source was built (for the tests). */
+  public long columnsRead() {
+    return columnsRead;
   }
 
   public Table table() {
@@ -189,6 +239,8 @@ public final class TableSource implements RelationSource {
   @Override
   public Iterator<Object[]> open() {
     final Iterator<Document> records = openRecords();
+    if (scanFilter != null)
+      return filtered(records);
     return new Iterator<>() {
       @Override
       public boolean hasNext() {
@@ -197,7 +249,37 @@ public final class TableSource implements RelationSource {
 
       @Override
       public Object[] next() {
-        return row(records.next());
+        return readColumns == null ? row(records.next()) : row(records.next(), readColumns);
+      }
+    };
+  }
+
+  /** The rows of the records that pass the scan filter: the condition's columns first, the rest of the row for a record that passes. */
+  private Iterator<Object[]> filtered(final Iterator<Document> records) {
+    return new Iterator<>() {
+      private Object[] next;
+
+      @Override
+      public boolean hasNext() {
+        while (next == null && records.hasNext()) {
+          final Document record = records.next();
+          final Object[] values = new Object[types.length];
+          fill(values, record, filterColumns);
+          if (Boolean.TRUE.equals(scanFilter.eval(values))) {
+            fill(values, record, restColumns);
+            next = values;
+          }
+        }
+        return next != null;
+      }
+
+      @Override
+      public Object[] next() {
+        if (!hasNext())
+          throw new NoSuchElementException();
+        final Object[] result = next;
+        next = null;
+        return result;
       }
     };
   }
@@ -223,7 +305,21 @@ public final class TableSource implements RelationSource {
     final Object[] values = new Object[types.length];
     for (int i = 0; i < values.length; i++)
       values[i] = Casts.fromEngine(catalogColumns.get(i).read(record), types[i]);
+    columnsRead += values.length;
     return values;
+  }
+
+  /** The row of a record with only these columns read, the others {@code null}. */
+  private Object[] row(final Document record, final int[] columns) {
+    final Object[] values = new Object[types.length];
+    fill(values, record, columns);
+    return values;
+  }
+
+  private void fill(final Object[] values, final Document record, final int[] columns) {
+    for (final int i : columns)
+      values[i] = Casts.fromEngine(catalogColumns.get(i).read(record), types[i]);
+    columnsRead += columns.length;
   }
 
   /** Whether a record is a row of this table: of the type, or of a subtype unless the read is {@code ONLY}. */
