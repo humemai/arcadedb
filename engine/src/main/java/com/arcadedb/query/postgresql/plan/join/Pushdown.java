@@ -40,6 +40,9 @@ import java.util.Set;
  * <table>
  * <caption>Placement of a conjunct at a join node</caption>
  * <tr><th>term</th><th>{@code INNER} join</th><th>{@code LEFT} join</th></tr>
+ * <tr><td colspan="3">A {@code RIGHT} join is the mirror of the {@code LEFT} column (left and right swapped). In a {@code FULL}
+ * join both inputs are null-supplying: every {@code WHERE} term stays above the join and every {@code ON} term is part of the
+ * match condition.</td></tr>
  * <tr><td>{@code WHERE}, mentions only the left input (or nothing)</td><td>pushed into the left input</td>
  * <td>pushed into the left input (the preserved side: the term filters rows that are all kept or all dropped)</td></tr>
  * <tr><td>{@code WHERE}, mentions only the right input</td><td>pushed into the right input</td>
@@ -112,6 +115,28 @@ public final class Pushdown {
     final List<Conjunct> toRight = new ArrayList<>();
     final List<Conjunct> matching = new ArrayList<>();
     final List<Conjunct> above = new ArrayList<>();
+    if (type == TableReference.JoinType.FULL) {
+      // both inputs are null-supplying and preserved: nothing moves below the join, and every ON term decides the match
+      above.addAll(incoming);
+      matching.addAll(on);
+      return new Placement(toLeft, toRight, matching, above);
+    }
+    if (type == TableReference.JoinType.RIGHT) {
+      // the mirror of LEFT: the right input is preserved, the left one is null-supplying
+      for (final Conjunct term : incoming) {
+        if (term.within(right))
+          toRight.add(term);
+        else
+          above.add(term);
+      }
+      for (final Conjunct term : on) {
+        if (term.mentionsAny() && term.within(left))
+          toLeft.add(term);
+        else
+          matching.add(term);
+      }
+      return new Placement(toLeft, toRight, matching, above);
+    }
     for (final Conjunct term : incoming) {
       if (term.within(left))
         toLeft.add(term);

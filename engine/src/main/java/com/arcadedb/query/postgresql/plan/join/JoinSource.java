@@ -47,7 +47,11 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * The rows of a join of two sources: the columns of the left source followed by those of the right one, and for each pair of
  * rows that matches, the left row followed by the right row. {@code INNER} keeps the matching pairs; {@code LEFT} also keeps
- * every left row that has no partner, with {@code NULL} in the right columns.
+ * every left row that has no partner, with {@code NULL} in the right columns; {@code RIGHT} keeps every right row that has no
+ * partner, with {@code NULL} in the left columns; {@code FULL} keeps both. A {@code RIGHT} join is the mirror of {@code LEFT}: it
+ * builds the left input and probes with the right one. A {@code FULL} join marks each row of its build side that a probe row
+ * matched, and after the probe side ends it gives the rows that were not marked (a hash join), or does the same over the right
+ * rows it holds (a nested loop). Neither is an index nested loop or a walk, which read the right input for each left row.
  *
  * <p>Two rows match when every equality key is equal on both sides and the residual condition is {@code true}. A key that is
  * {@code NULL} on either side matches nothing, not even another {@code NULL} ({@code NULL = NULL} is not true), so such a row
@@ -84,6 +88,13 @@ public final class JoinSource implements RelationSource {
    * over a row of the right input, both already cast to {@code type}, the common type of the comparison.
    */
   record Key(Evaluable left, Evaluable right, PgType type) {
+  }
+
+  /**
+   * One merged column of {@code FULL JOIN ... USING}: the value is {@code left} of the left row, or {@code right} of the right
+   * row when the left one is {@code NULL}, both in the common type (PostgreSQL's {@code coalesce(a.x, b.x)}).
+   */
+  record Merge(Evaluable left, Evaluable right) {
   }
 
   /**
@@ -134,11 +145,12 @@ public final class JoinSource implements RelationSource {
   private final String                    warning;
   private final long                      estimatedRows;
   private final List<Field>               columns;
+  private final List<Merge>               merges;
 
   JoinSource(final Strategy strategy, final TableReference.JoinType type, final RelationSource left, final RelationSource right,
       final List<Key> keys, final Evaluable residual, final boolean buildLeft, final IndexProbe probe, final Traversal traversal,
       final long capBytes, final String header, final List<String> rightLines, final JoinSupport support, final String warning,
-      final long estimatedRows) {
+      final long estimatedRows, final List<Field> hidden, final List<Merge> merges) {
     this.strategy = strategy;
     this.type = type;
     this.left = left;
@@ -156,7 +168,9 @@ public final class JoinSource implements RelationSource {
     this.estimatedRows = estimatedRows;
     final List<Field> all = new ArrayList<>(left.columns());
     all.addAll(right.columns());
+    all.addAll(hidden);
     this.columns = List.copyOf(all);
+    this.merges = List.copyOf(merges);
   }
 
   public Strategy strategy() {
@@ -239,9 +253,16 @@ public final class JoinSource implements RelationSource {
 
   @Override
   public Iterator<Object[]> open() {
+    final Iterator<Object[]> rows = openRows();
+    return merges.isEmpty() ? rows : withMergedColumns(rows);
+  }
+
+  private Iterator<Object[]> openRows() {
     final BuildMemory memory = new BuildMemory(capBytes);
     switch (strategy) {
     case HASH:
+      if (type == TableReference.JoinType.FULL)
+        return fullHashJoin(memory);
       return buildLeft ? hashJoinBuildingLeft(memory) : hashJoinBuildingRight(memory);
     case INDEX_NESTED_LOOP:
       return indexNestedLoop();
@@ -250,6 +271,31 @@ public final class JoinSource implements RelationSource {
     default:
       return nestedLoop(memory);
     }
+  }
+
+  /** The rows with the merged columns of {@code FULL ... USING} appended: {@code coalesce(left, right)} of each pair. */
+  private Iterator<Object[]> withMergedColumns(final Iterator<Object[]> rows) {
+    final int leftWidth = left.columns().size();
+    final int rightWidth = right.columns().size();
+    return new Iterator<>() {
+      @Override
+      public boolean hasNext() {
+        return rows.hasNext();
+      }
+
+      @Override
+      public Object[] next() {
+        final Object[] row = rows.next();
+        final Object[] l = Arrays.copyOfRange(row, 0, leftWidth);
+        final Object[] r = Arrays.copyOfRange(row, leftWidth, leftWidth + rightWidth);
+        final Object[] out = Arrays.copyOf(row, leftWidth + rightWidth + merges.size());
+        for (int i = 0; i < merges.size(); i++) {
+          final Object value = merges.get(i).left().eval(l);
+          out[leftWidth + rightWidth + i] = value != null ? value : merges.get(i).right().eval(r);
+        }
+        return out;
+      }
+    };
   }
 
   // ---- the strategies ----
@@ -291,14 +337,19 @@ public final class JoinSource implements RelationSource {
         if (!probing.hasNext())
           return false;
         final Object[] r = probing.next();
+        boolean matched = false;
         final Object key = keyOf(r, false);
         final List<Object[]> bucket = key == null ? null : table.get(key);
         if (bucket != null)
           for (final Object[] l : bucket) {
             final Object[] row = concat(l, r);
-            if (accepts(row))
+            if (accepts(row)) {
               out.add(row);
+              matched = true;
+            }
           }
+        if (!matched && type == TableReference.JoinType.RIGHT)
+          out.add(padLeft(r));
         return true;
       }
     };
@@ -313,22 +364,106 @@ public final class JoinSource implements RelationSource {
       rows.add(row);
     }
     final Iterator<Object[]> outer = left.open();
+    // RIGHT and FULL give the right rows that no left row matched, after the last left row
+    final boolean keepsRight = type == TableReference.JoinType.RIGHT || type == TableReference.JoinType.FULL;
+    final boolean keepsLeft = type == TableReference.JoinType.LEFT || type == TableReference.JoinType.FULL;
+    final boolean[] matchedRight = new boolean[keepsRight ? rows.size() : 0];
     return new Expanding() {
+      private boolean flushed;
+
       @Override
       boolean produce(final ArrayDeque<Object[]> out) {
-        if (!outer.hasNext())
+        if (!outer.hasNext()) {
+          if (keepsRight && !flushed) {
+            flushed = true;
+            for (int i = 0; i < matchedRight.length; i++)
+              if (!matchedRight[i])
+                out.add(padLeft(rows.get(i)));
+            return !out.isEmpty();
+          }
           return false;
+        }
         final Object[] l = outer.next();
         boolean matched = false;
-        for (final Object[] r : rows) {
-          final Object[] row = concat(l, r);
+        for (int i = 0; i < rows.size(); i++) {
+          final Object[] row = concat(l, rows.get(i));
           if (accepts(row)) {
             out.add(row);
             matched = true;
+            if (keepsRight)
+              matchedRight[i] = true;
           }
         }
-        if (!matched && type == TableReference.JoinType.LEFT)
+        if (!matched && keepsLeft)
           out.add(pad(l));
+        return true;
+      }
+    };
+  }
+
+  /** One row of the build side of a {@code FULL} join and whether a probe row matched it. */
+  private static final class Tracked {
+    final Object[] row;
+    boolean        matched;
+
+    Tracked(final Object[] row) {
+      this.row = row;
+    }
+  }
+
+  /** The bytes that the matched flag of a build row adds: the object, its reference in the table and in the list of all rows. */
+  private static final long TRACKED_BYTES = 24 + 8 + 8;
+
+  /**
+   * A {@code FULL} join: one input is kept in a hash table by key (rows with a {@code NULL} key too, as they can never match but
+   * have to come out), the other is probed. A probe row without a partner comes out padded; after the probe side ends, every kept
+   * row that no probe row matched comes out padded on the other side.
+   */
+  private Iterator<Object[]> fullHashJoin(final BuildMemory memory) {
+    final boolean buildsLeft = buildLeft;
+    final Map<Object, List<Tracked>> table = new HashMap<>();
+    final List<Tracked> all = new ArrayList<>();
+    final Iterator<Object[]> input = (buildsLeft ? left : right).open();
+    while (input.hasNext()) {
+      final Object[] row = input.next();
+      memory.charge(row);
+      memory.chargeBytes(TRACKED_BYTES);
+      final Tracked tracked = new Tracked(row);
+      all.add(tracked);
+      final Object key = keyOf(row, buildsLeft);
+      if (key != null)
+        table.computeIfAbsent(key, k -> new ArrayList<>()).add(tracked);
+    }
+    final Iterator<Object[]> probing = (buildsLeft ? right : left).open();
+    return new Expanding() {
+      private boolean flushed;
+
+      @Override
+      boolean produce(final ArrayDeque<Object[]> out) {
+        if (!probing.hasNext()) {
+          if (flushed)
+            return false;
+          flushed = true;
+          for (final Tracked tracked : all)
+            if (!tracked.matched)
+              out.add(buildsLeft ? pad(tracked.row) : padLeft(tracked.row));
+          return !out.isEmpty();
+        }
+        final Object[] p = probing.next();
+        boolean matched = false;
+        final Object key = keyOf(p, !buildsLeft);
+        final List<Tracked> bucket = key == null ? null : table.get(key);
+        if (bucket != null)
+          for (final Tracked t : bucket) {
+            final Object[] row = buildsLeft ? concat(t.row, p) : concat(p, t.row);
+            if (accepts(row)) {
+              out.add(row);
+              t.matched = true;
+              matched = true;
+            }
+          }
+        if (!matched)
+          out.add(buildsLeft ? padLeft(p) : pad(p));
         return true;
       }
     };
@@ -510,6 +645,14 @@ public final class JoinSource implements RelationSource {
   /** A left row with {@code NULL} in every right column. */
   private Object[] pad(final Object[] l) {
     return Arrays.copyOf(l, l.length + right.columns().size());
+  }
+
+  /** A right row with {@code NULL} in every left column. */
+  private Object[] padLeft(final Object[] r) {
+    final int leftWidth = left.columns().size();
+    final Object[] row = new Object[leftWidth + r.length];
+    System.arraycopy(r, 0, row, leftWidth, r.length);
+    return row;
   }
 
   /** An iterator whose input step may produce no row, one row or several rows. */

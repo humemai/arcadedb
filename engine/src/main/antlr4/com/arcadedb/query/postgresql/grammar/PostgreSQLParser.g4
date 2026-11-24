@@ -366,6 +366,8 @@ tableRef
 joinKind
   : INNER
   | LEFT OUTER?
+  | RIGHT OUTER?
+  | FULL OUTER?
   ;
 
 joinQual
@@ -379,8 +381,6 @@ unsupportedJoinUsingAlias
 
 unsupportedJoinKind
   : NATURAL (INNER | LEFT | RIGHT | FULL)? OUTER?
-  | RIGHT OUTER?
-  | FULL OUTER?
   ;
 
 unsupportedJoinAlias
