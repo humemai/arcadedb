@@ -238,6 +238,15 @@ public class SelectPlanner {
     return plan(select, false);
   }
 
+  /**
+   * The plan of the {@code SELECT} of an {@code INSERT ... SELECT}: an output that is only a string literal or {@code NULL} keeps the
+   * type {@code unknown}, and the column that takes it decides what it is, as PostgreSQL resolves it (a {@code NULL} is a
+   * {@code bigint} for a {@code bigint} column, {@code '5'} is a number for a number column).
+   */
+  public SelectPlan planForInsert(final SelectStatement select) {
+    return plan(select, true);
+  }
+
   private SelectPlan plan(final SelectStatement select, final boolean keepUnknown) {
     // PostgreSQL takes the terms that every branch of an OR has in common out of it before it plans (prepqual.c)
     final Expression whereClause = OrFactoring.factor(select.where());

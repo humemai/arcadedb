@@ -204,12 +204,13 @@ public final class WritePlanner {
           + (table.kind() == Table.Kind.EDGE ? ", one edge each between source_id and target_id" : ""));
     } else {
       final InsertStatement.Query query = (InsertStatement.Query) insert.source();
-      selectPlan = selectPlanner.plan(query.select());
+      selectPlan = selectPlanner.planForInsert(query.select());
       width = selectPlan.columns().size();
       selectTypes = new PgType[width];
       for (int i = 0; i < width; i++) {
-        final PgType type = PgType.byName(List.of(selectPlan.columns().get(i).typeName()));
-        selectTypes[i] = type != null ? type : PgType.ARRAY;
+        final PgType named = PgType.byName(List.of(selectPlan.columns().get(i).typeName()));
+        // an unknown output (a string literal or NULL) takes the type of the column it goes into
+        selectTypes[i] = selectPlan.outputTypes().get(i) == PgType.UNKNOWN ? PgType.UNKNOWN : named != null ? named : PgType.ARRAY;
       }
       steps.add("INSERT INTO " + table.name() + " FROM");
       for (final String line : selectPlan.steps())
