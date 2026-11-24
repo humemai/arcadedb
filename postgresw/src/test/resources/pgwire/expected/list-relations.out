@@ -1,0 +1,9 @@
+         List of relations
+ Schema |   Name   | Type  | Owner 
+--------+----------+-------+-------
+ public | company  | table | root
+ public | orders   | table | root
+ public | person   | table | root
+ public | works_at | table | root
+(4 rows)
+

@@ -1,0 +1,13 @@
+               Table "public.works_at"
+  Column   |  Type   | Collation | Nullable | Default 
+-----------+---------+-----------+----------+---------
+ id        | text    |           | not null | 
+ source_id | text    |           | not null | 
+ target_id | text    |           | not null | 
+ since     | integer |           |          | 
+Indexes:
+    "works_at_pkey" PRIMARY KEY, btree (id)
+Foreign-key constraints:
+    "works_at_source_id_fkey" FOREIGN KEY (source_id) REFERENCES person(id)
+    "works_at_target_id_fkey" FOREIGN KEY (target_id) REFERENCES company(id)
+

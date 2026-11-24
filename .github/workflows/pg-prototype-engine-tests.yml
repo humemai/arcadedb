@@ -111,3 +111,14 @@ jobs:
       # driver of PostgreSQL, and psql and psycopg run in containers.
       - name: Run the postgresw tests of the postgresql packages
         run: ./mvnw package --batch-mode --errors --show-version -pl postgresw -am "-Dsurefire.includes=**/postgresql/**/*Test.java,**/postgres/PostgreSQL*Test.java,**/postgres/PostgresCatalog*Test.java,**/postgres/PostgresIndexCatalogTest.java"
+
+      # What the psql corpus (fork issue #12, W3) got from real PostgreSQL 18 and from this server, one file per case. A new case has its
+      # expected output here: review it and commit it to postgresw/src/test/resources/pgwire/expected.
+      - name: Upload what PostgreSQL 18 and this server printed for the psql corpus
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pg-wire-corpus
+          path: postgresw/target/pgwire/
+          if-no-files-found: ignore
+          retention-days: 30

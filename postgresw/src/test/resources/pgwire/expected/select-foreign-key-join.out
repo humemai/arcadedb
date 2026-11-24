@@ -1,0 +1,9 @@
+ name | company 
+------+---------
+ Ada  | Acme
+ Ada  | Acme
+ Bo   | Acme
+ Cy   | Birch
+ Di   | Birch
+(5 rows)
+

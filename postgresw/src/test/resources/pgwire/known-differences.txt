@@ -1,0 +1,3 @@
+# The cases of corpus.txt whose output differs from what PostgreSQL 18 prints, one per line: case | reason.
+# The list may only shrink: a case that is equal again fails the run until it is taken off.
+select-types | a text array is written with every element in double quotes ({"gift","express"}), PostgreSQL quotes an element only when it has to ({gift,express}); the encoder of the wire (PostgresArrayLiteral)
