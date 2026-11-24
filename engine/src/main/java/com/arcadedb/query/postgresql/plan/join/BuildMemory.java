@@ -30,17 +30,28 @@ import java.time.LocalDateTime;
  * {@code 53200} ({@code out_of_memory}) and a hint, and never answers from part of its input. There is no spill to disk in this
  * step: a join that does not fit is refused, the way PostgreSQL refuses when it has no memory left.
  *
- * <p>The cap is a constant, {@link #DEFAULT_CAP_BYTES}. The engine's {@code GlobalConfiguration} has no setting for the memory of
- * a query operator (the two memory settings it has belong to the {@code FACETS} counters and to the openCypher algorithm
- * procedures), so the planner takes the cap as a constructor argument and the constant is the default.
+ * <p>The cap of a planner made without one is a share of the heap of the JVM, {@link #defaultCapBytes}: a sixteenth of the maximum
+ * heap, never under {@link #FLOOR_CAP_BYTES} and never over {@link #CEILING_CAP_BYTES}, or the number of MiB in the JVM property
+ * {@link #CAP_PROPERTY}. It is the cap of each operator that keeps rows (each hash join build, derived table, common table
+ * expression, set operation and subquery key set), not of the statement, and the estimate it counts is about 1.5 times the real
+ * heap of the rows (fork issue #50 measured 205 estimated against 137 real bytes for the two-column rows of a friendship list).
+ * The engine's {@code GlobalConfiguration} has no setting for the memory of a query operator (the two memory settings it has
+ * belong to the {@code FACETS} counters and to the openCypher algorithm procedures), so the planner takes the cap as a
+ * constructor argument.
  *
  * <p>The estimate is the size of the Java objects of one row: the array, the reference of each value, and the object behind it
  * (a string by its length, a number by its class), plus a fixed share for the hash table entry. It is an estimate, kept on the
  * safe side, not a measurement.
  */
 public final class BuildMemory {
-  /** The default cap of one join: 64 MiB of estimated row bytes. */
-  public static final long DEFAULT_CAP_BYTES = 64L * 1024 * 1024;
+  /** The least that the default cap is, whatever the heap: 64 MiB of estimated row bytes. */
+  public static final long FLOOR_CAP_BYTES = 64L * 1024 * 1024;
+
+  /** The most that the default cap is, whatever the heap: 1 GiB of estimated row bytes. */
+  public static final long CEILING_CAP_BYTES = 1024L * 1024 * 1024;
+
+  /** The default cap is one part in this many of the maximum heap of the JVM. */
+  public static final int HEAP_SHARE = 16;
 
   /** The JVM property that raises or lowers the cap of a planner made without an explicit one, in MiB. */
   public static final String CAP_PROPERTY = "arcadedb.postgresql.joinMemoryMb";
@@ -53,14 +64,26 @@ public final class BuildMemory {
   private long         used;
 
   /**
-   * The cap of a planner made without one: {@link #DEFAULT_CAP_BYTES}, or the number of MiB in the JVM property
-   * {@link #CAP_PROPERTY}. TPC-H at scale factor 1 builds the 200000 rows of {@code part}, about 95 MiB by the estimate below, so
-   * the timed run of fork issue #13 sets it; a value that is not a positive number is an error, never a silent default.
+   * The cap of a planner made without one for a JVM with this maximum heap: {@code maxHeapBytes / }{@link #HEAP_SHARE}, between
+   * {@link #FLOOR_CAP_BYTES} and {@link #CEILING_CAP_BYTES}. A server with a small heap keeps the floor, a large one is not
+   * allowed more than the ceiling per operator. Fork issue #50: the symmetric friendship list of LDBC SF1 (361,246 rows of two
+   * record ids) is 74 million estimated bytes, over the 64 MiB that was the constant default, so every statement that read it as a
+   * {@code WITH} stopped with {@code 53200}; a heap of 2 GiB gives it 128 MiB.
+   */
+  public static long defaultCapBytes(final long maxHeapBytes) {
+    return Math.max(FLOOR_CAP_BYTES, Math.min(CEILING_CAP_BYTES, maxHeapBytes / HEAP_SHARE));
+  }
+
+  /**
+   * The cap of a planner made without one: {@link #defaultCapBytes} of the maximum heap of this JVM, or the number of MiB in the
+   * JVM property {@link #CAP_PROPERTY}. TPC-H at scale factor 1 builds the 200000 rows of {@code part}, about 95 MiB by the
+   * estimate below, so the timed run of fork issue #13 sets it; a value that is not a positive number is an error, never a silent
+   * default.
    */
   public static long configuredCapBytes() {
     final String value = System.getProperty(CAP_PROPERTY);
     if (value == null || value.isBlank())
-      return DEFAULT_CAP_BYTES;
+      return defaultCapBytes(Runtime.getRuntime().maxMemory());
     try {
       final long mebibytes = Long.parseLong(value.strip());
       if (mebibytes > 0 && mebibytes <= Long.MAX_VALUE / (1024L * 1024L))
@@ -74,7 +97,7 @@ public final class BuildMemory {
   /** The cap of one join. */
   public BuildMemory(final long capBytes) {
     this(capBytes, "a join", "the join does not spill to disk; narrow the smaller side with a WHERE condition on its own columns, "
-        + "or join on a column that has an index");
+        + "join on a column that has an index, or raise the cap with the JVM property " + CAP_PROPERTY + " (MiB)");
   }
 
   /**
