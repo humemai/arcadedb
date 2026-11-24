@@ -3560,6 +3560,13 @@ public enum GlobalConfiguration {
       only the cost and the plan differ. Set to false to plan every such join as a plain equality join, which is the control of \
       a measurement. Default is true""", Boolean.class, true),
 
+  POSTGRESQL_STATEMENT_CACHE("arcadedb.postgresql.statementCache", SCOPE.DATABASE, """
+      Maximum number of parsed statements of the postgresql query language to keep in cache, by their text, as \
+      arcadedb.sqlStatementCache does for sql. A call with a text that is in the cache skips the parser: names are still bound \
+      and the plan is still made on every call, against the schema as it is then, so the answer never depends on the cache. \
+      A text that is refused is never kept, and a text longer than 4096 characters is not kept. 0 turns the cache off. \
+      Read when the language is first used on a database. Default is 300""", Integer.class, 300),
+
   POSTGRESQL_JOIN_WARNING("arcadedb.postgresql.joinWarning", SCOPE.DATABASE, """
       Writes one WARNING to the log, the first time a statement of the postgresql query language joins two tables that no edge, \
       LINK or index supports: such a join usually means that a relationship is missing from the model. A statement is its \

@@ -126,9 +126,16 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   private final DatabaseInternal database;
+  private final StatementCache   statements;
 
   protected PostgreSQLQueryEngine(final DatabaseInternal database) {
     this.database = database;
+    this.statements = new StatementCache(database.getConfiguration().getValueAsInteger(GlobalConfiguration.POSTGRESQL_STATEMENT_CACHE));
+  }
+
+  /** The parsed statements this engine keeps (fork issue #76), for the tests. */
+  StatementCache statements() {
+    return statements;
   }
 
   @Override
@@ -338,16 +345,20 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
-   * @return the syntax tree of a statement of the language
+   * @return the syntax tree of a statement of the language, the one kept from an earlier call with the same text when there is one
    *
    * @throws PostgreSQLSyntaxException               when the text is not PostgreSQL syntax
    * @throws PostgreSQLFeatureNotSupportedException when the text is outside the subset, or is the empty statement
    */
-  private static Statement parse(final String query) {
+  private Statement parse(final String query) {
+    final Statement cached = statements.get(query);
+    if (cached != null)
+      return cached;
     final Statement statement = StatementParser.parse(query);
     if (statement instanceof EmptyStatement)
       throw new PostgreSQLFeatureNotSupportedException(
           "An empty statement is not supported by the postgresql language (" + statement.position() + ")");
+    statements.put(query, statement);
     return statement;
   }
 }
