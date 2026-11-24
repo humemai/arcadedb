@@ -56,6 +56,8 @@ import com.arcadedb.schema.EdgeType;
 import com.arcadedb.schema.Property;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -81,6 +83,9 @@ import java.util.Set;
  * keep the whole {@code WHERE} clause as a filter, so the path never changes the answer. The rows are found first and changed
  * after, so a statement sees the table as it was when it started. A vertex that is deleted takes its edges with it, as in
  * ArcadeDB, which is what {@code ON DELETE CASCADE} does.</li>
+ * <li><b>ON CONFLICT</b> on an {@code INSERT} (document and vertex tables) is the upsert: a row that would break a unique index
+ * is skipped ({@code DO NOTHING}) or changes the row that is there ({@code DO UPDATE}, which reads that row by the table name or its
+ * alias and the proposed one as {@code EXCLUDED}); see {@link Upsert}.</li>
  * <li>An edge table is written through its two endpoint columns. {@code INSERT} creates one edge between the vertices named by
  * {@code source_id} and {@code target_id}, both required (else {@code 23502}), both an existing vertex (else {@code 23503}), and
  * for a type with declared endpoint tables a vertex of that table; the edge properties are given as for any record. A
@@ -232,6 +237,10 @@ public final class WritePlanner {
       for (int i = 0; i < width; i++)
         checkSlot(targets.get(i), new Evaluable.Slot(selectTypes[i], i), selectTypes[i]);
 
+    final Upsert upsert = insert.onConflict() == null ? null : new Upsert(insert.onConflict(), table, shape);
+    if (upsert != null)
+      steps.add(upsert.describe());
+
     final Returning returning = returning(insert.returning(), shape);
     if (returning.present())
       steps.add("RETURNING " + returning.columns().size() + " column(s)");
@@ -264,6 +273,7 @@ public final class WritePlanner {
       }
 
       final List<Object[]> returned = new ArrayList<>();
+      long written = 0;
       if (table.kind() == Table.Kind.EDGE) {
         for (final Object[] values : rows) {
           final Edge edge = insertEdge(db, table, targets, values);
@@ -289,13 +299,230 @@ public final class WritePlanner {
         applyDefaults(table, record, given);
         requireValues(table, record);
         record.validate();
+        if (upsert != null) {
+          final Document conflicting = upsert.find(db, table, record);
+          if (conflicting != null) {
+            final MutableDocument updated = upsert.doNothing() ? null : upsert.update(db, table, conflicting, record);
+            if (updated != null) {
+              written++;
+              if (returning.present())
+                returned.add(project(returning, shape.rowOf(updated)));
+            }
+            continue;
+          }
+        }
         checkUnique(db, record, null);
         record.save();
+        if (upsert != null)
+          upsert.inserted(table, db, record);
+        written++;
         if (returning.present())
           returned.add(project(returning, shape.rowOf(record)));
       }
-      return answer(db, returning, returned, rows.size(), steps);
+      return answer(db, returning, returned, written, steps);
     });
+  }
+
+  /**
+   * The {@code ON CONFLICT} clause of an {@code INSERT}, planned. A row is in conflict when a unique index already holds its key: the
+   * one index that the target names, or, with no target (which {@code DO NOTHING} allows), any unique index of the type. A key with
+   * a {@code NULL} in it conflicts with nothing, as in PostgreSQL. {@code DO NOTHING} skips the row. {@code DO UPDATE} changes the
+   * row that is there: its {@code SET} items and {@code WHERE} read it by the table name (or the alias) and the proposed row as
+   * {@code excluded}, so a bare column name that both have is {@code 42702}, as in PostgreSQL. A row whose {@code WHERE} is not true is
+   * left as it is and not counted. A row that would change what the same statement inserted or changed is {@code 21000}.
+   *
+   * <p>The rows that the statement itself inserted are kept by key, so a conflict inside one statement is found whether or not the
+   * index shows a row of the open transaction.
+   */
+  private final class Upsert {
+    private final List<Column>     target;
+    private final TableSource      existing;
+    private final TableSource      proposed;
+    private final SetList          set;
+    private final Evaluable        where;
+    private final String           text;
+    /** the rows this statement inserted, by index name and key: a second row with the key is a conflict with them */
+    private final Map<String, Map<List<Object>, Document>> own     = new HashMap<>();
+    /** the rows this statement inserted or changed under {@code DO UPDATE} */
+    private final Set<RID>                                 touched = new HashSet<>();
+
+    Upsert(final InsertStatement.OnConflict clause, final Table table, final TableSource shape) {
+      if (table.kind() == Table.Kind.EDGE)
+        throw new PostgreSQLFeatureNotSupportedException("ON CONFLICT on the edge table " + table.name() + " is not supported: "
+            + "an edge is inserted between two vertices, delete it and insert it again (" + clause.position() + ")");
+      target = new ArrayList<>();
+      for (final Name name : clause.target()) {
+        final Column column = table.column(identifier(name));
+        if (!target.contains(column))
+          target.add(column);
+      }
+      // a target has to name a unique index, as PostgreSQL's inference does, also for DO NOTHING and also for an empty table
+      if (!target.isEmpty() && matching(table).isEmpty())
+        throw new PostgreSQLEvaluationException("42P10",
+            "there is no unique or exclusion constraint matching the ON CONFLICT specification");
+      existing = shape;
+      if (clause.doNothing()) {
+        proposed = null;
+        set = null;
+        where = null;
+      } else {
+        proposed = new TableSource(database, table, "excluded", false);
+        final List<RelationSource.Field> fields = new ArrayList<>(shape.columns());
+        fields.addAll(proposed.columns());
+        final ExpressionCompiler compiler = new ExpressionCompiler(new RelationScope(fields, catalog), parameters);
+        set = setList(clause.assignments(), table, compiler);
+        where = clause.where() == null ? null : compiler.compileCondition(clause.where(), "WHERE");
+      }
+      text = "ON CONFLICT" + (target.isEmpty() ? "" : " (" + String.join(", ", target.stream().map(Column::name).toList()) + ")")
+          + (clause.doNothing() ? " DO NOTHING" : " DO UPDATE SET " + set.columns().size() + " column(s)"
+          + (where == null ? "" : " WHERE"));
+    }
+
+    String describe() {
+      return text;
+    }
+
+    boolean doNothing() {
+      return set == null;
+    }
+
+    /** The unique indexes whose key is the target, or every unique index when the clause has no target. */
+    private List<TypeIndex> matching(final Table table) {
+      final List<TypeIndex> found = new ArrayList<>();
+      final Set<String> wanted = new HashSet<>();
+      for (final Column column : target)
+        wanted.add(column.kind() == Column.Kind.PROPERTY ? column.property() : "#" + column.name());
+      for (final TypeIndex index : database.getSchema().getType(table.name()).getAllIndexes(true))
+        if (index.isUnique() && (target.isEmpty() || new HashSet<>(index.getPropertyNames()).equals(wanted)))
+          found.add(index);
+      return found;
+    }
+
+    /** The row that holds the key of the proposed one, {@code null} when there is none. */
+    Document find(final Database db, final Table table, final MutableDocument record) {
+      for (final TypeIndex index : matching(table)) {
+        final List<String> properties = index.getPropertyNames();
+        final Object[] keys = new Object[properties.size()];
+        boolean complete = true;
+        for (int i = 0; i < keys.length; i++) {
+          keys[i] = record.get(properties.get(i));
+          complete &= keys[i] != null;
+        }
+        if (!complete)
+          continue;
+        final Document previous = own.getOrDefault(index.getName(), Map.of()).get(Arrays.asList(keys));
+        final Document found;
+        if (previous != null)
+          found = previous;
+        else {
+          final IndexCursor cursor = index.get(keys);
+          if (!cursor.hasNext())
+            continue;
+          found = cursor.next().asDocument();
+        }
+        if (!doNothing() && touched.contains(found.getIdentity()))
+          throw new PostgreSQLEvaluationException("21000", "ON CONFLICT DO UPDATE command cannot affect row a second time");
+        return found;
+      }
+      return null;
+    }
+
+    /** Remembers a row that the statement inserted, under the key of every unique index it can conflict on. */
+    void inserted(final Table table, final Database db, final MutableDocument record) {
+      for (final TypeIndex index : matching(table)) {
+        final List<String> properties = index.getPropertyNames();
+        final List<Object> keys = new ArrayList<>();
+        for (final String property : properties)
+          keys.add(record.get(property));
+        if (keys.contains(null))
+          continue;
+        own.computeIfAbsent(index.getName(), name -> new HashMap<>()).put(keys, record);
+      }
+      if (!doNothing())
+        touched.add(record.getIdentity());
+    }
+
+    /** {@code DO UPDATE}: the changed row, or {@code null} when the {@code WHERE} is not true and the row is left as it is. */
+    MutableDocument update(final Database db, final Table table, final Document found, final MutableDocument record) {
+      final Object[] there = existing.rowOf(found);
+      final Object[] proposal = proposed.rowOf(record);
+      final Object[] both = Arrays.copyOf(there, there.length + proposal.length);
+      System.arraycopy(proposal, 0, both, there.length, proposal.length);
+      if (where != null && !Boolean.TRUE.equals(where.eval(both)))
+        return null;
+      final Object[] values = new Object[set.columns().size()];
+      for (int i = 0; i < values.length; i++)
+        values[i] = set.values().get(i) == null ? DEFAULT
+            : Assignments.convert(set.values().get(i).eval(both), set.types().get(i), set.columns().get(i));
+      final MutableDocument changed = found.modify();
+      final Set<String> properties = applySet(db, table, changed, set.columns(), values);
+      requireValues(table, changed);
+      changed.validate();
+      checkUnique(db, changed, properties);
+      changed.save();
+      touched.add(changed.getIdentity());
+      return changed;
+    }
+  }
+
+  /** The {@code SET} list of an {@code UPDATE} or of a {@code DO UPDATE}: the columns, what they are set to and the type of each. */
+  private record SetList(List<Column> columns, List<Evaluable> values, List<PgType> types) {
+  }
+
+  private SetList setList(final List<UpdateStatement.Assignment> assignments, final Table table, final ExpressionCompiler compiler) {
+    final List<Column> columns = new ArrayList<>();
+    final List<Evaluable> values = new ArrayList<>();
+    final List<PgType> types = new ArrayList<>();
+    for (final UpdateStatement.Assignment assignment : assignments) {
+      final Column column = table.column(identifier(assignment.column()));
+      if (columns.contains(column))
+        throw new PostgreSQLEvaluationException("42601", "multiple assignments to the same column \"" + column.name() + "\"");
+      if (column.kind() == Column.Kind.SOURCE || column.kind() == Column.Kind.TARGET)
+        throw new PostgreSQLFeatureNotSupportedException("UPDATE of the column " + column.name() + " of the edge table " + table.name()
+            + " is not supported: delete the edge and insert it again (" + assignment.position() + ")");
+      if (column.isSynthetic() && !assignment.value().isDefault())
+        throw new PostgreSQLEvaluationException("428C9", "column \"" + column.name() + "\" can only be updated to DEFAULT");
+      Evaluable value = null;
+      PgType type = PgType.UNKNOWN;
+      if (!assignment.value().isDefault()) {
+        value = compiler.compile(assignment.value().expression());
+        type = effectiveType(assignment.value().expression(), value);
+        if (!(value instanceof Evaluable.Constant constant && constant.value() == null))
+          Assignments.check(type, column);
+      }
+      columns.add(column);
+      values.add(value);
+      types.add(type);
+    }
+    return new SetList(columns, values, types);
+  }
+
+  /** Sets the columns of a record to the values computed for them; the result is the properties that were set. */
+  private Set<String> applySet(final Database db, final Table table, final MutableDocument record, final List<Column> columns,
+      final Object[] values) {
+    final Set<String> changed = new HashSet<>();
+    for (int i = 0; i < columns.size(); i++) {
+      final Column column = columns.get(i);
+      if (column.isSynthetic())
+        continue;
+      Object value = values[i];
+      if (value == DEFAULT) {
+        final Property property = table.documentType().getPolymorphicPropertyIfExists(column.property());
+        value = property == null ? null : property.getDefaultValue();
+        changed.add(column.property());
+        if (value == null)
+          setNull(table, record, column);
+        else
+          record.set(column.property(), value);
+      } else {
+        changed.add(column.property());
+        if (value == null)
+          setNull(table, record, column);
+        else
+          record.set(column.property(), toEngine(db, table, column, value));
+      }
+    }
+    return changed;
   }
 
   /** The type a slot counts as: a text parameter is {@code unknown} as it is in PostgreSQL, which gives it the type of its column. */
@@ -419,30 +646,10 @@ public final class WritePlanner {
     if (whereClause != null)
       source = selectPlanner.chooseAccessPath(source, whereClause, compiler);
 
-    final List<Column> columns = new ArrayList<>();
-    final List<Evaluable> values = new ArrayList<>();
-    final List<PgType> types = new ArrayList<>();
-    for (final UpdateStatement.Assignment assignment : update.assignments()) {
-      final Column column = table.column(identifier(assignment.column()));
-      if (columns.contains(column))
-        throw new PostgreSQLEvaluationException("42601", "multiple assignments to the same column \"" + column.name() + "\"");
-      if (column.kind() == Column.Kind.SOURCE || column.kind() == Column.Kind.TARGET)
-        throw new PostgreSQLFeatureNotSupportedException("UPDATE of the column " + column.name() + " of the edge table " + table.name()
-            + " is not supported: delete the edge and insert it again (" + assignment.position() + ")");
-      if (column.isSynthetic() && !assignment.value().isDefault())
-        throw new PostgreSQLEvaluationException("428C9", "column \"" + column.name() + "\" can only be updated to DEFAULT");
-      Evaluable value = null;
-      PgType type = PgType.UNKNOWN;
-      if (!assignment.value().isDefault()) {
-        value = compiler.compile(assignment.value().expression());
-        type = effectiveType(assignment.value().expression(), value);
-        if (!(value instanceof Evaluable.Constant constant && constant.value() == null))
-          Assignments.check(type, column);
-      }
-      columns.add(column);
-      values.add(value);
-      types.add(type);
-    }
+    final SetList assigned = setList(update.assignments(), table, compiler);
+    final List<Column> columns = assigned.columns();
+    final List<Evaluable> values = assigned.values();
+    final List<PgType> types = assigned.types();
 
     final TableSource found = source;
     final Returning returning = returning(update.returning(), found);
@@ -472,28 +679,7 @@ public final class WritePlanner {
       final List<Object[]> returned = new ArrayList<>();
       for (final Match match : matches) {
         final MutableDocument record = match.record().modify();
-        final Set<String> changed = new HashSet<>();
-        for (int i = 0; i < columns.size(); i++) {
-          final Column column = columns.get(i);
-          if (column.isSynthetic())
-            continue;
-          Object value = match.values()[i];
-          if (value == DEFAULT) {
-            final Property property = table.documentType().getPolymorphicPropertyIfExists(column.property());
-            value = property == null ? null : property.getDefaultValue();
-            changed.add(column.property());
-            if (value == null)
-              setNull(table, record, column);
-            else
-              record.set(column.property(), value);
-          } else {
-            changed.add(column.property());
-            if (value == null)
-              setNull(table, record, column);
-            else
-              record.set(column.property(), toEngine(db, table, column, value));
-          }
-        }
+        final Set<String> changed = applySet(db, table, record, columns, match.values());
         requireValues(table, record);
         record.validate();
         checkUnique(db, record, changed);

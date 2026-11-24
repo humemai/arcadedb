@@ -133,7 +133,41 @@ final class AstBuilder {
         throw new IllegalStateException("An INSERT source the parser did not refuse has no tree: " + rest.source.getText());
       }
     }
-    return new InsertStatement(position(context.getStart()), table, columns, source, returning(context.returningClause()));
+    return new InsertStatement(position(context.getStart()), table, columns, source, onConflict(context.onConflictClause()),
+        returning(context.returningClause()));
+  }
+
+  private InsertStatement.OnConflict onConflict(final OnConflictClauseContext context) {
+    if (context == null)
+      return null;
+    final List<Name> target = new ArrayList<>();
+    if (context.target instanceof ConflictConstraintContext constraint)
+      throw Diagnostics.notSupported("ON CONFLICT ON CONSTRAINT", constraint.getStart());
+    if (context.target instanceof ConflictColumnsContext columns) {
+      if (columns.predicate != null)
+        throw Diagnostics.notSupported("An index predicate in the target of ON CONFLICT", columns.predicate.getStart());
+      for (final AExprContext item : columns.items) {
+        // PostgreSQL reads an index expression here: only a plain column name is in the subset
+        final Expression expression = expression(item);
+        if (!(expression instanceof Expression.ColumnRef reference) || !reference.qualifier().isEmpty())
+          throw Diagnostics.notSupported("An expression in the target of ON CONFLICT", item.getStart());
+        target.add(reference.column());
+      }
+    }
+    final List<UpdateStatement.Assignment> assignments = new ArrayList<>();
+    Expression where = null;
+    if (context.action instanceof ConflictUpdateContext update) {
+      for (final SetClauseContext item : update.items) {
+        if (!(item instanceof SetSingleContext single))
+          throw Diagnostics.notSupported("A multiple-column assignment", item.getStart());
+        assignments.add(new UpdateStatement.Assignment(position(single.getStart()), name(single.column), writeValue(single.value)));
+      }
+      if (update.condition != null)
+        where = expression(update.condition);
+      if (target.isEmpty())
+        throw Diagnostics.syntaxError("ON CONFLICT DO UPDATE requires inference specification or constraint name", context.getStart());
+    }
+    return new InsertStatement.OnConflict(position(context.getStart()), target, assignments, where);
   }
 
   private UpdateStatement update(final UpdateStmtContext context) {

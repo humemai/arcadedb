@@ -96,7 +96,7 @@ unsupportedStatement
 // ============================================================================
 
 insertStmt
-  : INSERT INTO target=insertTarget rest=insertRest (unsupportedOnConflict skipRest)? returningClause?
+  : INSERT INTO target=insertTarget rest=insertRest onConflict=onConflictClause? returningClause?
   ;
 
 insertTarget
@@ -129,8 +129,20 @@ unsupportedInsertSource
   | LPAREN+ (SELECT | WITH | VALUES | TABLE)
   ;
 
-unsupportedOnConflict
-  : ON CONFLICT
+// ON CONFLICT of PostgreSQL. The target items are read as expressions: an item that is not a plain column name (an expression, an
+// index predicate, ON CONSTRAINT) is refused by the tree builder with 0A000
+onConflictClause
+  : ON CONFLICT target=conflictTarget? DO action=conflictAction
+  ;
+
+conflictTarget
+  : LPAREN items+=aExpr (COMMA items+=aExpr)* RPAREN (WHERE predicate=aExpr)?   # conflictColumns
+  | ON CONSTRAINT name=colId                                                    # conflictConstraint
+  ;
+
+conflictAction
+  : NOTHING                                                                           # conflictNothing
+  | UPDATE SET items+=setClause (COMMA items+=setClause)* (WHERE condition=aExpr)?    # conflictUpdate
   ;
 
 valuesClause

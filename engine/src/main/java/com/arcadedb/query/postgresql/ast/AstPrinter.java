@@ -76,6 +76,20 @@ public final class AstPrinter {
         .collect(Collectors.joining(", ")));
     case InsertStatement.Query query -> text.append(' ').append(print(query.select()));
     }
+    if (insert.onConflict() != null) {
+      final InsertStatement.OnConflict conflict = insert.onConflict();
+      text.append(" ON CONFLICT");
+      if (!conflict.target().isEmpty())
+        text.append(" (").append(conflict.target().stream().map(AstPrinter::print).collect(Collectors.joining(", "))).append(')');
+      if (conflict.doNothing())
+        text.append(" DO NOTHING");
+      else {
+        text.append(" DO UPDATE SET ").append(conflict.assignments().stream()
+            .map(assignment -> print(assignment.column()) + " = " + print(assignment.value())).collect(Collectors.joining(", ")));
+        if (conflict.where() != null)
+          text.append(" WHERE ").append(print(conflict.where()));
+      }
+    }
     return text.append(printReturning(insert.returning())).toString();
   }
 
