@@ -426,36 +426,36 @@ ex-residual-term-of-the-outer-query	ordered	-	ok	SELECT p.pid FROM person p WHER
 ex-residual-expression-over-both	ordered	-	ok	SELECT p.pid FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid + o.oid) ORDER BY p.pid	{"columns":["pid"],"types":["int4"],"rows":[]}
 ex-residual-is-not-null-of-both	ordered	-	ok	SELECT p.pid FROM person p WHERE NOT EXISTS (SELECT 1 FROM person q WHERE q.city = p.city AND q.pid <> p.pid AND q.age IS NOT NULL AND p.age IS NULL) ORDER BY p.pid	{"columns":["pid"],"types":["int4"],"rows":[[1],[2],[4],[5]]}
 ex-residual-function-over-both	ordered	-	pending	SELECT p.pid FROM person p WHERE EXISTS (SELECT 1 FROM person q WHERE q.city = p.city AND abs(q.age - p.age) > 3) ORDER BY p.pid	{"columns":["pid"],"types":["int4"],"rows":[[1],[2]]}
-ilike-prefix	ordered	-	ok	SELECT name FROM person WHERE name ILIKE 'a%' ORDER BY pid	pending-server
-ilike-contains-upper-pattern	ordered	-	ok	SELECT name FROM person WHERE name ILIKE '%D%' ORDER BY pid	pending-server
-ilike-not	ordered	-	ok	SELECT name FROM person WHERE name NOT ILIKE '%d%' ORDER BY pid	pending-server
-ilike-underscore	ordered	-	ok	SELECT name FROM person WHERE name ILIKE '_O' ORDER BY pid	pending-server
-ilike-column-pattern	ordered	-	ok	SELECT pid FROM person WHERE city ILIKE 'DELFT' ORDER BY pid	pending-server
-ilike-select-list	ordered	-	ok	SELECT name, name ILIKE '%a%' AS has_a FROM person ORDER BY pid	pending-server
-ilike-null-operands	multiset	-	ok	SELECT NULL::text ILIKE 'a' AS a, 'a' ILIKE NULL AS b, NULL::text NOT ILIKE 'a' AS c	pending-server
-ilike-null-column-excluded	ordered	-	ok	SELECT pid FROM person WHERE age::text NOT ILIKE 'X%' ORDER BY pid	pending-server
-ilike-escape	multiset	-	ok	SELECT 'a%b' ILIKE 'A!%B' ESCAPE '!' AS a, 'axb' ILIKE 'A!%B' ESCAPE '!' AS b, 'AXB' NOT ILIKE 'a!%b' ESCAPE '!' AS c	pending-server
-ilike-default-backslash-escape	multiset	-	ok	SELECT 'a_b' ILIKE 'A\\_B' AS a, 'axb' ILIKE 'A\\_B' AS b	pending-server
-ilike-join-filter	ordered	-	ok	SELECT o.oid FROM orders o JOIN person p ON p.pid = o.pid WHERE p.name ILIKE 'ADA' ORDER BY o.oid	pending-server
-err-ilike-int-operand	multiset	-	ok	SELECT pid FROM person WHERE pid ILIKE '1%'	pending-server
-err-ilike-escape-too-long	multiset	-	ok	SELECT 'a' ILIKE 'a' ESCAPE 'ab'	pending-server
-ilike-pattern-ends-with-escape-without-text-left	multiset	-	ok	SELECT 'a' ILIKE 'a\\' AS a, 'b' ILIKE 'a\\' AS b	pending-server
-err-ilike-pattern-ends-with-escape-with-text-left	multiset	-	ok	SELECT 'ab' ILIKE 'a\\'	pending-server
-err-like-pattern-ends-with-escape-after-percent	multiset	-	ok	SELECT 'abc' LIKE '%\\'	pending-server
-agg-string-agg-all	multiset	-	ok	SELECT string_agg(name, ', ') AS names FROM person	pending-server
-agg-string-agg-group-by	ordered	-	ok	SELECT city, string_agg(name, '+') AS names FROM person GROUP BY city ORDER BY city	pending-server
-agg-string-agg-expression-argument	multiset	-	ok	SELECT string_agg(name || ':' || city, ' | ') AS pairs FROM person WHERE pid < 3	pending-server
-agg-string-agg-skips-nulls	multiset	-	ok	SELECT string_agg(CASE WHEN age IS NULL THEN NULL ELSE name END, ',') AS names FROM person	pending-server
-agg-string-agg-empty-input	multiset	-	ok	SELECT string_agg(name, ',') AS names FROM person WHERE pid > 99	pending-server
-agg-string-agg-null-delimiter	multiset	-	ok	SELECT string_agg(name, NULL) AS names FROM person	pending-server
-agg-string-agg-unknown-arguments	multiset	-	ok	SELECT string_agg('a', ',') AS s FROM person	pending-server
-agg-string-agg-distinct	multiset	-	ok	SELECT string_agg(DISTINCT city, '/') AS cities FROM person	pending-server
-agg-string-agg-distinct-sorts	multiset	-	ok	SELECT string_agg(DISTINCT CASE WHEN pid < 3 THEN 'z' ELSE 'a' END, ',') AS s FROM person	pending-server
-agg-string-agg-having	ordered	-	ok	SELECT city FROM person GROUP BY city HAVING string_agg(name, ',') LIKE '%,%' ORDER BY city	pending-server
-agg-string-agg-with-count	ordered	-	ok	SELECT city, count(*) AS n, string_agg(name, ',') AS names FROM person GROUP BY city ORDER BY city	pending-server
-err-string-agg-int-argument	multiset	-	ok	SELECT string_agg(pid, ',') FROM person	pending-server
-err-string-agg-one-argument	multiset	-	ok	SELECT string_agg(name) FROM person	pending-server
-err-string-agg-int-delimiter	multiset	-	ok	SELECT string_agg(name, 1) FROM person	pending-server
-err-string-agg-in-where	multiset	-	ok	SELECT name FROM person WHERE string_agg(name, ',') = 'x'	pending-server
-agg-string-agg-over-window	ordered	-	pending	SELECT pid, string_agg(name, ',') OVER (PARTITION BY city) AS names FROM person ORDER BY pid	pending-server
-agg-array-agg	multiset	-	pending	SELECT array_agg(pid) AS ids FROM person WHERE pid < 3	pending-server
+ilike-prefix	ordered	-	ok	SELECT name FROM person WHERE name ILIKE 'a%' ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"]]}
+ilike-contains-upper-pattern	ordered	-	ok	SELECT name FROM person WHERE name ILIKE '%D%' ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Di"],["Ed"]]}
+ilike-not	ordered	-	ok	SELECT name FROM person WHERE name NOT ILIKE '%d%' ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Bo"],["Cy"]]}
+ilike-underscore	ordered	-	ok	SELECT name FROM person WHERE name ILIKE '_O' ORDER BY pid	{"columns":["name"],"types":["varchar"],"rows":[["Bo"]]}
+ilike-column-pattern	ordered	-	ok	SELECT pid FROM person WHERE city ILIKE 'DELFT' ORDER BY pid	{"columns":["pid"],"types":["int4"],"rows":[[1],[2]]}
+ilike-select-list	ordered	-	ok	SELECT name, name ILIKE '%a%' AS has_a FROM person ORDER BY pid	{"columns":["name","has_a"],"types":["varchar","bool"],"rows":[["Ada",true],["Bo",false],["Cy",false],["Di",false],["Ed",false]]}
+ilike-null-operands	multiset	-	ok	SELECT NULL::text ILIKE 'a' AS a, 'a' ILIKE NULL AS b, NULL::text NOT ILIKE 'a' AS c	{"columns":["a","b","c"],"types":["bool","bool","bool"],"rows":[[null,null,null]]}
+ilike-null-column-excluded	ordered	-	ok	SELECT pid FROM person WHERE age::text NOT ILIKE 'X%' ORDER BY pid	{"columns":["pid"],"types":["int4"],"rows":[[1],[2],[4],[5]]}
+ilike-escape	multiset	-	ok	SELECT 'a%b' ILIKE 'A!%B' ESCAPE '!' AS a, 'axb' ILIKE 'A!%B' ESCAPE '!' AS b, 'AXB' NOT ILIKE 'a!%b' ESCAPE '!' AS c	{"columns":["a","b","c"],"types":["bool","bool","bool"],"rows":[[true,false,true]]}
+ilike-default-backslash-escape	multiset	-	ok	SELECT 'a_b' ILIKE 'A\\_B' AS a, 'axb' ILIKE 'A\\_B' AS b	{"columns":["a","b"],"types":["bool","bool"],"rows":[[true,false]]}
+ilike-join-filter	ordered	-	ok	SELECT o.oid FROM orders o JOIN person p ON p.pid = o.pid WHERE p.name ILIKE 'ADA' ORDER BY o.oid	{"columns":["oid"],"types":["int4"],"rows":[[100],[101]]}
+err-ilike-int-operand	multiset	-	ok	SELECT pid FROM person WHERE pid ILIKE '1%'	{"error":"42883"}
+err-ilike-escape-too-long	multiset	-	ok	SELECT 'a' ILIKE 'a' ESCAPE 'ab'	{"error":"22025"}
+ilike-pattern-ends-with-escape-without-text-left	multiset	-	ok	SELECT 'a' ILIKE 'a\\' AS a, 'b' ILIKE 'a\\' AS b	{"columns":["a","b"],"types":["bool","bool"],"rows":[[false,false]]}
+err-ilike-pattern-ends-with-escape-with-text-left	multiset	-	ok	SELECT 'ab' ILIKE 'a\\'	{"error":"22025"}
+err-like-pattern-ends-with-escape-after-percent	multiset	-	ok	SELECT 'abc' LIKE '%\\'	{"error":"22025"}
+agg-string-agg-all	multiset	-	ok	SELECT string_agg(name, ', ') AS names FROM person	{"columns":["names"],"types":["text"],"rows":[["Ada, Bo, Cy, Di, Ed"]]}
+agg-string-agg-group-by	ordered	-	ok	SELECT city, string_agg(name, '+') AS names FROM person GROUP BY city ORDER BY city	{"columns":["city","names"],"types":["varchar","text"],"rows":[["Delft","Ada+Bo"],["Leiden","Cy+Di"],["Utrecht","Ed"]]}
+agg-string-agg-expression-argument	multiset	-	ok	SELECT string_agg(name || ':' || city, ' | ') AS pairs FROM person WHERE pid < 3	{"columns":["pairs"],"types":["text"],"rows":[["Ada:Delft | Bo:Delft"]]}
+agg-string-agg-skips-nulls	multiset	-	ok	SELECT string_agg(CASE WHEN age IS NULL THEN NULL ELSE name END, ',') AS names FROM person	{"columns":["names"],"types":["text"],"rows":[["Ada,Bo,Di,Ed"]]}
+agg-string-agg-empty-input	multiset	-	ok	SELECT string_agg(name, ',') AS names FROM person WHERE pid > 99	{"columns":["names"],"types":["text"],"rows":[[null]]}
+agg-string-agg-null-delimiter	multiset	-	ok	SELECT string_agg(name, NULL) AS names FROM person	{"columns":["names"],"types":["text"],"rows":[["AdaBoCyDiEd"]]}
+agg-string-agg-unknown-arguments	multiset	-	ok	SELECT string_agg('a', ',') AS s FROM person	{"columns":["s"],"types":["text"],"rows":[["a,a,a,a,a"]]}
+agg-string-agg-distinct	multiset	-	ok	SELECT string_agg(DISTINCT city, '/') AS cities FROM person	{"columns":["cities"],"types":["text"],"rows":[["Delft/Leiden/Utrecht"]]}
+agg-string-agg-distinct-sorts	multiset	-	ok	SELECT string_agg(DISTINCT CASE WHEN pid < 3 THEN 'z' ELSE 'a' END, ',') AS s FROM person	{"columns":["s"],"types":["text"],"rows":[["a,z"]]}
+agg-string-agg-having	ordered	-	ok	SELECT city FROM person GROUP BY city HAVING string_agg(name, ',') LIKE '%,%' ORDER BY city	{"columns":["city"],"types":["varchar"],"rows":[["Delft"],["Leiden"]]}
+agg-string-agg-with-count	ordered	-	ok	SELECT city, count(*) AS n, string_agg(name, ',') AS names FROM person GROUP BY city ORDER BY city	{"columns":["city","n","names"],"types":["varchar","int8","text"],"rows":[["Delft",2,"Ada,Bo"],["Leiden",2,"Cy,Di"],["Utrecht",1,"Ed"]]}
+err-string-agg-int-argument	multiset	-	ok	SELECT string_agg(pid, ',') FROM person	{"error":"42883"}
+err-string-agg-one-argument	multiset	-	ok	SELECT string_agg(name) FROM person	{"error":"42883"}
+err-string-agg-int-delimiter	multiset	-	ok	SELECT string_agg(name, 1) FROM person	{"error":"42883"}
+err-string-agg-in-where	multiset	-	ok	SELECT name FROM person WHERE string_agg(name, ',') = 'x'	{"error":"42803"}
+agg-string-agg-over-window	ordered	-	pending	SELECT pid, string_agg(name, ',') OVER (PARTITION BY city) AS names FROM person ORDER BY pid	{"columns":["pid","names"],"types":["int4","text"],"rows":[[1,"Ada,Bo"],[2,"Ada,Bo"],[3,"Cy,Di"],[4,"Cy,Di"],[5,"Ed"]]}
+agg-array-agg	multiset	-	pending	SELECT array_agg(pid) AS ids FROM person WHERE pid < 3	{"columns":["ids"],"types":["_int4"],"rows":[[[1,2]]]}
