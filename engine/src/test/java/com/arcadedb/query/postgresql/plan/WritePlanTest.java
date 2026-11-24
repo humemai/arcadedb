@@ -457,4 +457,198 @@ class WritePlanTest extends TestHelper {
     assertState(() -> database.query("postgresql", "BEGIN"), "25006");
     assertThat(value("SELECT count(*) FROM person")).isEqualTo(5L);
   }
+
+  // ---- ON CONFLICT (the upsert; fork issue: ON CONFLICT of the gap list of #35) ----
+
+  private List<Object> column(final String sql, final String name) {
+    final List<Object> values = new ArrayList<>();
+    for (final Result row : query(sql))
+      values.add(row.getProperty(name));
+    return values;
+  }
+
+  @Test
+  void onConflictDoNothingSkipsTheRowThatBreaksAUniqueKey() {
+    assertThat(command("INSERT INTO person (pid, name) VALUES (1, 'Dup') ON CONFLICT DO NOTHING")).isEqualTo(0);
+
+    assertThat(value("SELECT name FROM person WHERE pid = 1")).isEqualTo("Ada");
+    assertThat(value("SELECT count(*) FROM person")).isEqualTo(5L);
+  }
+
+  @Test
+  void onConflictDoNothingWithATargetInsertsTheOtherRowsAndReturnsOnlyThem() {
+    try (final ResultSet resultSet = database.command("postgresql",
+        "INSERT INTO person (pid, name) VALUES (1, 'Dup'), (6, 'Fay') ON CONFLICT (pid) DO NOTHING RETURNING pid, name")) {
+      final PostgreSQLResultSet answer = (PostgreSQLResultSet) resultSet;
+      assertThat(answer.affectedRows()).isEqualTo(1);
+      final List<Result> rows = new ArrayList<>();
+      while (resultSet.hasNext())
+        rows.add(resultSet.next());
+      assertThat(rows).hasSize(1);
+      assertThat((Object) rows.get(0).getProperty("name")).isEqualTo("Fay");
+    }
+    assertThat(value("SELECT count(*) FROM person")).isEqualTo(6L);
+  }
+
+  @Test
+  void onConflictDoNothingSeesTheRowThatTheSameStatementInserted() {
+    assertThat(command("INSERT INTO person (pid, name) VALUES (7, 'first'), (7, 'second') ON CONFLICT DO NOTHING")).isEqualTo(1);
+
+    assertThat(column("SELECT name FROM person WHERE pid = 7", "name")).containsExactly("first");
+  }
+
+  @Test
+  void onConflictDoNothingWorksForInsertSelect() {
+    // the cids 10, 20 and 30 are taken: pid * 10 gives 10, 20, 30, 40, 50
+    assertThat(command("INSERT INTO company (cid, name) SELECT pid * 10, name FROM person ON CONFLICT DO NOTHING")).isEqualTo(2);
+
+    assertThat(column("SELECT cid FROM company ORDER BY cid", "cid")).containsExactly(10, 20, 30, 40, 50);
+  }
+
+  @Test
+  void aNullInTheKeyConflictsWithNothing() {
+    // the unique key of company is cid: two rows with a NULL cid are both inserted, as in PostgreSQL
+    assertThat(command("INSERT INTO company (name) VALUES ('x'), ('y') ON CONFLICT DO NOTHING")).isEqualTo(2);
+  }
+
+  @Test
+  void onConflictDoUpdateChangesTheRowThatIsThereWithExcluded() {
+    try (final ResultSet resultSet = database.command("postgresql",
+        "INSERT INTO person (pid, name, age) VALUES (1, 'Ada L', 37) ON CONFLICT (pid) DO UPDATE "
+            + "SET name = EXCLUDED.name, age = EXCLUDED.age RETURNING pid, name, age")) {
+      final PostgreSQLResultSet answer = (PostgreSQLResultSet) resultSet;
+      assertThat(answer.affectedRows()).isEqualTo(1);
+      final Result row = resultSet.next();
+      assertThat((Object) row.getProperty("name")).isEqualTo("Ada L");
+      assertThat((Object) row.getProperty("age")).isEqualTo(37);
+    }
+    assertThat(value("SELECT count(*) FROM person")).isEqualTo(5L);
+    assertThat(value("SELECT city FROM person WHERE pid = 1")).isEqualTo("Delft");
+  }
+
+  @Test
+  void onConflictDoUpdateReadsTheRowThatIsThereByTheTableNameOrTheAlias() {
+    command("INSERT INTO person (pid, name, age) VALUES (1, 'x', 1) ON CONFLICT (pid) DO UPDATE SET age = person.age + EXCLUDED.age");
+    assertThat(value("SELECT age FROM person WHERE pid = 1")).isEqualTo(37);
+
+    command("INSERT INTO person AS p (pid, name, age) VALUES (2, 'x', 10) ON CONFLICT (pid) DO UPDATE SET age = p.age * EXCLUDED.age");
+    assertThat(value("SELECT age FROM person WHERE pid = 2")).isEqualTo(410);
+  }
+
+  @Test
+  void onConflictDoUpdateOfANullStaysNullThroughArithmetic() {
+    command("INSERT INTO person (pid, name, age) VALUES (3, 'x', 5) ON CONFLICT (pid) DO UPDATE SET age = person.age + EXCLUDED.age");
+    assertThat(value("SELECT age FROM person WHERE pid = 3")).isNull();
+
+    command("INSERT INTO person (pid, name, age) VALUES (3, 'x', 5) ON CONFLICT (pid) DO UPDATE SET age = coalesce(person.age, 0) + EXCLUDED.age");
+    assertThat(value("SELECT age FROM person WHERE pid = 3")).isEqualTo(5);
+  }
+
+  @Test
+  void onConflictDoUpdateWhereLeavesTheRowThatFailsItAndDoesNotCountIt() {
+    assertThat(command("INSERT INTO person (pid, name) VALUES (1, 'x') ON CONFLICT (pid) DO UPDATE SET name = EXCLUDED.name "
+        + "WHERE person.age > 100")).isEqualTo(0);
+    assertThat(value("SELECT name FROM person WHERE pid = 1")).isEqualTo("Ada");
+
+    assertThat(command("INSERT INTO person (pid, name) VALUES (1, 'x') ON CONFLICT (pid) DO UPDATE SET name = EXCLUDED.name "
+        + "WHERE person.age > 30")).isEqualTo(1);
+    assertThat(value("SELECT name FROM person WHERE pid = 1")).isEqualTo("x");
+  }
+
+  @Test
+  void onConflictDoUpdateInsertsTheRowsThatHaveNoConflict() {
+    assertThat(command("INSERT INTO person (pid, name) VALUES (1, 'x'), (8, 'Hal') ON CONFLICT (pid) DO UPDATE "
+        + "SET name = EXCLUDED.name")).isEqualTo(2);
+
+    assertThat(value("SELECT name FROM person WHERE pid = 1")).isEqualTo("x");
+    assertThat(value("SELECT name FROM person WHERE pid = 8")).isEqualTo("Hal");
+  }
+
+  @Test
+  void anUpsertWritesTheRecordThatCypherReads() {
+    command("INSERT INTO person (pid, name) VALUES (1, 'Ada L') ON CONFLICT (pid) DO UPDATE SET name = EXCLUDED.name");
+
+    try (final ResultSet resultSet = database.query("opencypher", "MATCH (p:person {pid: 1}) RETURN p.name AS name")) {
+      assertThat((Object) resultSet.next().getProperty("name")).isEqualTo("Ada L");
+    }
+  }
+
+  @Test
+  void aCompositeKeyIsTheTargetInAnyOrderOfItsColumns() {
+    database.command("sql", "CREATE DOCUMENT TYPE fact");
+    database.command("sql", "CREATE PROPERTY fact.subject STRING");
+    database.command("sql", "CREATE PROPERTY fact.kind STRING");
+    database.command("sql", "CREATE PROPERTY fact.fact_value STRING");
+    database.command("sql", "CREATE INDEX ON fact (subject, kind) UNIQUE");
+    command("INSERT INTO fact (subject, kind, fact_value) VALUES ('ada', 'city', 'Delft')");
+
+    assertThat(command("INSERT INTO fact (subject, kind, fact_value) VALUES ('ada', 'city', 'Leiden') "
+        + "ON CONFLICT (kind, subject) DO UPDATE SET fact_value = EXCLUDED.fact_value")).isEqualTo(1);
+    assertThat(value("SELECT fact_value FROM fact WHERE subject = 'ada'")).isEqualTo("Leiden");
+    assertThat(value("SELECT count(*) FROM fact")).isEqualTo(1L);
+    // a target that is only a part of the key is no unique index
+    assertState(() -> command("INSERT INTO fact (subject, kind) VALUES ('bo', 'city') ON CONFLICT (subject) DO NOTHING"), "42P10");
+  }
+
+  @Test
+  void aTargetThatNoUniqueIndexMatchesIs42P10EvenForAnEmptyOrUntouchedTable() {
+    assertState(() -> command("INSERT INTO person (pid, name) VALUES (9, 'x') ON CONFLICT (name) DO NOTHING"), "42P10");
+    assertState(() -> command("INSERT INTO person (pid, name) VALUES (9, 'x') ON CONFLICT (name) DO UPDATE SET age = 1"), "42P10");
+    assertThat(value("SELECT count(*) FROM person")).isEqualTo(5L);
+  }
+
+  @Test
+  void onConflictErrorsCarryTheSqlStateOfPostgreSQL() {
+    assertState(() -> command("INSERT INTO person (pid, name) VALUES (1, 'x') ON CONFLICT (nope) DO NOTHING"), "42703");
+    assertState(() -> command("INSERT INTO person (pid, name) VALUES (1, 'x') ON CONFLICT DO UPDATE SET name = 'y'"), "42601");
+    // a bare column name that the row there and the proposed row both have is ambiguous
+    assertState(() -> command("INSERT INTO person (pid, name, age) VALUES (1, 'x', 1) ON CONFLICT (pid) DO UPDATE SET age = age + 1"),
+        "42702");
+    assertState(() -> command("INSERT INTO person (pid, name) VALUES (1, 'x') ON CONFLICT (pid) DO UPDATE SET nope = 1"), "42703");
+    assertState(() -> command("INSERT INTO person (pid, name) VALUES (1, 'x') ON CONFLICT (pid) DO UPDATE SET id = 'a'"), "428C9");
+    // a row that would change what the same statement inserted or changed
+    assertState(() -> command("INSERT INTO person (pid, name) VALUES (1, 'a'), (1, 'b') ON CONFLICT (pid) DO UPDATE "
+        + "SET name = EXCLUDED.name"), "21000");
+    assertState(() -> command("INSERT INTO person (pid, name) VALUES (9, 'a'), (9, 'b') ON CONFLICT (pid) DO UPDATE "
+        + "SET name = EXCLUDED.name"), "21000");
+    // the statement is one transaction: nothing of it stays
+    assertThat(value("SELECT name FROM person WHERE pid = 1")).isEqualTo("Ada");
+    assertThat(value("SELECT count(*) FROM person")).isEqualTo(5L);
+  }
+
+  @Test
+  void aBreakOfAnIndexTheTargetDoesNotNameIsStill23505() {
+    database.command("sql", "CREATE DOCUMENT TYPE tag");
+    database.command("sql", "CREATE PROPERTY tag.a INTEGER");
+    database.command("sql", "CREATE PROPERTY tag.b INTEGER");
+    database.command("sql", "CREATE INDEX ON tag (a) UNIQUE");
+    database.command("sql", "CREATE INDEX ON tag (b) UNIQUE");
+    command("INSERT INTO tag (a, b) VALUES (1, 1)");
+
+    // no target: either index is an arbiter, the row is skipped
+    assertThat(command("INSERT INTO tag (a, b) VALUES (2, 1) ON CONFLICT DO NOTHING")).isEqualTo(0);
+    // target a: only a is an arbiter, the break of b is an error
+    assertState(() -> command("INSERT INTO tag (a, b) VALUES (2, 1) ON CONFLICT (a) DO NOTHING"), "23505");
+    assertThat(command("INSERT INTO tag (a, b) VALUES (1, 5) ON CONFLICT (a) DO UPDATE SET b = EXCLUDED.b")).isEqualTo(1);
+    assertState(() -> command("INSERT INTO tag (a, b) VALUES (3, 3), (1, 3) ON CONFLICT (a) DO UPDATE SET b = EXCLUDED.b"), "23505");
+  }
+
+  @Test
+  void whatThePrototypeCannotRunOfOnConflictIsRefusedWith0A000() {
+    assertState(() -> command("INSERT INTO person (pid) VALUES (1) ON CONFLICT ON CONSTRAINT person_pkey DO NOTHING"), "0A000");
+    assertState(() -> command("INSERT INTO person (pid) VALUES (1) ON CONFLICT (lower(name)) DO NOTHING"), "0A000");
+    assertState(() -> command("INSERT INTO person (pid) VALUES (1) ON CONFLICT (pid) WHERE pid > 0 DO NOTHING"), "0A000");
+    assertState(() -> command("INSERT INTO works_at (source_id, target_id) VALUES ('#1:1', '#1:2') ON CONFLICT DO NOTHING"), "0A000");
+  }
+
+  @Test
+  void explainShowsTheOnConflictStep() {
+    try (final ResultSet resultSet = database.command("postgresql",
+        "EXPLAIN INSERT INTO person (pid, name) VALUES (9, 'x') ON CONFLICT (pid) DO NOTHING")) {
+      final StringBuilder text = new StringBuilder();
+      while (resultSet.hasNext())
+        text.append(resultSet.next().toString()).append('\n');
+      assertThat(text.toString()).contains("ON CONFLICT (pid) DO NOTHING");
+    }
+  }
 }

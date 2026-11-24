@@ -79,7 +79,6 @@ final class Diagnostics {
       Map.entry("unsupportedStarArg", "A whole-row reference such as t.*"),
       Map.entry("unsupportedUnicodeIdent", "A Unicode escape identifier"),
       Map.entry("unsupportedTableAlias", "An alias after a subquery or a function in FROM"),
-      Map.entry("unsupportedOnConflict", "ON CONFLICT"),
       Map.entry("unsupportedMultiAssign", "A multiple-column assignment"),
       Map.entry("unsupportedUpdateFrom", "UPDATE with FROM"),
       Map.entry("unsupportedDeleteUsing", "DELETE with USING"),

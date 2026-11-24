@@ -75,6 +75,32 @@ class WriteStatementParserTest {
   }
 
   @Test
+  void onConflictParsesToATreeThatPrintsAsItWasWritten() {
+    assertThat(print("INSERT INTO t VALUES (1) ON CONFLICT DO NOTHING")).isEqualTo("INSERT INTO t VALUES (1) ON CONFLICT DO NOTHING");
+    assertThat(print("insert into t (a, b) values (1, 2) on conflict (a, b) do nothing returning a")).isEqualTo(
+        "INSERT INTO t (a, b) VALUES (1, 2) ON CONFLICT (a, b) DO NOTHING RETURNING a");
+
+    final Statement statement = StatementParser.parse(
+        "INSERT INTO t AS x (a) VALUES (1) ON CONFLICT (a) DO UPDATE SET b = excluded.b, c = 2 WHERE (x.c < 3) RETURNING a");
+    final InsertStatement.OnConflict conflict = ((InsertStatement) statement).onConflict();
+    assertThat(conflict).isNotNull();
+    assertThat(conflict.target()).hasSize(1);
+    assertThat(conflict.doNothing()).isFalse();
+    assertThat(conflict.assignments()).hasSize(2);
+    assertThat(conflict.where()).isNotNull();
+    assertThat(AstPrinter.print(statement)).isEqualTo(
+        "INSERT INTO t AS x (a) VALUES (1) ON CONFLICT (a) DO UPDATE SET b = excluded.b, c = 2 WHERE (x.c < 3) RETURNING a");
+    assertThat(((InsertStatement) StatementParser.parse("INSERT INTO t VALUES (1)")).onConflict()).isNull();
+  }
+
+  @Test
+  void doUpdateWithoutATargetIsASyntaxErrorAsInPostgreSQL() {
+    assertThatThrownBy(() -> StatementParser.parse("INSERT INTO t VALUES (1) ON CONFLICT DO UPDATE SET a = 1"))
+        .isInstanceOf(PostgreSQLSyntaxException.class)
+        .hasMessageContaining("ON CONFLICT DO UPDATE requires inference specification or constraint name");
+  }
+
+  @Test
   void insertForms() {
     assertThat(print("insert into t values (1)")).isEqualTo("INSERT INTO t VALUES (1)");
     assertThat(print("INSERT INTO public.t AS x (a) VALUES ($1) RETURNING *")).isEqualTo(
@@ -165,7 +191,14 @@ class WriteStatementParserTest {
 
   static Stream<String[]> refusals() {
     return Stream.of(
-        new String[] { "INSERT INTO t VALUES (1) ON CONFLICT DO NOTHING", "ON CONFLICT is not supported", "ON CONFLICT" },
+        new String[] { "INSERT INTO t VALUES (1) ON CONFLICT ON CONSTRAINT c DO NOTHING", "ON CONFLICT ON CONSTRAINT is not supported",
+            "ON CONSTRAINT" },
+        new String[] { "INSERT INTO t VALUES (1) ON CONFLICT (lower(a)) DO NOTHING", "An expression in the target of ON CONFLICT is not supported",
+            "lower(a)" },
+        new String[] { "INSERT INTO t VALUES (1) ON CONFLICT (a) WHERE a > 0 DO NOTHING",
+            "An index predicate in the target of ON CONFLICT is not supported", "a > 0" },
+        new String[] { "INSERT INTO t VALUES (1) ON CONFLICT (a) DO UPDATE SET (a, b) = (1, 2)", "A multiple-column assignment is not supported",
+            "(a, b)" },
         new String[] { "INSERT INTO t OVERRIDING SYSTEM VALUE VALUES (1)", "OVERRIDING is not supported", "OVERRIDING" },
         new String[] { "INSERT INTO t WITH x AS (SELECT 1) SELECT * FROM x", "WITH is not supported", "WITH" },
         new String[] { "INSERT INTO t (SELECT 1)", "A parenthesised query is not supported", "(SELECT" },

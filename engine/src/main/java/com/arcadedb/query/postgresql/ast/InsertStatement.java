@@ -22,22 +22,47 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * {@code INSERT INTO table [AS alias] [(column, ...)] source [RETURNING ...]}: {@code InsertStmt} of {@code gram.y} without
- * {@code WITH}, {@code OVERRIDING} and {@code ON CONFLICT}, which are refused with SQLSTATE 0A000.
+ * {@code INSERT INTO table [AS alias] [(column, ...)] source [ON CONFLICT ...] [RETURNING ...]}: {@code InsertStmt} of
+ * {@code gram.y} without {@code WITH} and {@code OVERRIDING}, which are refused with SQLSTATE 0A000.
  *
- * @param table     the table, with its alias if it has one ({@code only} is always false: {@code INSERT INTO ONLY} is not syntax)
- * @param columns   the column list; empty when the statement has none, which means every column in the declared order
- * @param source    where the rows come from
- * @param returning the {@code RETURNING} list, empty when there is none
+ * @param table      the table, with its alias if it has one ({@code only} is always false: {@code INSERT INTO ONLY} is not syntax)
+ * @param columns    the column list; empty when the statement has none, which means every column in the declared order
+ * @param source     where the rows come from
+ * @param onConflict the {@code ON CONFLICT} clause, {@code null} when there is none
+ * @param returning  the {@code RETURNING} list, empty when there is none
  */
 public record InsertStatement(SourcePosition position, TableReference.Table table, List<Name> columns, Source source,
-                              List<SelectItem> returning) implements WriteStatement {
+                              OnConflict onConflict, List<SelectItem> returning) implements WriteStatement {
   public InsertStatement {
     Objects.requireNonNull(position, "position");
     Objects.requireNonNull(table, "table");
     Objects.requireNonNull(source, "source");
     columns = List.copyOf(columns);
     returning = List.copyOf(returning);
+  }
+
+  /**
+   * {@code ON CONFLICT [(column, ...)] DO NOTHING} or {@code ON CONFLICT (column, ...) DO UPDATE SET ... [WHERE ...]}: {@code
+   * OnConflictClause} of {@code gram.y} for a target of plain columns, without an index predicate, {@code ON CONSTRAINT} and an
+   * expression or a collation in the target, which are refused with SQLSTATE 0A000.
+   *
+   * @param target      the columns that name the unique index; empty when there is no target
+   * @param assignments the {@code SET} items of {@code DO UPDATE}; empty for {@code DO NOTHING}
+   * @param where       the condition of {@code DO UPDATE}, or {@code null}
+   */
+  public record OnConflict(SourcePosition position, List<Name> target, List<UpdateStatement.Assignment> assignments, Expression where)
+      implements Node {
+    public OnConflict {
+      Objects.requireNonNull(position, "position");
+      target = List.copyOf(target);
+      assignments = List.copyOf(assignments);
+      if (assignments.isEmpty() && where != null)
+        throw new IllegalArgumentException("DO NOTHING has no WHERE");
+    }
+
+    public boolean doNothing() {
+      return assignments.isEmpty();
+    }
   }
 
   /** The rows of an {@code INSERT}. */
