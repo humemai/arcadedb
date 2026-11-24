@@ -53,6 +53,8 @@ public final class Corpus {
   public static final String TPCH_FILE          = "tpch.tsv";
   /** The statements of the {@code id} rule of fork issue #38: the columns of {@code answers.tsv}, the data of {@code IdRuleFixture}. */
   public static final String IDRULE_FILE        = "idrule.tsv";
+  /** The generated columns of fork issue #78: the columns of {@code answers.tsv}, the data of {@code GeneratedColumnsFixture}. */
+  public static final String GENERATED_FILE     = "generated.tsv";
   /** The statements that language models wrote (fork issue #7): the columns of {@code syntax.tsv}, then model, group and duckdb. */
   public static final String AGENT_SQL_FILE     = "agent-sql.tsv";
   /** The schema the server needs to bind the names of {@link #AGENT_SQL_FILE}; the harness loads it into a database of its own. */
@@ -77,6 +79,10 @@ public final class Corpus {
 
   public static CorpusFile readIdRule() throws IOException {
     return CorpusFile.readResource(RESOURCE_DIRECTORY + IDRULE_FILE);
+  }
+
+  public static CorpusFile readGenerated() throws IOException {
+    return CorpusFile.readResource(RESOURCE_DIRECTORY + GENERATED_FILE);
   }
 
   public static CorpusFile readIdRuleWrites() throws IOException {

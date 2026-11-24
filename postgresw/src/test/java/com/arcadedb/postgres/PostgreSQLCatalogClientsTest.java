@@ -112,7 +112,7 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
 
       final Container.ExecResult edge = psql(container, "-q -c '\\d works_at'");
       assertThat(edge.getExitCode()).as(edge.getStderr()).isZero();
-      assertThat(lines(edge.getStdout())).containsSubsequence("Table \"public.works_at\"", "id | text | | not null |",
+      assertThat(lines(edge.getStdout())).containsSubsequence("Table \"public.works_at\"", "id | text | | not null | generated always as identity",
           "source_id | text | | not null |", "target_id | text | | not null |", "since | integer | | |", "Indexes:",
           "\"works_at_pkey\" PRIMARY KEY, btree (id)", "Foreign-key constraints:",
           "\"works_at_source_id_fkey\" FOREIGN KEY (source_id) REFERENCES person(id)",
@@ -120,7 +120,7 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
 
       final Container.ExecResult vertex = psql(container, "-q -c '\\d person'");
       assertThat(vertex.getExitCode()).as(vertex.getStderr()).isZero();
-      assertThat(lines(vertex.getStdout())).containsSubsequence("Table \"public.person\"", "id | text | | not null |",
+      assertThat(lines(vertex.getStdout())).containsSubsequence("Table \"public.person\"", "id | text | | not null | generated always as identity",
           "age | integer | | |", "city | character varying | | |", "name | character varying | | |", "pid | integer | | |", "Indexes:",
           "\"person_pkey\" PRIMARY KEY, btree (id)", "\"person_pid_key\" UNIQUE CONSTRAINT, btree (pid)", "Referenced by:",
           "TABLE \"orders\" CONSTRAINT \"orders_buyer_fkey\" FOREIGN KEY (buyer) REFERENCES person(id)",
@@ -129,7 +129,7 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
       // a table with a link has the foreign key of it
       final Container.ExecResult document = psql(container, "-q -c '\\d orders'");
       assertThat(document.getExitCode()).as(document.getStderr()).isZero();
-      assertThat(lines(document.getStdout())).containsSubsequence("Table \"public.orders\"", "id | text | | not null |",
+      assertThat(lines(document.getStdout())).containsSubsequence("Table \"public.orders\"", "id | text | | not null | generated always as identity",
           "\"orders_pkey\" PRIMARY KEY, btree (id)", "\"orders_oid_key\" UNIQUE CONSTRAINT, btree (oid)",
           "Foreign-key constraints:", "\"orders_buyer_fkey\" FOREIGN KEY (buyer) REFERENCES person(id)");
     }

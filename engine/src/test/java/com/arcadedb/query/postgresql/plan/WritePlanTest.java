@@ -184,6 +184,28 @@ class WritePlanTest extends TestHelper {
   }
 
   @Test
+  void aValueForTheGeneratedRecordIdIsRefusedWithTheDetailAndTheHintOfPostgreSql() {
+    assertThatThrownBy(() -> command("INSERT INTO person (id, pid, name) VALUES ('#9:9', 20, 'X')"))
+        .hasMessageContaining("cannot insert a non-DEFAULT value into column \"id\"")
+        .hasMessageContaining("is an identity column defined as GENERATED ALWAYS").hasMessageContaining("leave the column out");
+    // the way that works: leave it out, or DEFAULT
+    assertThat(command("INSERT INTO person (pid, name) VALUES (20, 'X')")).isEqualTo(1);
+    assertThat(command("INSERT INTO person (id, pid, name) VALUES (DEFAULT, 21, 'Y')")).isEqualTo(1);
+    assertThat((String) value("SELECT id FROM person WHERE pid = 21")).startsWith("#");
+  }
+
+  @Test
+  void genRandomUuidGivesAnotherUuidInEveryRow() {
+    assertThat(command("INSERT INTO company (cid, name) SELECT pid + 100, gen_random_uuid() FROM person")).isEqualTo(5);
+    final List<Result> names = query("SELECT name FROM company WHERE cid > 100");
+    assertThat(names).hasSize(5);
+    assertThat(names.stream().map(r -> (String) r.getProperty("name")).distinct()).hasSize(5)
+        .allMatch(n -> n.matches("[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"));
+    assertThat(value("SELECT length(gen_random_uuid()::text)")).isEqualTo(36);
+    assertState(() -> query("SELECT gen_random_uuid(1)"), "42883");
+  }
+
+  @Test
   void insertDefaultValuesAndTheWholeRowWithoutAColumnList() {
     assertThat(command("INSERT INTO company DEFAULT VALUES")).isEqualTo(1);
     assertThat(value("SELECT count(*) FROM company WHERE cid IS NULL")).isEqualTo(1L);

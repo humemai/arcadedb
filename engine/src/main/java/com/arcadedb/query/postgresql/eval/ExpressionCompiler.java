@@ -1023,6 +1023,17 @@ public final class ExpressionCompiler {
     final PgType text = PgType.TEXT;
     final PgType int4 = PgType.INT4;
     switch (name) {
+    case "gen_random_uuid": {
+      // PostgreSQL returns a uuid, a type the language does not have: the value is the text form, 36 characters, a version 4 uuid,
+      // which a text column takes and which compares and casts to text as the uuid does. Not strict and not constant: one per row
+      if (args.length != 0) {
+        final PgType[] types = new PgType[args.length];
+        for (int i = 0; i < types.length; i++)
+          types[i] = args[i].type();
+        throw PostgreSQLEvaluationException.noFunction(name, types);
+      }
+      return new Evaluable.Node(text, row -> java.util.UUID.randomUUID().toString());
+    }
     case "lower": {
       final Evaluable[] a = arguments(name, args, text);
       return strictCall(text, a, v -> Text.lower((String) v[0]));

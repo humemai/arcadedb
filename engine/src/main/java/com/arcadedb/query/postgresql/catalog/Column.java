@@ -104,6 +104,15 @@ public final class Column {
   }
 
   /**
+   * Whether the engine gives the value of this column and a statement cannot choose it: the record id ({@link Kind#IDENTITY}).
+   * The views report it as {@code GENERATED ALWAYS AS IDENTITY}, and a value given for it is {@code 428C9}, as PostgreSQL
+   * refuses a value for such a column. The endpoints of an edge are not generated: a statement names them.
+   */
+  public boolean isGeneratedAlways() {
+    return kind == Kind.IDENTITY;
+  }
+
+  /**
    * The name of the property behind a {@link Kind#PROPERTY} column, else {@code null}. It differs from {@link #name()} only for a
    * property that has the name of an endpoint column of an edge table ({@code source_id_} shows the property {@code source_id}).
    */

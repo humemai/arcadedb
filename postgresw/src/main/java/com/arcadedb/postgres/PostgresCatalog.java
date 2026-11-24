@@ -158,7 +158,10 @@ public class PostgresCatalog {
    * A column of a relation: a {@code pg_attribute} row, numbered by its position in the list {@link Context#columnsOf} answers - a
    * declared property of a table, or what the query of a materialized view projects (issue #10799).
    */
-  private record Column(String name, PostgresType type, boolean notNull, Object defaultValue) {
+  private record Column(String name, PostgresType type, boolean notNull, Object defaultValue, boolean generatedAlways) {
+    Column(final String name, final PostgresType type, final boolean notNull, final Object defaultValue) {
+      this(name, type, notNull, defaultValue, false);
+    }
   }
   /**
    * How much work one statement may do, in rows read plus sub-select tokens re-read. Nesting depth alone does not
@@ -2599,7 +2602,7 @@ public class PostgresCatalog {
 
         final Row row = relationRow(context, type)//
             .with("pg_attribute", attributeValues(oidOf(type.getName()), column.name(), ordinal, pgType, notNull,
-                defaultValue != null, local, inheritedCount));
+                defaultValue != null, local, inheritedCount, column.generatedAlways()));
         if (table)
           row.with("information_schema.columns", "table_catalog", schema, "table_schema", schema, "table_name",
                 type.getName(), "column_name", column.name(), "ordinal_position", ordinal,//
@@ -2607,8 +2610,10 @@ public class PostgresCatalog {
                 // data_type is the SQL standard name and udt_name the pg_type one: PostgreSQL keeps the two apart, and an
                 // array is the literal ARRAY in the first (its element type is another relation's business) - issue #10370
                 "is_nullable", notNull ? "NO" : "YES", "data_type", pgType.isArrayType() ? "ARRAY" : pgType.sqlName(),
-                "udt_catalog", schema, "udt_schema", PG_CATALOG_SCHEMA, "udt_name", pgType.typeName, "is_identity", "NO",
-                "is_generated", "NEVER", "is_updatable", "YES",//
+                "udt_catalog", schema, "udt_schema", PG_CATALOG_SCHEMA, "udt_name", pgType.typeName,
+                // the record id of the language is GENERATED ALWAYS AS IDENTITY: the engine gives it and a statement cannot
+                "is_identity", column.generatedAlways() ? "YES" : "NO", "identity_generation",
+                column.generatedAlways() ? "ALWAYS" : null, "is_generated", "NEVER", "is_updatable", "YES",//
                 // no column here declares a length, a precision or a scale, which is PostgreSQL's typmod -1: the figures below
                 // are the ones it answers for a built-in type declared bare
                 "character_octet_length", characterOctetLength(pgType), "numeric_precision", numericPrecision(pgType),
@@ -2637,13 +2642,13 @@ public class PostgresCatalog {
    * column itself, and from how many of its direct parents it inherits it (issue #10594).
    */
   private static Object[] attributeValues(final int relationOid, final String name, final int ordinal, final PostgresType pgType,
-      final boolean notNull, final boolean hasDefault, final boolean local, final int inheritedCount) {
+      final boolean notNull, final boolean hasDefault, final boolean local, final int inheritedCount, final boolean generatedAlways) {
     return new Object[] { "attrelid", relationOid, "attname", name, "attnum", ordinal, "atttypid", pgType.code, "attlen",
         pgType.size, "atttypmod", -1, "attnotnull", notNull, "atthasdef", hasDefault, "attisdropped", Boolean.FALSE, "attislocal",
         local, "attinhcount", inheritedCount, "attndims", pgType.isArrayType() ? 1 : 0,
         // the collation of the column's type, as PostgreSQL stores it, so a join to pg_type reads one answer (issue #10873)
         "attcollation", PostgresTypeCatalog.collation(pgType), "attstattarget", -1,
-        "attidentity", "", "attgenerated", "", "atthasmissing", Boolean.FALSE, "attbyval", pgType.size > 0 && pgType.size <= 8,
+        "attidentity", generatedAlways ? "a" : "", "attgenerated", "", "atthasmissing", Boolean.FALSE, "attbyval", pgType.size > 0 && pgType.size <= 8,
         "attalign", "i", "attcompression", "",
         // A variable-length value is stored "extended" in PostgreSQL, a fixed-length one "plain".
         "attstorage", pgType.size > 0 ? "p" : "x" };
@@ -2763,7 +2768,7 @@ public class PostgresCatalog {
         final PostgresType pgType = keyTypes[k];
         rows.add(describeType(indexRow(context, index)//
             // an index's key columns are its own, as in PostgreSQL: an index inherits nothing
-            .with("pg_attribute", attributeValues(index.oid(), index.attributeNames()[k], k + 1, pgType, false, false, true, 0)),
+            .with("pg_attribute", attributeValues(index.oid(), index.attributeNames()[k], k + 1, pgType, false, false, true, 0, false)),
                 pgType)
             .complete());
       }
@@ -3031,7 +3036,8 @@ public class PostgresCatalog {
   private static List<Column> relationalColumns(final Table table) {
     final List<Column> columns = new ArrayList<>(table.columns().size());
     for (final com.arcadedb.query.postgresql.catalog.Column column : table.columns())
-      columns.add(new Column(column.name(), PostgresLanguageAnswer.wireType(column.type().typeName()), !column.nullable(), null));
+      columns.add(new Column(column.name(), PostgresLanguageAnswer.wireType(column.type().typeName()), !column.nullable(), null,
+          column.isGeneratedAlways()));
     return columns;
   }
 
