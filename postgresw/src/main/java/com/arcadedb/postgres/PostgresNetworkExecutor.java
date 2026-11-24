@@ -834,13 +834,15 @@ public class PostgresNetworkExecutor extends Thread {
 
       // Now send RowDescription or NoData
       // For SELECT queries, we need to determine the columns from the type schema
-      if (portal.isExpectingResult && portal.columns == null && !languagePortal) {
+      if (portal.isExpectingResult && portal.columns == null && (!languagePortal || portal.catalogQuery)) {
         if (!portal.catalogQuery)
           portal.columns = getColumnsFromQuerySchema(portal.query, portal.sqlStatement);
         else {
           // A catalog query whose filters are bound parameters is answered at Execute, but the columns are those of
-          // the emulated catalog relation whatever the filter values are, so they can be named now (issue #8379)
-          portal.columns = describeCatalogColumns(portal.query);
+          // the emulated catalog relation whatever the filter values are, so they can be named now (issue #8379). A catalog
+          // query of the postgresql language is one too: the JDBC driver prepares its metadata calls with the name patterns
+          // as parameters (fork issue #12)
+          portal.columns = describeCatalogColumns(portal.language, portal.query);
         }
       }
 
@@ -911,7 +913,7 @@ public class PostgresNetworkExecutor extends Thread {
     publishStatementTimeout();
     if (portal.catalogQuery) {
       // Deferred from parseCommand because the query's filters are bound parameters (issue #6412).
-      final CatalogAnswer catalogAnswer = handleCatalogQuery(portal.query, getParams(portal));
+      final CatalogAnswer catalogAnswer = handleCatalogQuery(portal.language, portal.query, getParams(portal));
       // A Describe('S') already announced the columns, and the rows are encoded from what the client was told
       if (catalogAnswer != null && !portal.columnsDescribed)
         portal.columns = catalogAnswer.columns();
@@ -1132,7 +1134,7 @@ public class PostgresNetworkExecutor extends Thread {
           // The same for a catalog query answered at Parse: the schema as it stands at THIS Execute, not the one a named
           // prepared statement saw at Parse, in both directions (a type created or dropped since). The columns are those
           // of the emulated relation whatever the rows are, so the ones Parse (or a Describe) fixed stay (issue #10922)
-          final CatalogAnswer fresh = handleCatalogQuery(portal.query);
+          final CatalogAnswer fresh = handleCatalogQuery(portal.language, portal.query);
           // A query that is no longer recognised keeps the answer Parse gave it, as before this refresh existed
           if (fresh != null)
             portal.fullResultSet = fresh.rows();
@@ -1627,7 +1629,7 @@ public class PostgresNetworkExecutor extends Thread {
       } else {
         // A query about the emulated system catalog, which every client sends and which ArcadeDB's own SQL
         // engine has no tables for (issue #6412).
-        catalogAnswer = handleCatalogQuery(query.query);
+        catalogAnswer = handleCatalogQuery(query.language, query.query);
         if (catalogAnswer != null) {
           resultSet = new IteratorResultSet(catalogAnswer.rows().iterator());
         } else {
@@ -1863,7 +1865,7 @@ public class PostgresNetworkExecutor extends Thread {
    *
    * @return the answer, or null when the query is not about the catalog at all and must be executed normally
    */
-  private CatalogAnswer handleCatalogQuery(final String query, final Object... parameters) {
+  private CatalogAnswer handleCatalogQuery(final String language, final String query, final Object... parameters) {
     if (!PostgresCatalog.mightBeAnswered(query))
       return null;
 
@@ -1879,7 +1881,16 @@ public class PostgresNetworkExecutor extends Thread {
     if (types != null)
       return new CatalogAnswer(toResults(types.rows), types.columns);
 
-    final PostgresCatalog.Answer answer = PostgresCatalog.resolveForSession(query, database, userName, sessionSettings, parameters);
+    // A value of a parameter the client declared no type for reaches the language as UnknownText; the catalog reads it as the text
+    // it is, as for every other language (psycopg's lookup of a type, to_regtype($1), binds one)
+    final Object[] catalogParameters = new Object[parameters.length];
+    for (int i = 0; i < parameters.length; i++)
+      catalogParameters[i] = parameters[i] instanceof UnknownText unknown ? unknown.text() : parameters[i];
+
+    // The relational names are seen per statement, by the language it runs in (fork issue #10): a statement of the postgresql
+    // language sees the tables, columns and keys of the relational view, and reads information_schema from the language
+    final PostgresCatalog.Answer answer = PostgresCatalog.resolveForStatement(query, database, userName, sessionSettings,
+        PostgresQueryLanguages.POSTGRESQL.equals(language), catalogParameters);
     if (answer != null) {
       if (answer.rows != null)
         return new CatalogAnswer(toResults(answer.rows), answer.columns);
@@ -1895,7 +1906,7 @@ public class PostgresNetworkExecutor extends Thread {
     // name, in an INSERT - goes to the engine like any other (issue #10695)
     // A probe this catalog cannot evaluate is refused like a declined catalog query, not answered with no row: PostgreSQL answers
     // a FROM-less SELECT with exactly one row or an error (issue #10883)
-    final PostgresCatalog.Answer probe = PostgresCatalog.resolveProbe(query, database, userName, sessionSettings, parameters);
+    final PostgresCatalog.Answer probe = PostgresCatalog.resolveProbe(query, database, userName, sessionSettings, catalogParameters);
     if (probe == PostgresCatalog.DECLINED)
       return refuseCatalogQuery(query, parameters, true);
     if (probe != null)
@@ -2430,8 +2441,8 @@ public class PostgresNetworkExecutor extends Thread {
    * but a shape whose resolver needs a value to recognise it declines the query while the parameters are unbound, so it is
    * asked again with a placeholder for each of them: only the columns are kept, never the rows of that probe (issue #8562).
    */
-  private Map<String, PostgresType> describeCatalogColumns(final String query) {
-    CatalogAnswer answer = handleCatalogQuery(query);
+  private Map<String, PostgresType> describeCatalogColumns(final String language, final String query) {
+    CatalogAnswer answer = handleCatalogQuery(language, query);
     if (answer != null && !answer.columns().isEmpty())
       return answer.columns();
 
@@ -2441,7 +2452,7 @@ public class PostgresNetworkExecutor extends Thread {
       final Object[] probe = new Object[placeholders];
       Arrays.fill(probe, "");
       try {
-        answer = handleCatalogQuery(query, probe);
+        answer = handleCatalogQuery(language, query, probe);
       } catch (final RuntimeException e) {
         if (DEBUG)
           LogManager.instance().log(this, Level.INFO, "PSQL: cannot name the columns of catalog query '%s': %s", query, e.getMessage());
@@ -4054,7 +4065,7 @@ public class PostgresNetworkExecutor extends Thread {
         // One that carries parameters cannot be answered yet: the JDBC driver puts the name patterns of its
         // table and column lists in them, and their values only arrive with the Bind message. It is marked
         // here and answered in executeCommand, with the values in hand.
-        final CatalogAnswer catalogAnswer = handleCatalogQuery(portal.query);
+        final CatalogAnswer catalogAnswer = handleCatalogQuery(portal.language, portal.query);
         if (catalogAnswer != null && actualParamCount > 0) {
           // Recognised, but its filters are bound parameters whose values only arrive with Bind: the answer
           // computed here would ignore them, so it is thrown away and recomputed in executeCommand.

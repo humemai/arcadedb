@@ -25,6 +25,8 @@ import com.arcadedb.postgres.PostgresCatalogSyntax.FromEntry;
 import com.arcadedb.postgres.PostgresCatalogSyntax.Join;
 import com.arcadedb.postgres.PostgresCatalogSyntax.SetOperation;
 import com.arcadedb.postgres.PostgresCatalogSyntax.Statement;
+import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
+import com.arcadedb.query.postgresql.catalog.Table;
 import com.arcadedb.query.sql.parser.FromItem;
 import com.arcadedb.query.sql.parser.SelectStatement;
 import com.arcadedb.schema.ContinuousAggregate;
@@ -575,7 +577,7 @@ public class PostgresCatalog {
     columnTypes("pg_constraint", PostgresType.INTEGER, "oid", "connamespace", "conrelid", "contypid", "conindid", "conparentid",
         "confrelid", "coninhcount");
     columnTypes("pg_constraint", PostgresType.BOOLEAN, "condeferrable", "condeferred", "convalidated", "conislocal", "connoinherit");
-    columnTypes("pg_constraint", PostgresType.ARRAY_INT, "conkey");
+    columnTypes("pg_constraint", PostgresType.ARRAY_INT, "conkey", "confkey");
     columnTypes("information_schema.key_column_usage", PostgresType.INTEGER, "ordinal_position");
     columnTypes("pg_inherits", PostgresType.INTEGER, "inhrelid", "inhparent", "inhseqno");
     columnTypes("pg_inherits", PostgresType.BOOLEAN, "inhdetachpending");
@@ -742,6 +744,19 @@ public class PostgresCatalog {
    */
   static Answer resolveForSession(final String query, final Database database, final String userName,
       final PostgresSessionSettings settings, final Object... parameters) {
+    return resolveForStatement(query, database, userName, settings, false, parameters);
+  }
+
+  /**
+   * {@link #resolveForSession} for a statement that runs in a given language (fork issue #10, decision of 2026-11-24): the
+   * relational names are seen per statement, by the language it runs in. A statement of the {@code postgresql} language
+   * ({@code relational}) sees the tables, columns, keys and indexes of the relational view of the engine (the columns of
+   * {@code SELECT *}, {@code id} or {@code rid}, {@code source_id} and {@code target_id}, a primary key, foreign keys), and reads
+   * {@code information_schema} from the language: such a statement is not answered here, it goes on to the language, whose seven
+   * views come from the same view. Every other statement is answered as it always was, from the types and their properties.
+   */
+  static Answer resolveForStatement(final String query, final Database database, final String userName,
+      final PostgresSessionSettings settings, final boolean relational, final Object... parameters) {
     if (query == null || database == null)
       return null;
 
@@ -762,22 +777,89 @@ public class PostgresCatalog {
       tokens.remove(tokens.size() - 1);
 
     substituteParameters(tokens, parameters);
-    tokens = plainSpellings(tokens);
+    tokens = withoutPartitionAncestors(plainSpellings(tokens));
+
+    // the information_schema of a statement of the language is the language's own, one source for the columns and the keys
+    if (relational && namesInformationSchema(tokens))
+      return null;
 
     if (!catalogNamed) {
       // Reached only for being a set operation: anything this catalog cannot evaluate is the SQL engine's to
       // answer - with its own error, rather than with the empty result set a declined catalog query gets.
       if (!containsSetOperation(tokens))
         return null;
-      final Answer answer = resolveBounded(tokens, context(database, userName, settings), true);
+      final Answer answer = resolveBounded(tokens, context(database, userName, settings, relational), true);
       return answer == DECLINED ? null : textOfVectors(answer);
     }
 
-    return textOfVectors(resolveBounded(tokens, context(database, userName, settings), false));
+    return textOfVectors(resolveBounded(tokens, context(database, userName, settings, relational), false));
   }
 
-  private static Context context(final Database database, final String userName, final PostgresSessionSettings settings) {
-    return new Context(database, userName, settings != null ? settings : new PostgresSessionSettings());
+  /**
+   * psql lists the constraints that refer to a table (the "Referenced by" of {@code \d}) with
+   * {@code confrelid IN (SELECT pg_partition_ancestors('oid') UNION ALL VALUES ('oid'::regclass))}. No relation of this catalog is a
+   * partition, so the first arm has no row: it is dropped, and the {@code VALUES} of one column is read as the {@code SELECT} of
+   * its expression, which this catalog evaluates. Without it the filter was unreadable, which keeps every row, and the list had every
+   * foreign key of the database (a foreign key is the first constraint of kind {@code f} to be listed).
+   */
+  private static List<PostgresCatalogToken> withoutPartitionAncestors(final List<PostgresCatalogToken> tokens) {
+    final List<PostgresCatalogToken> result = new ArrayList<>(tokens.size());
+    int i = 0;
+    while (i < tokens.size()) {
+      // the function name follows SELECT, with or without its schema
+      final int name = i + 3 < tokens.size() && tokens.get(i + 1).isKeyword("pg_catalog") && tokens.get(i + 2).isSymbol(".") ? i + 3 : i + 1;
+      if (tokens.get(i).isKeyword("SELECT") && name + 1 < tokens.size() && tokens.get(name).isKeyword("pg_partition_ancestors")
+          && tokens.get(name + 1).isSymbol("(")) {
+        final int close = closingParenthesis(tokens, name + 1);
+        if (close > 0 && close + 3 < tokens.size() && tokens.get(close + 1).isKeyword("UNION") && tokens.get(close + 2).isKeyword("ALL")
+            && tokens.get(close + 3).isKeyword("VALUES") && close + 4 < tokens.size() && tokens.get(close + 4).isSymbol("(")) {
+          final int valuesClose = closingParenthesis(tokens, close + 4);
+          if (valuesClose > 0) {
+            result.add(tokens.get(i));
+            result.addAll(tokens.subList(close + 5, valuesClose));
+            i = valuesClose + 1;
+            continue;
+          }
+        }
+      }
+      result.add(tokens.get(i));
+      ++i;
+    }
+    return result;
+  }
+
+  /** The position of the parenthesis that closes the one at {@code open}, or -1. */
+  private static int closingParenthesis(final List<PostgresCatalogToken> tokens, final int open) {
+    int depth = 0;
+    for (int i = open; i < tokens.size(); i++) {
+      if (tokens.get(i).isSymbol("("))
+        ++depth;
+      else if (tokens.get(i).isSymbol(")") && --depth == 0)
+        return i;
+    }
+    return -1;
+  }
+
+  private static Context context(final Database database, final String userName, final PostgresSessionSettings settings,
+      final boolean relational) {
+    return new Context(database, userName, settings != null ? settings : new PostgresSessionSettings(), relational);
+  }
+
+  /**
+   * Whether the statement reads a relation of {@code information_schema}: the word as a schema name (not a string literal, not part
+   * of a longer name) in front of a name that is no function call. The function {@code information_schema._pg_expandarray(...)} is
+   * not a view of the language: the JDBC driver calls it in {@code getPrimaryKeys} and {@code getIndexInfo}, over {@code pg_index}.
+   */
+  private static boolean namesInformationSchema(final List<PostgresCatalogToken> tokens) {
+    for (int i = 0; i < tokens.size(); i++) {
+      if (!tokens.get(i).isKeyword("information_schema"))
+        continue;
+      final boolean qualified = i + 2 < tokens.size() && tokens.get(i + 1).isSymbol(".");
+      final boolean call = qualified && i + 3 < tokens.size() && tokens.get(i + 3).isSymbol("(");
+      if (!call)
+        return true;
+    }
+    return false;
   }
 
   /**
@@ -820,7 +902,7 @@ public class PostgresCatalog {
 
     final Answer answer;
     try {
-      answer = project(statement, List.of(), List.of(new Row()), context(database, userName, settings), Map.of(), true, null);
+      answer = project(statement, List.of(), List.of(new Row()), context(database, userName, settings, false), Map.of(), true, null);
     } catch (final PostgresCatalogExpression.BudgetExceeded e) {
       throw new WorkLimitExceeded();
     }
@@ -1894,6 +1976,11 @@ public class PostgresCatalog {
     private final Database database;
     private final String   userName;
     private final PostgresSessionSettings settings;
+    /** Whether the statement runs in the {@code postgresql} language, which sees the relational view (see {@link #resolveForStatement}). */
+    private final boolean  relational;
+    /** The tables of the relational view by the name of their type, built at most once per statement, for a relational one only. */
+    private Map<String, Table> tablesByName;
+    private List<PostgresCatalogIndexes.Reference>                  references = List.of();
 
     /** The types the session's principal may read, in name order: every relation of this catalog is built off it, once per statement. */
     private List<DocumentType>        readableTypes;
@@ -1920,10 +2007,34 @@ public class PostgresCatalog {
     /** The rows of each relation a join reads, built at most once per statement for the same reason {@link #rowsByFamily} is. */
     private final Map<String, List<Map<String, Object>>> joinRows = new HashMap<>();
 
-    Context(final Database database, final String userName, final PostgresSessionSettings settings) {
+    Context(final Database database, final String userName, final PostgresSessionSettings settings, final boolean relational) {
       this.database = database;
       this.userName = userName;
       this.settings = settings;
+      this.relational = relational;
+    }
+
+    /** The table of the relational view that a type is, or null: a statement that is not relational has none, and a time series type is no table. */
+    Table tableOf(final String typeName) {
+      return tables().get(typeName);
+    }
+
+    /** The tables of the relational view by the name of their type: none for a statement that is not relational. */
+    Map<String, Table> tables() {
+      if (tablesByName == null) {
+        final Map<String, Table> tables = new HashMap<>();
+        if (relational)
+          for (final Table table : RelationalCatalog.of(database).tables())
+            tables.put(table.name(), table);
+        tablesByName = tables;
+      }
+      return tablesByName;
+    }
+
+    /** The foreign keys of the relational view, which have no index: none for a statement that is not relational. */
+    List<PostgresCatalogIndexes.Reference> references() {
+      indexes();
+      return references;
     }
 
     /** The run-time parameters of the connection that asked, which {@code pg_settings} lists (issue #10591). */
@@ -1947,8 +2058,15 @@ public class PostgresCatalog {
         final Set<Integer> typeOids = new HashSet<>();
         for (final DocumentType type : types)
           typeOids.add(oidOf(type.getName()));
-        indexes = PostgresCatalogIndexes.of(types, type -> oidOf(type.getName()), this::columnNames, typeOids, FIRST_USER_OID,
-            OID_SPACE);
+        if (relational) {
+          // the keys of the relational view: the primary key and the unique keys as indexes, the foreign keys beside them
+          final PostgresCatalogIndexes.Keys keys = PostgresCatalogIndexes.ofRelational(types, tables(),
+              type -> oidOf(type.getName()), typeOids, FIRST_USER_OID, OID_SPACE);
+          indexes = keys.indexes();
+          references = keys.references();
+        } else
+          indexes = PostgresCatalogIndexes.of(types, type -> oidOf(type.getName()), this::columnNames, typeOids, FIRST_USER_OID,
+              OID_SPACE);
 
         indexedTypes = new HashSet<>();
         indexesByOid = new HashMap<>();
@@ -1998,7 +2116,8 @@ public class PostgresCatalog {
       List<Column> columns = columnsByType.get(type.getName());
       if (columns == null) {
         final MaterializedRelation view = materializedRelation(type.getName());
-        columns = view != null ? viewColumns(this, type, view) : tableColumns(type);
+        final Table table = view == null ? tableOf(type.getName()) : null;
+        columns = view != null ? viewColumns(this, type, view) : table != null ? relationalColumns(table) : tableColumns(type);
         columnsByType.put(type.getName(), columns);
       }
       return columns;
@@ -2068,8 +2187,9 @@ public class PostgresCatalog {
       return userName;
     }
 
+    /** The one schema: the name of the database, and {@code public} for a statement of the language, which names its tables so. */
     String schema() {
-      return database.getName();
+      return relational ? RelationalCatalog.SCHEMA : database.getName();
     }
 
     /** The materialized view whose {@code _RETURN} rule has {@code oid} (issue #10976), or null for an OID that names no rule. */
@@ -2702,6 +2822,9 @@ public class PostgresCatalog {
     for (final PostgresCatalogIndexes.Info index : context.indexes())
       if (index.hasConstraint())
         rows.add(completeMap("pg_constraint", PostgresCatalogIndexes.constraintValues(index, SCHEMA_OID)));
+    // the foreign keys of the relational view have no index to be read from: a second source of constraints (fork issue #10)
+    for (final PostgresCatalogIndexes.Reference key : context.references())
+      rows.add(completeMap("pg_constraint", PostgresCatalogIndexes.referenceValues(key, SCHEMA_OID)));
     return rows;
   }
 
@@ -2888,6 +3011,9 @@ public class PostgresCatalog {
   private static List<DocumentType> sortedTypes(final Context context) {
     if (context.readableTypes == null) {
       final List<DocumentType> types = new ArrayList<>(readableTypes(context.database()));
+      // a statement of the language sees the tables of the relational view, and a type that is none (time series) is not one
+      if (context.relational)
+        types.removeIf(type -> context.tableOf(type.getName()) == null);
       types.sort(Comparator.comparing(DocumentType::getName));
       context.readableTypes = Collections.unmodifiableList(types);
     }
@@ -2896,6 +3022,17 @@ public class PostgresCatalog {
 
   private static Collection<? extends DocumentType> readableTypes(final Database database) {
     return SecurityHelper.readableTypes((DatabaseInternal) database);
+  }
+
+  /**
+   * The columns of a table of the relational view, which is what {@code SELECT *} of the language answers: the record id, the ends
+   * of an edge, then the declared properties, typed as the language types them and NOT NULL as it says (fork issue #10).
+   */
+  private static List<Column> relationalColumns(final Table table) {
+    final List<Column> columns = new ArrayList<>(table.columns().size());
+    for (final com.arcadedb.query.postgresql.catalog.Column column : table.columns())
+      columns.add(new Column(column.name(), PostgresLanguageAnswer.wireType(column.type().typeName()), !column.nullable(), null));
+    return columns;
   }
 
   /** The columns of a table: its {@link #sortedProperties}, each typed and constrained as it is declared. */
@@ -4026,7 +4163,12 @@ public class PostgresCatalog {
       if (!(arguments.get(0) instanceof Number oid))
         return null;
       final PostgresCatalogIndexes.Info index = context.constraintWithOid(oid.intValue());
-      return index == null ? null : PostgresCatalogIndexes.constraintDefinition(index);
+      if (index != null)
+        return PostgresCatalogIndexes.constraintDefinition(index);
+      for (final PostgresCatalogIndexes.Reference key : context.references())
+        if (key.oid() == oid.intValue())
+          return PostgresCatalogIndexes.referenceDefinition(key);
+      return null;
     }
 
     /**
