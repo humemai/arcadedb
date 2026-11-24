@@ -608,6 +608,11 @@ public final class JoinPlanner {
     for (final Candidate candidate : candidates)
       keys.add(candidate.key());
     final Evaluable residual = residuals.isEmpty() ? null : allOf(residuals);
+    // PostgreSQL refuses a FULL join whose condition has no equality to hash or merge on; a condition that is only true has none to
+    // refuse, and the join is the nested loop with flags
+    if (join.type == TableReference.JoinType.FULL && keys.isEmpty() && !matching.isEmpty())
+      throw new com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException(
+          "FULL JOIN is only supported with merge-joinable or hash-joinable join conditions");
     final String condition = texts.isEmpty() ? "true" : String.join(" AND ", texts);
 
     final long leftRows = estimate(left);

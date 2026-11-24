@@ -1610,8 +1610,8 @@ g2-cross-join-then-inner	ok	inside	-	SELECT * FROM a CROSS JOIN b JOIN c ON a.x 
 g2-cross-join-in-parens	ok	inside	-	SELECT * FROM a JOIN (b CROSS JOIN c) ON a.x = b.x	g2 (fork issue #61)	42P01
 g2-cross-join-on	syntax-error	unknown	-	SELECT * FROM a CROSS JOIN b ON a.x = b.x	g2 (fork issue #61)	42601
 g2-cross-join-using	syntax-error	unknown	-	SELECT * FROM a CROSS JOIN b USING (x)	g2 (fork issue #61)	42601
-g3-right-outer-join-using	pending-server	inside	-	SELECT * FROM a RIGHT OUTER JOIN b USING (x)	g3 (fork issue #57)	-
-g3-full-outer-join-using	pending-server	inside	-	SELECT * FROM a FULL OUTER JOIN b USING (x, y)	g3 (fork issue #57)	-
-g3-join-chain-all-kinds	pending-server	inside	-	SELECT * FROM a LEFT JOIN b ON a.x = b.x RIGHT JOIN c ON b.y = c.y FULL JOIN d ON c.z = d.z INNER JOIN e ON d.w = e.w	g3 (fork issue #57)	-
-g3-full-join-no-condition	pending-server	unknown	-	SELECT * FROM a FULL JOIN b	g3 (fork issue #57)	-
-g3-natural-full-join-stays-out	pending-server	outside	-	SELECT * FROM a NATURAL FULL JOIN b	g3 (fork issue #57)	-
+g3-right-outer-join-using	ok	inside	-	SELECT * FROM a RIGHT OUTER JOIN b USING (x)	g3 (fork issue #57)	42P01
+g3-full-outer-join-using	ok	inside	-	SELECT * FROM a FULL OUTER JOIN b USING (x, y)	g3 (fork issue #57)	42P01
+g3-join-chain-all-kinds	ok	inside	-	SELECT * FROM a LEFT JOIN b ON a.x = b.x RIGHT JOIN c ON b.y = c.y FULL JOIN d ON c.z = d.z INNER JOIN e ON d.w = e.w	g3 (fork issue #57)	42P01
+g3-full-join-no-condition	syntax-error	unknown	-	SELECT * FROM a FULL JOIN b	g3 (fork issue #57)	42601
+g3-natural-full-join-stays-out	ok	outside	-	SELECT * FROM a NATURAL FULL JOIN b	g3 (fork issue #57)	42P01

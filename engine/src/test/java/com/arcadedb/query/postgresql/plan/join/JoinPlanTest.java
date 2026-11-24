@@ -434,9 +434,10 @@ class JoinPlanTest extends TestHelper {
         .containsExactly(row("Cy", null), row("Ed", null), row(null, 105));
     assertThat(count("SELECT count(*) FROM orders a FULL JOIN orders b ON a.pid = b.pid")).as("two NULL keys do not match, both come out")
         .isEqualTo(9 + 2);
-    assertThat(count("SELECT count(*) FROM person a FULL JOIN company c ON a.pid > c.cid / 10 + 3")).as("nested loop: 1 match, 4 and 2 alone")
-        .isEqualTo(7);
-    assertThat(plan("SELECT count(*) FROM person a FULL JOIN company c ON a.pid > c.cid / 10 + 3")).contains("NESTED LOOP FULL");
+    assertThat(count("SELECT count(*) FROM person a FULL JOIN company c ON true")).as("nested loop: every pair").isEqualTo(15);
+    assertThat(plan("SELECT count(*) FROM person a FULL JOIN company c ON true")).contains("NESTED LOOP FULL");
+    assertThat(state("SELECT count(*) FROM person a FULL JOIN company c ON a.pid > c.cid / 10 + 3")).as("as PostgreSQL: no equality").isEqualTo("0A000");
+    assertThat(state("SELECT 1 FROM person a FULL JOIN company c ON a.city = 'Delft'")).isEqualTo("0A000");
     assertThat(count("SELECT count(*) FROM person p FULL JOIN (SELECT cid FROM company WHERE cid < 0) c ON p.pid = c.cid")).isEqualTo(5);
     assertThat(rows("SELECT p.name, o.oid FROM person p FULL JOIN orders o ON o.pid = p.pid AND o.total > 9 ORDER BY p.pid, o.oid").size())
         .as("a residual that fails leaves both rows alone: 3 pairs, 3 persons and 3 orders").isEqualTo(9);
@@ -460,7 +461,7 @@ class JoinPlanTest extends TestHelper {
       final String hash = "SELECT count(*) FROM person p " + kind + " JOIN orders o ON o.pid = p.pid";
       assertThatThrownBy(() -> planned(hash, 100L).execute(database).hasNext()).isInstanceOfSatisfying(PostgreSQLEvaluationException.class,
           e -> assertThat(e.getSqlState()).isEqualTo("53200"));
-      final String nested = "SELECT count(*) FROM person p " + kind + " JOIN orders o ON o.pid < p.pid";
+      final String nested = "SELECT count(*) FROM person p " + kind + " JOIN orders o ON " + (kind.equals("FULL") ? "true" : "o.pid < p.pid");
       assertThatThrownBy(() -> planned(nested, 100L).execute(database).hasNext()).isInstanceOfSatisfying(PostgreSQLEvaluationException.class,
           e -> assertThat(e.getSqlState()).isEqualTo("53200"));
       assertThat(plan("SELECT count(*) FROM works_at w " + kind + " JOIN person p ON w.source_id = p.id")).doesNotContain("INDEX NESTED LOOP")
