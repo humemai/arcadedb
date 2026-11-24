@@ -1593,10 +1593,10 @@ c5-exists-with-set-operation	ok	inside	-	SELECT a FROM u WHERE EXISTS (SELECT 1 
 c5-exists-parenthesised-twice	ok	inside	-	SELECT a FROM u WHERE EXISTS ((SELECT 1))	written for the parser	42P01
 c5-exists-values	ok	outside	-	SELECT EXISTS (VALUES (1))	written for the parser	-
 c5-exists-unclosed	syntax-error	unknown	-	SELECT EXISTS (SELECT 1	written for the parser	42601
-g1-on-conflict-target-do-nothing	pending-server	inside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT (cid) DO NOTHING	g1 (fork issue #55)	-
-g1-on-conflict-do-update	pending-server	inside	-	INSERT INTO company (cid, name) VALUES (1, 'x') ON CONFLICT (cid) DO UPDATE SET name = EXCLUDED.name WHERE company.cid > 0 RETURNING cid	g1 (fork issue #55)	-
-g1-on-conflict-returning	pending-server	inside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT DO NOTHING RETURNING cid	g1 (fork issue #55)	-
-g1-out-on-conflict-on-constraint	pending-server	outside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT ON CONSTRAINT c DO NOTHING	g1 (fork issue #55)	-
-g1-out-on-conflict-expression	pending-server	outside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT (lower(name)) DO NOTHING	g1 (fork issue #55)	-
-g1-out-on-conflict-predicate	pending-server	outside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT (cid) WHERE cid > 0 DO NOTHING	g1 (fork issue #55)	-
-g1-on-conflict-do-update-no-target	pending-server	unknown	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT DO UPDATE SET cid = 1	g1 (fork issue #55)	-
+g1-on-conflict-target-do-nothing	ok	inside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT (cid) DO NOTHING	g1 (fork issue #55)	-
+g1-on-conflict-do-update	ok	inside	-	INSERT INTO company (cid, name) VALUES (1, 'x') ON CONFLICT (cid) DO UPDATE SET name = EXCLUDED.name WHERE company.cid > 0 RETURNING cid	g1 (fork issue #55)	-
+g1-on-conflict-returning	ok	inside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT DO NOTHING RETURNING cid	g1 (fork issue #55)	-
+g1-out-on-conflict-on-constraint	ok	outside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT ON CONSTRAINT c DO NOTHING	g1 (fork issue #55)	42704
+g1-out-on-conflict-expression	ok	outside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT (lower(name)) DO NOTHING	g1 (fork issue #55)	-
+g1-out-on-conflict-predicate	ok	outside	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT (cid) WHERE cid > 0 DO NOTHING	g1 (fork issue #55)	-
+g1-on-conflict-do-update-no-target	syntax-error	unknown	-	INSERT INTO company (cid) VALUES (1) ON CONFLICT DO UPDATE SET cid = 1	g1 (fork issue #55)	42601
