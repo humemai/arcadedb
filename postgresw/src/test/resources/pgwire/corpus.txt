@@ -1,0 +1,32 @@
+== list-tables
+\dt
+== list-tables-pattern
+\dt w*
+== list-relations
+\d
+== list-indexes
+\di
+== describe-person
+\d person
+== describe-company
+\d company
+== describe-works-at
+\d works_at
+== describe-orders
+\d orders
+== describe-primary-key-index
+\d person_pkey
+== describe-unique-index
+\d person_pid_key
+== describe-missing
+\d nosuch
+== select-join
+SELECT p.name, o.oid FROM orders o JOIN person p ON o.pid = p.pid ORDER BY o.oid;
+== select-group
+SELECT city, count(*) FROM person GROUP BY city ORDER BY city;
+== select-types
+SELECT oid, total, placed, tags FROM orders ORDER BY oid;
+== select-edge-property
+SELECT since FROM works_at ORDER BY since;
+== select-foreign-key-join
+SELECT p.name, c.name AS company FROM works_at w JOIN person p ON w.source_id = p.id JOIN company c ON w.target_id = c.id ORDER BY p.name, c.name, w.since;
