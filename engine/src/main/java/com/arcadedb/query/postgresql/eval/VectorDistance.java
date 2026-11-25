@@ -84,6 +84,7 @@ public final class VectorDistance implements Evaluable {
       return operand;
     if (operand.isConstant() && (type == PgType.UNKNOWN || type.isString())) {
       final Object value = operand.eval(new Object[0]);
+      ExpressionCompiler.inferParameter(operand, PgType.VECTOR);
       return new Evaluable.Constant(PgType.VECTOR, value == null ? null : parse((String) value));
     }
     return null;

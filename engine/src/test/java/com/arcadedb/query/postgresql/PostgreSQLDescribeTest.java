@@ -50,6 +50,68 @@ class PostgreSQLDescribeTest extends TestHelper {
     SmallFixture.load(database);
   }
 
+  private List<PgType> parameters(final String statement, final PgType... declared) {
+    return engine().describeStatement(statement, declared).parameterTypes();
+  }
+
+  @Test
+  void aDescribeReportsTheTypeEachParameterTakesFromItsContext() {
+    assertThat(parameters("SELECT name FROM person WHERE pid = $1")).containsExactly(PgType.INT4);
+    assertThat(parameters("SELECT name FROM person WHERE $2 = city AND age > $1")).containsExactly(PgType.INT4, PgType.TEXT);
+    assertThat(parameters("SELECT name FROM person WHERE pid IN ($1, $2)")).containsExactly(PgType.INT4, PgType.INT4);
+    assertThat(parameters("SELECT name FROM person WHERE age BETWEEN $1 AND $2")).containsExactly(PgType.INT4, PgType.INT4);
+    assertThat(parameters("SELECT name FROM person WHERE name LIKE $1")).containsExactly(PgType.TEXT);
+    assertThat(parameters("SELECT name FROM person ORDER BY pid LIMIT $1 OFFSET $2")).containsExactly(PgType.INT8, PgType.INT8);
+    assertThat(parameters("SELECT $1::int8")).containsExactly(PgType.INT8);
+    assertThat(parameters("SELECT $1")).containsExactly(PgType.TEXT);
+    assertThat(parameters("SELECT oid FROM orders WHERE total > $1 AND placed = $2")).containsExactly(PgType.NUMERIC, PgType.DATE);
+    assertThat(parameters("SELECT name FROM person WHERE $1 IN (SELECT pid FROM orders)")).containsExactly(PgType.INT4);
+    assertThat(parameters("SELECT name FROM person WHERE pid IN (SELECT pid FROM orders WHERE oid = $1)")).containsExactly(PgType.INT4);
+    assertThat(parameters("SELECT lag(name, $1) OVER (ORDER BY pid) FROM person")).containsExactly(PgType.INT4);
+    assertThat(parameters("SELECT coalesce(age, $1) FROM person")).containsExactly(PgType.INT4);
+    assertThat(parameters("SELECT age FROM person UNION SELECT $1")).containsExactly(PgType.INT4);
+    assertThat(parameters("EXPLAIN SELECT name FROM person WHERE pid = $1")).containsExactly(PgType.INT4);
+    // the first context decides, whatever the number of the parameter
+    assertThat(parameters("SELECT name FROM person WHERE $1::int IS NULL OR pid = $1")).containsExactly(PgType.INT4);
+  }
+
+  @Test
+  void aDescribeOfAWriteTypesAParameterAsItsColumn() {
+    assertThat(parameters("INSERT INTO person (pid, name, age, city) VALUES ($1, $2, $3, $4)"))
+        .containsExactly(PgType.INT4, PgType.VARCHAR, PgType.INT4, PgType.VARCHAR);
+    assertThat(parameters("INSERT INTO person (pid, name) SELECT $1, $2")).containsExactly(PgType.INT4, PgType.VARCHAR);
+    assertThat(parameters("UPDATE person SET age = $1 WHERE pid = $2")).containsExactly(PgType.INT4, PgType.INT4);
+    assertThat(parameters("UPDATE person SET age = $1 FROM orders WHERE orders.pid = person.pid AND orders.oid = $2"))
+        .containsExactly(PgType.INT4, PgType.INT4);
+    assertThat(parameters("DELETE FROM person WHERE pid = $1")).containsExactly(PgType.INT4);
+    assertThat(parameters("INSERT INTO person (pid, name) VALUES ($1, $2) ON CONFLICT (pid) DO UPDATE SET age = $3"))
+        .containsExactly(PgType.INT4, PgType.VARCHAR, PgType.INT4);
+  }
+
+  @Test
+  void aDeclaredTypeStaysAndAParameterNothingTypesIsUnknown() {
+    assertThat(parameters("SELECT name FROM person WHERE pid = $1", PgType.INT8)).containsExactly(PgType.INT8);
+    assertThat(parameters("SELECT name FROM person WHERE $1 IS NULL")).containsExactly(PgType.UNKNOWN);
+    assertThat(parameters("SELECT name FROM person WHERE pid = $2")).containsExactly(PgType.UNKNOWN, PgType.INT4);
+    assertThat(parameters("SELECT name FROM person")).isEmpty();
+  }
+
+  @Test
+  void theColumnsAreThoseOfARunWithValuesOfTheInferredTypes() {
+    // the output uses the parameter, and WHERE or HAVING types it, before or after the select list is planned
+    assertThat(describe("SELECT $1 AS p FROM person WHERE pid = $1")).containsExactly("p:int4");
+    assertThat(describe("SELECT $1 AS p FROM person GROUP BY city HAVING count(*) > $1")).containsExactly("p:int8");
+    try (final ResultSet resultSet = database.query("postgresql", "SELECT $1 AS p FROM person WHERE pid = $1", 2)) {
+      assertThat(((PostgreSQLResultSet) resultSet).columns()).extracting(PostgreSQLResultSet.Column::typeName).containsExactly("int4");
+    }
+  }
+
+  @Test
+  void twoContextsThatCannotShareATypeAreRefused() {
+    assertThatThrownBy(() -> parameters("SELECT name FROM person WHERE pid = $1 OR name = $1"))
+        .satisfies(e -> assertThat(PostgreSQLErrors.sqlState(e)).isEqualTo("42883"));
+  }
+
   @Test
   void aSelectIsDescribedWithTheTypesOfTheView() {
     assertThat(describe("SELECT name, age FROM person WHERE pid = $1")).containsExactly("name:varchar", "age:int4");

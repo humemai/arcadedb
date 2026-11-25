@@ -241,8 +241,10 @@ public final class WritePlanner {
         for (int i = 0; i < row.length; i++)
           checkSlot(targets.get(i), row[i].value(), row[i].type());
     if (selectTypes != null)
-      for (int i = 0; i < width; i++)
+      for (int i = 0; i < width; i++) {
+        selectPlan.inferParameter(i, Assignments.typeOf(targets.get(i)));
         checkSlot(targets.get(i), new Evaluable.Slot(selectTypes[i], i), selectTypes[i]);
+      }
 
     final Upsert upsert = insert.onConflict() == null ? null : new Upsert(insert.onConflict(), table, shape);
     if (upsert != null)
@@ -495,6 +497,7 @@ public final class WritePlanner {
       if (!assignment.value().isDefault()) {
         value = compiler.compile(assignment.value().expression());
         type = effectiveType(assignment.value().expression(), value);
+        ExpressionCompiler.inferParameter(value, Assignments.typeOf(column));
         if (!(value instanceof Evaluable.Constant constant && constant.value() == null))
           Assignments.check(type, column);
       }
@@ -548,6 +551,7 @@ public final class WritePlanner {
       throw new PostgreSQLEvaluationException("428C9", "cannot insert a non-DEFAULT value into column \"" + column.name()
           + "\". Detail: Column \"" + column.name() + "\" is an identity column defined as GENERATED ALWAYS. Hint: leave the column"
           + " out of the column list or write DEFAULT: the engine gives the record id of the new row");
+    ExpressionCompiler.inferParameter(value, Assignments.typeOf(column));
     if (value instanceof Evaluable.Constant constant && constant.value() == null)
       return;
     Assignments.check(type, column);
@@ -682,9 +686,13 @@ public final class WritePlanner {
             + column.name() + "\" is an identity column defined as GENERATED ALWAYS.");
       columns.add(column);
       defaults.add(assignment.value().isDefault());
-      if (!assignment.value().isDefault())
+      if (!assignment.value().isDefault()) {
+        // the value is planned as an output of a query: a bare parameter takes the type of its column before that
+        if (assignment.value().expression() instanceof Expression.ParameterRef reference)
+          parameters.inferDescribed(reference.index(), Assignments.typeOf(column));
         items.add(new SelectItem.Projection(position, assignment.value().expression(),
             new Name(position, "__set" + (items.size() - 1), true)));
+      }
     }
     final List<TableReference> from = new ArrayList<>();
     from.add(update.table());

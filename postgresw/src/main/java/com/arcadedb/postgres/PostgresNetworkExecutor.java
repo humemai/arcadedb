@@ -823,7 +823,7 @@ public class PostgresNetworkExecutor extends Thread {
         // The postgresql language plans the statement and names its columns without running it (fork issue #12). Before the
         // ParameterDescription, so that a statement it refuses is answered with the error alone
         try {
-          portal.columns = describeLanguageColumns(portal);
+          portal.columns = describeLanguageStatement(portal);
         } catch (final RuntimeException e) {
           setExtendedProtocolError();
           writeError(ERROR_SEVERITY.ERROR, clientMessage("Error on describing query: " + e.getMessage(), e), sqlStateFor(e));
@@ -3696,9 +3696,7 @@ public class PostgresNetworkExecutor extends Thread {
           }
 
           // Determine type code - use UNSPECIFIED (0) if not declared in PARSE
-          final long typeCode = portal.parameterTypes != null && i < portal.parameterTypes.size()
-              ? portal.parameterTypes.get(i)
-              : 0L; // UNSPECIFIED type
+          final long typeCode = bindParameterType(portal, i, formatCode);
 
           if (DEBUG)
             LogManager.instance().log(this, Level.INFO, "PSQL: bind deserializing param %d typeCode=%d formatCode=%d (thread=%s)",
@@ -5228,6 +5226,29 @@ public class PostgresNetworkExecutor extends Thread {
   }
 
   /**
+   * The type a value of the parameter at {@code index} is read with at Bind: the one the client declared in Parse. A binary value of a
+   * parameter it declared none for, in a statement of the postgresql language, is in the format of the type the language inferred
+   * (fork issue #67), which ParameterDescription announced; a client that sends it without asking gets the same inference. A text
+   * value of such a parameter stays untyped (0), and the language reads it from its context.
+   */
+  private long bindParameterType(final PostgresPortal portal, final int index, final int formatCode) {
+    final long declared = portal.parameterTypes != null && index < portal.parameterTypes.size() ? portal.parameterTypes.get(index) : 0L;
+    final PostgresPortal statement = portal.statement;
+    if (declared != 0L || formatCode != 1 || statement == null || statement.catalogQuery || statement.ignoreExecution
+        || !PostgresQueryLanguages.POSTGRESQL.equals(statement.language))
+      return declared;
+    if (statement.inferredParameterTypes == null)
+      describeLanguageStatement(statement);
+    return inferredParameterType(statement, index);
+  }
+
+  private static long inferredParameterType(final PostgresPortal statement, final int index) {
+    return statement.inferredParameterTypes != null && index < statement.inferredParameterTypes.size()
+        ? statement.inferredParameterTypes.get(index)
+        : 0L;
+  }
+
+  /**
    * Writes ParameterDescription message ('t') describing the parameters of a prepared statement.
    * This is required by the PostgreSQL extended query protocol for DESCRIBE 'S' (Statement).
    */
@@ -5238,10 +5259,11 @@ public class PostgresNetworkExecutor extends Thread {
 
     writeMessage("parameter description", () -> {
       channel.writeShort((short) paramCount);
-      if (portal.parameterTypes != null) {
-        for (final Long typeOid : portal.parameterTypes) {
-          channel.writeUnsignedInt(typeOid != null ? typeOid.intValue() : 0); // 0 = unspecified type
-        }
+      for (int i = 0; i < paramCount; i++) {
+        final Long declared = portal.parameterTypes.get(i);
+        // 0 = unspecified type. A parameter of the postgresql language the client declared no type for has the one it inferred
+        final long typeOid = declared != null && declared != 0L ? declared : inferredParameterType(portal, i);
+        channel.writeUnsignedInt((int) typeOid);
       }
     }, 't', messageLength);
   }
@@ -5402,10 +5424,11 @@ public class PostgresNetworkExecutor extends Thread {
 
   /**
    * The columns of a prepared statement of the postgresql language, from the language: it plans the statement with the types the
-   * client declared for its parameters, and the types of the other ones come from the expressions they are in. Null for a statement
-   * that returns no rows, which a Describe answers with NoData.
+   * client declared for its parameters, and the types of the other ones come from the expressions they are in, which are kept on the
+   * statement for its ParameterDescription and its binary values (fork issue #67). Null for a statement that returns no rows, which
+   * a Describe answers with NoData.
    */
-  private Map<String, PostgresType> describeLanguageColumns(final PostgresPortal portal) {
+  private Map<String, PostgresType> describeLanguageStatement(final PostgresPortal portal) {
     errorQueryText = portal.query;
     errorQueryOffset = portal.queryOffset;
     final int count = portal.parameterTypes == null ? 0 : portal.parameterTypes.size();
@@ -5413,8 +5436,9 @@ public class PostgresNetworkExecutor extends Thread {
     for (int i = 0; i < count; i++)
       types[i] = PostgresLanguageAnswer.parameterType(portal.parameterTypes.get(i));
     final PostgreSQLQueryEngine engine = (PostgreSQLQueryEngine) database.getQueryEngine(PostgresQueryLanguages.POSTGRESQL);
-    final List<PostgreSQLResultSet.Column> columns = engine.describe(portal.query, types);
-    return columns.isEmpty() ? null : PostgresLanguageAnswer.wireColumns(columns);
+    final PostgreSQLQueryEngine.Description description = engine.describeStatement(portal.query, types);
+    portal.inferredParameterTypes = description.parameterTypes().stream().map(PostgresLanguageAnswer::parameterOid).toList();
+    return description.columns().isEmpty() ? null : PostgresLanguageAnswer.wireColumns(description.columns());
   }
 
   /** The number of characters that {@link #normalizeStatementText} takes off the front of {@code text}. */

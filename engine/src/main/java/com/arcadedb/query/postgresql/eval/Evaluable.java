@@ -49,8 +49,17 @@ public interface Evaluable {
     Object apply(Object[] row);
   }
 
-  /** A constant of a type. */
-  record Constant(PgType type, Object value) implements Evaluable {
+  /**
+   * A constant of a type.
+   *
+   * @param parameter set only for a parameter of a statement that is described and whose type nothing has decided yet: the context
+   *                  that converts it tells the parameter which type that is ({@link Parameters.Untyped})
+   */
+  record Constant(PgType type, Object value, Parameters.Untyped parameter) implements Evaluable {
+    public Constant(final PgType type, final Object value) {
+      this(type, value, null);
+    }
+
     @Override
     public Object eval(final Object[] row) {
       return value;

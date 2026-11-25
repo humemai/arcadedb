@@ -167,6 +167,20 @@ final class PostgresLanguageAnswer {
   }
 
   /**
+   * The type OID that ParameterDescription announces for a parameter that the language typed as {@code type} (fork issue #67), 0
+   * (unspecified) for a parameter nothing typed and for a type whose values the language does not take from a client yet
+   * ({@code jsonb}, {@code vector}, arrays, {@code bytea}, {@code interval}). A client such as asyncpg binds a value in the binary
+   * format of the type announced here.
+   */
+  static long parameterOid(final PgType type) {
+    return switch (type) {
+      case BOOL, INT2, INT4, INT8, NUMERIC, FLOAT4, FLOAT8, TEXT, VARCHAR, DATE, TIMESTAMP ->
+          PostgresType.byName(type.typeName()).code;
+      default -> 0L;
+    };
+  }
+
+  /**
    * The tag of the CommandComplete of a statement of the language, read off its first word as PostgreSQL's tag is: the language
    * has no statement class the wire could be asked. {@code count} is the number of rows a {@code SELECT} returned or a write changed.
    */

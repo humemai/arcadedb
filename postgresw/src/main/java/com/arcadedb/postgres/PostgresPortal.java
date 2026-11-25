@@ -45,6 +45,12 @@ public class PostgresPortal {
   public long                      languageAffected     = 0;
   public Statement                 sqlStatement;
   public List<Long>                parameterTypes;
+  /**
+   * On a prepared-statement template of the {@code postgresql} language: for each parameter the type OID the language inferred, 0
+   * where it inferred none the wire can announce (fork issue #67). It stands in only for a parameter whose entry in
+   * {@link #parameterTypes} is 0. Null until the statement has been described.
+   */
+  public List<Long>                inferredParameterTypes;
   public List<Integer>             parameterFormats;
   public List<Object>              parameterValues;
   public List<Integer>             resultFormats;
