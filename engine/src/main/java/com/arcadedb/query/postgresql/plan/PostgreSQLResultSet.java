@@ -26,6 +26,7 @@ import com.arcadedb.query.sql.executor.ResultInternal;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * The answer of a {@code postgresql} query: ArcadeDB's rows, and the description of the columns the rows of a {@code Result}
@@ -42,20 +43,29 @@ public final class PostgreSQLResultSet extends InternalResultSet {
 
   /** The plan of a query as text: how the table is read, then the steps applied to its rows. */
   public static final class Plan implements ExecutionPlan {
-    private final List<String> lines;
+    private final Supplier<List<String>> later;
+    private       List<String>           lines;
 
     public Plan(final List<String> lines) {
+      this.later = null;
       this.lines = List.copyOf(lines);
     }
 
-    public List<String> lines() {
+    /** A plan whose lines are built the first time they are read. */
+    public Plan(final Supplier<List<String>> later) {
+      this.later = later;
+    }
+
+    public synchronized List<String> lines() {
+      if (lines == null)
+        lines = List.copyOf(later.get());
       return lines;
     }
 
     @Override
     public List<ExecutionStep> getSteps() {
       final List<ExecutionStep> steps = new ArrayList<>();
-      for (final String line : lines)
+      for (final String line : lines())
         steps.add(new Step(line));
       return steps;
     }
@@ -64,7 +74,7 @@ public final class PostgreSQLResultSet extends InternalResultSet {
     public String prettyPrint(final int depth, final int indent) {
       final String margin = " ".repeat(depth * indent);
       final StringBuilder out = new StringBuilder();
-      for (final String line : lines) {
+      for (final String line : lines()) {
         if (!out.isEmpty())
           out.append('\n');
         out.append(margin).append("+ ").append(line);

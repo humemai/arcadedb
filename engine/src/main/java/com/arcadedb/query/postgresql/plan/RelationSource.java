@@ -23,6 +23,7 @@ import com.arcadedb.query.postgresql.eval.PgType;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.function.Supplier;
 
 /**
  * <b>The seam of the join step (S5).</b> A relation source is what a {@code FROM} clause is, to everything after it: the filter,
@@ -85,6 +86,16 @@ public interface RelationSource {
    */
   default List<String> describeTree() {
     return List.of(describe());
+  }
+
+  /**
+   * The lines of {@link #describeTree()}, to be built when they are read. A statement is planned on every call and its plan text is
+   * read only by {@code EXPLAIN} and by whoever asks a result set for its plan, so a table, a join and a filter build none before
+   * then, and what they return holds no row and no run-time state. This default, for every other source, builds the lines now.
+   */
+  default Supplier<List<String>> planLines() {
+    final List<String> lines = describeTree();
+    return () -> lines;
   }
 
   /** The source of {@code SELECT 1}: no column and one row. */

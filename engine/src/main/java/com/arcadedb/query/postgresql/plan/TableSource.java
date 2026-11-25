@@ -45,6 +45,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * The rows of one table. How it reads them is its access path, chosen by the planner from the {@code WHERE} clause:
@@ -237,6 +238,30 @@ public final class TableSource implements RelationSource {
 
   @Override
   public String describe() {
+    return describe(table, relation, only, access, keyColumn);
+  }
+
+  @Override
+  public Supplier<List<String>> planLines() {
+    final Supplier<String> line = line(access, keyColumn);
+    return () -> List.of(line.get());
+  }
+
+  /** The plan line of a lookup of this table by {@code column}, built when it is read. */
+  public Supplier<String> lookupLine(final Column column) {
+    return line(column.kind() == Column.Kind.IDENTITY ? Access.ID : Access.INDEX, column);
+  }
+
+  /** A plan line built from the names alone: it keeps neither this source nor its keys. */
+  private Supplier<String> line(final Access how, final Column column) {
+    final Table named = table;
+    final String as = relation;
+    final boolean exact = only;
+    return () -> describe(named, as, exact, how, column);
+  }
+
+  private static String describe(final Table table, final String relation, final boolean only, final Access access,
+      final Column keyColumn) {
     final String name = table.name() + (relation.equals(table.name()) ? "" : " AS " + relation);
     switch (access) {
     case ID:

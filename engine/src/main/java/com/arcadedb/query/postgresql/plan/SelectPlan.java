@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * A planned {@code SELECT}: a {@link RelationSource}, then the steps PostgreSQL applies to its rows, in the order of its
@@ -79,13 +80,13 @@ public final class SelectPlan implements QueryPlan {
   private final List<SortKey>  sortKeys;
   private final Evaluable      limit;
   private final Evaluable      offset;
-  private final List<String>   steps;
+  private final Supplier<List<String>> steps;
   private final List<String>   warnings;
   private final WindowStage    windows;
 
   SelectPlan(final RelationSource source, final Evaluable where, final GroupStage group, final Evaluable having,
       final Evaluable[] outputs, final Evaluable[] extras, final List<PostgreSQLResultSet.Column> columns, final boolean distinct,
-      final List<SortKey> sortKeys, final Evaluable limit, final Evaluable offset, final List<String> steps,
+      final List<SortKey> sortKeys, final Evaluable limit, final Evaluable offset, final Supplier<List<String>> steps,
       final List<String> warnings, final WindowStage windows) {
     this.windows = windows;
     this.source = source;
@@ -99,14 +100,14 @@ public final class SelectPlan implements QueryPlan {
     this.sortKeys = List.copyOf(sortKeys);
     this.limit = limit;
     this.offset = offset;
-    this.steps = List.copyOf(steps);
+    this.steps = steps;
     this.warnings = List.copyOf(warnings);
   }
 
   /** The lines of the plan, the way the source reads first. */
   @Override
   public List<String> steps() {
-    return steps;
+    return List.copyOf(steps.get());
   }
 
   /**
@@ -545,6 +546,6 @@ public final class SelectPlan implements QueryPlan {
 
   @Override
   public String toString() {
-    return String.join("\n", steps) + " " + Arrays.toString(outputs);
+    return String.join("\n", steps()) + " " + Arrays.toString(outputs);
   }
 }

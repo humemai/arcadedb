@@ -18,13 +18,18 @@
  */
 package com.arcadedb.query.postgresql.plan.join;
 
+import com.arcadedb.query.postgresql.ast.AstPrinter;
+import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.plan.RelationSource;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.StringJoiner;
+import java.util.function.Supplier;
 
 /**
  * A source with a condition applied to its rows before anything above reads them: a {@code WHERE} term pushed below a join (see
@@ -34,20 +39,20 @@ import java.util.NoSuchElementException;
 public final class FilteredSource implements RelationSource {
   private final RelationSource inner;
   private final Evaluable      condition;
-  private final String         relations;
-  private final String         text;
+  private final Collection<String> relations;
+  private final List<Expression>   terms;
   private final long           estimatedRows;
 
   /**
    * @param relations the relation names the condition is pushed to, for the plan line
-   * @param text      the condition as SQL text, for the plan line
+   * @param terms     the terms of the condition as parsed, for the plan line
    */
-  FilteredSource(final RelationSource inner, final Evaluable condition, final String relations, final String text,
-      final long estimatedRows) {
+  FilteredSource(final RelationSource inner, final Evaluable condition, final Collection<String> relations,
+      final List<Expression> terms, final long estimatedRows) {
     this.inner = inner;
     this.condition = condition;
     this.relations = relations;
-    this.text = text;
+    this.terms = terms;
     this.estimatedRows = estimatedRows;
   }
 
@@ -80,9 +85,22 @@ public final class FilteredSource implements RelationSource {
 
   @Override
   public List<String> describeTree() {
-    final List<String> lines = new ArrayList<>(inner.describeTree());
-    lines.add("FILTER pushed to " + relations + ": " + text);
-    return lines;
+    return planLines().get();
+  }
+
+  @Override
+  public Supplier<List<String>> planLines() {
+    final Supplier<List<String>> below = inner.planLines();
+    final Collection<String> pushedTo = relations;
+    final List<Expression> pushed = terms;
+    return () -> {
+      final List<String> lines = new ArrayList<>(below.get());
+      final StringJoiner text = new StringJoiner(" AND ");
+      for (final Expression term : pushed)
+        text.add(AstPrinter.print(term));
+      lines.add("FILTER pushed to " + String.join(", ", pushedTo) + ": " + text);
+      return lines;
+    };
   }
 
   @Override
