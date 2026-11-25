@@ -47,10 +47,10 @@ I used the nine tasks of the timed study on fork issue #13 as the starting point
 | WITH, a common table expression | different | none | none |
 | CROSS JOIN | different | none | none |
 | RIGHT JOIN on a value | no `sql` query | none | `sql` |
-| FULL JOIN on a value | no `sql` query | none | `sql`, openCypher |
+| FULL JOIN on a value | no `sql` query | none | `sql` |
 | Window functions over a partition | no `sql` query | none | `sql` |
 | Running totals with the default frame and a ROWS frame | no `sql` query | none | `sql` |
-| A moving window frame | no `sql` query | `postgresql` | `sql`, openCypher |
+| A moving window frame | no `sql` query | `postgresql` | `sql` |
 | Reading an array and a jsonb value | same | none | none |
 | Filtering on an element of an array | different | `postgresql` | none |
 | Filtering on a field of a jsonb value | different | `postgresql` | none |
@@ -87,7 +87,7 @@ I used the nine tasks of the timed study on fork issue #13 as the starting point
 
 ## The data
 
-The same records serve all three ArcadeDB languages. A vertex type or document type is a table, and an edge type is a table with `source_id` and `target_id`, which hold record ids. A type with a property `id` shows its record id as `rid`. In PostgreSQL 18 I declare `rid` as an identity column and the foreign keys that make a deleted person take its edges along.
+The same records serve all three ArcadeDB languages. A vertex type or document type is a table, and an edge type is a table with `source_id` and `target_id`, which hold record ids. A type with a property `id` shows its record id as `rid`. In PostgreSQL 18 I declare `rid` as an identity column, and foreign keys with `ON DELETE CASCADE` so that a deleted person takes its edges along.
 
 ArcadeDB `sql` setup, schema:
 
@@ -850,7 +850,7 @@ ArcadeDB `postgresql`, PostgreSQL 18:
 SELECT p.name AS person, m.name AS memory FROM person p RIGHT JOIN memory m ON m.age = p.age ORDER BY memory, person;
 ```
 
-ArcadeDB `sql`: no query. It has no outer join between records on a value; `MATCH` follows edges.
+ArcadeDB `sql`: no query. It has no outer join between records on a value (`MATCH` follows edges), and I did not write an emulation.
 
 ArcadeDB `sql` refuses this text:
 
@@ -875,13 +875,15 @@ Result:
 
 ### FULL JOIN on a value
 
+openCypher has no full outer join; the union of an optional match and of the memories that nobody matches gives the same rows.
+
 ArcadeDB `postgresql`, PostgreSQL 18:
 
 ```sql
-SELECT p.name AS person, m.name AS memory FROM person p FULL JOIN memory m ON m.age = p.age ORDER BY person, memory;
+SELECT p.name AS person, m.name AS memory FROM person p FULL JOIN memory m ON m.age = p.age;
 ```
 
-ArcadeDB `sql`: no query. It has no outer join between records on a value.
+ArcadeDB `sql`: no query. It has no outer join between records on a value, and I did not write an emulation.
 
 ArcadeDB `sql` refuses this text:
 
@@ -889,12 +891,12 @@ ArcadeDB `sql` refuses this text:
 SELECT p.name AS person, m.name AS memory FROM person p FULL JOIN memory m ON m.age = p.age ORDER BY person, memory;
 ```
 
-ArcadeDB openCypher: no query. It has no full outer join.
-
-ArcadeDB openCypher refuses this text:
+ArcadeDB openCypher:
 
 ```cypher
-SELECT p.name AS person, m.name AS memory FROM person p FULL JOIN memory m ON m.age = p.age ORDER BY person, memory;
+MATCH (p:person) OPTIONAL MATCH (m:memory) WHERE m.age = p.age RETURN p.name AS person, m.name AS memory
+UNION ALL
+MATCH (m:memory) WHERE NOT EXISTS { MATCH (p:person) WHERE p.age = m.age } RETURN null AS person, m.name AS memory;
 ```
 
 Result:
@@ -920,7 +922,7 @@ ArcadeDB `postgresql`, PostgreSQL 18:
 SELECT name, city, age, row_number() OVER (PARTITION BY city ORDER BY age DESC, name) AS rn, count(*) OVER (PARTITION BY city) AS in_city, lag(name) OVER (PARTITION BY city ORDER BY age DESC, name) AS older FROM person WHERE age IS NOT NULL ORDER BY city, rn;
 ```
 
-ArcadeDB `sql`: no query. It has no window functions.
+ArcadeDB `sql`: no query. It has no window functions, and I did not write an emulation.
 
 ArcadeDB `sql` refuses this text:
 
@@ -964,7 +966,7 @@ ArcadeDB `postgresql`, PostgreSQL 18:
 SELECT name, age, sum(created) OVER (ORDER BY age) AS by_peer, sum(created) OVER (ORDER BY age, name ROWS UNBOUNDED PRECEDING) AS by_row FROM person WHERE age IS NOT NULL ORDER BY age, name;
 ```
 
-ArcadeDB `sql`: no query. It has no window functions.
+ArcadeDB `sql`: no query. It has no window functions, and I did not write an emulation.
 
 ArcadeDB `sql` refuses this text:
 
@@ -992,7 +994,7 @@ Result:
 
 ### A moving window frame
 
-The prototype refuses a frame with an offset.
+The prototype refuses a frame with an offset. openCypher adds the row before by its position in the ordered list.
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 
@@ -1000,7 +1002,7 @@ ArcadeDB `postgresql`, PostgreSQL 18:
 SELECT name, sum(created) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS last_two FROM person ORDER BY name;
 ```
 
-ArcadeDB `sql`: no query. It has no window functions.
+ArcadeDB `sql`: no query. It has no window functions, and I did not write an emulation.
 
 ArcadeDB `sql` refuses this text:
 
@@ -1008,12 +1010,15 @@ ArcadeDB `sql` refuses this text:
 SELECT name, sum(created) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS last_two FROM person;
 ```
 
-ArcadeDB openCypher: no query. It has no window frames.
-
-ArcadeDB openCypher refuses this text:
+ArcadeDB openCypher:
 
 ```cypher
-MATCH (p:person) RETURN sum(p.created) OVER (ORDER BY p.id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS last_two;
+MATCH (p:person)
+WITH p ORDER BY p.id
+WITH collect(p) AS people
+UNWIND range(0, size(people) - 1) AS i
+RETURN people[i].name AS name, people[i].created + CASE WHEN i = 0 THEN 0 ELSE people[i - 1].created END AS last_two
+ORDER BY name;
 ```
 
 Result:
@@ -2008,7 +2013,7 @@ SELECT (name FROM person;
 SELECT count(*) AS n FROM memory;
 ```
 
-ArcadeDB openCypher: no query. A connection that chose openCypher cannot begin a transaction with a statement.
+ArcadeDB openCypher: no query. It has no transaction statements, and a JDBC connection that chose it refuses `BEGIN` (the next operation).
 
 ArcadeDB openCypher refuses this text:
 
