@@ -101,7 +101,6 @@ class PostgreSQLAsyncpgTest extends PostgresWireProtocolTestBase {
           ("SELECT name FROM person WHERE pid = $1 + 1", [1]),
           ("SELECT $1 AS v", ["x"]),
           ("SELECT $1::int8 AS v", [7]),
-          ("SELECT $1 AS v, name FROM person WHERE pid = $1", [2]),
           ("SELECT name FROM person WHERE city = $1 AND age > $2 ORDER BY pid", ["Delft", 40]),
           ("SELECT oid FROM orders WHERE total > $1 AND placed >= $2 ORDER BY oid",
            [decimal.Decimal("9.50"), datetime.date(2026, 1, 6)]),
@@ -279,7 +278,7 @@ class PostgreSQLAsyncpgTest extends PostgresWireProtocolTestBase {
           // asyncpg binds a prepared parameter by the type the server announces: the one the language inferred (fork issue #67)
           "param|[[\"Bo\"]]",
           "written|[\"INSERT 0 1\", \"UPDATE 1\", [[\"Pa\", 8, \"Delft\"]], \"UPDATE 1\", null, \"DELETE 1\"]",
-          "compared|30");
+          "compared|29");
       assertThat(out.stream().filter(line -> line.startsWith("differs|")).toList()).as("the same answers as PostgreSQL 18").isEmpty();
     }
   }

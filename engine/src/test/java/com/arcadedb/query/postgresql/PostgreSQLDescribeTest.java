@@ -98,7 +98,8 @@ class PostgreSQLDescribeTest extends TestHelper {
 
   @Test
   void theColumnsAreThoseOfARunWithValuesOfTheInferredTypes() {
-    // the output uses the parameter, and WHERE or HAVING types it, before or after the select list is planned
+    // the output uses the parameter, and WHERE or HAVING types it, before or after the select list is planned. PostgreSQL refuses
+    // this shape with 42P08 (inconsistent types deduced); the language takes the type of the clause
     assertThat(describe("SELECT $1 AS p FROM person WHERE pid = $1")).containsExactly("p:int4");
     assertThat(describe("SELECT $1 AS p FROM person GROUP BY city HAVING count(*) > $1")).containsExactly("p:int8");
     try (final ResultSet resultSet = database.query("postgresql", "SELECT $1 AS p FROM person WHERE pid = $1", 2)) {
