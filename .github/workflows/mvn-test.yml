@@ -1342,6 +1342,9 @@ jobs:
       && needs.vector-unit-tests.result != 'skipped'
       && needs.opencypher-tck-tests.result != 'skipped'
       && needs.integration-tests.result != 'skipped' }}
+    # A fork has no Codacy token, and the reporter fails without one: its step is skipped there.
+    env:
+      HAS_CODACY_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -1423,6 +1426,7 @@ jobs:
             integration-tests-rest=integration-coverage-rest
 
       - name: Codacy coverage reporter
+        if: env.HAS_CODACY_TOKEN == 'true'
         uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
         with:
           language: java
