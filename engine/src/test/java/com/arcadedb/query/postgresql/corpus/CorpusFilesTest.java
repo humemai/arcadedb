@@ -55,7 +55,7 @@ class CorpusFilesTest {
       assertThat(ids.add(c.id())).as("unique id %s", c.id()).isTrue();
       assertThat(statements.add(c.statement())).as("unique statement of %s", c.id()).isTrue();
       assertThat(c.pg18()).as("pg18 of %s", c.id()).isIn("ok", "syntax-error", "feature-not-supported", Corpus.PENDING_SERVER);
-      assertThat(c.subset()).as("subset of %s", c.id()).isIn("inside", "outside", "unknown");
+      assertThat(c.subset()).as("subset of %s", c.id()).isIn("inside", "outside", "error");
       assertThat(c.gap()).as("gap of %s", c.id()).isNotEmpty();
       assertThat(c.source()).as("source of %s", c.id()).isNotEmpty();
       assertThat(c.statement()).as("statement of %s", c.id()).isNotEmpty();
@@ -64,6 +64,11 @@ class CorpusFilesTest {
       if (!generated)
         continue;
       assertThat(c.hasOutcome()).as("%s has an outcome from the server", c.id()).isTrue();
+      if ("syntax-error".equals(c.pg18()))
+        assertThat(c.subset()).as("subset of %s, which the server calls a syntax error", c.id()).isEqualTo("error");
+      // an error that the server does not call a syntax error carries its SQLSTATE
+      if ("error".equals(c.subset()))
+        assertThat(c.detail()).as("detail of %s", c.id()).isNotEqualTo("-");
       switch (c.pg18()) {
       case "syntax-error" -> assertThat(c.detail()).as("detail of %s", c.id()).isEqualTo("42601");
       case "feature-not-supported" -> assertThat(c.detail()).as("detail of %s", c.id()).isEqualTo("0A000");

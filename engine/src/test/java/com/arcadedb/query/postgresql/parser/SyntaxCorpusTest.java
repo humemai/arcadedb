@@ -35,8 +35,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The accept and reject differential of issue #3 against the statements of the corpus file
  * {@code postgresql/corpus/syntax.tsv}. For each statement the parser answers one of three things (it accepts, it refuses
- * with 0A000, it refuses with 42601) and the answer has to agree with what the file records: what PostgreSQL 18 does with
- * the statement (the {@code pg18} column) and whether the supported subset covers it (the {@code subset} column). An entry whose
+ * with 0A000, it refuses with 42601 or, for an invalid escape, with the SQLSTATE of that) and the answer has to agree with what
+ * the file records: what PostgreSQL 18 does with the statement (the {@code pg18} column) and the verdict recorded for the parser
+ * (the {@code subset} column: {@code inside}, {@code outside} or {@code error}), which every entry has. An entry whose
  * {@code pg18} is {@code pending-server} is not checked against PostgreSQL; its answer is printed. An entry with a reason in the
  * {@code gap} column is a known disagreement, and the test fails when it stops disagreeing, so the list can only shrink.
  *
@@ -95,7 +96,9 @@ class SyntaxCorpusTest {
       if (verdict != Verdict.REFUSED_0A000)
         return "outside the subset, so it must be refused with 0A000";
       break;
-    case "unknown":
+    case "error":
+      if (verdict != Verdict.REFUSED_42601 && verdict != Verdict.REFUSED_OTHER)
+        return "recorded as an error, so it must be refused as a syntax error or with the SQLSTATE of the server";
       break;
     default:
       throw new IllegalStateException("Unknown subset value at line " + entry.line() + ": " + entry.subset());
