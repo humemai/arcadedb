@@ -24,7 +24,10 @@ import com.arcadedb.query.postgresql.PostgreSQLCatalogException;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.SmallFixture;
 import com.arcadedb.query.postgresql.catalog.EdgeEndpoints;
+import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.query.postgresql.parser.StatementParser;
+import com.arcadedb.query.postgresql.plan.join.BuildMemory;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
 import com.arcadedb.schema.EdgeType;
@@ -490,6 +493,40 @@ class SelectPlanTest extends TestHelper {
     assertThat(rows("SELECT city FROM person GROUP BY city ORDER BY city")).hasSize(3);
     assertThat(rows("SELECT city, count(*) FROM person WHERE age > 100 GROUP BY city")).as("no rows, no group").isEmpty();
     assertThat(rows("SELECT count(*) FROM person HAVING count(*) > 100")).isEmpty();
+  }
+
+  /** The rows of the answer of a statement planned with this memory cap. */
+  private int answered(final String sql, final long cap) {
+    int rows = 0;
+    try (final ResultSet resultSet = new SelectPlanner(database, Parameters.NONE, cap).planQuery(StatementParser.parse(sql))
+        .execute(database)) {
+      while (resultSet.hasNext()) {
+        resultSet.next();
+        ++rows;
+      }
+    }
+    return rows;
+  }
+
+  @Test
+  void aGroupByOverTheCapStopsWithOutOfMemoryAndNeverAnswersFromPartOfItsInput() {
+    final String byCity = "SELECT city, count(*) FROM person GROUP BY city";
+    assertThatThrownBy(() -> answered(byCity, 100L)).isInstanceOfSatisfying(PostgreSQLEvaluationException.class, e -> {
+      assertThat(e.getSqlState()).isEqualTo("53200");
+      assertThat(e.getMessage()).contains("out of memory").contains("a GROUP BY holds more than 100 bytes").contains("Hint:")
+          .contains(BuildMemory.CAP_PROPERTY);
+    });
+    assertThat(answered(byCity, BuildMemory.FLOOR_CAP_BYTES)).as("the default cap holds the small fixture").isEqualTo(3);
+  }
+
+  @Test
+  void theCapOfAGroupByCountsGroupsAndNotInputRows() {
+    // five persons make two groups by "age IS NULL" and five by pid: the cap holds the first and not the second
+    assertThat(answered("SELECT age IS NULL, count(*) FROM person GROUP BY age IS NULL", 1000L)).isEqualTo(2);
+    assertThatThrownBy(() -> answered("SELECT pid, count(*) FROM person GROUP BY pid", 1000L)).isInstanceOfSatisfying(
+        PostgreSQLEvaluationException.class, e -> assertThat(e.getSqlState()).isEqualTo("53200"));
+    // without a GROUP BY there is one group whatever the input, so the cap does not apply
+    assertThat(answered("SELECT count(*), sum(age) FROM person", 1L)).isEqualTo(1);
   }
 
   // ---- EXPLAIN ----
