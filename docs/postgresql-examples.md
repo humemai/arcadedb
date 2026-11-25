@@ -2,7 +2,7 @@
 
 Fork only (`humemai/arcadedb`, branch `feat/postgresql-prototype`). This page shows each operation in ArcadeDB `sql`, ArcadeDB `postgresql` (the prototype), PostgreSQL 18, and ArcadeDB openCypher, over the same data. The test [`PostgreSQLExamplesPageTest`](../postgresw/src/test/java/com/arcadedb/postgres/PostgreSQLExamplesPageTest.java) reads this file, runs every code block on it, and compares the answers with the tables below, so the page cannot drift from what runs. What the language supports in general is on the [supported syntax page](postgresql-supported-syntax.md).
 
-I used the nine tasks of the timed study on fork issue #13 as the starting point, with sample values: point lookup, latest rows, grouped count and sum, filtered read, neighbour list, single insert, update by key, delete by key, and batch insert.
+The page starts from the nine tasks of the timed study on fork issue #13, with sample values: point lookup, latest rows, grouped count and sum, filtered read, neighbour list, single insert, update by key, delete by key, and batch insert.
 
 ## How to read this page
 
@@ -10,7 +10,7 @@ I used the nine tasks of the timed study on fork issue #13 as the starting point
 - A "Result" or "After" table that names no system is the answer of PostgreSQL 18, and every other system with a query for that operation gives the same one. A table that names a system is a real difference.
 - For a write, "After" is the answer of the "Check" statement, run once the writes are done: by the `postgresql` language on the same ArcadeDB database, and by PostgreSQL 18 on its own tables.
 - Row order is compared where the PostgreSQL 18 text has `ORDER BY`. Elsewhere the rows are compared without order, duplicates included.
-- "No query" means that I show none for that system, and why. A block marked "refuses this text" is checked to fail in that language.
+- "No query" means that the page shows none for that system, and why. A block marked "refuses this text" is checked to fail in that language.
 - `SQLSTATE` with `00000` means that the statement succeeded.
 - Every operation starts from the data below. No write carries over to the next operation.
 - The sections "Transactions" and "Errors a client sees" run over the PostgreSQL wire protocol, for all four. Everything else, including every "refuses this text" block, runs on ArcadeDB embedded and on PostgreSQL 18 through JDBC.
@@ -87,7 +87,7 @@ I used the nine tasks of the timed study on fork issue #13 as the starting point
 
 ## The data
 
-The same records serve all three ArcadeDB languages. A vertex type or document type is a table, and an edge type is a table with `source_id` and `target_id`, which hold record ids. A type with a property `id` shows its record id as `rid`. In PostgreSQL 18 I declare `rid` as an identity column, and foreign keys with `ON DELETE CASCADE` so that a deleted person takes its edges along.
+The same records serve all three ArcadeDB languages. A vertex type or document type is a table, and an edge type is a table with `source_id` and `target_id`, which hold record ids. A type with a property `id` shows its record id as `rid`. The PostgreSQL 18 tables declare `rid` as an identity column, and foreign keys with `ON DELETE CASCADE` so that a deleted person takes its edges along.
 
 ArcadeDB `sql` setup, schema:
 
@@ -850,7 +850,7 @@ ArcadeDB `postgresql`, PostgreSQL 18:
 SELECT p.name AS person, m.name AS memory FROM person p RIGHT JOIN memory m ON m.age = p.age ORDER BY memory, person;
 ```
 
-ArcadeDB `sql`: no query. It has no outer join between records on a value (`MATCH` follows edges), and I did not write an emulation.
+ArcadeDB `sql`: no query. It has no outer join between records on a value (`MATCH` follows edges), and this page has no emulation of it.
 
 ArcadeDB `sql` refuses this text:
 
@@ -883,7 +883,7 @@ ArcadeDB `postgresql`, PostgreSQL 18:
 SELECT p.name AS person, m.name AS memory FROM person p FULL JOIN memory m ON m.age = p.age;
 ```
 
-ArcadeDB `sql`: no query. It has no outer join between records on a value, and I did not write an emulation.
+ArcadeDB `sql`: no query. It has no outer join between records on a value, and this page has no emulation of it.
 
 ArcadeDB `sql` refuses this text:
 
@@ -922,7 +922,7 @@ ArcadeDB `postgresql`, PostgreSQL 18:
 SELECT name, city, age, row_number() OVER (PARTITION BY city ORDER BY age DESC, name) AS rn, count(*) OVER (PARTITION BY city) AS in_city, lag(name) OVER (PARTITION BY city ORDER BY age DESC, name) AS older FROM person WHERE age IS NOT NULL ORDER BY city, rn;
 ```
 
-ArcadeDB `sql`: no query. It has no window functions, and I did not write an emulation.
+ArcadeDB `sql`: no query. It has no window functions, and this page has no emulation of it.
 
 ArcadeDB `sql` refuses this text:
 
@@ -966,7 +966,7 @@ ArcadeDB `postgresql`, PostgreSQL 18:
 SELECT name, age, sum(created) OVER (ORDER BY age) AS by_peer, sum(created) OVER (ORDER BY age, name ROWS UNBOUNDED PRECEDING) AS by_row FROM person WHERE age IS NOT NULL ORDER BY age, name;
 ```
 
-ArcadeDB `sql`: no query. It has no window functions, and I did not write an emulation.
+ArcadeDB `sql`: no query. It has no window functions, and this page has no emulation of it.
 
 ArcadeDB `sql` refuses this text:
 
@@ -1002,7 +1002,7 @@ ArcadeDB `postgresql`, PostgreSQL 18:
 SELECT name, sum(created) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS last_two FROM person ORDER BY name;
 ```
 
-ArcadeDB `sql`: no query. It has no window functions, and I did not write an emulation.
+ArcadeDB `sql`: no query. It has no window functions, and this page has no emulation of it.
 
 ArcadeDB `sql` refuses this text:
 
@@ -1287,7 +1287,7 @@ After:
 
 ### Upsert that updates
 
-One key is there and one is new. In `sql` I write one `UPSERT` statement for each key.
+One key is there and one is new. In `sql` there is one `UPSERT` statement for each key, so this is not one atomic statement: wrap them in a transaction to apply them together.
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 
@@ -1384,7 +1384,7 @@ After:
 
 ### Update by a join
 
-Everyone Ada knows moves to Ada's city.
+Everyone Ada knows moves to Ada's city. The `sql` statement reads that city with a subquery, which works because there is one source row.
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 
@@ -1655,7 +1655,7 @@ ArcadeDB `sql`:
 INSERT INTO memory (id, payload) VALUES (4, decode('Cv8=', 'base64'));
 ```
 
-ArcadeDB openCypher: no query. It has no `decode` function, and I did not find another way to write bytes in the text of a statement.
+ArcadeDB openCypher: no query. It has no `decode` function, and no other way to write bytes in the text of a statement was found.
 
 ArcadeDB openCypher refuses this text:
 
@@ -1711,7 +1711,7 @@ After:
 
 ## Transactions
 
-openCypher has no transaction statements: the transaction belongs to the API of the client. Over the PostgreSQL protocol the connection handles `BEGIN`, `COMMIT` and `ROLLBACK` for `sql` and `postgresql`. A JDBC connection that chose openCypher refuses `BEGIN` (see the errors below), so I show no openCypher query here.
+openCypher has no transaction statements: the transaction belongs to the API of the client. Over the PostgreSQL protocol the connection handles `BEGIN`, `COMMIT` and `ROLLBACK` for `sql` and `postgresql`. A JDBC connection that chose openCypher refuses `BEGIN` (see the errors below), so this section has no openCypher query.
 
 ### Rolling a transaction back
 
