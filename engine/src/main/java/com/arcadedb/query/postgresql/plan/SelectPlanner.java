@@ -101,7 +101,8 @@ public class SelectPlanner {
   }
 
   /**
-   * @param joinMemoryCap the bytes of rows that one join may keep in memory before it stops with SQLSTATE {@code 53200}
+   * @param joinMemoryCap the bytes of rows that one operator that keeps rows (a join, the groups of a {@code GROUP BY}, a derived
+   *     table) may keep in memory before it stops with SQLSTATE {@code 53200}
    */
   public SelectPlanner(final Database database, final Parameters parameters, final long joinMemoryCap) {
     this(database, RelationalCatalog.of(database), parameters, joinMemoryCap, Map.of());
@@ -401,7 +402,7 @@ public class SelectPlanner {
     }
 
     if (groupingScope != null)
-      group = groupingScope.stage();
+      group = groupingScope.stage(joinMemoryCap);
 
     final List<PostgreSQLResultSet.Column> columns = new ArrayList<>();
     for (int i = 0; i < outputs.size(); i++)
@@ -1110,8 +1111,8 @@ public class SelectPlanner {
       return subqueries;
     }
 
-    SelectPlan.GroupStage stage() {
-      return new SelectPlan.GroupStage(groupEvaluables.toArray(new Evaluable[0]), specs);
+    SelectPlan.GroupStage stage(final long capBytes) {
+      return new SelectPlan.GroupStage(groupEvaluables.toArray(new Evaluable[0]), specs, capBytes);
     }
 
     @Override

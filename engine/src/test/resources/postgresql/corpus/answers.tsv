@@ -104,6 +104,7 @@ st-orders-jsonb	ordered	-	ok	SELECT oid, address FROM orders ORDER BY oid	{"colu
 st-orders-link	ordered	-	ok	SELECT oid, buyer FROM orders ORDER BY oid	{"columns":["oid","buyer"],"types":["int4","text"],"rows":[[100,"#2:0"],[101,"#2:0"],[102,"#2:1"],[103,"#2:3"],[104,"#2:3"],[105,null]]}
 st-person-id	ordered	-	ok	SELECT id, pid FROM person ORDER BY pid	{"columns":["id","pid"],"types":["text","int4"],"rows":[["#2:0",1],["#2:1",2],["#2:2",3],["#2:3",4],["#2:4",5]]}
 st-works-at	ordered	-	ok	SELECT source_id, target_id, since FROM works_at ORDER BY since	{"columns":["source_id","target_id","since"],"types":["text","text","int4"],"rows":[["#2:0","#1:0",2019],["#2:1","#1:0",2020],["#2:2","#1:1",2021],["#2:0","#1:0",2022],["#2:3","#1:1",2023]]}
+st-group-by-having-avg	ordered	-	ok	SELECT city, count(*) AS n, count(age) AS known, avg(age) AS a FROM person GROUP BY city HAVING count(*) > 1 ORDER BY city	{"columns":["city","n","known","a"],"types":["varchar","int8","int8","numeric"],"rows":[["Delft",2,2,38.5000000000000000],["Leiden",2,1,29.0000000000000000]]}
 join-inner	ordered	-	ok	SELECT p.name, o.oid FROM orders o JOIN person p ON o.pid = p.pid ORDER BY o.oid	{"columns":["name","oid"],"types":["varchar","int4"],"rows":[["Ada",100],["Ada",101],["Bo",102],["Di",103],["Di",104]]}
 join-implicit	ordered	-	ok	SELECT p.name, o.oid FROM orders o, person p WHERE o.pid = p.pid ORDER BY o.oid	{"columns":["name","oid"],"types":["varchar","int4"],"rows":[["Ada",100],["Ada",101],["Bo",102],["Di",103],["Di",104]]}
 join-left	ordered	-	ok	SELECT p.name, o.oid FROM person p LEFT JOIN orders o ON o.pid = p.pid ORDER BY p.name, o.oid	{"columns":["name","oid"],"types":["varchar","int4"],"rows":[["Ada",100],["Ada",101],["Bo",102],["Cy",null],["Di",103],["Di",104],["Ed",null]]}
@@ -120,6 +121,8 @@ join-non-equality	ordered	-	ok	SELECT a.name AS a, b.name AS b FROM person a JOI
 join-extra-condition	ordered	-	ok	SELECT p.name, o.oid FROM person p JOIN orders o ON o.pid = p.pid AND o.total > 9 ORDER BY o.oid	{"columns":["name","oid"],"types":["varchar","int4"],"rows":[["Ada",100],["Ada",101],["Bo",102]]}
 join-three-tables	multiset	-	ok	SELECT count(*) AS n FROM person p, company c, works_at w WHERE w.source_id = p.id AND w.target_id = c.id	{"columns":["n"],"types":["int8"],"rows":[[5]]}
 join-expression-key	ordered	-	ok	SELECT p.name, c.name FROM person p, company c WHERE p.pid = c.cid / 10 ORDER BY p.pid	{"columns":["name","name"],"types":["varchar","varchar"],"rows":[["Ada","Acme"],["Bo","Birch"],["Cy","Cedar"]]}
+join-left-count-edge-id	ordered	-	ok	SELECT c.name, count(w.id) AS n FROM company c LEFT JOIN works_at w ON w.target_id = c.id GROUP BY c.name ORDER BY c.name	{"columns":["name","n"],"types":["varchar","int8"],"rows":[["Acme",3],["Birch",2],["Cedar",0]]}
+join-aggregate-order-by-sum-desc	ordered	-	ok	SELECT p.name, sum(o.total) AS spent FROM person p JOIN orders o ON o.pid = p.pid GROUP BY p.name ORDER BY spent DESC	{"columns":["name","spent"],"types":["varchar","numeric"],"rows":[["Bo",99.99],["Ada",35.50],["Di",12.25]]}
 err-unknown-column	multiset	-	ok	SELECT nosuch FROM person	{"error":"42703"}
 err-unknown-table	multiset	-	ok	SELECT * FROM nosuch	{"error":"42P01"}
 err-division-by-zero	multiset	-	ok	SELECT 1 / 0	{"error":"22012"}

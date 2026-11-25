@@ -279,14 +279,26 @@ public final class SelectPlan implements QueryPlan {
 
   // ---- grouping ----
 
-  /** Groups the rows by the key expressions and computes the aggregates: a group row is the keys, then the aggregates. */
+  /**
+   * Groups the rows by the key expressions and computes the aggregates: a group row is the keys, then the aggregates. Every group
+   * is kept in memory until the input ends, so each new group of a {@code GROUP BY} is charged to a {@link BuildMemory} under the
+   * same cap as a join, and over it the statement stops with SQLSTATE {@code 53200}. What one group collects as it grows (the
+   * values of a {@code DISTINCT} aggregate, the text of {@code string_agg}) is not counted.
+   */
   static final class GroupStage {
+    /** The estimated bytes of one group besides its key values: the key list and the two hash table entries. */
+    private static final long GROUP_BYTES       = 128;
+    /** The estimated bytes of the state of one aggregate in one group. */
+    private static final long ACCUMULATOR_BYTES = 64;
+
     private final Evaluable[]          keys;
     private final List<AggregateSpec>  specs;
+    private final long                 capBytes;
 
-    GroupStage(final Evaluable[] keys, final List<AggregateSpec> specs) {
+    GroupStage(final Evaluable[] keys, final List<AggregateSpec> specs, final long capBytes) {
       this.keys = keys;
       this.specs = List.copyOf(specs);
+      this.capBytes = capBytes;
     }
 
     int keyCount() {
@@ -299,8 +311,13 @@ public final class SelectPlan implements QueryPlan {
 
     /**
      * Without a {@code GROUP BY} the whole input is one group, even when it is empty; with one, an empty input has no group.
+     *
+     * @throws PostgreSQLEvaluationException with SQLSTATE {@code 53200} when the groups of a {@code GROUP BY} are over the cap
      */
     List<Object[]> groups(final Iterator<Object[]> rows) {
+      final BuildMemory memory = new BuildMemory(capBytes, "a GROUP BY",
+          "the groups are kept in memory and do not spill to disk; group by fewer or shorter columns, narrow the input with a "
+              + "WHERE condition, or raise the cap with the JVM property " + BuildMemory.CAP_PROPERTY + " (MiB)");
       final Map<List<Object>, Object[]> keyValues = new LinkedHashMap<>();
       final Map<List<Object>, Accumulator[]> accumulators = new LinkedHashMap<>();
       while (rows.hasNext()) {
@@ -311,6 +328,11 @@ public final class SelectPlan implements QueryPlan {
         final List<Object> key = distinctKey(values, values.length);
         Accumulator[] group = accumulators.get(key);
         if (group == null) {
+          // without a GROUP BY there is one group whatever the input, so nothing grows with it
+          if (keys.length > 0) {
+            memory.charge(values);
+            memory.chargeBytes(GROUP_BYTES + ACCUMULATOR_BYTES * specs.size());
+          }
           group = newAccumulators();
           accumulators.put(key, group);
           keyValues.put(key, values);
