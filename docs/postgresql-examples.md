@@ -25,7 +25,7 @@ I used the nine tasks of the timed study on fork issue #13 as the starting point
 | Point lookup by the indexed key | same | none | none |
 | Filtered read on a property without an index | same | none | none |
 | Latest rows with a filter, ORDER BY and LIMIT | same | none | none |
-| ORDER BY on a column with a missing value | same | none | none |
+| ORDER BY on a column with a missing value | same | `sql` | none |
 | Count and sum with GROUP BY | same | none | none |
 | GROUP BY and HAVING | different | none | none |
 | IS DISTINCT FROM | different | none | none |
@@ -68,18 +68,22 @@ I used the nine tasks of the timed study on fork issue #13 as the starting point
 | Delete with a subquery | same | none | none |
 | Delete an edge | same | none | none |
 | Delete a vertex that has edges | same | none | none |
-| Writing an array and a jsonb value | different | none | none |
-| Writing binary data | different | none | none |
+| Writing an array | different | none | none |
+| Writing a jsonb value | different | none | openCypher |
+| Writing binary data | different | none | openCypher |
 | Writing a vector | different | none | none |
-| Rolling a transaction back | same | none | none |
-| Committing a transaction | same | none | none |
+| Rolling a transaction back | same | none | openCypher |
+| Committing a transaction | same | none | openCypher |
 | Syntax error | same | none | none |
+| A WHERE with no condition | same | `sql` | none |
+| A DELETE with no condition after WHERE | same | `sql` | none |
 | Unknown column | same | `sql`, openCypher | none |
 | Unknown table | same | openCypher | none |
 | Duplicate key | same | none | none |
-| Giving a value to the record id column | same | `sql` | openCypher |
-| A jsonb array where the property holds a map | different | `postgresql` | none |
-| A statement after an error inside a transaction | same | none | none |
+| Giving a value to the record id column | same | `sql`, openCypher | none |
+| A jsonb array where the property holds a map | different | `sql`, `postgresql`, openCypher | none |
+| A statement after an error inside a transaction | same | none | openCypher |
+| BEGIN on a JDBC connection | same | openCypher | none |
 
 ## The data
 
@@ -209,6 +213,8 @@ Result:
 
 ### ORDER BY on a column with a missing value
 
+ArcadeDB `sql` puts the missing value first in ascending order. The other three put it last.
+
 ArcadeDB `sql`, ArcadeDB `postgresql`, PostgreSQL 18:
 
 ```sql
@@ -230,6 +236,16 @@ Result:
 | Di | 36 |
 | Bo | 41 |
 | Ed | NULL |
+
+Result, ArcadeDB `sql` (differs):
+
+| name | age |
+| --- | --- |
+| Ed | NULL |
+| Cy | 29 |
+| Ada | 36 |
+| Di | 36 |
+| Bo | 41 |
 
 ### Count and sum with GROUP BY
 
@@ -274,6 +290,12 @@ ArcadeDB openCypher:
 
 ```cypher
 MATCH (p:person) WITH p.city AS city, count(*) AS n, sum(p.created) AS total WHERE n > 1 RETURN city, n, total ORDER BY city;
+```
+
+ArcadeDB `sql` refuses this text:
+
+```sql
+SELECT city, count(*) AS n, sum(created) AS total FROM person GROUP BY city HAVING count(*) > 1 ORDER BY city;
 ```
 
 Result:
@@ -482,7 +504,7 @@ Result:
 
 ### Neighbour list from one vertex
 
-This is where the two ArcadeDB SQL languages differ most: `sql` walks the edges of a record, `postgresql` joins through the edge table.
+`sql` walks the edges of a record, `postgresql` joins through the edge table.
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 
@@ -776,6 +798,12 @@ ArcadeDB openCypher:
 MATCH (d:person) WHERE d.city = 'Delft' WITH d MATCH (d)-[k:knows]->(:person) RETURN d.name AS name, count(k) AS n ORDER BY name;
 ```
 
+ArcadeDB `sql` refuses this text:
+
+```sql
+WITH delft AS (SELECT rid, name FROM person WHERE city = 'Delft') SELECT d.name AS name, count(*) AS n FROM delft d JOIN knows k ON k.source_id = d.rid GROUP BY d.name ORDER BY name;
+```
+
 Result:
 
 | name | n |
@@ -911,6 +939,12 @@ RETURN people[i].name AS name, city, people[i].age AS age, i + 1 AS rn, size(peo
 ORDER BY city, rn;
 ```
 
+ArcadeDB openCypher refuses this text:
+
+```cypher
+MATCH (p:person) RETURN p.name AS name, row_number() OVER (ORDER BY p.id) AS rn;
+```
+
 Result:
 
 | name | city | age | rn | in_city | older |
@@ -1022,7 +1056,7 @@ Result:
 
 ### Filtering on an element of an array
 
-The prototype writes and reads arrays but cannot search inside one.
+The prototype writes and reads arrays but refuses `= ANY`.
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 
@@ -1056,7 +1090,7 @@ Result, ArcadeDB `postgresql` (differs):
 
 ### Filtering on a field of a jsonb value
 
-The prototype writes and reads `jsonb` but has no operator that looks inside it.
+The prototype writes and reads `jsonb` but refuses `->>`.
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 
@@ -1091,7 +1125,7 @@ Result, ArcadeDB `postgresql` (differs):
 
 ### Vector search for the two nearest rows
 
-`postgresql` and PostgreSQL 18 use the distance operator of pgvector. `sql` and openCypher call the vector index, which searches approximately; on three rows the answer is exact.
+`postgresql` and PostgreSQL 18 use the distance operator of pgvector. `sql` and openCypher call the vector index of ArcadeDB.
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 
@@ -1248,7 +1282,7 @@ After:
 
 ### Upsert that updates
 
-One key is there and one is new. `sql` takes one statement for each key.
+One key is there and one is new. In `sql` I write one `UPSERT` statement for each key.
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 
@@ -1534,37 +1568,73 @@ After:
 | Di | 2024 |
 | Ed | NULL |
 
-### Writing an array and a jsonb value
+### Writing an array
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 
 ```sql
-INSERT INTO memory (id, tags, meta) VALUES (4, ARRAY['x', 'y z'], '{"source": "chat", "score": 2}');
+INSERT INTO memory (id, tags) VALUES (4, ARRAY['x', 'y z']);
 ```
 
 ArcadeDB `sql`:
 
 ```sql
-INSERT INTO memory (id, tags, meta) VALUES (4, ['x', 'y z'], {"source": "chat", "score": 2});
+INSERT INTO memory (id, tags) VALUES (4, ['x', 'y z']);
 ```
 
 ArcadeDB openCypher:
 
 ```cypher
-CREATE (:memory {id: 4, tags: ['x', 'y z'], meta: {source: 'chat', score: 2}});
+CREATE (:memory {id: 4, tags: ['x', 'y z']});
 ```
 
 Check:
 
 ```sql
-SELECT id, tags, meta FROM memory WHERE id = 4;
+SELECT id, tags FROM memory WHERE id = 4;
 ```
 
 After:
 
-| id | tags | meta |
-| --- | --- | --- |
-| 4 | [x, y z] | {score: 2, source: chat} |
+| id | tags |
+| --- | --- |
+| 4 | [x, y z] |
+
+### Writing a jsonb value
+
+openCypher reads a map property that another language wrote, but it cannot write one: its property values are primitives and arrays of them.
+
+ArcadeDB `postgresql`, PostgreSQL 18:
+
+```sql
+INSERT INTO memory (id, meta) VALUES (4, '{"source": "chat", "score": 2}');
+```
+
+ArcadeDB `sql`:
+
+```sql
+INSERT INTO memory (id, meta) VALUES (4, {"source": "chat", "score": 2});
+```
+
+ArcadeDB openCypher: no query. A map cannot be the value of a property.
+
+ArcadeDB openCypher refuses this text:
+
+```cypher
+CREATE (:memory {id: 4, meta: {source: 'chat', score: 2}});
+```
+
+Check:
+
+```sql
+SELECT id, meta FROM memory WHERE id = 4;
+```
+
+After:
+
+| id | meta |
+| --- | --- |
+| 4 | {score: 2, source: chat} |
 
 ### Writing binary data
 
@@ -1580,7 +1650,9 @@ ArcadeDB `sql`:
 INSERT INTO memory (id, payload) VALUES (4, decode('Cv8=', 'base64'));
 ```
 
-ArcadeDB openCypher:
+ArcadeDB openCypher: no query. It has no `decode` function, and I did not find another way to write bytes in the text of a statement.
+
+ArcadeDB openCypher refuses this text:
 
 ```cypher
 CREATE (:memory {id: 4, payload: decode('Cv8=', 'base64')});
@@ -1634,7 +1706,7 @@ After:
 
 ## Transactions
 
-openCypher has no transaction statements of its own: the client controls the transaction. Over the PostgreSQL protocol, `BEGIN`, `COMMIT` and `ROLLBACK` are handled by the connection for every language.
+openCypher has no transaction statements: the transaction belongs to the API of the client. Over the PostgreSQL protocol the connection handles `BEGIN`, `COMMIT` and `ROLLBACK` for `sql` and `postgresql`. A JDBC connection that chose openCypher refuses `BEGIN` (see the errors below), so I show no openCypher query here.
 
 ### Rolling a transaction back
 
@@ -1647,14 +1719,7 @@ DELETE FROM memory WHERE id = 2;
 ROLLBACK;
 ```
 
-ArcadeDB openCypher:
-
-```cypher
-BEGIN;
-MATCH (m:memory) WHERE m.id = 1 SET m.age = 99;
-MATCH (m:memory) WHERE m.id = 2 DELETE m;
-ROLLBACK;
-```
+ArcadeDB openCypher: no query. It has no transaction statements.
 
 ArcadeDB openCypher refuses this text:
 
@@ -1687,13 +1752,12 @@ INSERT INTO memory (id, age) VALUES (4, 18);
 COMMIT;
 ```
 
-ArcadeDB openCypher:
+ArcadeDB openCypher: no query. It has no transaction statements.
+
+ArcadeDB openCypher refuses this text:
 
 ```cypher
 BEGIN;
-MATCH (m:memory) WHERE m.id = 1 SET m.age = 99;
-CREATE (:memory {id: 4, age: 18});
-COMMIT;
 ```
 
 Check:
@@ -1718,6 +1782,28 @@ After:
 ArcadeDB `sql`, ArcadeDB `postgresql`, PostgreSQL 18:
 
 ```sql
+SELECT (name FROM person;
+```
+
+ArcadeDB openCypher:
+
+```cypher
+MATCH (p:person RETURN p.name AS name;
+```
+
+Result:
+
+| SQLSTATE |
+| --- |
+| 42601 |
+
+### A WHERE with no condition
+
+ArcadeDB `sql` allows `WHERE` as a name, so it reads the last word as an alias of `person` and returns every row. A statement that was cut off after `WHERE` is not an error there.
+
+ArcadeDB `sql`, ArcadeDB `postgresql`, PostgreSQL 18:
+
+```sql
 SELECT name FROM person WHERE;
 ```
 
@@ -1732,6 +1818,46 @@ Result:
 | SQLSTATE |
 | --- |
 | 42601 |
+
+Result, ArcadeDB `sql` (differs):
+
+| name |
+| --- |
+| Ada |
+| Bo |
+| Cy |
+| Di |
+| Ed |
+
+### A DELETE with no condition after WHERE
+
+The same alias rule applies to a write: in `sql` this statement deletes every person.
+
+ArcadeDB `sql`, ArcadeDB `postgresql`, PostgreSQL 18:
+
+```sql
+DELETE FROM person WHERE;
+SELECT count(*) AS n FROM person;
+```
+
+ArcadeDB openCypher:
+
+```cypher
+MATCH (p:person) WHERE DELETE p;
+MATCH (p:person) RETURN count(*) AS n;
+```
+
+Result:
+
+| n |
+| --- |
+| 5 |
+
+Result, ArcadeDB `sql` (differs):
+
+| n |
+| --- |
+| 0 |
 
 ### Unknown column
 
@@ -1806,7 +1932,7 @@ Result:
 
 ### Giving a value to the record id column
 
-`sql` has no column `rid`, so the same text stores an ordinary property of that name.
+`sql` and openCypher have no column `rid`, so the same write stores an ordinary property of that name.
 
 ArcadeDB `sql`, ArcadeDB `postgresql`, PostgreSQL 18:
 
@@ -1814,12 +1940,10 @@ ArcadeDB `sql`, ArcadeDB `postgresql`, PostgreSQL 18:
 INSERT INTO person (rid, id) VALUES ('999', 9);
 ```
 
-ArcadeDB openCypher: no query. A record id is read with `id(p)` and has no property that a statement could set.
-
-ArcadeDB openCypher refuses this text:
+ArcadeDB openCypher:
 
 ```cypher
-INSERT INTO person (rid, id) VALUES ('999', 9);
+CREATE (:person {rid: '999', id: 9});
 ```
 
 Result:
@@ -1828,7 +1952,7 @@ Result:
 | --- |
 | 428C9 |
 
-Result, ArcadeDB `sql` (differs):
+Result, ArcadeDB `sql`, ArcadeDB openCypher (differs):
 
 | SQLSTATE |
 | --- |
@@ -1836,7 +1960,7 @@ Result, ArcadeDB `sql` (differs):
 
 ### A jsonb array where the property holds a map
 
-PostgreSQL 18 stores any JSON value. A `MAP` property holds an object only.
+PostgreSQL 18 stores any JSON value. A `MAP` property holds an object only, and the three ArcadeDB languages refuse the array, with two different codes.
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 
@@ -1868,22 +1992,28 @@ Result, ArcadeDB `postgresql` (differs):
 | --- |
 | 0A000 |
 
+Result, ArcadeDB `sql`, ArcadeDB openCypher (differs):
+
+| SQLSTATE |
+| --- |
+| 42804 |
+
 ### A statement after an error inside a transaction
 
 ArcadeDB `sql`, ArcadeDB `postgresql`, PostgreSQL 18:
 
 ```sql
 BEGIN;
-SELECT name FROM person WHERE;
+SELECT (name FROM person;
 SELECT count(*) AS n FROM memory;
 ```
 
-ArcadeDB openCypher:
+ArcadeDB openCypher: no query. A connection that chose openCypher cannot begin a transaction with a statement.
+
+ArcadeDB openCypher refuses this text:
 
 ```cypher
 BEGIN;
-MATCH (p:person) WHERE RETURN p.name AS name;
-MATCH (m:memory) RETURN count(*) AS n;
 ```
 
 Result:
@@ -1891,6 +2021,28 @@ Result:
 | SQLSTATE |
 | --- |
 | 25P02 |
+
+### BEGIN on a JDBC connection
+
+The connection chooses its language when it starts. This is `BEGIN` sent by the PostgreSQL JDBC driver in its default mode.
+
+ArcadeDB `sql`, ArcadeDB `postgresql`, PostgreSQL 18, ArcadeDB openCypher:
+
+```sql
+BEGIN;
+```
+
+Result:
+
+| SQLSTATE |
+| --- |
+| 00000 |
+
+Result, ArcadeDB openCypher (differs):
+
+| SQLSTATE |
+| --- |
+| 42601 |
 
 ## Not shown
 
