@@ -2,10 +2,9 @@
 
 Fork only (`humemai/arcadedb`, branch `feat/postgresql-prototype`). The table lists constructs added on top of the core of the language, so
 a construct with no row here may still run. An unsupported construct is meant to be refused with an error (SQLSTATE `0A000` where the
-language recognizes it), not answered differently. Known differences from PostgreSQL are named in the row notes, in the parity corpus
-cases marked pending (such as `is-columns-public-rows`, identity columns in `information_schema`), and in the open issue on timestamp
-precision (#106). The answers are compared with PostgreSQL 18.7 by the parity corpus
-(`engine/src/test/resources/postgresql/corpus`).
+language recognizes it), not answered differently. Known differences from PostgreSQL are named in the row notes and in the parity corpus
+cases marked pending (such as `is-columns-public-rows`, identity columns in `information_schema`). The answers are compared with
+PostgreSQL 18.7 by the parity corpus (`engine/src/test/resources/postgresql/corpus`).
 
 | Construct | State | Notes |
 |---|---|---|
@@ -34,3 +33,4 @@ precision (#106). The answers are compared with PostgreSQL 18.7 by the parity co
 | `array_agg`, `json_agg`, `jsonb_agg`, `json_object_agg`, `bool_and`, `bool_or`, `every`, `bit_and`, `bit_or`, `stddev`, `variance`, `mode`, `percentile_cont` and the like | refused, `0A000` | They exist in PostgreSQL, so the answer is "not supported", not `42883`. |
 | A correlated scalar subquery or `IN (SELECT ...)` subquery (it reads a column of the query around it): `(SELECT count(*) FROM t WHERE t.k = o.k)` in the select list, `WHERE`, `ORDER BY`, `SET` and `VALUES`, with any comparison, aggregate, `ORDER BY ... LIMIT` or join inside | supported | Run as PostgreSQL runs it: once for each row of the outer query, with the outer columns it reads fixed to that row's values, so a key equality on an indexed column is an index lookup; an outer row with the same values as an earlier one gets the earlier answer (the last 10000 distinct value sets are kept). The innermost scope wins for an unqualified name. More than one row is `21000`, no row is `NULL`. A relation or column that nobody has is still `42P01` or `42703`. Known limit: an aggregate inside the subquery whose arguments read only outer columns belongs to the outer query in PostgreSQL; here it is refused, `0A000` in the select list, `HAVING` and `ORDER BY`, `42803` in `WHERE`. |
 | `INSERT ... SELECT` with a `NULL` or a string literal in the select list: `INSERT INTO t (a, b) SELECT x, NULL FROM s` | supported | An output that is only `NULL` or a string literal keeps the type `unknown` and the target column decides it, as PostgreSQL resolves it: `NULL` is `NULL` of the column's type, `'42'` is a number for a number column (`22P02` when it is not one). Any other expression keeps its type, so a `text` expression into a number column is `42804` and needs a cast. Before, every literal was `text` first and `NULL` into a `bigint` column was `42804`. |
+| A type modifier in a cast: `numeric(p,s)`, `varchar(n)`, `timestamp(p)` (also on `localtimestamp(p)`), `vector(n)` | supported | Applied as PostgreSQL applies it: a `numeric` is rounded to the scale (`22003` if it does not fit), a `varchar` is cut to the length, a timestamp is rounded to the precision (a half goes away from 2000-01-01), a precision above 6 is 6 (without PostgreSQL's warning). A modifier out of range is `22023`, and a modifier on a type that takes none (`text(3)`, `int4(3)`, `date(3)`) is `42601`, as in PostgreSQL. A type the language does not have (`character(n)`, `timestamptz`, `time`) and a precision on `interval` are `0A000`. |

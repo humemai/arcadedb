@@ -27,6 +27,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -49,7 +50,13 @@ public final class Casts {
   private static final Pattern NUMBER    = Pattern.compile("[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?");
   private static final Pattern DATE      = Pattern.compile("(\\d{1,4})-(\\d{1,2})-(\\d{1,2})");
   private static final Pattern TIMESTAMP = Pattern.compile(
-      "(\\d{1,4})-(\\d{1,2})-(\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2})(?::(\\d{2})(?:\\.(\\d{1,9}))?)?)?");
+      "(\\d{1,4})-(\\d{1,2})-(\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2})(?::(\\d{2})(?:\\.(\\d+))?)?)?");
+
+  /** The most digits of a second a timestamp keeps: microseconds. */
+  static final int MAX_TIMESTAMP_PRECISION = 6;
+
+  /** PostgreSQL counts the microseconds of a timestamp from this instant, and rounds a precision around it. */
+  private static final LocalDateTime PG_EPOCH = LocalDateTime.of(2000, 1, 1, 0, 0);
 
   private static final BigInteger SHORT_MIN = BigInteger.valueOf(Short.MIN_VALUE);
   private static final BigInteger SHORT_MAX = BigInteger.valueOf(Short.MAX_VALUE);
@@ -258,13 +265,10 @@ public final class Casts {
       final int hour = matcher.group(4) == null ? 0 : Integer.parseInt(matcher.group(4));
       final int minute = matcher.group(5) == null ? 0 : Integer.parseInt(matcher.group(5));
       final int second = matcher.group(6) == null ? 0 : Integer.parseInt(matcher.group(6));
-      int nanos = 0;
-      if (matcher.group(7) != null)
-        nanos = Integer.parseInt((matcher.group(7) + "000000000").substring(0, 9));
-      // timestamps have a precision of microseconds
-      nanos = nanos / 1000 * 1000;
+      // timestamps have a precision of microseconds: further digits are rounded, as ParseFractionalSecond does (rint)
+      final long micros = matcher.group(7) == null ? 0 : (long) Math.rint(Double.parseDouble("0." + matcher.group(7)) * 1_000_000);
       return LocalDateTime.of(Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)),
-          Integer.parseInt(matcher.group(3)), hour, minute, second, nanos);
+          Integer.parseInt(matcher.group(3)), hour, minute, second).plus(micros, ChronoUnit.MICROS);
     } catch (final DateTimeException e) {
       throw new PostgreSQLEvaluationException("22008", "date/time field value out of range: \"" + text + "\"");
     }
@@ -279,7 +283,7 @@ public final class Casts {
    * @param from   the type of the value; {@link PgType#UNKNOWN} for a string literal
    * @param to     the target type
    * @param typmod the type modifiers of the target, {@code null} for none: {@code {precision, scale}} for {@code numeric}, the
-   *               length for {@code varchar}
+   *               length for {@code varchar}, the precision for {@code timestamp}, the dimensions for {@code vector}
    */
   public static Object cast(final Object value, final PgType from, final PgType to, final int[] typmod) {
     if (value == null)
@@ -365,8 +369,11 @@ public final class Casts {
       if (rounded.signum() != 0 && rounded.precision() - rounded.scale() > precision - scale)
         throw new PostgreSQLEvaluationException("22003", "numeric field overflow. A field with precision " + precision + ", scale "
             + scale + " must round to an absolute value less than 10^" + (precision - scale));
-      return rounded;
+      // a negative scale rounds left of the point, and the result has no digits after it
+      return rounded.scale() < 0 ? rounded.setScale(0) : rounded;
     }
+    if (type == PgType.TIMESTAMP && typmod.length >= 1)
+      return roundTimestamp((LocalDateTime) value, typmod[0]);
     if (type == PgType.VECTOR && typmod.length >= 1 && ((float[]) value).length != typmod[0])
       throw new PostgreSQLEvaluationException("22000", "expected " + typmod[0] + " dimensions, not " + ((float[]) value).length);
     if (type == PgType.VARCHAR && typmod.length >= 1) {
@@ -375,6 +382,22 @@ public final class Casts {
         return text.substring(0, text.offsetByCodePoints(0, typmod[0]));
     }
     return value;
+  }
+
+  /**
+   * A timestamp with {@code precision} digits of a second, as {@code AdjustTimestampForTypmod} rounds it: half away from zero
+   * on the microseconds counted from 2000-01-01, so a half goes to the later instant after that date and to the earlier one
+   * before it.
+   */
+  static LocalDateTime roundTimestamp(final LocalDateTime value, final int precision) {
+    if (precision >= MAX_TIMESTAMP_PRECISION)
+      return value;
+    long unit = 1;
+    for (int digit = precision; digit < MAX_TIMESTAMP_PRECISION; digit++)
+      unit *= 10;
+    final long micros = ChronoUnit.MICROS.between(PG_EPOCH, value);
+    final long rounded = (Math.abs(micros) + unit / 2) / unit * unit;
+    return PG_EPOCH.plus(micros < 0 ? -rounded : rounded, ChronoUnit.MICROS);
   }
 
   private static boolean fits(final BigInteger value, final PgType type) {
