@@ -348,13 +348,20 @@ abstract class PostgresCatalogExpression {
     /** What follows the aggregated expression: {@code string_agg}'s separator. */
     final List<PostgresCatalogExpression> extraArguments;
     final boolean                         distinct;
+    /** The keys of {@code ORDER BY} inside the call, which {@code array_agg} and {@code string_agg} collect their values in. */
+    final List<PostgresCatalogExpression> orderBy;
+    /** Per key of {@link #orderBy}, whether it is written {@code DESC}. */
+    final List<Boolean>                   descending;
 
     AggregateCall(final String name, final PostgresCatalogExpression argument,
-        final List<PostgresCatalogExpression> extraArguments, final boolean distinct) {
+        final List<PostgresCatalogExpression> extraArguments, final boolean distinct, final List<PostgresCatalogExpression> orderBy,
+        final List<Boolean> descending) {
       this.name = name;
       this.argument = argument;
       this.extraArguments = extraArguments;
       this.distinct = distinct;
+      this.orderBy = orderBy;
+      this.descending = descending;
     }
 
     @Override
@@ -363,6 +370,8 @@ abstract class PostgresCatalogExpression {
         argument.collectColumns(columns);
       for (final PostgresCatalogExpression extra : extraArguments)
         extra.collectColumns(columns);
+      for (final PostgresCatalogExpression key : orderBy)
+        key.collectColumns(columns);
     }
 
     @Override
@@ -442,6 +451,33 @@ abstract class PostgresCatalogExpression {
   }
 
   /**
+   * {@code like_escape(pattern, escape)}, what {@code LIKE pattern ESCAPE escape} stands for: the pattern with the backslash as
+   * its escape character. {@link #UNKNOWN} for an escape of more than one character, which PostgreSQL refuses.
+   */
+  private static Object likeEscape(final List<Object> values) {
+    if (values.size() != 2)
+      return UNKNOWN;
+    if (values.get(0) == null || values.get(1) == null)
+      return null;
+    final String pattern = asString(values.get(0));
+    final String escape = asString(values.get(1));
+    if (escape.length() > 1)
+      return UNKNOWN;
+    final StringBuilder rewritten = new StringBuilder(pattern.length() + 2);
+    for (int i = 0; i < pattern.length(); i++) {
+      final char c = pattern.charAt(i);
+      if (!escape.isEmpty() && c == escape.charAt(0) && i + 1 < pattern.length())
+        rewritten.append('\\').append(pattern.charAt(++i));
+      else if (c == '\\')
+        // a backslash is an ordinary character once another one, or none, is the escape
+        rewritten.append("\\\\");
+      else
+        rewritten.append(c);
+    }
+    return rewritten.toString();
+  }
+
+  /**
    * A window function: {@code row_number() OVER (PARTITION BY ... ORDER BY ...)}. Its value depends on the
    * other rows, not only on this one, so it is computed by the caller over the whole row set and read back
    * here - see {@link Resolver#window}. The JDBC driver's column list is written with one of these, to number
@@ -479,7 +515,7 @@ abstract class PostgresCatalogExpression {
   private static Object scalarFunction(final String name, final List<Object> values) {
     switch (name) {
     case "lower", "upper", "length", "abs", "trim", "btrim", "ltrim", "rtrim", "replace", "concat", "substring", "substr",
-         "array_upper", "array_lower", "array_length", "cardinality" -> {
+         "array_upper", "array_lower", "array_length", "cardinality", "like_escape" -> {
       for (final Object value : values)
         if (value == UNKNOWN)
           return UNKNOWN;
@@ -499,6 +535,9 @@ abstract class PostgresCatalogExpression {
 
     if (name.startsWith("array_") || "cardinality".equals(name))
       return arrayFunction(name, values);
+
+    if ("like_escape".equals(name))
+      return likeEscape(values);
 
     if (values.isEmpty() || values.get(0) == null)
       return values.isEmpty() ? UNKNOWN : null;
@@ -611,15 +650,14 @@ abstract class PostgresCatalogExpression {
   }
 
   /**
-   * {@code information_schema._pg_expandarray(array)}: a set-returning function, one row for each element of the array, each the
-   * pair {@code (x, n)} of the element and its position from 1 (the JDBC driver lists the key columns of an index and of a
-   * primary key with it). A projection holding it is evaluated once for each element, the calls of one row in step with each
-   * other; a NULL array has no element, and so no row. See {@link Resolver#expansion}.
+   * A set-returning function in a projection: a row of the statement becomes one row for each element of the array the call
+   * reads, the calls of one row in step with each other, and a call with fewer elements than another reads NULL for the rows it
+   * has none for. A NULL array has no element, and so no row. See {@link Resolver#expansion}.
    */
-  static final class ExpandArray extends PostgresCatalogExpression {
-    private final PostgresCatalogExpression array;
+  abstract static class SetReturning extends PostgresCatalogExpression {
+    final PostgresCatalogExpression array;
 
-    ExpandArray(final PostgresCatalogExpression array) {
+    SetReturning(final PostgresCatalogExpression array) {
       this.array = array;
     }
 
@@ -652,13 +690,97 @@ abstract class PostgresCatalogExpression {
         return null;
       if (!(value instanceof List<?> list))
         return UNKNOWN;
-      // a call with fewer elements than another of the same row reads NULL for the rows it has none for
-      if (position >= list.size())
-        return null;
+      return position >= list.size() ? null : element(list, position);
+    }
+
+    /** What the call answers on the row of the element at {@code position}, from 0. */
+    abstract Object element(List<?> list, int position);
+  }
+
+  /**
+   * {@code information_schema._pg_expandarray(array)}: each element as the pair {@code (x, n)} of the element and its position
+   * from 1 (the JDBC driver lists the key columns of an index and of a primary key with it).
+   */
+  static final class ExpandArray extends SetReturning {
+    ExpandArray(final PostgresCatalogExpression array) {
+      super(array);
+    }
+
+    @Override
+    Object element(final List<?> list, final int position) {
       final Map<String, Object> pair = new LinkedHashMap<>(2);
       pair.put("x", list.get(position));
       pair.put("n", position + 1);
       return pair;
+    }
+  }
+
+  /** {@code unnest(array)}: the elements themselves (SQLAlchemy reads the key columns of a constraint and of an index with it). */
+  private static final class Unnest extends SetReturning {
+    Unnest(final PostgresCatalogExpression array) {
+      super(array);
+    }
+
+    @Override
+    Object element(final List<?> list, final int position) {
+      return list.get(position);
+    }
+  }
+
+  /**
+   * {@code generate_subscripts(array, 1)}: the subscripts of the array, which start at 1 for an array and at 0 for an
+   * {@code int2vector} or {@code oidvector} such as {@code pg_index.indkey}, as in PostgreSQL.
+   */
+  private static final class GenerateSubscripts extends SetReturning {
+    private final PostgresCatalogExpression dimension;
+
+    GenerateSubscripts(final PostgresCatalogExpression array, final PostgresCatalogExpression dimension) {
+      super(array);
+      this.dimension = dimension;
+    }
+
+    @Override
+    void collectColumns(final Columns columns) {
+      super.collectColumns(columns);
+      dimension.collectColumns(columns);
+    }
+
+    /** -1 for any other dimension than the first, which is the only one an array of this catalog has. */
+    @Override
+    int rows(final Resolver resolver) {
+      return dimension.evaluate(resolver) instanceof Number number && number.longValue() == 1L ? super.rows(resolver) : -1;
+    }
+
+    @Override
+    Object element(final List<?> list, final int position) {
+      return list instanceof PostgresCatalogIndexes.Vector ? position : position + 1;
+    }
+  }
+
+  /** {@code ARRAY[a, b]}: the array of the values. */
+  private static final class ArrayConstructor extends PostgresCatalogExpression {
+    private final List<PostgresCatalogExpression> elements;
+
+    ArrayConstructor(final List<PostgresCatalogExpression> elements) {
+      this.elements = elements;
+    }
+
+    @Override
+    void collectColumns(final Columns columns) {
+      for (final PostgresCatalogExpression element : elements)
+        element.collectColumns(columns);
+    }
+
+    @Override
+    Object evaluate(final Resolver resolver) {
+      final List<Object> values = new ArrayList<>(elements.size());
+      for (final PostgresCatalogExpression element : elements) {
+        final Object value = element.evaluate(resolver);
+        if (value == UNKNOWN)
+          return UNKNOWN;
+        values.add(value);
+      }
+      return values;
     }
   }
 
@@ -1288,14 +1410,14 @@ abstract class PostgresCatalogExpression {
     private       int                        position;
     private       int                        depth;
     private       boolean                    aggregated;
-    private final List<ExpandArray>          expansions = new ArrayList<>();
+    private final List<SetReturning>          expansions = new ArrayList<>();
 
     Parser(final List<PostgresCatalogToken> tokens) {
       this.tokens = tokens;
     }
 
     /** The set-returning calls the expression read, which multiply the row they are projected on. */
-    List<ExpandArray> expansions() {
+    List<SetReturning> expansions() {
       return expansions;
     }
 
@@ -1440,9 +1562,15 @@ abstract class PostgresCatalogExpression {
             left = new In(left, candidates, negated);
           } else if (next.isKeyword("LIKE") || next.isKeyword("ILIKE")) {
             ++position;
-            final PostgresCatalogExpression right = parseConcat();
+            PostgresCatalogExpression right = parseConcat();
             if (right == null)
               return null;
+            if (skipKeyword("ESCAPE")) {
+              final PostgresCatalogExpression escape = parseConcat();
+              if (escape == null)
+                return null;
+              right = new FunctionCall("like_escape", List.of(right, escape));
+            }
             left = new Binary((negated ? "NOT " : "") + next.text.toUpperCase(Locale.ENGLISH), left, right);
           } else if (negated)
             return null;
@@ -1724,6 +1852,10 @@ abstract class PostgresCatalogExpression {
         if (token.isKeyword("SELECT") || token.isKeyword("FROM") || token.isKeyword("WHERE"))
           // A sub-select, or the end of the expression where the caller expected more.
           return null;
+        if (token.isKeyword("ARRAY") && peek(1) != null && peek(1).isSymbol("["))
+          return parseArrayConstructor();
+        if (token.isKeyword("CAST") && peek(1) != null && peek(1).isSymbol("("))
+          return parseCast();
         if ((token.isKeyword("EXISTS") || token.isKeyword("ARRAY")) && peek(1) != null && peek(1).isSymbol("(")
             && peek(2) != null && peek(2).isKeyword("SELECT")) {
           ++position;
@@ -1739,6 +1871,35 @@ abstract class PostgresCatalogExpression {
         return null;
       }
       }
+    }
+
+    /** {@code ARRAY[a, b, ...]}, the position on {@code ARRAY} (SQLAlchemy filters the kind of a relation with one). */
+    private PostgresCatalogExpression parseArrayConstructor() {
+      position += 2; // ARRAY [
+      final List<PostgresCatalogExpression> elements = new ArrayList<>();
+      if (!skipSymbol("]")) {
+        do {
+          final PostgresCatalogExpression element = guardDepth(this::parseExpression);
+          if (element == null)
+            return null;
+          elements.add(element);
+        } while (skipSymbol(","));
+        if (!skipSymbol("]"))
+          return null;
+      }
+      return new ArrayConstructor(elements);
+    }
+
+    /** {@code CAST(x AS type)}, the position on {@code CAST}: read as {@code x::type} is. */
+    private PostgresCatalogExpression parseCast() {
+      position += 2; // CAST (
+      final PostgresCatalogExpression operand = guardDepth(this::parseExpression);
+      if (operand == null || !skipKeyword("AS"))
+        return null;
+      final String castType = skipCastType();
+      if (castType == null || !skipSymbol(")"))
+        return null;
+      return LOOKUP_CASTS.contains(castType) ? new FunctionCall(castType, List.of(operand)) : operand;
     }
 
     /**
@@ -1793,8 +1954,13 @@ abstract class PostgresCatalogExpression {
         if (peek() != null && peek().isKeyword("OVER"))
           return parseWindow(functionName);
 
-        if ("_pg_expandarray".equals(functionName) && arguments.size() == 1) {
-          final ExpandArray expansion = new ExpandArray(arguments.get(0));
+        final SetReturning expansion = switch (functionName) {
+          case "_pg_expandarray" -> arguments.size() == 1 ? new ExpandArray(arguments.get(0)) : null;
+          case "unnest" -> arguments.size() == 1 ? new Unnest(arguments.get(0)) : null;
+          case "generate_subscripts" -> arguments.size() == 2 ? new GenerateSubscripts(arguments.get(0), arguments.get(1)) : null;
+          default -> null;
+        };
+        if (expansion != null) {
           expansions.add(expansion);
           return expansion;
         }
@@ -1897,8 +2063,9 @@ abstract class PostgresCatalogExpression {
     }
 
     /**
-     * Reads an aggregate call: {@code count(*)}, {@code count(DISTINCT x)}, {@code string_agg(x, ', ')}. An
-     * ORDER BY or FILTER clause changes what the aggregate answers, so a call carrying one is not read; followed
+     * Reads an aggregate call: {@code count(*)}, {@code count(DISTINCT x)}, {@code string_agg(x, ', ')},
+     * {@code array_agg(x ORDER BY y)}. A FILTER clause changes what the aggregate answers, and so does an
+     * ORDER BY inside any other aggregate than these two, so a call carrying one is not read; followed
      * by OVER it is a window function instead, which {@link #parseWindow} reads.
      */
     private PostgresCatalogExpression parseAggregate(final String functionName) {
@@ -1909,6 +2076,8 @@ abstract class PostgresCatalogExpression {
 
       PostgresCatalogExpression argument = null;
       final List<PostgresCatalogExpression> extraArguments = new ArrayList<>();
+      final List<PostgresCatalogExpression> orderBy = new ArrayList<>();
+      final List<Boolean> descending = new ArrayList<>();
       if ("count".equals(functionName) && !distinct && peek() != null && peek().isSymbol("*") && peek(1) != null
           && peek(1).isSymbol(")"))
         position += 2;
@@ -1922,6 +2091,21 @@ abstract class PostgresCatalogExpression {
             return null;
           extraArguments.add(extra);
         }
+        // the order the values are collected in changes the answer of these two only; any other aggregate with it is not read
+        if (("array_agg".equals(functionName) || "string_agg".equals(functionName)) && skipKeyword("ORDER")) {
+          if (!skipKeyword("BY"))
+            return null;
+          do {
+            final PostgresCatalogExpression key = parseExpression();
+            if (key == null)
+              return null;
+            orderBy.add(key);
+            final boolean desc = peek() != null && peek().isKeyword("DESC");
+            if (desc || peek() != null && peek().isKeyword("ASC"))
+              ++position;
+            descending.add(desc);
+          } while (skipSymbol(","));
+        }
         if (!skipSymbol(")"))
           return null;
         if (extraArguments.size() != ("string_agg".equals(functionName) ? 1 : 0))
@@ -1929,12 +2113,13 @@ abstract class PostgresCatalogExpression {
       }
 
       if (peek() != null && peek().isKeyword("OVER"))
-        return parseWindow(functionName);
+        // an ORDER BY inside the call of a window function is not read
+        return orderBy.isEmpty() ? parseWindow(functionName) : null;
       if (peek() != null && peek().isKeyword("FILTER"))
         return null;
 
       aggregated = true;
-      return new AggregateCall(functionName, argument, extraArguments, distinct);
+      return new AggregateCall(functionName, argument, extraArguments, distinct, orderBy, descending);
     }
 
     /** Whether the expressions this parser has read so far contain an aggregate call. */

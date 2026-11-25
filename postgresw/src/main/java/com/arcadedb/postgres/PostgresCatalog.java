@@ -37,6 +37,7 @@ import com.arcadedb.schema.Property;
 import com.arcadedb.schema.Schema;
 import com.arcadedb.security.SecurityHelper;
 
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -204,6 +205,15 @@ public class PostgresCatalog {
       "pg_depend", "pg_rewrite", "pg_sequence", "pg_shdescription", "pg_default_acl", "pg_foreign_table", "pg_tablespace",
       "pg_settings", "pg_event_trigger", "pg_foreign_data_wrapper", "pg_foreign_server", "pg_user_mappings", "pg_subscription",
       "pg_db_role_setting", "pg_largeobject_metadata", "pg_parameter_acl");
+
+  /**
+   * The relations that a statement of the {@code postgresql} language (fork issue #64) reads with their columns and no row, because
+   * the relational view it sees has none of what their rows describe: {@code pg_opclass}, whose rows are operator classes, while
+   * every {@code pg_index.indclass} is 0. SQLAlchemy reads it to name the operator class of an index column. A statement of another
+   * language keeps the refusal.
+   */
+  private static final Map<String, List<String>> NO_ROWS_FOR_THE_LANGUAGE = Map.of("pg_opclass",
+      List.of("oid", "opcmethod", "opcname", "opcnamespace", "opcowner", "opcfamily", "opcintype", "opcdefault", "opckeytype"));
 
   /**
    * The relations of {@link #JOINED_RELATIONS} that hold no row in this catalog, whatever the schema: the honest answer to a
@@ -1060,7 +1070,7 @@ public class PostgresCatalog {
 
     if (shadowedByUserType(from, context))
       return null;
-    if (readsJoinedRelation(from, nested) || readsNoEntry(statement, from))
+    if (readsJoinedRelation(from, nested, context.relational) || readsNoEntry(statement, from))
       return resolveJoined(statement, from, context, outer);
 
     final Map<String, Collection<String>> columnsByRelation = new LinkedHashMap<>();
@@ -1331,7 +1341,7 @@ public class PostgresCatalog {
    * as it was. A statement that reads no emulated relation at all is the join path's only when {@code nested}: a derived table or a
    * sub-select of a catalog query, whose rows come from a table function.
    */
-  private static boolean readsJoinedRelation(final List<FromEntry> from, final boolean nested) {
+  private static boolean readsJoinedRelation(final List<FromEntry> from, final boolean nested, final boolean relational) {
     boolean joined = false;
     boolean modelled = false;
     for (final FromEntry entry : from) {
@@ -1339,7 +1349,10 @@ public class PostgresCatalog {
         joined = true;
       else if (entry.derived != null)
         joined |= from.size() > 1 || entry.columnAliases != null;
-      else if (!RELATIONS.containsKey(entry.relation))
+      else if (relational && NO_ROWS_FOR_THE_LANGUAGE.containsKey(entry.relation)) {
+        modelled = true;
+        joined = true;
+      } else if (!RELATIONS.containsKey(entry.relation))
         return false;
       else {
         modelled = true;
@@ -1382,7 +1395,8 @@ public class PostgresCatalog {
       columnsByRelation.put(entry.relation, entries[i].columns());
       if (entry.derived == null && entry.function == null) {
         tolerant &= FAMILIES.get(entry.relation) != Family.TYPES;
-        neverHasRows |= NEVER_HAVE_ROWS.containsKey(entry.relation) && entry.join != Join.LEFT;
+        neverHasRows |= (NEVER_HAVE_ROWS.containsKey(entry.relation)
+            || context.relational && NO_ROWS_FOR_THE_LANGUAGE.containsKey(entry.relation)) && entry.join != Join.LEFT;
       }
     }
 
@@ -1487,6 +1501,10 @@ public class PostgresCatalog {
       return tableFunction(entry, from, context, outer);
     if (entry.derived != null)
       return derivedTable(entry, context, outer);
+    if (context.relational && NO_ROWS_FOR_THE_LANGUAGE.containsKey(entry.relation)) {
+      final List<String> columns = NO_ROWS_FOR_THE_LANGUAGE.get(entry.relation);
+      return new JoinedEntry(columns, List.of(), nullColumns(columns));
+    }
     return new JoinedEntry(RELATIONS.get(entry.relation), context.joinRows(entry.relation), nullRow(entry.relation));
   }
 
@@ -3312,7 +3330,7 @@ public class PostgresCatalog {
         int projections = 1;
         if (!projection.expansions.isEmpty()) {
           projections = 0;
-          for (final PostgresCatalogExpression.ExpandArray expansion : projection.expansions) {
+          for (final PostgresCatalogExpression.SetReturning expansion : projection.expansions) {
             final int rows = expansion.rows(resolver);
             if (rows < 0)
               return DECLINED;
@@ -3693,6 +3711,8 @@ public class PostgresCatalog {
       }
 
       int index = -1;
+      if (key.size() == 5 && key.get(0).text.equalsIgnoreCase("pg_catalog") && key.get(1).isSymbol("."))
+        key.subList(0, 2).clear();
       if (key.size() == 3 && key.get(1).isSymbol(".") && projection != null) {
         index = projectedColumn(projection, key.get(0).text.toLowerCase(Locale.ENGLISH), key.get(2).text.toLowerCase(Locale.ENGLISH));
         if (index < 0)
@@ -3773,7 +3793,7 @@ public class PostgresCatalog {
    * @param expansions the set-returning calls it holds, each of which turns a row into one for every element of its array
    */
   private record Projection(List<ProjectionItem> items, boolean aggregated,
-                            List<PostgresCatalogExpression.ExpandArray> expansions) {
+                            List<PostgresCatalogExpression.SetReturning> expansions) {
     List<String> keys() {
       final List<String> keys = new ArrayList<>(items.size());
       for (final ProjectionItem item : items)
@@ -3789,7 +3809,7 @@ public class PostgresCatalog {
       return null;
 
     final List<ProjectionItem> projection = new ArrayList<>(items.size());
-    final List<PostgresCatalogExpression.ExpandArray> expansions = new ArrayList<>();
+    final List<PostgresCatalogExpression.SetReturning> expansions = new ArrayList<>();
     final Set<String> keys = new HashSet<>();
     boolean aggregated = false;
 
@@ -3879,6 +3899,14 @@ public class PostgresCatalog {
   }
 
   private static int entryIndex(final List<FromEntry> from, final String qualifier) {
+    // An entry goes by its alias, and one without an alias by the name of its relation: in "pg_namespace AS n_ref ... JOIN
+    // pg_namespace ON pg_namespace.oid = ..." the qualified name is the second entry, whose alias does not hide it
+    for (int i = 0; i < from.size(); i++)
+      if (qualifier.equals(from.get(i).alias))
+        return i;
+    for (int i = 0; i < from.size(); i++)
+      if (from.get(i).alias == null && qualifier.equals(from.get(i).relation))
+        return i;
     for (int i = 0; i < from.size(); i++) {
       final FromEntry entry = from.get(i);
       if (qualifier.equals(entry.alias) || qualifier.equals(entry.relation) || entry.relation.endsWith("." + qualifier)
@@ -4010,7 +4038,10 @@ public class PostgresCatalog {
       final List<Object> values = new ArrayList<>(group.size());
       final Set<List<Object>> seen = call.distinct ? new HashSet<>() : null;
       final List<Object> separators = "string_agg".equals(call.name) ? new ArrayList<>(group.size()) : null;
-      for (final Joined joined : group) {
+      final List<Joined> collected = call.orderBy.isEmpty() ? group : ordered(group, call);
+      if (collected == null)
+        return PostgresCatalogExpression.UNKNOWN;
+      for (final Joined joined : collected) {
         if (call.argument == null) {
           // count(*): every row counts, whatever it holds.
           values.add(Boolean.TRUE);
@@ -4038,6 +4069,37 @@ public class PostgresCatalog {
       return aggregateOf(call.name, values, separators);
     }
 
+    /**
+     * The rows of a group in the order of the {@code ORDER BY} of an aggregate call, a NULL key after every value, and before
+     * every value for a key written {@code DESC}, as PostgreSQL orders them. Null when a key cannot be computed.
+     */
+    private List<Joined> ordered(final List<Joined> rows, final PostgresCatalogExpression.AggregateCall call) {
+      context.charge(rows.size());
+      final List<Map.Entry<List<Object>, Joined>> keyed = new ArrayList<>(rows.size());
+      for (final Joined joined : rows) {
+        final RowResolver resolver = new RowResolver(joined.row(), joined.nulled(), from, context, outer);
+        final List<Object> key = new ArrayList<>(call.orderBy.size());
+        for (final PostgresCatalogExpression expression : call.orderBy) {
+          final Object value = expression.evaluate(resolver);
+          if (value == PostgresCatalogExpression.UNKNOWN)
+            return null;
+          key.add(value);
+        }
+        keyed.add(new AbstractMap.SimpleImmutableEntry<>(key, joined));
+      }
+      keyed.sort((left, right) -> {
+        for (int i = 0; i < call.orderBy.size(); i++) {
+          final Object a = left.getKey().get(i);
+          final Object b = right.getKey().get(i);
+          final int order = a == null ? b == null ? 0 : 1 : b == null ? -1 : compareValues(a, b);
+          if (order != 0)
+            return call.descending.get(i) ? -order : order;
+        }
+        return 0;
+      });
+      return keyed.stream().map(Map.Entry::getValue).toList();
+    }
+
     @Override
     public Object function(final String name, final List<Object> arguments) {
       return switch (name) {
@@ -4050,6 +4112,9 @@ public class PostgresCatalog {
         // it is on the search path by definition.
         case "pg_table_is_visible", "pg_type_is_visible", "pg_function_is_visible" -> Boolean.TRUE;
         case "pg_encoding_to_char" -> "UTF8";
+        // the one setting a catalog query reads: every table is a heap table, see pg_am (SQLAlchemy's table options)
+        case "current_setting" -> arguments.size() == 1 && "default_table_access_method".equals(arguments.get(0)) ? "heap" :
+            PostgresCatalogExpression.UNKNOWN;
         // Both tablespaces there are live in the data directory, which PostgreSQL answers with an empty location (issue #10591)
         case "pg_tablespace_location" -> arguments.size() != 1 || arguments.get(0) == PostgresCatalogExpression.UNKNOWN ?
             PostgresCatalogExpression.UNKNOWN : arguments.get(0) == null ? null : "";
