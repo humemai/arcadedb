@@ -500,21 +500,21 @@ err-values-int-and-text-literal-mix	multiset	-	ok	SELECT * FROM (VALUES (1), ('x
 err-values-default-keyword	multiset	-	ok	SELECT * FROM (VALUES (DEFAULT)) v(a)	{"error":"42601"}
 err-values-text-key-against-int-column	multiset	-	ok	SELECT p.name FROM person p JOIN (VALUES ('1'::text), ('3'::text)) v(k) ON v.k = p.pid	{"error":"42883"}
 values-lateral-stays-out	multiset	-	pending	SELECT * FROM person p, LATERAL (VALUES (p.pid)) v(a) ORDER BY p.pid	{"columns":["id","age","city","name","pid","a"],"types":["text","int4","varchar","varchar","int4","int4"],"rows":[["#2:0",36,"Delft","Ada",1,1],["#2:1",41,"Delft","Bo",2,2],["#2:2",null,"Leiden","Cy",3,3],["#2:3",29,"Leiden","Di",4,4],["#2:4",52,"Utrecht","Ed",5,5]]}
-typmod-timestamp-literal	multiset	-	ok	SELECT '2026-01-02 03:04:05.456789'::timestamp(0) AS p0, '2026-01-02 03:04:05.456789'::timestamp(3) AS p3, CAST('2026-01-02 03:04:05.456789' AS timestamp(6)) AS p6, timestamp(1) '2026-12-31 23:59:59.95' AS carry	pending-server
-typmod-timestamp-half-around-2000	multiset	-	ok	SELECT '2000-01-01 00:00:00.5'::timestamp(0) AS after_2000, '1999-12-31 23:59:59.5'::timestamp(0) AS before_2000, '1969-07-20 20:17:40.125'::timestamp(2) AS older	pending-server
-typmod-timestamp-column	ordered	-	ok	SELECT oid, (placed + interval '1.5 seconds')::timestamp(0) AS t FROM orders ORDER BY oid	pending-server
-typmod-timestamp-input-rounds	multiset	-	ok	SELECT '2026-01-01 00:00:00.1234567'::timestamp AS a, '2026-12-31 23:59:59.9999999'::timestamp AS b, '2026-01-01 00:00:00.4999999'::timestamp(0) AS c	pending-server
-typmod-timestamp-above-six	multiset	-	ok	SELECT '2026-01-01 00:00:00.123456'::timestamp(9) AS t	pending-server
-typmod-localtimestamp	multiset	-	ok	SELECT localtimestamp(0)::text LIKE '%.%' AS has_fraction, localtimestamp(0) > timestamp '2000-01-01' AS recent	pending-server
-typmod-numeric-negative-scale	multiset	-	ok	SELECT 12345.678::numeric(7,-3) AS thousands, 0.0012::numeric(2,4) AS small	pending-server
-typmod-varchar	multiset	-	ok	SELECT 'abcdef'::varchar(3) AS v, CAST('ab' AS character varying(5)) AS w	pending-server
-err-typmod-text	multiset	-	ok	SELECT 'abc'::text(2)	pending-server
-err-typmod-integer	multiset	-	ok	SELECT 1::int4(3)	pending-server
-err-typmod-float	multiset	-	ok	SELECT 1.5::float8(2)	pending-server
-err-typmod-boolean	multiset	-	ok	SELECT 'true'::bool(1)	pending-server
-err-typmod-date	multiset	-	ok	SELECT '2026-01-01'::date(2)	pending-server
-err-typmod-jsonb	multiset	-	ok	SELECT '{}'::jsonb(1)	pending-server
-err-typmod-varchar-zero	multiset	-	ok	SELECT 'abc'::varchar(0)	pending-server
-err-typmod-numeric-precision-zero	multiset	-	ok	SELECT 1::numeric(0)	pending-server
-err-typmod-numeric-scale-range	multiset	-	ok	SELECT 1::numeric(5,1001)	pending-server
-err-typmod-numeric-three	multiset	-	ok	SELECT 1::numeric(5,2,1)	pending-server
+typmod-timestamp-literal	multiset	-	ok	SELECT '2026-01-02 03:04:05.456789'::timestamp(0) AS p0, '2026-01-02 03:04:05.456789'::timestamp(3) AS p3, CAST('2026-01-02 03:04:05.456789' AS timestamp(6)) AS p6, timestamp(1) '2026-12-31 23:59:59.95' AS carry	{"columns":["p0","p3","p6","carry"],"types":["timestamp","timestamp","timestamp","timestamp"],"rows":[["2026-01-02T03:04:05","2026-01-02T03:04:05.457","2026-01-02T03:04:05.456789","2027-01-01T00:00"]]}
+typmod-timestamp-half-around-2000	multiset	-	ok	SELECT '2000-01-01 00:00:00.5'::timestamp(0) AS after_2000, '1999-12-31 23:59:59.5'::timestamp(0) AS before_2000, '1969-07-20 20:17:40.125'::timestamp(2) AS older	{"columns":["after_2000","before_2000","older"],"types":["timestamp","timestamp","timestamp"],"rows":[["2000-01-01T00:00:01","1999-12-31T23:59:59","1969-07-20T20:17:40.120"]]}
+typmod-timestamp-column	ordered	-	ok	SELECT oid, (placed + interval '1.5 seconds')::timestamp(0) AS t FROM orders ORDER BY oid	{"columns":["oid","t"],"types":["int4","timestamp"],"rows":[[100,"2026-01-05T00:00:02"],[101,"2026-01-07T00:00:02"],[102,"2026-02-01T00:00:02"],[103,"2026-02-03T00:00:02"],[104,"2026-03-09T00:00:02"],[105,"2026-03-10T00:00:02"]]}
+typmod-timestamp-input-rounds	multiset	-	ok	SELECT '2026-01-01 00:00:00.1234567'::timestamp AS a, '2026-12-31 23:59:59.9999999'::timestamp AS b, '2026-01-01 00:00:00.4999999'::timestamp(0) AS c	{"columns":["a","b","c"],"types":["timestamp","timestamp","timestamp"],"rows":[["2026-01-01T00:00:00.123457","2027-01-01T00:00","2026-01-01T00:00:01"]]}
+typmod-timestamp-above-six	multiset	-	ok	SELECT '2026-01-01 00:00:00.123456'::timestamp(9) AS t	{"columns":["t"],"types":["timestamp"],"rows":[["2026-01-01T00:00:00.123456"]]}
+typmod-localtimestamp	multiset	-	ok	SELECT localtimestamp(0)::text LIKE '%.%' AS has_fraction, localtimestamp(0) > timestamp '2000-01-01' AS recent	{"columns":["has_fraction","recent"],"types":["bool","bool"],"rows":[[false,true]]}
+typmod-numeric-negative-scale	multiset	-	ok	SELECT 12345.678::numeric(7,-3) AS thousands, 0.0012::numeric(2,4) AS small	{"columns":["thousands","small"],"types":["numeric","numeric"],"rows":[[12000,0.0012]]}
+typmod-varchar	multiset	-	ok	SELECT 'abcdef'::varchar(3) AS v, CAST('ab' AS character varying(5)) AS w	{"columns":["v","w"],"types":["varchar","varchar"],"rows":[["abc","ab"]]}
+err-typmod-text	multiset	-	ok	SELECT 'abc'::text(2)	{"error":"42601"}
+err-typmod-integer	multiset	-	ok	SELECT 1::int4(3)	{"error":"42601"}
+err-typmod-float	multiset	-	ok	SELECT 1.5::float8(2)	{"error":"42601"}
+err-typmod-boolean	multiset	-	ok	SELECT 'true'::bool(1)	{"error":"42601"}
+err-typmod-date	multiset	-	ok	SELECT '2026-01-01'::date(2)	{"error":"42601"}
+err-typmod-jsonb	multiset	-	ok	SELECT '{}'::jsonb(1)	{"error":"42601"}
+err-typmod-varchar-zero	multiset	-	ok	SELECT 'abc'::varchar(0)	{"error":"22023"}
+err-typmod-numeric-precision-zero	multiset	-	ok	SELECT 1::numeric(0)	{"error":"22023"}
+err-typmod-numeric-scale-range	multiset	-	ok	SELECT 1::numeric(5,1001)	{"error":"22023"}
+err-typmod-numeric-three	multiset	-	ok	SELECT 1::numeric(5,2,1)	{"error":"22023"}
