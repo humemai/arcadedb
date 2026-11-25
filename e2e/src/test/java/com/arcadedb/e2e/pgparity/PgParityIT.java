@@ -19,6 +19,7 @@
 package com.arcadedb.e2e.pgparity;
 
 import com.arcadedb.Constants;
+import com.arcadedb.query.postgresql.ValuesFixture;
 import com.arcadedb.query.postgresql.corpus.Corpus;
 import com.arcadedb.query.postgresql.corpus.CorpusFile;
 import com.arcadedb.query.postgresql.corpus.Outcome;
@@ -446,6 +447,25 @@ class PgParityIT {
     final Path guards = resources.resolve("postgresql/small-writes.sql");
     assumeTrue(Files.exists(path) && Files.exists(guards), "the write corpus is not on this branch yet");
     pg.load(Files.readString(guards, StandardCharsets.UTF_8));
+    writeCases(path, arcade, "writes");
+  }
+
+  /**
+   * The values corpus (fork issue #29): the writes of {@code jsonb}, arrays and {@code bytea} of {@code values-writes.tsv} on the
+   * table of {@code values-schema.sql} on the server and on {@code ValuesFixture} in ArcadeDB, compared as the write corpus is.
+   */
+  @Test
+  @Order(10)
+  void valuesCorpus() throws Exception {
+    pg.load(Files.readString(resources.resolve("postgresql/values-schema.sql"), StandardCharsets.UTF_8));
+    try (final ArcadeSide values = new ArcadeSide("values")) {
+      ValuesFixture.createSchema(values.database());
+      ValuesFixture.load(values.database());
+      writeCases(corpusFile(Corpus.VALUES_WRITES_FILE), values, "values");
+    }
+  }
+
+  private void writeCases(final Path path, final ArcadeSide side, final String label) throws Exception {
     final CorpusFile file = CorpusFile.read(path);
     final List<String> corpusFailures = new ArrayList<>();
     final List<String> engineFailures = new ArrayList<>();
@@ -470,12 +490,12 @@ class PgParityIT {
           corpusFailures.add(c.id() + ": the server no longer does what the corpus says: " + drift);
       }
 
-      final WriteOutcome engine = arcade.runWrite(c.statement(), c.checks());
+      final WriteOutcome engine = side.runWrite(c.statement(), c.checks());
       final String difference = WriteOutcome.compare(server, engine, Values.DEFAULT_TOLERANCE);
       final String verdict;
       if (difference == null && c.pending()) {
         verdict = "pending, but equal: flip the status to ok";
-        engineFailures.add(c.id() + ": pending, yet the engine does what the server did: flip status to ok in writes.tsv");
+        engineFailures.add(c.id() + ": pending, yet the engine does what the server did: flip status to ok in " + path.getFileName());
       } else if (difference == null) {
         verdict = "equal";
         ++equal;
@@ -487,10 +507,10 @@ class PgParityIT {
         ++different;
         engineFailures.add(c.id() + ": " + difference);
       }
-      line("writes", c.id(), verdict);
+      line(label, c.id(), verdict);
     }
 
-    final String summary = "writes: " + file.rows.size() + " statements, " + equal + " equal, " + pending + " pending, " + different
+    final String summary = label + ": " + file.rows.size() + " statements, " + equal + " equal, " + pending + " pending, " + different
         + " different";
     REPORT.add(summary);
     System.out.println("pgparity: " + summary);

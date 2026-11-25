@@ -650,6 +650,8 @@ final class AstBuilder {
         throw Diagnostics.syntaxError("parameter number too large", token);
       }
     }
+    if (context instanceof ArrayExprContext e)
+      return new Expression.ArrayConstructor(position(e.getStart()), e.exprList() == null ? List.of() : expressions(e.exprList()));
     if (context instanceof ExistsExprContext e)
       return new Expression.Exists(position(e.getStart()), query(e.selectStmt()));
     if (context instanceof ScalarSubqueryExprContext e)

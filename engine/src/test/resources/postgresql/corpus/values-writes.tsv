@@ -1,0 +1,74 @@
+# PostgreSQL-style SQL prototype: the values corpus (fork issue #29), the writes of jsonb, arrays and bytea.
+# The columns and the rules are those of writes.tsv: id, status, checks, statement, expected. Every case runs in a transaction that is rolled back, on the table of values-schema.sql (the server) and of ValuesFixture (ArcadeDB).
+# expected: written by the generator from the real server, never by hand. pending-server = the generator has not run on the case yet.
+# Not here, because a record cannot hold them as PostgreSQL does (refused with 0A000, tested in ValuesWriteTest): a JSON value that is not what the property holds, a null element of a typed list, an array of more than one dimension. vector needs pgvector, which this server does not have.
+# Copyright © 2021-present Arcade Data Ltd (info@arcadedata.com)
+# SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
+# SPDX-License-Identifier: Apache-2.0
+id	status	checks	statement	expected
+insert-tags-literal	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (100, '{x,"y z","q\\"u",  spaced out  ,"NULL","",a\\,b}')	pending-server
+insert-tags-returning	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (101, '{r}') RETURNING mid, tags	pending-server
+insert-tags-empty	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (102, '{}')	pending-server
+insert-tags-constructor	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (103, ARRAY['a', 'b c']) RETURNING mid, tags	pending-server
+insert-tags-cast	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (104, '{a,b}'::text[])	pending-server
+insert-tags-empty-constructor-cast	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (105, ARRAY[]::text[])	pending-server
+insert-tags-int-array	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (106, ARRAY[1, 2])	pending-server
+insert-tags-null	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (107, NULL)	pending-server
+insert-labels-null-elements	ok	SELECT mid, labels FROM memory	INSERT INTO memory (mid, labels) VALUES (108, '{a,NULL,null}') RETURNING mid, labels	pending-server
+insert-labels-constructor-null	ok	SELECT mid, labels FROM memory	INSERT INTO memory (mid, labels) VALUES (109, ARRAY['a', NULL])	pending-server
+insert-flags-literal	ok	SELECT mid, flags FROM memory	INSERT INTO memory (mid, flags) VALUES (110, '{t,f,yes,off}') RETURNING mid, flags	pending-server
+insert-flags-constructor	ok	SELECT mid, flags FROM memory	INSERT INTO memory (mid, flags) VALUES (111, ARRAY[true, false])	pending-server
+insert-counts-literal	ok	SELECT mid, counts FROM memory	INSERT INTO memory (mid, counts) VALUES (112, ' { 1, -2 ,3 } ') RETURNING mid, counts	pending-server
+insert-counts-constructor	ok	SELECT mid, counts FROM memory	INSERT INTO memory (mid, counts) VALUES (113, ARRAY[1, 2 + 3])	pending-server
+insert-counts-from-numeric	ok	SELECT mid, counts FROM memory	INSERT INTO memory (mid, counts) VALUES (114, ARRAY[1.4, 2.5])	pending-server
+insert-big-literal	ok	SELECT mid, big FROM memory	INSERT INTO memory (mid, big) VALUES (115, '{3000000000,-1}') RETURNING mid, big	pending-server
+insert-big-from-int	ok	SELECT mid, big FROM memory	INSERT INTO memory (mid, big) VALUES (116, ARRAY[1, 2])	pending-server
+insert-scores-literal	ok	SELECT mid, scores FROM memory	INSERT INTO memory (mid, scores) VALUES (117, '{1.5,2,-3e2}') RETURNING mid, scores	pending-server
+insert-scores-from-numeric	ok	SELECT mid, scores FROM memory	INSERT INTO memory (mid, scores) VALUES (118, ARRAY[1, 2.5])	pending-server
+insert-ratios-literal	ok	SELECT mid, ratios FROM memory	INSERT INTO memory (mid, ratios) VALUES (119, '{0.5,1.25}') RETURNING mid, ratios	pending-server
+insert-prices-literal	ok	SELECT mid, prices FROM memory	INSERT INTO memory (mid, prices) VALUES (120, '{1.10,2}') RETURNING mid, prices	pending-server
+insert-meta-object	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (121, '{"name": "x", "n": 5, "f": 1.5, "b": true, "z": null, "list": [1, "two", {"a": []}], "e": {}}') RETURNING mid, meta	pending-server
+insert-meta-cast	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (122, '{"a": {"b": 2}}'::jsonb) RETURNING mid, meta	pending-server
+insert-meta-duplicate-key	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (123, '{"a": 1, "a": 2}') RETURNING mid, meta	pending-server
+insert-meta-numbers	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (124, '{"i": 3000000000, "h": 123456789012345678901234567890, "d": -0.125, "x": 1e3}') RETURNING mid, meta	pending-server
+insert-meta-escapes	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (125, '{"u": "caf\\u00e9 \\ud83d\\ude00", "q": "a\\"b\\\\c\\/d\\ne"}') RETURNING mid, meta	pending-server
+insert-items-array	ok	SELECT mid, items FROM memory	INSERT INTO memory (mid, items) VALUES (126, '[{"a": 1}, {"a": 2, "b": [true]}]') RETURNING mid, items	pending-server
+insert-items-empty	ok	SELECT mid, items FROM memory	INSERT INTO memory (mid, items) VALUES (127, '[]')	pending-server
+insert-payload-hex	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (128, '\\x00ff10') RETURNING mid, payload	pending-server
+insert-payload-hex-spaces	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (129, '\\x de AD 0f ') RETURNING mid, payload	pending-server
+insert-payload-escape	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (130, 'a\\\\b\\001c\\377') RETURNING mid, payload	pending-server
+insert-payload-text	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (131, 'hello é') RETURNING mid, payload	pending-server
+insert-payload-empty	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (132, '') RETURNING mid, payload	pending-server
+insert-payload-cast	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (133, '\\x01'::bytea) RETURNING mid, payload	pending-server
+update-tags	ok	SELECT mid, tags FROM memory	UPDATE memory SET tags = '{z}' WHERE mid = 1	pending-server
+update-tags-returning	ok	SELECT mid, tags FROM memory	UPDATE memory SET tags = ARRAY['r', 's'] WHERE mid = 1 RETURNING mid, tags	pending-server
+update-meta-returning	ok	SELECT mid, meta FROM memory	UPDATE memory SET meta = '{"k": 2}' WHERE mid = 1 RETURNING meta	pending-server
+update-payload	ok	SELECT mid, payload FROM memory	UPDATE memory SET payload = '\\xbeef' WHERE mid = 1	pending-server
+update-tags-null	ok	SELECT mid, tags FROM memory	UPDATE memory SET tags = NULL WHERE mid = 1	pending-server
+insert-select-values	ok	SELECT mid, tags, meta, payload FROM memory	INSERT INTO memory (mid, tags, meta, payload) SELECT mid + 10, tags, meta, payload FROM memory	pending-server
+insert-select-literals	ok	SELECT mid, tags, meta FROM memory	INSERT INTO memory (mid, tags, meta) SELECT 50, '{s}', '{"s": 1}' FROM memory	pending-server
+err-array-unclosed	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (141, '{a,b')	pending-server
+err-array-no-braces	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (142, 'abc')	pending-server
+err-array-trailing-junk	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (143, '{a}x')	pending-server
+err-array-trailing-comma	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (144, '{a,}')	pending-server
+err-array-bad-element	ok	SELECT mid, counts FROM memory	INSERT INTO memory (mid, counts) VALUES (145, '{1,x}')	pending-server
+err-array-range	ok	SELECT mid, counts FROM memory	INSERT INTO memory (mid, counts) VALUES (146, '{3000000000}')	pending-server
+err-array-wrong-element-type	ok	SELECT mid, counts FROM memory	INSERT INTO memory (mid, counts) VALUES (147, ARRAY['a'::text])	pending-server
+err-array-mixed	ok	SELECT mid, counts FROM memory	INSERT INTO memory (mid, counts) VALUES (148, ARRAY[1, true])	pending-server
+err-array-empty-constructor	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (149, ARRAY[])	pending-server
+err-array-from-text	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (150, '{a}'::text)	pending-server
+err-array-from-scalar	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (151, 1)	pending-server
+err-array-cast-from-int	ok	SELECT mid, tags FROM memory	INSERT INTO memory (mid, tags) VALUES (152, 1::text[])	pending-server
+err-json-truncated	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (153, '{"a": }')	pending-server
+err-json-single-quotes	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (154, '{''a'': 1}')	pending-server
+err-json-leading-zero	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (155, '{"a": 01}')	pending-server
+err-json-trailing-comma	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (156, '{"a": 1,}')	pending-server
+err-json-nul	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (157, '{"a": "\\u0000"}')	pending-server
+err-json-lone-surrogate	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (158, '{"a": "\\udc00"}')	pending-server
+err-json-from-text	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (159, '{"a": 1}'::text)	pending-server
+err-json-from-int	ok	SELECT mid, meta FROM memory	INSERT INTO memory (mid, meta) VALUES (160, 1)	pending-server
+err-bytea-odd	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (161, '\\x1')	pending-server
+err-bytea-digit	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (162, '\\xzz')	pending-server
+err-bytea-escape	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (163, 'a\\q')	pending-server
+err-bytea-from-int	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (164, 1)	pending-server
+err-bytea-from-text	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (165, 'a'::text)	pending-server

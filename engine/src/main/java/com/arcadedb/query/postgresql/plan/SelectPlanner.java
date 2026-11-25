@@ -1343,6 +1343,8 @@ public class SelectPlanner {
       return special.kind().name().toLowerCase(Locale.ROOT);
     if (expression instanceof Expression.Case)
       return "case";
+    if (expression instanceof Expression.ArrayConstructor)
+      return "array";
     if (expression instanceof Expression.ScalarSubquery subquery)
       return firstColumnName(subquery.query());
     if (expression instanceof Expression.Cast cast) {

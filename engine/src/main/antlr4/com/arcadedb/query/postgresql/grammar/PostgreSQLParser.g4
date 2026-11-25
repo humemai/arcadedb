@@ -612,6 +612,7 @@ cExpr
   | SUBSTRING LPAREN funcArgList? RPAREN                                       # substringCallExpr
   | TRIM LPAREN kind=(BOTH | LEADING | TRAILING)? trimList RPAREN              # trimExpr
   | EXISTS LPAREN selectStmt RPAREN                                            # existsExpr
+  | ARRAY LBRACKET exprList? RBRACKET                                          # arrayExpr
   | unsupportedPrimary                                                         # unsupportedPrimaryExpr
   ;
 

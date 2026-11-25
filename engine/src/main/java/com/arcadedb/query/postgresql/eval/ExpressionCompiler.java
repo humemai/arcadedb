@@ -122,6 +122,7 @@ public final class ExpressionCompiler {
       case Expression.Case e -> caseExpression(e);
       case Expression.Cast e -> cast(e);
       case Expression.FunctionCall e -> function(e);
+      case Expression.ArrayConstructor e -> arrayConstructor(e);
       case Expression.SpecialFunction e -> special(e);
     };
   }
@@ -233,6 +234,7 @@ public final class ExpressionCompiler {
     }
     case Expression.Cast e -> out.add(e.operand());
     case Expression.FunctionCall e -> out.addAll(e.args());
+    case Expression.ArrayConstructor e -> out.addAll(e.elements());
     case Expression.SpecialFunction e -> out.addAll(e.args());
     default -> {
     }
@@ -997,9 +999,11 @@ public final class ExpressionCompiler {
     final PgType target = PgType.byName(name.name());
     if (target == PgType.INTERVAL)
       return intervalCast(e);
-    if (target == null || name.arrayDimensions() > 0 || name.intervalFields() != null)
-      throw PostgreSQLEvaluationException.unsupported("The type " + String.join(".", name.name())
-          + (name.arrayDimensions() > 0 ? "[]" : "") + " is not supported by the postgresql language");
+    if (name.arrayDimensions() > 0)
+      return arrayCast(e, target);
+    if (target == null || name.intervalFields() != null)
+      throw PostgreSQLEvaluationException.unsupported(
+          "The type " + String.join(".", name.name()) + " is not supported by the postgresql language");
     int[] modifiers = null;
     if (!name.modifiers().isEmpty()) {
       modifiers = new int[name.modifiers().size()];
@@ -1011,16 +1015,70 @@ public final class ExpressionCompiler {
     }
     final int[] typmod = modifiers;
     final Evaluable operand = compile(e.operand());
+    // a Java value bound as a parameter takes the type of the cast, as a text parameter does
+    if (e.operand() instanceof Expression.ParameterRef && operand instanceof Evaluable.Constant constant && constant.value() != null
+        && (target == PgType.JSONB && constant.type() == PgType.ARRAY || target == PgType.VECTOR && constant.type() == PgType.ARRAY))
+      return new Evaluable.Constant(target,
+          target == PgType.JSONB ? ValueInput.toJson(constant.value()) : Casts.cast(constant.value(), PgType.ARRAY, target, modifiers));
     final PgType from = operand.type();
-    final boolean possible = from == target || from == PgType.UNKNOWN || (target.isString() && !from.isOpaque()) || from.isString()
+    final boolean possible = from == target || (target == PgType.VECTOR && from == PgType.ARRAY) || from == PgType.UNKNOWN || (target.isString() && !from.isOpaque()) || from.isString()
         || (from.isNumber() && target.isNumber()) || (from == PgType.BOOL && target == PgType.INT4)
         || (from == PgType.INT4 && target == PgType.BOOL) || (from.isDateTime() && target.isDateTime());
-    if (!possible || (target.isOpaque() && from != target))
+    // text, and a string literal, is read by the input function of any type; another type has no cast to jsonb or bytea
+    if (!possible || (target.isOpaque() && from != target && from != PgType.UNKNOWN && !from.isString()))
       throw new PostgreSQLEvaluationException("42846", "cannot cast type " + from.displayName() + " to " + target.displayName());
     inferParameter(operand, target);
     if (operand instanceof Evaluable.Constant constant)
       return new Evaluable.Constant(target, Casts.cast(constant.value(), from, target, typmod));
     return new Evaluable.Node(target, row -> Casts.cast(operand.eval(row), from, target, typmod), operand);
+  }
+
+  /**
+   * A cast to an array of one dimension: {@code '{a,b}'::text[]}, {@code ARRAY[1,2]::float8[]}, {@code $1::int4[]}. The value is
+   * a list, and the type name of the expression says its element type.
+   */
+  private Evaluable arrayCast(final Expression.Cast e, final PgType element) {
+    final TypeName name = e.type();
+    if (!ValueInput.isElementType(element) || name.arrayDimensions() > 1 || !name.modifiers().isEmpty()
+        || name.intervalFields() != null)
+      throw PostgreSQLEvaluationException.unsupported(
+          "The type " + String.join(".", name.name()) + "[] is not supported by the postgresql language");
+    final String typeName = "_" + element.typeName();
+    if (e.operand() instanceof Expression.ArrayConstructor array && array.elements().isEmpty())
+      return new Evaluable.Node(PgType.ARRAY, typeName, row -> List.of(), new Evaluable.Constant(PgType.UNKNOWN, null));
+    final Evaluable operand = compile(e.operand());
+    final PgType from = operand.type();
+    if (from != PgType.UNKNOWN && !from.isString() && from != PgType.ARRAY && !(from == PgType.VECTOR && element == PgType.FLOAT4))
+      throw new PostgreSQLEvaluationException("42846",
+          "cannot cast type " + from.displayName() + " to " + element.displayName() + "[]");
+    inferParameter(operand, PgType.ARRAY);
+    if (operand instanceof Evaluable.Constant constant) {
+      // a bad literal is an error before any row is read
+      final Object value = ValueInput.toArray(constant.value(), element);
+      return new Evaluable.Node(PgType.ARRAY, typeName, row -> value, operand);
+    }
+    return new Evaluable.Node(PgType.ARRAY, typeName, row -> ValueInput.toArray(operand.eval(row), element), operand);
+  }
+
+  /** {@code ARRAY[a, b]}: the elements take their common type, as the branches of a {@code CASE} do. */
+  private Evaluable arrayConstructor(final Expression.ArrayConstructor e) {
+    if (e.elements().isEmpty())
+      throw new PostgreSQLEvaluationException("42P18",
+          "cannot determine type of empty array. Hint: Explicitly cast to the desired type, for example ARRAY[]::integer[]");
+    final List<Evaluable> items = new ArrayList<>(e.elements().size());
+    for (final Expression element : e.elements())
+      items.add(compile(element));
+    final PgType element = commonType(items, "ARRAY");
+    if (!ValueInput.isElementType(element))
+      throw PostgreSQLEvaluationException.unsupported(
+          "An array of " + element.displayName() + " is not supported: one dimension of booleans, numbers, text or bytea");
+    final Evaluable[] converted = coerceAll(items, element, "ARRAY").toArray(new Evaluable[0]);
+    return new Evaluable.Node(PgType.ARRAY, "_" + element.typeName(), row -> {
+      final List<Object> out = new ArrayList<>(converted.length);
+      for (final Evaluable item : converted)
+        out.add(item.eval(row));
+      return out;
+    }, converted);
   }
 
   /**

@@ -243,7 +243,7 @@ public final class WritePlanner {
     if (selectTypes != null)
       for (int i = 0; i < width; i++) {
         selectPlan.inferParameter(i, Assignments.typeOf(targets.get(i)));
-        checkSlot(targets.get(i), new Evaluable.Slot(selectTypes[i], i), selectTypes[i]);
+        checkSlot(targets.get(i), new Evaluable.Slot(selectTypes[i], selectPlan.columns().get(i).typeName(), i), selectTypes[i]);
       }
 
     final Upsert upsert = insert.onConflict() == null ? null : new Upsert(insert.onConflict(), table, shape);
@@ -499,7 +499,7 @@ public final class WritePlanner {
         type = effectiveType(assignment.value().expression(), value);
         ExpressionCompiler.inferParameter(value, Assignments.typeOf(column));
         if (!(value instanceof Evaluable.Constant constant && constant.value() == null))
-          Assignments.check(type, column);
+          Assignments.check(type, value.typeName(), column);
       }
       columns.add(column);
       values.add(value);
@@ -538,9 +538,14 @@ public final class WritePlanner {
 
   /** The type a slot counts as: a text parameter is {@code unknown} as it is in PostgreSQL, which gives it the type of its column. */
   private static PgType effectiveType(final Expression expression, final Evaluable value) {
-    if (expression instanceof Expression.ParameterRef && value.type().isString())
+    if (expression instanceof Expression.ParameterRef && takesColumnType(value.type()))
       return PgType.UNKNOWN;
     return value.type();
+  }
+
+  /** The types of a bound value that the column decides: text, and the Java values of the types that have no Java class of their own. */
+  private static boolean takesColumnType(final PgType type) {
+    return type.isString() || type.isOpaque() || type == PgType.VECTOR;
   }
 
   /** The checks of one value against its column that need no row: {@code id}, the types the language does not write yet, the cast. */
@@ -554,7 +559,7 @@ public final class WritePlanner {
     ExpressionCompiler.inferParameter(value, Assignments.typeOf(column));
     if (value instanceof Evaluable.Constant constant && constant.value() == null)
       return;
-    Assignments.check(type, column);
+    Assignments.check(type, value.typeName(), column);
   }
 
   /**
@@ -677,6 +682,7 @@ public final class WritePlanner {
         new Name(position, identity.name(), true)), new Name(position, "__rid", true)));
     final List<Column> columns = new ArrayList<>();
     final List<Boolean> defaults = new ArrayList<>();
+    final Set<Integer> parameterColumns = new HashSet<>();
     for (final UpdateStatement.Assignment assignment : update.assignments()) {
       final Column column = table.column(identifier(assignment.column()));
       if (columns.contains(column))
@@ -688,8 +694,10 @@ public final class WritePlanner {
       defaults.add(assignment.value().isDefault());
       if (!assignment.value().isDefault()) {
         // the value is planned as an output of a query: a bare parameter takes the type of its column before that
-        if (assignment.value().expression() instanceof Expression.ParameterRef reference)
+        if (assignment.value().expression() instanceof Expression.ParameterRef reference) {
           parameters.inferDescribed(reference.index(), Assignments.typeOf(column));
+          parameterColumns.add(columns.size() - 1);
+        }
         items.add(new SelectItem.Projection(position, assignment.value().expression(),
             new Name(position, "__set" + (items.size() - 1), true)));
       }
@@ -705,9 +713,13 @@ public final class WritePlanner {
     for (int i = 0; i < types.length; i++) {
       if (defaults.get(i))
         continue;
-      final PgType type = PgType.byName(List.of(selectPlan.columns().get(next++).typeName()));
+      final String typeName = selectPlan.columns().get(next++).typeName();
+      final PgType type = PgType.byName(List.of(typeName));
       types[i] = type != null ? type : PgType.ARRAY;
-      Assignments.check(types[i], columns.get(i));
+      // a bare parameter takes the type of its column, as in the SET list of a plain UPDATE
+      if (parameterColumns.contains(i) && takesColumnType(types[i]))
+        types[i] = PgType.UNKNOWN;
+      Assignments.check(types[i], typeName, columns.get(i));
     }
     final List<String> steps = new ArrayList<>();
     steps.add("UPDATE " + table.name() + " SET " + columns.size() + " column(s) FROM");
@@ -851,8 +863,13 @@ public final class WritePlanner {
 
   // ------------------------------------------------------------------------------------------------ values and checks
 
-  /** The value as the record holds it: a {@code LINK} is the record id, after the record has been found to exist. */
+  /**
+   * The value as the record holds it: a {@code LINK} is the record id, after the record has been found to exist; the values of
+   * {@code jsonb}, arrays and {@code vector} as {@link StoredValues} has them.
+   */
   private Object toEngine(final Database db, final Table table, final Column column, final Object value) {
+    if (StoredValues.applies(column))
+      return StoredValues.of(table, column, value);
     if (!column.isLink())
       return value;
     final String text = (String) value;

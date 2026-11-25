@@ -19,6 +19,8 @@
 package com.arcadedb.query.postgresql.eval;
 
 import com.arcadedb.query.postgresql.catalog.ColumnType;
+import com.arcadedb.serializer.json.JSONArray;
+import com.arcadedb.serializer.json.JSONObject;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -45,7 +47,8 @@ import java.util.Locale;
  *
  * SQL {@code NULL} is the Java {@code null} for every type. {@link #UNKNOWN} is the type of a string literal and of a bare
  * {@code NULL} before the context decides (PostgreSQL's {@code unknown}); {@link #JSONB}, {@link #BYTEA} and {@link #ARRAY} are
- * read from a record and handed to the client unchanged: no operator takes them. {@link #VECTOR} is the pgvector type of a
+ * read from a record and handed to the client unchanged: no operator takes them, and {@link ValueInput} reads the values a
+ * statement writes. {@link #VECTOR} is the pgvector type of a
  * {@code float[]} (an {@code ARRAY_OF_FLOATS} property): only the distance operators ({@link VectorDistance}) take it.
  */
 public enum PgType {
@@ -153,6 +156,12 @@ public enum PgType {
       return TEXT;
     if (value instanceof float[])
       return VECTOR;
+    if (value instanceof byte[])
+      return BYTEA;
+    if (value instanceof java.util.Map<?, ?> || value instanceof JSONObject)
+      return JSONB;
+    if (value instanceof java.util.Collection<?> || value instanceof JSONArray || value.getClass().isArray())
+      return ARRAY;
     if (value instanceof java.sql.Date || value instanceof LocalDate)
       return DATE;
     if (value instanceof LocalDateTime || value instanceof java.util.Date)
@@ -183,6 +192,8 @@ public enum PgType {
       case "date" -> DATE;
       case "timestamp" -> TIMESTAMP;
       case "vector" -> VECTOR;
+      case "jsonb" -> JSONB;
+      case "bytea" -> BYTEA;
       case "interval" -> INTERVAL;
       default -> null;
     };

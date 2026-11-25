@@ -148,6 +148,7 @@ final class ColumnNames {
       case Expression.Cast cast -> expression(cast.operand(), names);
       case Expression.FunctionCall call -> all(call.args(), names) && (call.over() == null
           || all(call.over().partitionBy(), names) && sorts(call.over().orderBy(), names));
+      case Expression.ArrayConstructor array -> all(array.elements(), names);
       case Expression.SpecialFunction special -> all(special.args(), names);
       default -> false;
     };
