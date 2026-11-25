@@ -203,29 +203,38 @@ public final class RelationScope implements ExpressionCompiler.Scope {
   }
 
   private int resolve(final Name relation, final Name column) {
-    if (relation != null && !hasRelation(relation))
-      throw PostgreSQLReferenceException.missingFromEntry(relation.value());
     for (int pass = 0; pass < 2; pass++) {
-      final List<Integer> matches = new ArrayList<>();
+      int first = -1;
+      List<Integer> more = null;
       for (int i = 0; i < fields.size(); i++) {
         final RelationSource.Field field = fields.get(i);
-        if (relation != null && !sameRelation(relation, field.relation()))
+        // the name first: it differs for most columns, and then the relation is not compared at all
+        if (!same(column, field.name(), pass) || (relation != null && !sameRelation(relation, field.relation())))
           continue;
-        if (same(column, field.name(), pass))
-          matches.add(i);
+        if (first < 0)
+          first = i;
+        else {
+          if (more == null)
+            more = new ArrayList<>();
+          more.add(i);
+        }
       }
-      if (matches.size() == 1)
-        return matches.get(0);
-      if (matches.size() > 1) {
+      if (more != null) {
+        more.add(0, first);
         final List<String> names = new ArrayList<>();
-        for (final int match : matches)
+        for (final int match : more)
           names.add(fields.get(match).relation().isEmpty() ? fields.get(match).name()
               : fields.get(match).relation() + "." + fields.get(match).name());
         throw PostgreSQLAmbiguousIdentifierException.column(column.value(), names);
       }
+      if (first >= 0)
+        return first;
       if (column.quoted())
         break;
     }
+    // no column matched: a relation that is not in the FROM clause is reported before the column
+    if (relation != null && !hasRelation(relation))
+      throw PostgreSQLReferenceException.missingFromEntry(relation.value());
     throw PostgreSQLReferenceException.undefinedColumn(relation == null ? column.value() : relation.value() + "." + column.value(),
         visibleColumns(relation));
   }
