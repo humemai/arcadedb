@@ -137,7 +137,7 @@ class PostgreSQLAsyncpgTest extends PostgresWireProtocolTestBase {
                   out["rows"] = [list(r.values()) for r in await statement.fetch(*values)]
               return json.dumps(out, default=str)
           except Exception as e:
-              return "ERROR " + type(e).__name__ + " " + str(e).replace("\n", " ")[:300]
+              return "ERROR " + type(e).__name__ + " " + str(e).replace("\\n", " ")[:300]
 
 
       def rows(records):
