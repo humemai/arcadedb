@@ -1,8 +1,11 @@
 # The postgresql language: supported syntax (fork prototype)
 
-Fork only (`humemai/arcadedb`, branch `feat/postgresql-prototype`). One row per construct that agents write. A statement that is
-not in the table is refused with SQLSTATE `0A000` (never a wrong answer). The answers are compared with PostgreSQL 18.7 by the
-parity corpus (`engine/src/test/resources/postgresql/corpus`).
+Fork only (`humemai/arcadedb`, branch `feat/postgresql-prototype`). The table lists constructs added on top of the core of the language, so
+a construct with no row here may still run. An unsupported construct is meant to be refused with an error (SQLSTATE `0A000` where the
+language recognizes it), not answered differently. Known differences from PostgreSQL are named in the row notes, in the parity corpus
+cases marked pending (such as `is-columns-public-rows`, identity columns in `information_schema`), and in the open issue on timestamp
+precision (#106). The answers are compared with PostgreSQL 18.7 by the parity corpus
+(`engine/src/test/resources/postgresql/corpus`).
 
 | Construct | State | Notes |
 |---|---|---|
