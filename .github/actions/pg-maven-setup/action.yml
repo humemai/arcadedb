@@ -1,0 +1,80 @@
+#
+# Copyright © 2021-present Arcade Data Ltd (info@arcadedata.com)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
+# SPDX-License-Identifier: Apache-2.0
+#
+
+# Fork only (humemai/arcadedb, PostgreSQL-style SQL prototype): the JDK and Maven setup of the prototype's own workflows
+# (pg-prototype-engine-tests.yml, pg-parity-tests.yml). Call it after actions/checkout. Drop it when anything goes upstream.
+#
+# Maven Central answers the shared GitHub runners with HTTP 429, so the requests for central go to the mirror that Google hosts,
+# and the resolver retries a 429 or a 503 more often than its default of 3 times. Each job has its own cache: the cache of
+# setup-java has one key for every job and workflow of the repository, so the job that saved first decided what all the others
+# got, and an exact hit is never saved again.
+name: PostgreSQL prototype - JDK and Maven
+description: JDK 21, Maven Central through a mirror with retries, and the Maven cache of the calling job
+
+runs:
+  using: composite
+  steps:
+    - name: Set up JDK 21
+      uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+      with:
+        distribution: "temurin"
+        java-version: 21
+
+    # After setup-java, which writes a ~/.m2/settings.xml of its own. MAVEN_ARGS is read by Maven 3.9 and later. MVNW_REPOURL
+    # makes the wrapper download the Maven distribution from the mirror too.
+    - name: Send Maven Central through the mirror
+      shell: bash
+      run: |
+        mkdir -p "$HOME/.m2"
+        cat > "$HOME/.m2/settings.xml" <<'EOF'
+        <settings>
+          <mirrors>
+            <mirror>
+              <id>google-central</id>
+              <mirrorOf>central</mirrorOf>
+              <url>https://maven-central.storage-download.googleapis.com/maven2/</url>
+            </mirror>
+          </mirrors>
+        </settings>
+        EOF
+        echo "MVNW_REPOURL=https://maven-central.storage-download.googleapis.com/maven2" >> "$GITHUB_ENV"
+        echo "MAVEN_ARGS=-Daether.transport.http.retryHandler.count=6 -Daether.transport.http.retryHandler.serviceUnavailable=429,502,503,504" >> "$GITHUB_ENV"
+
+    # A cache saved by a run of the prototype branch is the one that every pull request into that branch can read. So only a run
+    # of that branch saves (after the job succeeded), and every other run restores, which also keeps the branches from filling
+    # the cache quota of the repository.
+    - name: Restore the Maven cache of this job, and save it after the job
+      if: github.ref == 'refs/heads/feat/postgresql-prototype'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.m2/wrapper
+        key: pg-maven-${{ runner.os }}-${{ github.job }}-${{ hashFiles('**/pom.xml', '.mvn/wrapper/maven-wrapper.properties', '.github/workflows/pg-*.yml', '.github/actions/pg-maven-setup/action.yml') }}
+        restore-keys: pg-maven-${{ runner.os }}-${{ github.job }}-
+
+    - name: Restore the Maven cache of this job
+      if: github.ref != 'refs/heads/feat/postgresql-prototype'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.m2/wrapper
+        key: pg-maven-${{ runner.os }}-${{ github.job }}-${{ hashFiles('**/pom.xml', '.mvn/wrapper/maven-wrapper.properties', '.github/workflows/pg-*.yml', '.github/actions/pg-maven-setup/action.yml') }}
+        restore-keys: pg-maven-${{ runner.os }}-${{ github.job }}-
