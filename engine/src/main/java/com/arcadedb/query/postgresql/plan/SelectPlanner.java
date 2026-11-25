@@ -61,6 +61,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Turns a {@code SELECT} of the subset into a {@link SelectPlan}: binds the names, types every expression with the evaluator,
@@ -270,6 +271,45 @@ public class SelectPlanner {
     }
   }
 
+  /**
+   * The lines of a plan: those of the source, then one for each step applied to its rows, then the warnings. They are built when
+   * they are read, from these values alone.
+   *
+   * @param exactReason why a nearest neighbour search is an exact scan, {@code null} for none
+   * @param groupKeys   the number of group keys, -1 for a statement that does not group
+   * @param windows     the number of window functions, 0 for none
+   */
+  private record PlanSteps(Supplier<List<String>> source, String exactReason, boolean where, int groupKeys, int aggregates,
+      boolean having, int windows, int outputs, boolean distinct, int sortKeys, boolean offset, boolean limit,
+      List<String> warnings) implements Supplier<List<String>> {
+    @Override
+    public List<String> get() {
+      final List<String> steps = new ArrayList<>(source.get());
+      if (exactReason != null)
+        steps.add("SCAN + SORT exact distance (" + exactReason + ")");
+      if (where)
+        steps.add("FILTER WHERE");
+      if (groupKeys >= 0)
+        steps.add("AGGREGATE " + groupKeys + " group key(s), " + aggregates + " aggregate(s)");
+      if (having)
+        steps.add("FILTER HAVING");
+      if (windows > 0)
+        steps.add("WINDOW " + windows + " function(s)");
+      steps.add("PROJECT " + outputs + " column(s)");
+      if (distinct)
+        steps.add("DISTINCT");
+      if (sortKeys > 0)
+        steps.add("SORT " + sortKeys + " key(s)");
+      if (offset)
+        steps.add("OFFSET");
+      if (limit)
+        steps.add("LIMIT");
+      for (final String warning : warnings)
+        steps.add("WARNING: " + warning);
+      return steps;
+    }
+  }
+
   private SelectPlan planSelect(final SelectStatement select, final boolean keepUnknown) {
     // PostgreSQL takes the terms that every branch of an OR has in common out of it before it plans (prepqual.c)
     final Expression whereClause = OrFactoring.factor(select.where());
@@ -408,32 +448,13 @@ public class SelectPlanner {
     for (int i = 0; i < outputs.size(); i++)
       columns.add(new PostgreSQLResultSet.Column(names.get(i), outputs.get(i).typeName()));
 
-    final List<String> steps = new ArrayList<>();
-    steps.addAll(source.describeTree());
-    if (exactReason != null)
-      steps.add("SCAN + SORT exact distance (" + exactReason + ")");
-    if (where != null)
-      steps.add("FILTER WHERE");
-    if (group != null)
-      steps.add("AGGREGATE " + group.keyCount() + " group key(s), " + group.aggregateCount() + " aggregate(s)");
-    if (having != null)
-      steps.add("FILTER HAVING");
-    final WindowStage windows = windowScope == null || windowScope.isEmpty() ? null : windowScope.stage();
-    if (windows != null)
-      steps.add("WINDOW " + windows.count() + " function(s)");
-    steps.add("PROJECT " + outputs.size() + " column(s)");
-    if (select.distinct())
-      steps.add("DISTINCT");
-    if (!sortKeys.isEmpty())
-      steps.add("SORT " + sortKeys.size() + " key(s)");
-    if (offset != null)
-      steps.add("OFFSET");
-    if (limit != null)
-      steps.add("LIMIT");
     // a join that no edge, link or index supports: the plan says so, and the engine writes the log line once per statement
     final List<String> warnings = JoinWarnings.of(source);
-    for (final String warning : warnings)
-      steps.add("WARNING: " + warning);
+    final WindowStage windows = windowScope == null || windowScope.isEmpty() ? null : windowScope.stage();
+    // the plan lines are built when they are read (EXPLAIN, the plan of a result set): a statement is planned on every call
+    final PlanSteps steps = new PlanSteps(source.planLines(), exactReason, where != null, group == null ? -1 : group.keyCount(),
+        group == null ? 0 : group.aggregateCount(), having != null, windows == null ? 0 : windows.count(), outputs.size(),
+        select.distinct(), sortKeys.size(), offset != null, limit != null, warnings);
 
     // A scan of one table reads only the columns that the compiled expressions read, and applies the WHERE clause to a row that holds
     // only its own columns, reading the rest for the records that pass (fork issue #85). The plan lines above are those of the

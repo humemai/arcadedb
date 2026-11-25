@@ -43,6 +43,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 /**
  * The rows of a join of two sources: the columns of the left source followed by those of the right one, and for each pair of
@@ -139,8 +140,8 @@ public final class JoinSource implements RelationSource {
   private final Traversal                 traversal;
   private final AtomicLong                edgesRead = new AtomicLong();
   private final long                      capBytes;
-  private final String                    header;
-  private final List<String>              rightLines;
+  private final Supplier<String>          header;
+  private final Supplier<List<String>>    rightLines;
   private final JoinSupport               support;
   private final String                    warning;
   private final long                      estimatedRows;
@@ -149,8 +150,8 @@ public final class JoinSource implements RelationSource {
 
   JoinSource(final Strategy strategy, final TableReference.JoinType type, final RelationSource left, final RelationSource right,
       final List<Key> keys, final Evaluable residual, final boolean buildLeft, final IndexProbe probe, final Traversal traversal,
-      final long capBytes, final String header, final List<String> rightLines, final JoinSupport support, final String warning,
-      final long estimatedRows, final List<Field> hidden, final List<Merge> merges) {
+      final long capBytes, final Supplier<String> header, final Supplier<List<String>> rightLines, final JoinSupport support,
+      final String warning, final long estimatedRows, final List<Field> hidden, final List<Merge> merges) {
     this.strategy = strategy;
     this.type = type;
     this.left = left;
@@ -162,7 +163,7 @@ public final class JoinSource implements RelationSource {
     this.traversal = traversal;
     this.capBytes = capBytes;
     this.header = header;
-    this.rightLines = List.copyOf(rightLines);
+    this.rightLines = rightLines;
     this.support = support;
     this.warning = warning;
     this.estimatedRows = estimatedRows;
@@ -237,18 +238,28 @@ public final class JoinSource implements RelationSource {
 
   @Override
   public String describe() {
-    return header;
+    return header.get();
   }
 
   @Override
   public List<String> describeTree() {
-    final List<String> lines = new ArrayList<>();
-    lines.add(header);
-    for (final String line : left.describeTree())
-      lines.add("  " + line);
-    for (final String line : rightLines)
-      lines.add("  " + line);
-    return lines;
+    return planLines().get();
+  }
+
+  @Override
+  public Supplier<List<String>> planLines() {
+    final Supplier<String> first = header;
+    final Supplier<List<String>> above = left.planLines();
+    final Supplier<List<String>> below = rightLines;
+    return () -> {
+      final List<String> lines = new ArrayList<>();
+      lines.add(first.get());
+      for (final String line : above.get())
+        lines.add("  " + line);
+      for (final String line : below.get())
+        lines.add("  " + line);
+      return lines;
+    };
   }
 
   @Override

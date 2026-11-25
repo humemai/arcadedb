@@ -56,6 +56,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.StringJoiner;
+import java.util.function.Supplier;
 
 /**
  * Plans the {@code FROM} clause of a statement that joins: {@code a [INNER] JOIN b ON ...}, {@code a LEFT [OUTER] JOIN b ON ...},
@@ -346,8 +348,8 @@ public final class JoinPlanner {
   private final Tables            tables;
   private final long              capBytes;
   private final boolean           traversalRule;
-  /** The sources whose rows come from a bound start (fork issue #52), with the text of the term that binds it. */
-  private final Map<RelationSource, String> boundStarts = new IdentityHashMap<>();
+  /** The sources whose rows come from a bound start (fork issue #52), with the term that binds it. */
+  private final Map<RelationSource, Expression> boundStarts = new IdentityHashMap<>();
 
   /**
    * @param capBytes the memory cap of every join, see {@link BuildMemory}
@@ -516,7 +518,7 @@ public final class JoinPlanner {
       terms.add(term.expression());
     final RelationSource source = filtered(leaf, tables.narrow(leaf.table, terms, compiler(leaf)), pushed);
     if (traversalRule) {
-      final String key = boundKey(leaf, terms);
+      final Expression key = boundKey(leaf, terms);
       if (key != null)
         boundStarts.put(source, key);
     }
@@ -526,12 +528,12 @@ public final class JoinPlanner {
   // ---- the bound start (fork issue #52) ----
 
   /**
-   * The text of the term that binds the rows of a table to the rows of a key, or {@code null} when no term of {@code terms} does:
+   * The term that binds the rows of a table to the rows of a key, or {@code null} when no term of {@code terms} does:
    * {@code key = constant} (either side) or {@code key IN (constant, ...)}, where the key is a column that is alone a primary key
    * or a unique key of the table, and a constant is a literal, a parameter or an expression of them (the same constants the
    * single-table plan takes for an index lookup).
    */
-  private String boundKey(final Leaf leaf, final List<Expression> terms) {
+  private Expression boundKey(final Leaf leaf, final List<Expression> terms) {
     final ExpressionCompiler compiler = compiler(leaf);
     for (final Expression term : terms) {
       boolean bound = false;
@@ -543,13 +545,17 @@ public final class JoinPlanner {
         for (final Expression value : in.values())
           bound &= isConstant(value, compiler);
       }
-      if (bound) {
-        final String text = AstPrinter.print(term);
-        final String bare = text.startsWith("(") && text.endsWith(")") ? text.substring(1, text.length() - 1) : text;
-        return bare.length() > 80 ? bare.substring(0, 77) + "..." : bare;
-      }
+      if (bound)
+        return term;
     }
     return null;
+  }
+
+  /** The text of the term that binds a start, for the plan line: without its outer parentheses, and cut at 80 characters. */
+  private static String startText(final Expression term) {
+    final String text = AstPrinter.print(term);
+    final String bare = text.startsWith("(") && text.endsWith(")") ? text.substring(1, text.length() - 1) : text;
+    return bare.length() > 80 ? bare.substring(0, 77) + "..." : bare;
   }
 
   /** Whether the expression is a column of the table that is a primary key or a unique key of the table alone. */
@@ -582,13 +588,13 @@ public final class JoinPlanner {
   }
 
   /**
-   * The text of the term that binds the start of a join whose left input is {@code left}, {@code null} when the start is not
+   * The term that binds the start of a join whose left input is {@code left}, {@code null} when the start is not
    * bound: the left input is a table restricted to the rows of a key, or a walk that began there, under any filters.
    */
-  private String boundStart(final RelationSource left) {
+  private Expression boundStart(final RelationSource left) {
     RelationSource current = left;
     while (true) {
-      final String key = boundStarts.get(current);
+      final Expression key = boundStarts.get(current);
       if (key != null)
         return key;
       if (current instanceof FilteredSource filteredSource)
@@ -601,15 +607,15 @@ public final class JoinPlanner {
   private RelationSource filtered(final Node node, final RelationSource source, final List<Conjunct> terms) {
     final ExpressionCompiler compiler = compiler(node);
     final List<Evaluable> conditions = new ArrayList<>();
-    final List<String> texts = new ArrayList<>();
+    final List<Expression> expressions = new ArrayList<>();
     final Set<String> relations = new LinkedHashSet<>();
     for (final Conjunct term : terms) {
       conditions.add(compiler.compileCondition(term.expression(), "WHERE"));
-      texts.add(AstPrinter.print(term.expression()));
+      expressions.add(term.expression());
       relations.addAll(term.relations());
     }
-    return new FilteredSource(source, allOf(conditions), String.join(", ", relations.isEmpty() ? node.relations() : relations),
-        String.join(" AND ", texts), Math.max(1L, estimate(source) / 4));
+    return new FilteredSource(source, allOf(conditions), relations.isEmpty() ? node.relations() : relations, expressions,
+        Math.max(1L, estimate(source) / 4));
   }
 
   // ---- one join ----
@@ -623,9 +629,7 @@ public final class JoinPlanner {
 
     final List<Candidate> candidates = new ArrayList<>();
     final List<Evaluable> residuals = new ArrayList<>();
-    final List<String> texts = new ArrayList<>();
     for (final Conjunct term : matching) {
-      texts.add(AstPrinter.print(term.expression()));
       final Candidate candidate = asKey(term, join, nodeScope, leftCompiler, rightCompiler, nodeCompiler);
       if (candidate != null)
         candidates.add(candidate);
@@ -641,7 +645,6 @@ public final class JoinPlanner {
     if (join.type == TableReference.JoinType.FULL && keys.isEmpty() && !matching.isEmpty())
       throw new com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException(
           "FULL JOIN is only supported with merge-joinable or hash-joinable join conditions");
-    final String condition = texts.isEmpty() ? "true" : String.join(" AND ", texts);
 
     final long leftRows = estimate(left);
     final long rightRows = estimate(right);
@@ -651,7 +654,7 @@ public final class JoinPlanner {
     final boolean probesRight = join.type == TableReference.JoinType.INNER || join.type == TableReference.JoinType.LEFT;
 
     // fork issue #52: the rule applies only where the start of the join is a small set that the statement names
-    final String start = traversalRule ? boundStart(left) : null;
+    final Expression start = traversalRule ? boundStart(left) : null;
     JoinSource.Strategy strategy = strategyOf(keys);
     JoinSource.IndexProbe probe = null;
     JoinSource.Traversal traversal = null;
@@ -681,32 +684,47 @@ public final class JoinPlanner {
     final boolean farEnd = strategy == JoinSource.Strategy.INDEX_NESTED_LOOP && start != null
         && edgeEnd(join, candidates.get(probe.key())) != null;
 
-    final String header;
-    final List<String> rightLines = new ArrayList<>(right.describeTree());
+    // the plan text is built when it is read (EXPLAIN, the plan of a result set, a warning), never to run the statement; what the
+    // suppliers below keep is names, parsed terms and catalog objects
+    final Supplier<String> condition = () -> conditionText(matching);
+    final TableReference.JoinType type = join.type;
+    final Supplier<List<String>> rightRead = right.planLines();
+    final Supplier<String> header;
+    final Supplier<List<String>> rightLines;
     switch (strategy) {
-    case TRAVERSE:
-      header = "TRAVERSE " + join.type + " ON " + condition + " (" + (traversal.direction() == Vertex.DIRECTION.OUT ? "out " : "in ")
-          + traversal.edges().table().name() + " AS " + traversal.edges().relation() + " FROM " + traversal.from().relation()
-          + ") = " + firstHopPattern(traversal);
-      rightLines.set(0, "WALK " + (traversal.direction() == Vertex.DIRECTION.OUT ? "out" : "in") + " EDGES "
-          + traversal.edges().table().name() + " AS " + traversal.edges().relation() + " of each left row");
-      break;
-    case INDEX_NESTED_LOOP: {
-      if (farEnd)
-        header = "TRAVERSE TO " + names(join.right) + " " + join.type + " ON " + condition + " (read " + names(join.right)
-            + " by " + probe.column().name() + " from the edge) = "
-            + secondHopPattern(left, edgeEnd(join, candidates.get(probe.key())), probe.table());
-      else
-        header = "INDEX NESTED LOOP " + join.type + " ON " + condition + " (probe " + names(join.right) + " by "
-            + probe.column().name() + ")";
-      rightLines.set(0, lookupLine(probe) + " for each left row");
+    case TRAVERSE: {
+      final boolean out = traversal.direction() == Vertex.DIRECTION.OUT;
+      final Aliased edges = Aliased.of(traversal.edges());
+      final Aliased from = Aliased.of(traversal.from());
+      header = () -> "TRAVERSE " + type + " ON " + condition.get() + " (" + (out ? "out " : "in ") + edges.table() + " AS "
+          + edges.relation() + " FROM " + from.relation() + ") = " + firstHopPattern(out, from, edges);
+      rightLines = withFirstLine(rightRead,
+          () -> "WALK " + (out ? "out" : "in") + " EDGES " + edges.table() + " AS " + edges.relation() + " of each left row");
       break;
     }
-    case HASH:
-      header = "HASH JOIN " + join.type + " ON " + condition + " (build " + names(buildLeft ? join.left : join.right) + ")";
+    case INDEX_NESTED_LOOP: {
+      final Set<String> probed = join.right.relations();
+      final Column column = probe.column();
+      if (farEnd) {
+        final Supplier<String> pattern = secondHopPattern(left, edgeEnd(join, candidates.get(probe.key())), probe.table());
+        header = () -> "TRAVERSE TO " + String.join(", ", probed) + " " + type + " ON " + condition.get() + " (read "
+            + String.join(", ", probed) + " by " + column.name() + " from the edge) = " + pattern.get();
+      } else
+        header = () -> "INDEX NESTED LOOP " + type + " ON " + condition.get() + " (probe " + String.join(", ", probed) + " by "
+            + column.name() + ")";
+      final Supplier<String> lookup = probe.table().lookupLine(column);
+      rightLines = withFirstLine(rightRead, () -> lookup.get() + " for each left row");
       break;
+    }
+    case HASH: {
+      final Set<String> built = (buildLeft ? join.left : join.right).relations();
+      header = () -> "HASH JOIN " + type + " ON " + condition.get() + " (build " + String.join(", ", built) + ")";
+      rightLines = rightRead;
+      break;
+    }
     default:
-      header = "NESTED LOOP " + join.type + " ON " + condition;
+      header = () -> "NESTED LOOP " + type + " ON " + condition.get();
+      rightLines = rightRead;
       break;
     }
 
@@ -716,13 +734,14 @@ public final class JoinPlanner {
     else
       estimated = inner ? Math.max(leftRows, rightRows) : join.type == TableReference.JoinType.RIGHT ? rightRows
           : join.type == TableReference.JoinType.FULL ? Math.max(leftRows, rightRows) : leftRows;
-    final String reason;
+    final Supplier<String> reason;
     if (strategy == JoinSource.Strategy.TRAVERSE || farEnd)
-      reason = " [traversal: start bound by " + start + "]";
-    else if (walkShape)
-      reason = " [" + (strategy == JoinSource.Strategy.HASH ? "hash join" : "index nested loop") + ": no bound start]";
-    else
-      reason = "";
+      reason = () -> " [traversal: start bound by " + startText(start) + "]";
+    else if (walkShape) {
+      final String chosen = strategy == JoinSource.Strategy.HASH ? "hash join" : "index nested loop";
+      reason = () -> " [" + chosen + ": no bound start]";
+    } else
+      reason = () -> "";
     // the merged column of FULL ... USING (a, b): coalesce(left, right) in the common type of each pair, read from the join keys
     List<JoinSource.Merge> merges = List.of();
     if (join.type == TableReference.JoinType.FULL && !join.using.isEmpty()) {
@@ -737,8 +756,8 @@ public final class JoinPlanner {
     final List<RelationSource.Field> hidden = join.fields().subList(join.left.fields().size() + join.right.fields().size(),
         join.fields().size());
     final JoinSource source = new JoinSource(strategy, join.type, left, right, keys, residual, buildLeft, probe, traversal, capBytes,
-        header + " [" + describe(support) + "]" + reason, rightLines, support,
-        warns(join, support) ? warningOf(join, condition) : null, estimated, hidden, merges).withOutputs(join.outputs());
+        () -> header.get() + " [" + describe(support) + "]" + reason.get(), rightLines, support,
+        warns(join, support) ? warningOf(join, condition.get()) : null, estimated, hidden, merges).withOutputs(join.outputs());
     if (strategy == JoinSource.Strategy.TRAVERSE || farEnd)
       boundStarts.put(source, start);
     return source;
@@ -757,12 +776,30 @@ public final class JoinPlanner {
     return support.supported() ? "supported by " + support : "not supported: " + support.reason();
   }
 
-  /** The plan line of one lookup of the right table. */
-  private static String lookupLine(final JoinSource.IndexProbe probe) {
-    final Evaluable placeholder = new Evaluable.Constant(PgType.UNKNOWN, null);
-    final TableSource lookup = probe.column().kind() == Column.Kind.IDENTITY ? probe.table().withIdLookup(probe.column(), placeholder)
-        : probe.table().withIndexLookup(probe.column(), placeholder);
-    return lookup.describe();
+  /** The match condition of a join as SQL text. */
+  private static String conditionText(final List<Conjunct> terms) {
+    if (terms.isEmpty())
+      return "true";
+    final StringJoiner text = new StringJoiner(" AND ");
+    for (final Conjunct term : terms)
+      text.add(AstPrinter.print(term.expression()));
+    return text.toString();
+  }
+
+  /** The lines of the right input with another first line: what the join does with it in place of reading it once. */
+  private static Supplier<List<String>> withFirstLine(final Supplier<List<String>> lines, final Supplier<String> first) {
+    return () -> {
+      final List<String> changed = new ArrayList<>(lines.get());
+      changed.set(0, first.get());
+      return changed;
+    };
+  }
+
+  /** A table of the statement by its two names, for a plan line. */
+  private record Aliased(String relation, String table) {
+    static Aliased of(final TableSource source) {
+      return new Aliased(source.relation(), source.table().name());
+    }
   }
 
   /**
@@ -958,26 +995,28 @@ public final class JoinPlanner {
   }
 
   /** The pattern of the walk, as openCypher would write it: {@code MATCH (p:person)-[w:works_at]->()}. */
-  private static String firstHopPattern(final JoinSource.Traversal walk) {
-    final String vertex = "(" + walk.from().relation() + ":" + walk.from().table().name() + ")";
-    final String edge = "[" + walk.edges().relation() + ":" + walk.edges().table().name() + "]";
-    return "MATCH " + (walk.direction() == Vertex.DIRECTION.OUT ? vertex + "-" + edge + "->()" : vertex + "<-" + edge + "-()");
+  private static String firstHopPattern(final boolean out, final Aliased from, final Aliased edges) {
+    final String vertex = "(" + from.relation() + ":" + from.table() + ")";
+    final String edge = "[" + edges.relation() + ":" + edges.table() + "]";
+    return "MATCH " + (out ? vertex + "-" + edge + "->()" : vertex + "<-" + edge + "-()");
   }
 
   /**
    * The pattern of the read of the far end of an edge: joined to the walk that produced the edge rows it is the whole hop,
    * {@code MATCH (p:person)-[w:works_at]->(c:company)}; otherwise it is the edge and its far end.
    */
-  private static String secondHopPattern(final RelationSource left, final Located edgeEnd, final TableSource far) {
-    final String vertex = "(" + far.relation() + ":" + far.table().name() + ")";
-    final TableSource edges = edgeEnd.table();
-    final String edge = "[" + edges.relation() + ":" + edges.table().name() + "]";
+  private static Supplier<String> secondHopPattern(final RelationSource left, final Located edgeEnd, final TableSource far) {
+    final Aliased vertex = Aliased.of(far);
+    final Aliased edges = Aliased.of(edgeEnd.table());
     final boolean toFar = edgeEnd.column().kind() == Column.Kind.TARGET;
     final JoinSource.Traversal walk = walkOf(left, edges.relation());
-    String near = "()";
-    if (walk != null && (walk.direction() == Vertex.DIRECTION.OUT) == toFar)
-      near = "(" + walk.from().relation() + ":" + walk.from().table().name() + ")";
-    return "MATCH " + (toFar ? near + "-" + edge + "->" + vertex : vertex + "-" + edge + "->" + near);
+    final Aliased start = walk != null && (walk.direction() == Vertex.DIRECTION.OUT) == toFar ? Aliased.of(walk.from()) : null;
+    return () -> {
+      final String read = "(" + vertex.relation() + ":" + vertex.table() + ")";
+      final String edge = "[" + edges.relation() + ":" + edges.table() + "]";
+      final String near = start == null ? "()" : "(" + start.relation() + ":" + start.table() + ")";
+      return "MATCH " + (toFar ? near + "-" + edge + "->" + read : read + "-" + edge + "->" + near);
+    };
   }
 
   /** The traversal below this source that produced the rows of the edge relation, {@code null} when there is none. */
