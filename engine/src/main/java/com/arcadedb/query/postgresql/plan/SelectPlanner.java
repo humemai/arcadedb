@@ -949,6 +949,8 @@ public class SelectPlanner {
       final PgType leftType = left.outputTypes().get(i);
       final PgType rightType = right.outputTypes().get(i);
       final PgType type = SetTypes.resolve(leftType, rightType, operation);
+      left.inferParameter(i, type);
+      right.inferParameter(i, type);
       final String typeName = leftType == type ? left.columns().get(i).typeName()
           : rightType == type ? right.columns().get(i).typeName() : type.typeName();
       types.add(type);

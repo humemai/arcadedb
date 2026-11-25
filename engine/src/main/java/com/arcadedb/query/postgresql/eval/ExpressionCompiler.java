@@ -147,7 +147,23 @@ public final class ExpressionCompiler {
 
   /** What an output column of type {@code unknown} becomes: {@code text}, as PostgreSQL resolves it. */
   public Evaluable resolveOutput(final Evaluable expression) {
-    return expression.type() == PgType.UNKNOWN ? implicit(expression, PgType.TEXT) : expression;
+    if (expression.type() != PgType.UNKNOWN)
+      return expression;
+    // a described parameter is text here only if no other place of the statement gives it a type
+    if (expression instanceof Evaluable.Constant constant && constant.parameter() != null) {
+      constant.parameter().inferFromOutput(PgType.TEXT);
+      return new Evaluable.Constant(PgType.TEXT, null);
+    }
+    return implicit(expression, PgType.TEXT);
+  }
+
+  /**
+   * When {@code expression} is a parameter of a described statement that has no type yet, its context converts it to
+   * {@code type}, which is what a Describe then reports for it. Any other expression is left alone.
+   */
+  public static void inferParameter(final Evaluable expression, final PgType type) {
+    if (expression instanceof Evaluable.Constant constant && constant.parameter() != null)
+      constant.parameter().infer(type);
   }
 
   public static boolean isAggregate(final Expression.FunctionCall call) {
@@ -293,7 +309,7 @@ public final class ExpressionCompiler {
 
   private Evaluable parameter(final Expression.ParameterRef reference) {
     if (parameters.isDescribing())
-      return new Evaluable.Constant(parameters.describedType(reference.index()), null);
+      return parameters.describedParameter(reference.index());
     final Object value = parameters.get(reference.index());
     // a value of a parameter whose type the client did not declare is typed by the expression it is in, as a string literal is
     if (value instanceof UnknownText unknown)
@@ -327,6 +343,7 @@ public final class ExpressionCompiler {
     if (from == PgType.UNKNOWN) {
       if (!(expression instanceof Evaluable.Constant constant))
         return null;
+      inferParameter(constant, target);
       if (constant.value() == null)
         return new Evaluable.Constant(target, null);
       return new Evaluable.Constant(target, Casts.parse((String) constant.value(), target));
@@ -725,7 +742,10 @@ public final class ExpressionCompiler {
    * for every operand that has no equal row.
    */
   private Evaluable inSubquery(final Expression.InSubquery e) {
-    final Evaluable operand = resolveOutput(compile(e.operand()));
+    final Evaluable compiled = compile(e.operand());
+    // a described parameter with no type yet waits for the column of the subquery, which is what types it
+    final boolean untyped = compiled instanceof Evaluable.Constant constant && constant.parameter() != null;
+    final Evaluable resolved = untyped ? compiled : resolveOutput(compiled);
     final SubqueryPlanner planner = scope.subqueries();
     final SubqueryPlanner.CorrelatedRows correlated = planner == null ? null : planner.correlated(e.query(), this);
     final Subquery subquery = correlated != null ? null : planSubquery(e.query());
@@ -734,6 +754,7 @@ public final class ExpressionCompiler {
     if (columnTypes.size() != 1)
       throw new PostgreSQLEvaluationException("42601", "subquery has too many columns");
     final PgType innerType = columnTypes.get(0);
+    final Evaluable operand = untyped ? implicit(resolved, innerType) : resolved;
     final boolean negated = e.negated();
 
     // the comparison of the operand with a row, typed as PostgreSQL types "operand = value"
@@ -996,6 +1017,7 @@ public final class ExpressionCompiler {
         || (from == PgType.INT4 && target == PgType.BOOL) || (from.isDateTime() && target.isDateTime());
     if (!possible || (target.isOpaque() && from != target))
       throw new PostgreSQLEvaluationException("42846", "cannot cast type " + from.displayName() + " to " + target.displayName());
+    inferParameter(operand, target);
     if (operand instanceof Evaluable.Constant constant)
       return new Evaluable.Constant(target, Casts.cast(constant.value(), from, target, typmod));
     return new Evaluable.Node(target, row -> Casts.cast(operand.eval(row), from, target, typmod), operand);
@@ -1019,6 +1041,7 @@ public final class ExpressionCompiler {
       return operand;
     if (from != PgType.UNKNOWN && !from.isString())
       throw new PostgreSQLEvaluationException("42846", "cannot cast type " + from.displayName() + " to interval");
+    inferParameter(operand, PgType.INTERVAL);
     if (operand instanceof Evaluable.Constant constant)
       return new Evaluable.Constant(PgType.INTERVAL, constant.value() == null ? null : PgInterval.parse((String) constant.value(), field));
     return new Evaluable.Node(PgType.INTERVAL, row -> {

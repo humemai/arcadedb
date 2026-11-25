@@ -48,6 +48,7 @@ import com.arcadedb.query.sql.executor.ResultInternal;
 import com.arcadedb.query.sql.executor.ResultSet;
 import com.arcadedb.utility.CollectionUtils;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -345,27 +346,57 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
-   * The columns of the answer of {@code query}, found by planning it: nothing is read and nothing is written. It is what a client
-   * asks with a Describe message before it binds values, a JDBC {@code PreparedStatement.getMetaData()} for one. Every name is
-   * bound and every expression typed, so a statement with an unknown table or column, or a type error, is refused here with the
-   * SQLSTATE that it would be refused with when it runs.
+   * What a Describe of a statement answers.
    *
-   * @param parameterTypes the types of {@code $1}, {@code $2} and so on; a parameter with no type here, or {@link PgType#UNKNOWN},
-   *                       takes its type from the expression it is in, as it does in PostgreSQL
-   *
-   * @return the columns in order, empty for a statement that returns no rows: {@code BEGIN}, {@code COMMIT} and {@code ROLLBACK}, and
-   *     a write without {@code RETURNING}
+   * @param columns        the columns in order, empty for a statement that returns no rows: {@code BEGIN}, {@code COMMIT} and
+   *                       {@code ROLLBACK}, and a write without {@code RETURNING}
+   * @param parameterTypes the type of {@code $1}, {@code $2} and so on, {@link PgType#UNKNOWN} for one that nothing types
    */
+  public record Description(List<PostgreSQLResultSet.Column> columns, List<PgType> parameterTypes) {
+  }
+
+  /** The columns of {@link #describeStatement}, for a caller that does not need the types of the parameters. */
   public List<PostgreSQLResultSet.Column> describe(final String query, final PgType... parameterTypes) {
+    return describeStatement(query, parameterTypes).columns();
+  }
+
+  /**
+   * The columns of the answer of {@code query} and the types of its parameters, found by planning it: nothing is read and nothing
+   * is written. It is what a client asks with a Describe message before it binds values, a JDBC
+   * {@code PreparedStatement.getMetaData()} for one. Every name is bound and every expression typed, so a statement with an unknown
+   * table or column, or a type error, is refused here with the SQLSTATE that it would be refused with when it runs.
+   *
+   * @param parameterTypes the types of {@code $1}, {@code $2} and so on that the caller declares; a parameter with no type here, or
+   *                       {@link PgType#UNKNOWN}, takes its type from the first expression that converts it, as it does in
+   *                       PostgreSQL: the column it is compared with or written to, a cast, {@code bigint} for {@code LIMIT},
+   *                       {@code text} when it is a whole output column and nothing else types it
+   */
+  public Description describeStatement(final String query, final PgType... parameterTypes) {
     final Statement statement = parse(query);
     final Parameters parameters = Parameters.describing(parameterTypes);
+    List<PostgreSQLResultSet.Column> columns = plannedColumns(statement, parameters);
+    final List<PgType> types = parameters.describedTypes();
+    if (!types.equals(parameterTypes == null ? List.of() : Arrays.asList(parameterTypes)))
+      // an expression can use a parameter before the one that types it: with every type known from the start the columns are
+      // those of a run with values of these types
+      columns = plannedColumns(statement, Parameters.describing(types.toArray(new PgType[0])));
+    if (statement instanceof ExplainStatement || statement instanceof ExplainWriteStatement)
+      columns = List.of(new PostgreSQLResultSet.Column(PLAN_COLUMN, "text"));
+    return new Description(columns, types);
+  }
+
+  /** The columns of a statement planned with described parameters; for {@code EXPLAIN} those of the statement it explains. */
+  private List<PostgreSQLResultSet.Column> plannedColumns(final Statement statement, final Parameters parameters) {
     if (statement instanceof TransactionStatement)
       return List.of();
-    if (statement instanceof ExplainStatement || statement instanceof ExplainWriteStatement)
-      return List.of(new PostgreSQLResultSet.Column(PLAN_COLUMN, "text"));
+    if (statement instanceof ExplainWriteStatement explain)
+      return new WritePlanner(database, catalog(), parameters).plan(explain.statement()).columns();
     if (statement instanceof WriteStatement write)
       return new WritePlanner(database, catalog(), parameters).plan(write).columns();
-    return new SelectPlanner(database, catalog(), parameters).planQuery(statement).columns();
+    final SelectPlanner planner = new SelectPlanner(database, catalog(), parameters);
+    if (statement instanceof ExplainStatement explain)
+      return planner.planQuery(explain.select()).columns();
+    return planner.planQuery(statement).columns();
   }
 
   /**

@@ -113,6 +113,12 @@ final class SetOperationPlan implements QueryPlan {
   }
 
   @Override
+  public void inferParameter(final int index, final PgType type) {
+    left.inferParameter(index, type);
+    right.inferParameter(index, type);
+  }
+
+  @Override
   public PostgreSQLResultSet execute(final Database database) {
     final List<Object[]> rows = rows(null);
     final List<String> keys = PostgreSQLResultSet.uniqueKeys(columns);

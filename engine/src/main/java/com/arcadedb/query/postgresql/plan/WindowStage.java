@@ -130,11 +130,13 @@ final class WindowStage {
         offset = input.compile(call.args().get(1));
         if (!offset.type().isInteger() && offset.type() != PgType.UNKNOWN)
           throw PostgreSQLEvaluationException.noFunction(name, argument.type(), offset.type());
+        ExpressionCompiler.inferParameter(offset, PgType.INT4);
       }
       Evaluable fallback = null;
       PgType fallbackTo = null;
       if (call.args().size() > 2) {
         fallback = input.compile(call.args().get(2));
+        ExpressionCompiler.inferParameter(fallback, argument.type());
         final boolean nullConstant = fallback instanceof Evaluable.Constant constant && constant.value() == null;
         if (!nullConstant && fallback.type() != argument.type()) {
           if ((fallback.type().isString() || fallback.type() == PgType.UNKNOWN) && argument.type().isString())

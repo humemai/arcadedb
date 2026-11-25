@@ -18,6 +18,9 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -33,6 +36,26 @@ public final class Parameters {
   private final boolean[] present;
   /** The types of the parameters of a statement that is only described, {@code null} for values that are bound. */
   private final PgType[]  described;
+  /** Described statements only, by number: the type the first context that converted a parameter of no declared type gave it. */
+  private final Map<Integer, PgType> fromContext;
+  /** Described statements only, by number: the type of a parameter that is all of an output or sort expression. */
+  private final Map<Integer, PgType> fromOutput;
+  /** Described statements only: the highest number the planned statement refers to. */
+  private int                        highestReference;
+
+  /** A parameter of a described statement whose type nothing has decided yet. */
+  public record Untyped(Parameters owner, int index) {
+    /** A context converts the parameter to {@code type}. The first one decides, as in PostgreSQL. */
+    void infer(final PgType type) {
+      if (type != PgType.UNKNOWN)
+        owner.fromContext.putIfAbsent(index, type);
+    }
+
+    /** The parameter is a whole output expression, which takes {@code type} unless a context decides otherwise. */
+    void inferFromOutput(final PgType type) {
+      owner.fromOutput.putIfAbsent(index, type);
+    }
+  }
 
   private Parameters(final Object[] values, final boolean[] present) {
     this(values, present, null);
@@ -42,6 +65,8 @@ public final class Parameters {
     this.values = values;
     this.present = present;
     this.described = described;
+    this.fromContext = described == null ? null : new HashMap<>();
+    this.fromOutput = described == null ? null : new HashMap<>();
   }
 
   /**
@@ -58,9 +83,43 @@ public final class Parameters {
     return described != null;
   }
 
-  /** The type that {@link #describing} gave {@code $index}, counted from 1: {@link PgType#UNKNOWN} when it gave none. */
+  /**
+   * The type of {@code $index}, counted from 1, in a described statement: the one {@link #describing} gave it, else the one a
+   * context has given it by now, {@link PgType#UNKNOWN} when neither has.
+   */
   public PgType describedType(final int index) {
-    return index >= 1 && index <= described.length && described[index - 1] != null ? described[index - 1] : PgType.UNKNOWN;
+    final PgType declared = index >= 1 && index <= described.length ? described[index - 1] : null;
+    return declared != null && declared != PgType.UNKNOWN ? declared : fromContext.getOrDefault(index, PgType.UNKNOWN);
+  }
+
+  /** {@code $index} as an expression of a described statement: a constant with no value, of its type as far as it is known. */
+  Evaluable describedParameter(final int index) {
+    highestReference = Math.max(highestReference, index);
+    final PgType type = describedType(index);
+    return type == PgType.UNKNOWN ? new Evaluable.Constant(type, null, new Untyped(this, index))
+        : new Evaluable.Constant(type, null);
+  }
+
+  /** A context that is known before the statement is planned converts {@code $index} to {@code type}. Bound values ignore it. */
+  public void inferDescribed(final int index, final PgType type) {
+    if (isDescribing()) {
+      highestReference = Math.max(highestReference, index);
+      new Untyped(this, index).infer(type);
+    }
+  }
+
+  /**
+   * After the planning of a described statement, the type of every parameter, {@code $1} first: as many as the statement refers to
+   * or as {@link #describing} was given, whichever is more. {@link PgType#UNKNOWN} stands for a parameter that nothing typed.
+   */
+  public List<PgType> describedTypes() {
+    final int count = Math.max(described.length, highestReference);
+    final List<PgType> types = new ArrayList<>(count);
+    for (int index = 1; index <= count; index++) {
+      final PgType type = describedType(index);
+      types.add(type != PgType.UNKNOWN ? type : fromOutput.getOrDefault(index, PgType.UNKNOWN));
+    }
+    return types;
   }
 
   /** {@code $1} is {@code values[0]}. */

@@ -49,6 +49,12 @@ public interface QueryPlan {
   List<PgType> outputTypes();
 
   /**
+   * The place that reads output column {@code index}, counted from 0, converts it to {@code type}: a parameter of a described
+   * statement that is that whole column, and has no type yet, takes it.
+   */
+  void inferParameter(int index, PgType type);
+
+  /**
    * The rows of the answer, each as wide as {@link #columns()}. The rows that stay in memory are charged to the memory when it
    * is not {@code null}, which stops the statement with SQLSTATE {@code 53200} when the cap is over.
    */

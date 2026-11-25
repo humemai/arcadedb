@@ -21,6 +21,7 @@ package com.arcadedb.query.postgresql.plan;
 import com.arcadedb.database.Database;
 import com.arcadedb.query.postgresql.eval.Comparison;
 import com.arcadedb.query.postgresql.eval.Evaluable;
+import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.Numbers;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
@@ -138,6 +139,11 @@ public final class SelectPlan implements QueryPlan {
       result.add(row);
     }
     return result;
+  }
+
+  @Override
+  public void inferParameter(final int index, final PgType type) {
+    ExpressionCompiler.inferParameter(outputs[index], type);
   }
 
   @Override
