@@ -52,7 +52,7 @@ Changing these means changing the ArcadeDB engine.
 | `CREATE`, `ALTER`, `DROP` | refused; types are made with ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
 | Types | no `uuid`, `timestamptz`, `time`, or `char(n)` |
 | Queries | refused: `array_agg`, the JSON aggregates, most window frames, `ntile`, named windows, `WITH RECURSIVE`, `= ANY`, `->>`, `LATERAL`, `NATURAL` joins, `SIMILAR TO` |
-| Large operations | fail with `53200` over a memory limit instead of spilling to disk |
+| Large operations | joins, `GROUP BY`, derived tables, `WITH`, and set operations fail with `53200` over a memory limit instead of spilling to disk |
 
 ## Known wrong answers
 
