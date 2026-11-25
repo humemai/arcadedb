@@ -40,6 +40,8 @@ public final class Parameters {
   private final Map<Integer, PgType> fromContext;
   /** Described statements only, by number: the type of a parameter that is all of an output or sort expression. */
   private final Map<Integer, PgType> fromOutput;
+  /** Described statements only, by number: the name of the array type of a parameter that a context typed as an array. */
+  private final Map<Integer, String> arrayNames;
   /** Described statements only: the highest number the planned statement refers to. */
   private int                        highestReference;
 
@@ -49,6 +51,13 @@ public final class Parameters {
     void infer(final PgType type) {
       if (type != PgType.UNKNOWN)
         owner.fromContext.putIfAbsent(index, type);
+    }
+
+    /** A context converts the parameter to the array type {@code typeName} ({@code _text}). */
+    void inferArray(final String typeName) {
+      infer(PgType.ARRAY);
+      if (owner.fromContext.get(index) == PgType.ARRAY)
+        owner.arrayNames.putIfAbsent(index, typeName);
     }
 
     /** The parameter is a whole output expression, which takes {@code type} unless a context decides otherwise. */
@@ -67,6 +76,7 @@ public final class Parameters {
     this.described = described;
     this.fromContext = described == null ? null : new HashMap<>();
     this.fromOutput = described == null ? null : new HashMap<>();
+    this.arrayNames = described == null ? null : new HashMap<>();
   }
 
   /**
@@ -106,6 +116,26 @@ public final class Parameters {
       highestReference = Math.max(highestReference, index);
       new Untyped(this, index).infer(type);
     }
+  }
+
+  /** {@link #inferDescribed} of an array type, {@code typeName} as the catalog names it ({@code _text}). */
+  public void inferDescribedArray(final int index, final String typeName) {
+    if (isDescribing()) {
+      highestReference = Math.max(highestReference, index);
+      new Untyped(this, index).inferArray(typeName);
+    }
+  }
+
+  /**
+   * After the planning of a described statement, the names of the types of the parameters of {@link #describedTypes()}: the
+   * name of the type, and for an array that a context typed its array type name ({@code _text}).
+   */
+  public List<String> describedTypeNames() {
+    final List<PgType> types = describedTypes();
+    final List<String> names = new ArrayList<>(types.size());
+    for (int i = 0; i < types.size(); i++)
+      names.add(types.get(i) == PgType.ARRAY ? arrayNames.getOrDefault(i + 1, PgType.ARRAY.typeName()) : types.get(i).typeName());
+    return names;
   }
 
   /**

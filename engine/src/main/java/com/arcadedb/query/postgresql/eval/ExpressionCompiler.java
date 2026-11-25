@@ -167,6 +167,12 @@ public final class ExpressionCompiler {
       constant.parameter().infer(type);
   }
 
+  /** {@link #inferParameter} for a context that converts to the array type {@code typeName} ({@code _text}). */
+  public static void inferArrayParameter(final Evaluable expression, final String typeName) {
+    if (expression instanceof Evaluable.Constant constant && constant.parameter() != null)
+      constant.parameter().inferArray(typeName);
+  }
+
   public static boolean isAggregate(final Expression.FunctionCall call) {
     // an aggregate with OVER is a window function: the window stage computes it
     if (call.over() != null)
@@ -1051,7 +1057,7 @@ public final class ExpressionCompiler {
     if (from != PgType.UNKNOWN && !from.isString() && from != PgType.ARRAY && !(from == PgType.VECTOR && element == PgType.FLOAT4))
       throw new PostgreSQLEvaluationException("42846",
           "cannot cast type " + from.displayName() + " to " + element.displayName() + "[]");
-    inferParameter(operand, PgType.ARRAY);
+    inferArrayParameter(operand, typeName);
     if (operand instanceof Evaluable.Constant constant) {
       // a bad literal is an error before any row is read
       final Object value = ValueInput.toArray(constant.value(), element);

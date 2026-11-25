@@ -136,6 +136,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.IntStream;
 
 import static com.arcadedb.schema.Property.CAT_PROPERTY;
 import static com.arcadedb.schema.Property.IN_PROPERTY;
@@ -3701,7 +3702,12 @@ public class PostgresNetworkExecutor extends Thread {
           if (DEBUG)
             LogManager.instance().log(this, Level.INFO, "PSQL: bind deserializing param %d typeCode=%d formatCode=%d (thread=%s)",
                 i, typeCode, formatCode, Thread.currentThread().threadId());
-          portal.parameterValues.add(PostgresType.deserialize(typeCode, formatCode, paramValue));
+          // a text of no declared type reaches the postgresql language as it was sent: the language reads it by the type of its
+          // context, so '{}' for a jsonb column is not first read as an empty array literal, as it is for sql (issue #2559)
+          final boolean textForTheLanguage = typeCode == 0L && formatCode == 0 && !portal.catalogQuery
+              && PostgresQueryLanguages.POSTGRESQL.equals(portal.language);
+          portal.parameterValues.add(textForTheLanguage ? new String(paramValue, DatabaseFactory.getDefaultCharset())
+              : PostgresType.deserialize(typeCode, formatCode, paramValue));
           if (DEBUG)
             LogManager.instance().log(this, Level.INFO, "PSQL: bind param %d deserialized (thread=%s)", i, Thread.currentThread().threadId());
         }
@@ -5437,7 +5443,9 @@ public class PostgresNetworkExecutor extends Thread {
       types[i] = PostgresLanguageAnswer.parameterType(portal.parameterTypes.get(i));
     final PostgreSQLQueryEngine engine = (PostgreSQLQueryEngine) database.getQueryEngine(PostgresQueryLanguages.POSTGRESQL);
     final PostgreSQLQueryEngine.Description description = engine.describeStatement(portal.query, types);
-    portal.inferredParameterTypes = description.parameterTypes().stream().map(PostgresLanguageAnswer::parameterOid).toList();
+    portal.inferredParameterTypes = IntStream.range(0, description.parameterTypes().size())
+        .mapToObj(i -> PostgresLanguageAnswer.parameterOid(description.parameterTypes().get(i), description.parameterTypeNames().get(i)))
+        .toList();
     return description.columns().isEmpty() ? null : PostgresLanguageAnswer.wireColumns(description.columns());
   }
 

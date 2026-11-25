@@ -82,6 +82,10 @@ public final class VectorDistance implements Evaluable {
     final PgType type = operand.type();
     if (type == PgType.VECTOR)
       return operand;
+    // a list or an array of numbers bound as a parameter, which is how a client binds a parameter announced as real[]; an array
+    // constructor is not a constant of this class, and has no operator, as in pgvector
+    if (type == PgType.ARRAY && operand instanceof Evaluable.Constant constant)
+      return new Evaluable.Constant(PgType.VECTOR, ValueInput.toVector(constant.value()));
     if (operand.isConstant() && (type == PgType.UNKNOWN || type.isString())) {
       final Object value = operand.eval(new Object[0]);
       ExpressionCompiler.inferParameter(operand, PgType.VECTOR);

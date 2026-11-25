@@ -351,8 +351,11 @@ public class PostgreSQLQueryEngine implements QueryEngine {
    * @param columns        the columns in order, empty for a statement that returns no rows: {@code BEGIN}, {@code COMMIT} and
    *                       {@code ROLLBACK}, and a write without {@code RETURNING}
    * @param parameterTypes the type of {@code $1}, {@code $2} and so on, {@link PgType#UNKNOWN} for one that nothing types
+   * @param parameterTypeNames the names of those types; an array that goes into a column or a cast is named with its element
+   *                           type ({@code _text})
    */
-  public record Description(List<PostgreSQLResultSet.Column> columns, List<PgType> parameterTypes) {
+  public record Description(List<PostgreSQLResultSet.Column> columns, List<PgType> parameterTypes,
+      List<String> parameterTypeNames) {
   }
 
   /** The columns of {@link #describeStatement}, for a caller that does not need the types of the parameters. */
@@ -382,7 +385,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       columns = plannedColumns(statement, Parameters.describing(types.toArray(new PgType[0])));
     if (statement instanceof ExplainStatement || statement instanceof ExplainWriteStatement)
       columns = List.of(new PostgreSQLResultSet.Column(PLAN_COLUMN, "text"));
-    return new Description(columns, types);
+    // the names come from the first plan: in the second one every type is declared, so nothing infers it again
+    return new Description(columns, types, parameters.describedTypeNames());
   }
 
   /** The columns of a statement planned with described parameters; for {@code EXPLAIN} those of the statement it explains. */
