@@ -151,7 +151,7 @@ public final class WritePlanner {
 
   private Table resolveTable(final TableReference.Table reference, final String verb) {
     final List<Name> name = reference.name();
-    if (InformationSchema.resolve(reference, catalog) != null)
+    if (InformationSchema.resolve(reference, catalog, database) != null)
       throw new PostgreSQLEvaluationException("55000", "cannot change view \"" + name.get(name.size() - 1).value() + "\"");
     final Table table = name.size() == 1 ? catalog.table(identifier(name.get(0)))
         : catalog.table(identifier(name.get(0)), identifier(name.get(1)));
