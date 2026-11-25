@@ -21,6 +21,8 @@ package com.arcadedb.query.postgresql.plan;
 import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.ColumnType;
 import com.arcadedb.query.postgresql.eval.Casts;
+import com.arcadedb.query.postgresql.eval.Evaluable;
+import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.eval.ValueInput;
@@ -43,6 +45,19 @@ final class Assignments {
 
   static PgType typeOf(final Column column) {
     return PgType.of(column.type());
+  }
+
+  /** A parameter of a described statement that goes into the column has the type of the column. */
+  static void inferParameter(final Evaluable value, final Column column) {
+    if (column.type().isArray())
+      ExpressionCompiler.inferArrayParameter(value, arrayName(column));
+    else
+      ExpressionCompiler.inferParameter(value, typeOf(column));
+  }
+
+  /** The name of the type of an array column, {@code _text}. */
+  static String arrayName(final Column column) {
+    return "_" + column.type().elementType().typeName();
   }
 
   /**

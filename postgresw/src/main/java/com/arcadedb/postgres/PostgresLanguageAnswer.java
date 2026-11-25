@@ -167,15 +167,19 @@ final class PostgresLanguageAnswer {
   }
 
   /**
-   * The type OID that ParameterDescription announces for a parameter that the language typed as {@code type} (fork issue #67), 0
-   * (unspecified) for a parameter nothing typed and for a type whose values the language does not take from a client yet
-   * ({@code jsonb}, {@code vector}, arrays, {@code bytea}, {@code interval}). A client such as asyncpg binds a value in the binary
-   * format of the type announced here.
+   * The type OID that ParameterDescription announces for a parameter that the language typed as {@code type} (fork issues #67
+   * and #29), 0 (unspecified) for a parameter nothing typed, for an array whose element type nothing decided and for
+   * {@code interval}. A {@code vector} is announced as a {@code vector} column is, {@code real[]}. A client such as asyncpg binds
+   * a value in the binary format of the type announced here.
+   *
+   * @param typeName the name of the type, which for an array carries the element type ({@code _text})
    */
-  static long parameterOid(final PgType type) {
+  static long parameterOid(final PgType type, final String typeName) {
     return switch (type) {
-      case BOOL, INT2, INT4, INT8, NUMERIC, FLOAT4, FLOAT8, TEXT, VARCHAR, DATE, TIMESTAMP ->
+      case BOOL, INT2, INT4, INT8, NUMERIC, FLOAT4, FLOAT8, TEXT, VARCHAR, DATE, TIMESTAMP, JSONB, BYTEA ->
           PostgresType.byName(type.typeName()).code;
+      case VECTOR -> wireType(type.typeName()).code;
+      case ARRAY -> typeName.startsWith("_") ? wireType(typeName).code : 0L;
       default -> 0L;
     };
   }
