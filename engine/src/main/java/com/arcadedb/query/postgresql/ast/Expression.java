@@ -388,6 +388,14 @@ public sealed interface Expression extends Node {
   }
 
   /** The functions that PostgreSQL's grammar spells as keywords and evaluates in a way no ordinary function can. */
+  /** {@code ARRAY[a, b]}: the array constructor of one dimension; no element is {@code ARRAY[]}, which only a cast types. */
+  record ArrayConstructor(SourcePosition position, List<Expression> elements) implements Expression {
+    public ArrayConstructor {
+      Objects.requireNonNull(position, "position");
+      elements = List.copyOf(elements);
+    }
+  }
+
   enum SpecialFunctionKind {
     /** {@code COALESCE(a, b, ...)}: the first argument that is not null; arguments after it are not evaluated. */
     COALESCE,

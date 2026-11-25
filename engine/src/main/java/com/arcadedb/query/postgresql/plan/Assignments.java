@@ -19,9 +19,11 @@
 package com.arcadedb.query.postgresql.plan;
 
 import com.arcadedb.query.postgresql.catalog.Column;
+import com.arcadedb.query.postgresql.catalog.ColumnType;
 import com.arcadedb.query.postgresql.eval.Casts;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.query.postgresql.eval.ValueInput;
 
 /**
  * The rule that decides which value a column takes, as PostgreSQL's assignment casts have it: a string literal (and a text
@@ -30,8 +32,10 @@ import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
  * converts to {@code text} and {@code varchar}; {@code date} and {@code timestamp} convert to one another. Everything else
  * (text to a number, a number to a boolean) is {@code 42804}, and needs a cast in the statement, as in PostgreSQL.
  *
- * <p>The types the evaluator does not compute with ({@code jsonb}, {@code bytea}, arrays, {@code vector}) take {@code NULL} and
- * {@code DEFAULT}; any other value is refused with {@code 0A000} until a later stage reads their input syntax.
+ * <p>A column of {@code jsonb}, {@code bytea}, an array or {@code vector} takes a value of its own type or one of unknown type (a
+ * string literal, a parameter), which {@link ValueInput} reads. An array also takes an array whose elements can be assigned to
+ * its element type, and a {@code vector} takes an array of numbers, as pgvector's assignment casts do. How the record holds such
+ * a value is the business of {@link StoredValues}.
  */
 final class Assignments {
   private Assignments() {
@@ -41,21 +45,20 @@ final class Assignments {
     return PgType.of(column.type());
   }
 
-  /** Whether the column takes only {@code NULL} and {@code DEFAULT} for now. */
-  static boolean opaque(final Column column) {
-    final PgType type = typeOf(column);
-    return type.isOpaque() || type == PgType.VECTOR;
-  }
-
   /**
    * Checks at plan time that a value of type {@code from} can go into the column, so that the error comes before any row is
    * read, and for an empty table too.
    */
-  static void check(final PgType from, final Column column) {
+  static void check(final PgType from, final String fromTypeName, final Column column) {
     final PgType to = typeOf(column);
-    if (opaque(column))
-      throw PostgreSQLEvaluationException.unsupported(
-          "A value for the column \"" + column.name() + "\" of type " + column.type() + " is not supported yet: it takes NULL and DEFAULT");
+    if (to == PgType.ARRAY || to == PgType.VECTOR) {
+      if (from == PgType.UNKNOWN || (from == to && to == PgType.VECTOR) || assignableArray(from, fromTypeName, column))
+        return;
+      final String source = from == PgType.ARRAY && ValueInput.elementType(fromTypeName) != null
+          ? ValueInput.elementType(fromTypeName).displayName() + "[]" : from.displayName();
+      throw PostgreSQLEvaluationException.mismatch(
+          "column \"" + column.name() + "\" is of type " + column.type() + " but expression is of type " + source);
+    }
     if (from == to || from == PgType.UNKNOWN || to.isString() || (from.isString() && to.isString()))
       return;
     if (from.isNumber() && to.isNumber())
@@ -66,15 +69,51 @@ final class Assignments {
         "column \"" + column.name() + "\" is of type " + to.displayName() + " but expression is of type " + from.displayName());
   }
 
-  /** The value in the class of the type of the column; {@code from} is {@link PgType#UNKNOWN} for a string literal. */
+  private static boolean assignableArray(final PgType from, final String fromTypeName, final Column column) {
+    if (column.type() == ColumnType.VECTOR) {
+      if (from != PgType.ARRAY)
+        return false;
+      final PgType element = ValueInput.elementType(fromTypeName);
+      // pgvector has assignment casts from integer[], real[], double precision[] and numeric[]
+      return element == null || (element.isNumber() && element != PgType.INT8);
+    }
+    final PgType target = PgType.of(column.type().elementType());
+    if (from == PgType.VECTOR)
+      return target == PgType.FLOAT4;
+    if (from != PgType.ARRAY)
+      return false;
+    final PgType element = ValueInput.elementType(fromTypeName);
+    return element == null || element == target || target.isString() || (element.isNumber() && target.isNumber());
+  }
+
+  /**
+   * The value in the class of the type of the column; {@code from} is {@link PgType#UNKNOWN} for a string literal and for a
+   * parameter whose Java value the column types.
+   */
   static Object convert(final Object value, final PgType from, final Column column) {
     if (value == null)
       return null;
     final PgType to = typeOf(column);
+    switch (to) {
+    case JSONB:
+      return ValueInput.toJson(value);
+    case BYTEA:
+      return ValueInput.toBytes(value);
+    case ARRAY:
+      return ValueInput.toArray(value, PgType.of(column.type().elementType()));
+    case VECTOR:
+      return ValueInput.toVector(value);
+    default:
+      break;
+    }
     if (from == to)
       return value;
-    if (from == PgType.UNKNOWN)
-      return to.isString() ? value : Casts.parse((String) value, to);
+    if (from == PgType.UNKNOWN) {
+      if (!(value instanceof String text))
+        throw PostgreSQLEvaluationException.mismatch("column \"" + column.name() + "\" is of type " + to.displayName()
+            + " and the value of the parameter is not");
+      return to.isString() ? value : Casts.parse(text, to);
+    }
     if (from.isString() && to.isString())
       return value;
     return Casts.cast(value, from, to, null);

@@ -1466,7 +1466,7 @@ out-tablesample	ok	outside	-	SELECT * FROM person TABLESAMPLE SYSTEM (10)	s3	-
 out-rollup	ok	outside	-	SELECT city, count(*) FROM person GROUP BY ROLLUP (city)	s3	-
 out-similar-to	ok	outside	-	SELECT name FROM person WHERE name SIMILAR TO 'A%'	s3	-
 out-is-true	ok	outside	-	SELECT true IS TRUE	s3	-
-out-array-constructor	ok	outside	-	SELECT ARRAY[1, 2]	s3	-
+out-array-constructor	ok	inside	-	SELECT ARRAY[1, 2]	s3	-
 out-json-arrow	ok	outside	-	SELECT '{"a": 1}'::jsonb -> 'a'	s3	-
 out-function-in-from	ok	outside	-	SELECT a.x FROM generate_series(1, 3) AS a(x)	s3	-
 out-copy	ok	outside	-	COPY person TO STDOUT	s3	-

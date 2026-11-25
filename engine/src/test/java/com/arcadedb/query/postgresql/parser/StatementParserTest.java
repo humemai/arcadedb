@@ -452,7 +452,7 @@ class StatementParserTest {
         new String[] { "WITH x AS (SELECT 1) DELETE FROM t", "A WITH clause on INSERT, UPDATE, DELETE or MERGE is not supported" },
         new String[] { "SELECT * FROM generate_series(1, 3)", "is not supported" },
         new String[] { "SELECT * FROM a, LATERAL (SELECT 1) s", "LATERAL" },
-        new String[] { "SELECT ARRAY[1, 2]", "ARRAY is not supported" },
+        new String[] { "SELECT ARRAY(SELECT 1)", "ARRAY is not supported" },
         new String[] { "SELECT ROW(1, 2)", "ROW is not supported" },
         new String[] { "SELECT (1, 2)", "A row constructor is not supported" },
         new String[] { "SELECT count(*) OVER w FROM t", "OVER W is not supported by the postgresql language (line 1, column 17)" },

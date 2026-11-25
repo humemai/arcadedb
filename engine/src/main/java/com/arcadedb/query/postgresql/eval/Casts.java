@@ -171,6 +171,10 @@ public final class Casts {
       return parseTimestamp(text);
     case VECTOR:
       return VectorDistance.parse(text);
+    case JSONB:
+      return ValueInput.toJson(text);
+    case BYTEA:
+      return ValueInput.parseBytea(text);
     default:
       throw PostgreSQLEvaluationException.unsupported("A value of type " + type.displayName() + " cannot be written as a literal");
     }
@@ -324,6 +328,10 @@ public final class Casts {
       if (from == PgType.DATE)
         return ((LocalDate) value).atStartOfDay();
       break;
+    case VECTOR:
+      if (from == PgType.ARRAY)
+        return applyModifier(ValueInput.toVector(value), to, typmod);
+      break;
     default:
       break;
     }
@@ -430,6 +438,10 @@ public final class Casts {
       return toTimestamp(raw);
     case VECTOR:
       return VectorDistance.fromEngine(raw);
+    case JSONB:
+      return raw instanceof com.arcadedb.serializer.json.JSONObject object ? object.toMap() : raw;
+    case ARRAY:
+      return raw instanceof com.arcadedb.serializer.json.JSONArray array ? array.toList() : raw;
     default:
       return raw;
     }

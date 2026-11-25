@@ -88,11 +88,18 @@ public interface Evaluable {
    */
   final class Node implements Evaluable {
     private final PgType      type;
+    private final String      typeName;
     private final boolean     constant;
     private final RowFunction function;
 
     public Node(final PgType type, final RowFunction function, final Evaluable... inputs) {
+      this(type, type.typeName(), function, inputs);
+    }
+
+    /** A node whose type name says more than its type: an array, whose name carries the element type ({@code _int4}). */
+    public Node(final PgType type, final String typeName, final RowFunction function, final Evaluable... inputs) {
       this.type = type;
+      this.typeName = typeName;
       this.function = function;
       boolean allConstant = inputs.length > 0;
       for (final Evaluable input : inputs)
@@ -103,6 +110,11 @@ public interface Evaluable {
     @Override
     public PgType type() {
       return type;
+    }
+
+    @Override
+    public String typeName() {
+      return typeName;
     }
 
     @Override

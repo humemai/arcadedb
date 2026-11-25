@@ -173,6 +173,7 @@ jobs:
             engine/src/test/resources/postgresql/corpus/generated.tsv
             engine/src/test/resources/postgresql/corpus/agent-sql.tsv
             engine/src/test/resources/postgresql/corpus/writes.tsv
+            engine/src/test/resources/postgresql/corpus/values-writes.tsv
             e2e/target/pgparity/report.txt
             e2e/target/pgparity/report-tpch.txt
             e2e/target/pgparity/report-idrule.txt

@@ -236,7 +236,7 @@ class WritePlanTest extends TestHelper {
     assertState(() -> command("INSERT INTO person (pid, name) VALUES (1, 'Dup')"), "23505");
     assertState(() -> command("INSERT INTO nope (a) VALUES (1)"), "42P01");
     assertState(() -> command("INSERT INTO information_schema.tables (table_name) VALUES ('x')"), "55000");
-    assertState(() -> command("INSERT INTO orders (oid, address) VALUES (300, '{}')"), "0A000");
+    assertState(() -> command("INSERT INTO orders (oid, address) VALUES (300, '[1]')"), "0A000");
     assertThat(value("SELECT count(*) FROM person")).isEqualTo(5L);
   }
 

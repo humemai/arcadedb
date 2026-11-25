@@ -253,6 +253,6 @@ class NumericTypingTest {
 
   @Test
   void anUnsupportedParameterClassIsRefused() {
-    assertThat(sqlState(param(1), new Object[] { new int[] { 1 } })).isEqualTo("0A000");
+    assertThat(sqlState(param(1), new Object[] { new Object() })).isEqualTo("0A000");
   }
 }

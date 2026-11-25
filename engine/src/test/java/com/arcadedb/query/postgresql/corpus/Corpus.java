@@ -49,6 +49,8 @@ public final class Corpus {
   public static final String WRITES_FILE        = "writes.tsv";
   /** The writes of the {@code id} rule of fork issue #38: the columns of {@code writes.tsv}, the data of {@code IdRuleFixture}. */
   public static final String IDRULE_WRITES_FILE = "idrule-writes.tsv";
+  /** The writes of {@code jsonb}, arrays and {@code bytea} of fork issue #29: the columns of {@code writes.tsv}, {@code ValuesFixture}. */
+  public static final String VALUES_WRITES_FILE = "values-writes.tsv";
   /** The TPC-H statements of fork issue #13: the columns of {@code answers.tsv}, the data of {@code TpchFixture}. */
   public static final String TPCH_FILE          = "tpch.tsv";
   /** The statements of the {@code id} rule of fork issue #38: the columns of {@code answers.tsv}, the data of {@code IdRuleFixture}. */
@@ -87,6 +89,10 @@ public final class Corpus {
 
   public static CorpusFile readIdRuleWrites() throws IOException {
     return CorpusFile.readResource(RESOURCE_DIRECTORY + IDRULE_WRITES_FILE);
+  }
+
+  public static CorpusFile readValuesWrites() throws IOException {
+    return CorpusFile.readResource(RESOURCE_DIRECTORY + VALUES_WRITES_FILE);
   }
 
   public static CorpusFile readTpch() throws IOException {

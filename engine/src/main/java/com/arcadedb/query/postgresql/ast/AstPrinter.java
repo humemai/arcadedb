@@ -281,6 +281,7 @@ public final class AstPrinter {
       case Expression.FunctionCall call -> call.name().stream().map(AstPrinter::print).collect(Collectors.joining("."))
           + (call.star() ? "(*)" : "(" + (call.distinct() ? "DISTINCT " : "") + printAll(call.args()) + ")")
           + (call.over() == null ? "" : " OVER (" + printWindow(call.over()) + ")");
+      case Expression.ArrayConstructor array -> "ARRAY[" + printAll(array.elements()) + "]";
       case Expression.SpecialFunction function -> function.args().isEmpty() ? function.kind().name()
           : function.kind().name() + "(" + printAll(function.args()) + ")";
     };
