@@ -6,6 +6,8 @@ language recognizes it), not answered differently. Known differences from Postgr
 cases marked pending (such as `is-columns-public-rows`, identity columns in `information_schema`). The answers are compared with
 PostgreSQL 18.7 by the parity corpus (`engine/src/test/resources/postgresql/corpus`).
 
+Where the language behaves differently from PostgreSQL, and why, is on the [differences page](postgresql-differences.md).
+
 | Construct | State | Notes |
 |---|---|---|
 | Values of a `jsonb`, array or `bytea` column: a literal (`'{a,b}'`, `'{"k": 1}'`, `'\x0aff'`), `ARRAY[...]`, a cast (`'{a}'::text[]`, `::jsonb`, `::bytea`), `$n` | supported | PostgreSQL's input rules and SQLSTATEs. A `$n` takes a text, or the Java value (`List` or array, `Map`, `byte[]`). On the wire `ParameterDescription` announces `jsonb`, `bytea`, the array type, and `real[]` for a `vector`, and a text of no declared type is read by the type of the column. The record holds it in the class of its property, so `sql` and openCypher read the same value. A `jsonb` object keeps the order of its keys as written (PostgreSQL sorts them); a decimal in it is stored as a double when a double holds the same number. |
