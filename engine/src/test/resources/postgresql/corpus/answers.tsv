@@ -518,12 +518,12 @@ err-typmod-varchar-zero	multiset	-	ok	SELECT 'abc'::varchar(0)	{"error":"22023"}
 err-typmod-numeric-precision-zero	multiset	-	ok	SELECT 1::numeric(0)	{"error":"22023"}
 err-typmod-numeric-scale-range	multiset	-	ok	SELECT 1::numeric(5,1001)	{"error":"22023"}
 err-typmod-numeric-three	multiset	-	ok	SELECT 1::numeric(5,2,1)	{"error":"22023"}
-accept-where-order-desc-limit	ordered	-	ok	SELECT name, age FROM person WHERE city = 'Delft' ORDER BY age DESC LIMIT 1	pending-server
-accept-not-equal-skips-null	ordered	-	ok	SELECT name FROM person WHERE age <> 36 ORDER BY name	pending-server
-accept-order-null-last	ordered	-	ok	SELECT name FROM person ORDER BY age	pending-server
-accept-limit-offset	ordered	-	ok	SELECT name FROM person ORDER BY name LIMIT 2 OFFSET 1	pending-server
-accept-integer-division	multiset	-	ok	SELECT total / 2, oid / 2 FROM orders WHERE oid = 101	pending-server
-accept-date-plus-month-range	ordered	-	ok	SELECT oid FROM orders WHERE placed >= DATE '2026-02-01' AND placed < DATE '2026-02-01' + INTERVAL '1' MONTH ORDER BY oid	pending-server
-accept-json-column	multiset	-	ok	SELECT address FROM orders WHERE oid = 100	pending-server
-err-accept-misspelled-column	multiset	-	ok	SELECT nam FROM person	pending-server
-err-accept-misspelled-table	multiset	-	ok	SELECT name FROM persons	pending-server
+accept-where-order-desc-limit	ordered	-	ok	SELECT name, age FROM person WHERE city = 'Delft' ORDER BY age DESC LIMIT 1	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Bo",41]]}
+accept-not-equal-skips-null	ordered	-	ok	SELECT name FROM person WHERE age <> 36 ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[["Bo"],["Di"],["Ed"]]}
+accept-order-null-last	ordered	-	ok	SELECT name FROM person ORDER BY age	{"columns":["name"],"types":["varchar"],"rows":[["Di"],["Ada"],["Bo"],["Ed"],["Cy"]]}
+accept-limit-offset	ordered	-	ok	SELECT name FROM person ORDER BY name LIMIT 2 OFFSET 1	{"columns":["name"],"types":["varchar"],"rows":[["Bo"],["Cy"]]}
+accept-integer-division	multiset	-	ok	SELECT total / 2, oid / 2 FROM orders WHERE oid = 101	{"columns":["?column?","?column?"],"types":["numeric","int4"],"rows":[[5.0000000000000000,50]]}
+accept-date-plus-month-range	ordered	-	ok	SELECT oid FROM orders WHERE placed >= DATE '2026-02-01' AND placed < DATE '2026-02-01' + INTERVAL '1' MONTH ORDER BY oid	{"columns":["oid"],"types":["int4"],"rows":[[102],[103]]}
+accept-json-column	multiset	-	ok	SELECT address FROM orders WHERE oid = 100	{"columns":["address"],"types":["jsonb"],"rows":[[{"zip":"1000AA","city":"Delft"}]]}
+err-accept-misspelled-column	multiset	-	ok	SELECT nam FROM person	{"error":"42703"}
+err-accept-misspelled-table	multiset	-	ok	SELECT name FROM persons	{"error":"42P01"}
