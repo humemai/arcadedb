@@ -185,6 +185,9 @@ public final class ExpressionCompiler {
     };
   }
 
+  /** The longest {@code varchar(n)} PostgreSQL declares. */
+  private static final int MAX_VARCHAR_LENGTH = 10_485_760;
+
   /** Aggregates of PostgreSQL that the language does not have: refused with {@code 0A000}, not reported as unknown functions. */
   private static final java.util.Set<String> UNSUPPORTED_AGGREGATES = java.util.Set.of("array_agg", "json_agg", "jsonb_agg",
       "json_object_agg", "jsonb_object_agg", "bool_and", "bool_or", "every", "bit_and", "bit_or", "bit_xor", "stddev",
@@ -1010,22 +1013,13 @@ public final class ExpressionCompiler {
     if (target == null || name.intervalFields() != null)
       throw PostgreSQLEvaluationException.unsupported(
           "The type " + String.join(".", name.name()) + " is not supported by the postgresql language");
-    int[] modifiers = null;
-    if (!name.modifiers().isEmpty()) {
-      modifiers = new int[name.modifiers().size()];
-      for (int i = 0; i < modifiers.length; i++) {
-        if (!(name.modifiers().get(i) instanceof Expression.IntegerLiteral literal) || literal.value().bitLength() > 31)
-          throw PostgreSQLEvaluationException.unsupported("A type modifier has to be an integer constant");
-        modifiers[i] = literal.value().intValue();
-      }
-    }
-    final int[] typmod = modifiers;
+    final int[] typmod = typeModifiers(name, target);
     final Evaluable operand = compile(e.operand());
     // a Java value bound as a parameter takes the type of the cast, as a text parameter does
     if (e.operand() instanceof Expression.ParameterRef && operand instanceof Evaluable.Constant constant && constant.value() != null
         && (target == PgType.JSONB && constant.type() == PgType.ARRAY || target == PgType.VECTOR && constant.type() == PgType.ARRAY))
       return new Evaluable.Constant(target,
-          target == PgType.JSONB ? ValueInput.toJson(constant.value()) : Casts.cast(constant.value(), PgType.ARRAY, target, modifiers));
+          target == PgType.JSONB ? ValueInput.toJson(constant.value()) : Casts.cast(constant.value(), PgType.ARRAY, target, typmod));
     final PgType from = operand.type();
     final boolean possible = from == target || (target == PgType.VECTOR && from == PgType.ARRAY) || from == PgType.UNKNOWN || (target.isString() && !from.isOpaque()) || from.isString()
         || (from.isNumber() && target.isNumber()) || (from == PgType.BOOL && target == PgType.INT4)
@@ -1037,6 +1031,62 @@ public final class ExpressionCompiler {
     if (operand instanceof Evaluable.Constant constant)
       return new Evaluable.Constant(target, Casts.cast(constant.value(), from, target, typmod));
     return new Evaluable.Node(target, row -> Casts.cast(operand.eval(row), from, target, typmod), operand);
+  }
+
+  /**
+   * The type modifiers of a cast, checked as the {@code typmodin} function of the type checks them, {@code null} for none.
+   * {@code numeric(p,s)}, {@code varchar(n)}, {@code timestamp(p)} and {@code vector(n)} take one, and
+   * {@link Casts#cast} applies it. Any other type with a modifier is {@code 42601}, so none is accepted and then ignored. A
+   * timestamp precision above 6 is 6, as in PostgreSQL (which also warns).
+   */
+  private static int[] typeModifiers(final TypeName name, final PgType target) {
+    if (name.modifiers().isEmpty())
+      return null;
+    if (target != PgType.NUMERIC && target != PgType.VARCHAR && target != PgType.TIMESTAMP && target != PgType.VECTOR)
+      throw new PostgreSQLEvaluationException("42601",
+          "type modifier is not allowed for type \"" + String.join(".", name.name()) + "\"");
+    final int[] values = new int[name.modifiers().size()];
+    for (int i = 0; i < values.length; i++)
+      values[i] = integerModifier(name.modifiers().get(i));
+    if (values.length > (target == PgType.NUMERIC ? 2 : 1))
+      throw invalidModifier(target == PgType.NUMERIC ? "invalid NUMERIC type modifier" : "invalid type modifier");
+    final int first = values[0];
+    switch (target) {
+    case NUMERIC -> {
+      if (first < 1 || first > 1000)
+        throw invalidModifier("NUMERIC precision " + first + " must be between 1 and 1000");
+      if (values.length == 2 && (values[1] < -1000 || values[1] > 1000))
+        throw invalidModifier("NUMERIC scale " + values[1] + " must be between -1000 and 1000");
+    }
+    case VARCHAR -> {
+      if (first < 1)
+        throw invalidModifier("length for type varchar must be at least 1");
+      if (first > MAX_VARCHAR_LENGTH)
+        throw invalidModifier("length for type varchar cannot exceed " + MAX_VARCHAR_LENGTH);
+    }
+    case TIMESTAMP -> {
+      if (first < 0)
+        throw invalidModifier("TIMESTAMP(" + first + ") precision must not be negative");
+      values[0] = Math.min(first, Casts.MAX_TIMESTAMP_PRECISION);
+    }
+    default -> {
+      if (first < 1)
+        throw invalidModifier("dimensions for type vector must be at least 1");
+      if (first > VectorDistance.MAX_DIMENSIONS)
+        throw invalidModifier("dimensions for type vector cannot exceed " + VectorDistance.MAX_DIMENSIONS);
+    }
+    }
+    return values;
+  }
+
+  private static int integerModifier(final Expression modifier) {
+    if (!(modifier instanceof Expression.IntegerLiteral literal) || literal.value().bitLength() > 31)
+      throw PostgreSQLEvaluationException.unsupported("A type modifier has to be an integer constant");
+    return literal.value().intValue();
+  }
+
+  private static PostgreSQLEvaluationException invalidModifier(final String message) {
+    return new PostgreSQLEvaluationException("22023", message);
   }
 
   /**
@@ -1395,8 +1445,12 @@ public final class ExpressionCompiler {
     }
     case CURRENT_DATE:
       return new Evaluable.Node(PgType.DATE, row -> LocalDate.now());
-    case LOCALTIMESTAMP:
-      return new Evaluable.Node(PgType.TIMESTAMP, row -> LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));
+    case LOCALTIMESTAMP: {
+      final int precision = call.args().isEmpty() ? Casts.MAX_TIMESTAMP_PRECISION
+          : Math.min(integerModifier(call.args().get(0)), Casts.MAX_TIMESTAMP_PRECISION);
+      return new Evaluable.Node(PgType.TIMESTAMP,
+          row -> Casts.roundTimestamp(LocalDateTime.now().truncatedTo(ChronoUnit.MICROS), precision));
+    }
     default:
       throw PostgreSQLEvaluationException.unsupported(call.kind().name() + " is not supported by the postgresql language yet");
     }

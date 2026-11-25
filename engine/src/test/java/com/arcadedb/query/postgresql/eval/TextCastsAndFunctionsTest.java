@@ -188,6 +188,36 @@ class TextCastsAndFunctionsTest {
   }
 
   @Test
+  void timestampPrecisionIsApplied() {
+    final String text = "2026-03-09 10:11:12.456789";
+    assertThat(value(cast(s(text), "timestamp", 0))).isEqualTo(LocalDateTime.of(2026, 3, 9, 10, 11, 12));
+    assertThat(value(cast(s(text), "timestamp", 3))).isEqualTo(LocalDateTime.of(2026, 3, 9, 10, 11, 12, 457_000_000));
+    assertThat(value(cast(s(text), "timestamp", 9))).isEqualTo(LocalDateTime.of(2026, 3, 9, 10, 11, 12, 456_789_000));
+    // a half goes away from 2000-01-01
+    assertThat(value(cast(s("2000-01-01 00:00:00.5"), "timestamp", 0))).isEqualTo(LocalDateTime.of(2000, 1, 1, 0, 0, 1));
+    assertThat(value(cast(s("1999-12-31 23:59:59.5"), "timestamp", 0))).isEqualTo(LocalDateTime.of(1999, 12, 31, 23, 59, 59));
+    // digits beyond the sixth are rounded on input, before the precision is applied
+    assertThat(value(cast(s("2026-03-09 10:11:12.4999999999"), "timestamp", 0)))
+        .isEqualTo(LocalDateTime.of(2026, 3, 9, 10, 11, 13));
+    assertThat(((LocalDateTime) value(special(Expression.SpecialFunctionKind.LOCALTIMESTAMP, i(0)))).getNano()).isZero();
+  }
+
+  @Test
+  void aTypeModifierIsNeverAcceptedAndIgnored() {
+    for (final String type : new String[] { "text", "int2", "int4", "int8", "float4", "float8", "bool", "date", "jsonb", "bytea" })
+      assertThat(sqlState(cast(nul(), type, 3))).as(type).isEqualTo("42601");
+    assertThat(sqlState(cast(s("a"), "varchar", 0))).isEqualTo("22023");
+    assertThat(sqlState(cast(s("a"), "varchar", 1, 2))).isEqualTo("22023");
+    assertThat(sqlState(cast(s("[1]"), "vector", 0))).isEqualTo("22023");
+    assertThat(sqlState(cast(s("[1]"), "vector", 16001))).isEqualTo("22023");
+    assertThat(sqlState(cast(i(1), "numeric", 0))).isEqualTo("22023");
+    assertThat(sqlState(cast(i(1), "numeric", 1001))).isEqualTo("22023");
+    assertThat(sqlState(cast(i(1), "numeric", 5, 2, 1))).isEqualTo("22023");
+    assertThat(sqlState(cast(s("2026-01-01"), "timestamp", -1))).isEqualTo("22023");
+    assertThat(value(cast(dec("12345.678"), "numeric", 7, -3))).isEqualTo(new BigDecimal("12000"));
+  }
+
+  @Test
   void castToText() {
     assertThat(value(cast(bool(true), "text"))).isEqualTo("true");
     assertThat(value(cast(bool(false), "text"))).isEqualTo("false");
