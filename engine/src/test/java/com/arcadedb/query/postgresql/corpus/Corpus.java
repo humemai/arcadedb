@@ -125,12 +125,13 @@ public final class Corpus {
   }
 
   /**
-   * A statement of the accept and reject differential. {@code subset} is {@code inside} when the statement lies inside the
-   * subset of the grammar, {@code outside} when it does not and {@code unknown} when only the server's answer is checked. With
-   * {@code pg18} read from the server the engine must: parse a statement that is {@code inside} and that the server did not
-   * reject as a syntax error; refuse a statement that is {@code outside} with SQLSTATE {@code 0A000}; refuse a statement the
-   * server rejected as {@code syntax-error} with {@code 42601}, and one it called {@code feature-not-supported} with
-   * {@code 0A000}. A {@code gap} other than {@code -} is a known disagreement of the parser.
+   * A statement of the accept and reject differential. In {@code syntax.tsv} {@code subset} is the recorded verdict of the
+   * parser: {@code inside} when the statement lies inside the subset of the grammar, {@code outside} when it does not and
+   * {@code error} when the server refuses the text itself. The agent statements of {@link #AGENT_SQL_FILE} are not classified,
+   * their {@code subset} is {@code unknown}. With {@code pg18} read from the server the engine must: parse a statement that is
+   * {@code inside} and that the server did not reject as a syntax error; refuse a statement that is {@code outside} with SQLSTATE
+   * {@code 0A000}; refuse a statement the server rejected as {@code syntax-error} with {@code 42601}, and one it called
+   * {@code feature-not-supported} with {@code 0A000}. A {@code gap} other than {@code -} is a known disagreement of the parser.
    */
   public static final class SyntaxCase {
     public static final int ID = 0, PG18 = 1, SUBSET = 2, GAP = 3, STATEMENT = 4, SOURCE = 5, DETAIL = 6;
