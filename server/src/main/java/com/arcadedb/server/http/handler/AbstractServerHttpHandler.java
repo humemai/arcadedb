@@ -30,6 +30,8 @@ import com.arcadedb.index.fulltext.FullTextQueryParseException;
 import com.arcadedb.log.LogManager;
 import com.arcadedb.network.binary.ServerIsNotTheLeaderException;
 import com.arcadedb.query.RunningQuery;
+import com.arcadedb.query.postgresql.PostgreSQLErrors;
+import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.sql.executor.CommandTimeoutOverride;
 import com.arcadedb.serializer.json.JSONArray;
 import com.arcadedb.serializer.json.JSONException;
@@ -1139,6 +1141,15 @@ public abstract class AbstractServerHttpHandler implements HttpHandler {
    * @return the status, label, reported throwable, {@code exceptionArgs} and log treatment for {@code e}; never null
    */
   protected ErrorClassification classifyError(final Throwable e) {
+    final ErrorClassification classification = classifyByType(e);
+    // The SQLSTATE of an error of the postgresql language, read off the whole chain because the throwable reported is not always
+    // the language's: a duplicate key is reported as the DuplicatedKeyException it carries. Null for every other failure
+    final String sqlState = PostgreSQLErrors.sqlState(e);
+    return sqlState == null ? classification : classification.withSqlState(sqlState);
+  }
+
+  /** The status, label, reported throwable, {@code exceptionArgs} and log treatment of {@link #classifyError}. */
+  private ErrorClassification classifyByType(final Throwable e) {
     // Exactly one level of unwrapping, and only for the generic wrappers - which is what the three former
     // chains did, since only their wrapper arms ever consulted getCause(). Unwrapping unconditionally would
     // change what a mapping keyed on the OUTER type answers: an IllegalArgumentException that happens to carry
@@ -1585,6 +1596,14 @@ public abstract class AbstractServerHttpHandler implements HttpHandler {
           kind != null ? kind.name() : null, ErrorLogKind.USER);
     }
 
+    // A statement of the postgresql language refused while it was typed, evaluated or written - a division by zero, a missing
+    // function, a missing required value: the caller's to correct. Before the generic CommandExecutionException arm, which it
+    // extends and which answers 500. A duplicate key, a concurrent update and a violated constraint carry the engine's exception
+    // as their cause and were answered above, as that exception is; a refusal for resources stays a 500
+    final PostgreSQLEvaluationException statementError = CauseChain.find(e, PostgreSQLEvaluationException.class);
+    if (statementError != null && statementError.isStatementError())
+      return new ErrorClassification(400, "Cannot execute command", statementError, null, ErrorLogKind.USER);
+
     // The request payload is missing a property, carries a null where a value is required, or holds the wrong
     // type for it: a malformed request, not a server fault. Without this it degraded to 500 (issue #5935).
     final JSONException invalidJson = firstOf(e, cause, JSONException.class);
@@ -1660,7 +1679,7 @@ public abstract class AbstractServerHttpHandler implements HttpHandler {
       exchange.getResponseHeaders().put(RETRY_AFTER_HEADER, classification.retryAfter());
     // A body refused mid-stream is discarded for a bounded budget at most, then cut off (issue #8081)
     sendErrorResponse(exchange, classification.status(), classification.message(), classification.reported(),
-        classification.exceptionArgs(),
+        classification.exceptionArgs(), classification.sqlState(),
         classification.reported() instanceof RequestTooBigException ? DISCARD_REFUSED_BODY_THEN_END_EXCHANGE : null);
   }
 
@@ -1742,14 +1761,25 @@ public abstract class AbstractServerHttpHandler implements HttpHandler {
    * What {@link #classifyError} decided for a failure: the HTTP status, the client-facing label (the body's
    * {@code error} field), the throwable reported on the wire contract's {@code exception} field (not always the
    * one raised: a {@code TransactionException} is reported as its cause), the structured {@code exceptionArgs},
-   * how the failure is logged, and the {@code Retry-After} header to send with it, or null for none.
+   * how the failure is logged, the {@code Retry-After} header to send with it, or null for none, and the SQLSTATE
+   * of an error of the {@code postgresql} language (the body's {@code sqlState} field), null for every other failure.
    */
   protected record ErrorClassification(int status, String message, Throwable reported, String exceptionArgs,
-                                       ErrorLogKind logKind, String retryAfter) {
+                                       ErrorLogKind logKind, String retryAfter, String sqlState) {
     /** A classification that sends no {@code Retry-After}: every arm but the in-flight and retry-later refusals. */
     protected ErrorClassification(final int status, final String message, final Throwable reported,
         final String exceptionArgs, final ErrorLogKind logKind) {
       this(status, message, reported, exceptionArgs, logKind, null);
+    }
+
+    /** A classification of a failure that names no SQLSTATE. */
+    protected ErrorClassification(final int status, final String message, final Throwable reported,
+        final String exceptionArgs, final ErrorLogKind logKind, final String retryAfter) {
+      this(status, message, reported, exceptionArgs, logKind, retryAfter, null);
+    }
+
+    ErrorClassification withSqlState(final String state) {
+      return new ErrorClassification(status, message, reported, exceptionArgs, logKind, retryAfter, state);
     }
   }
 
@@ -2884,21 +2914,22 @@ public abstract class AbstractServerHttpHandler implements HttpHandler {
 
   private void sendErrorResponse(final HttpServerExchange exchange, final int code, final String errorMessage, final Throwable e,
                                  final String exceptionArgs) {
-    sendErrorResponse(exchange, code, errorMessage, e, exceptionArgs, null);
+    sendErrorResponse(exchange, code, errorMessage, e, exceptionArgs, null, null);
   }
 
   /**
+   * @param sqlState      the SQLSTATE the body carries, null for none
    * @param afterResponse what runs once the whole response is written, in place of ending the exchange; null to end it
    */
   private void sendErrorResponse(final HttpServerExchange exchange, final int code, final String errorMessage, final Throwable e,
-                                 final String exceptionArgs, final IoCallback afterResponse) {
+                                 final String exceptionArgs, final String sqlState, final IoCallback afterResponse) {
     if (!exchange.isResponseStarted())
       exchange.setStatusCode(code);
 
     // Reuse the correlation id already echoed in the response header so operators can cross-reference a
     // concealed production error with the detailed server log entry.
     final String correlationId = exchange.getResponseHeaders().getFirst(REQUEST_ID_HEADER);
-    final String body = buildErrorBody(!isProductionMode(), errorMessage, e, exceptionArgs, correlationId);
+    final String body = buildErrorBody(!isProductionMode(), errorMessage, e, exceptionArgs, correlationId, sqlState);
 
     if (afterResponse == null) {
       exchange.getResponseSender().send(body);
@@ -2926,6 +2957,15 @@ public abstract class AbstractServerHttpHandler implements HttpHandler {
    */
   String buildErrorBody(final boolean verbose, final String errorMessage, final Throwable e, final String exceptionArgs,
                         final String correlationId) {
+    return buildErrorBody(verbose, errorMessage, e, exceptionArgs, correlationId, null);
+  }
+
+  /**
+   * The body of {@link #buildErrorBody(boolean, String, Throwable, String, String)} with the SQLSTATE of the failure, a bounded
+   * code that is sent in every mode, or null for none.
+   */
+  private String buildErrorBody(final boolean verbose, final String errorMessage, final Throwable e, final String exceptionArgs,
+                                final String correlationId, final String sqlState) {
     final JSONObject json = new JSONObject();
     json.put("error", errorMessage);
     if (correlationId != null && !correlationId.isEmpty())
@@ -2935,6 +2975,8 @@ public abstract class AbstractServerHttpHandler implements HttpHandler {
       json.put("exception", e.getClass().getName());
     if (exceptionArgs != null)
       json.put("exceptionArgs", exceptionArgs);
+    if (sqlState != null)
+      json.put("sqlState", sqlState);
 
     // The cause chain is the only free-form field: conceal it outside development/test to avoid leaking
     // internal file paths and engine errors to a client probing endpoints.
@@ -2953,7 +2995,7 @@ public abstract class AbstractServerHttpHandler implements HttpHandler {
    */
   protected JSONObject buildStreamedErrorLine(final HttpServerExchange exchange, final ErrorClassification classification) {
     final JSONObject error = new JSONObject(buildErrorBody(!isProductionMode(), classification.message(),
-        classification.reported(), classification.exceptionArgs(), getCorrelationId(exchange)))
+        classification.reported(), classification.exceptionArgs(), getCorrelationId(exchange), classification.sqlState()))
         .put("status", classification.status());
     if (classification.retryAfter() != null)
       // Defensive: the value doubles as the raw header, which HTTP also allows as a date. Every producer sends

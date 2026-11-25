@@ -24,6 +24,7 @@ import com.arcadedb.database.Identifiable;
 import com.arcadedb.database.MutableDocument;
 import com.arcadedb.database.RID;
 import com.arcadedb.database.Record;
+import com.arcadedb.exception.DuplicatedKeyException;
 import com.arcadedb.graph.Edge;
 import com.arcadedb.graph.Vertex;
 import com.arcadedb.index.IndexCursor;
@@ -962,7 +963,8 @@ public final class WritePlanner {
         final Identifiable found = cursor.next();
         if (record.getIdentity() == null || !found.getIdentity().equals(record.getIdentity()))
           throw new PostgreSQLEvaluationException("23505", "duplicate key value violates unique constraint \"" + index.getName()
-              + "\": the key already exists in " + type.getName());
+              + "\": the key already exists in " + type.getName(),
+              new DuplicatedKeyException(index.getName(), Arrays.toString(keys), found.getIdentity()));
       }
     }
   }

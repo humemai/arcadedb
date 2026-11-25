@@ -25,6 +25,10 @@ import com.arcadedb.exception.CommandExecutionException;
  * client sees the same code. The catalog errors (unknown column or table) and the refusal of a statement outside the subset
  * have their own classes in {@code com.arcadedb.query.postgresql}; they carry a SQLSTATE the same way, through
  * {@link #getSqlState()}.
+ * <p>
+ * An error of this class is the statement's, a client error on every protocol ({@link com.arcadedb.exception.ErrorCategory}),
+ * except a refusal for resources, see {@link #isStatementError()}. One that stands for an exception of the engine (a duplicate
+ * key, a concurrent update, a violated constraint) keeps it as its cause, so it is classified as that exception is.
  *
  * <table>
  * <caption>The SQLSTATEs of this class</caption>
@@ -52,8 +56,23 @@ public class PostgreSQLEvaluationException extends CommandExecutionException {
     this.sqlState = sqlState;
   }
 
+  /** An error that stands for an exception of the engine, kept as its cause. */
+  public PostgreSQLEvaluationException(final String sqlState, final String message, final Throwable cause) {
+    super(message, cause);
+    this.sqlState = sqlState;
+  }
+
   public String getSqlState() {
     return sqlState;
+  }
+
+  /**
+   * Whether the statement, or the data it was given, is at fault. Every state is, but those of the classes {@code 53}
+   * (insufficient resources: a step over its memory cap) and {@code XX} (internal error), which keep the verdict of a server
+   * fault, as a query of another language that alone needs more heap than there is does.
+   */
+  public boolean isStatementError() {
+    return !sqlState.startsWith("53") && !sqlState.startsWith("XX");
   }
 
   /** {@code 22003}: {@code integer out of range}, {@code bigint out of range}, {@code smallint out of range}. */
