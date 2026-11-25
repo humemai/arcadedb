@@ -174,13 +174,27 @@ public final class JoinPlanner {
   }
 
   private abstract static class Node {
+    private List<RelationSource.Output> outputs;
+    // the scope of the columns of this node, built at the first expression compiled against it
+    private RelationScope               scope;
+
     abstract List<RelationSource.Field> fields();
 
     /** The columns that an unqualified name reads: every field in order for a table, the merged columns first after a USING. */
-    List<RelationSource.Output> outputs() {
-      final List<RelationSource.Output> out = new ArrayList<>();
-      for (int i = 0; i < fields().size(); i++)
-        out.add(new RelationSource.Output(fields().get(i).name(), i, fields().get(i).type(), fields().get(i).typeName()));
+    /** The columns an unqualified name reads, worked out once: every scope of this node reads the same list. */
+    final List<RelationSource.Output> outputs() {
+      if (outputs == null)
+        outputs = List.copyOf(computeOutputs());
+      return outputs;
+    }
+
+    List<RelationSource.Output> computeOutputs() {
+      final List<RelationSource.Field> fields = fields();
+      final List<RelationSource.Output> out = new ArrayList<>(fields.size());
+      for (int i = 0; i < fields.size(); i++) {
+        final RelationSource.Field field = fields.get(i);
+        out.add(new RelationSource.Output(field.name(), i, field.type(), field.typeName()));
+      }
       return out;
     }
 
@@ -289,7 +303,7 @@ public final class JoinPlanner {
      * partner.
      */
     @Override
-    List<RelationSource.Output> outputs() {
+    List<RelationSource.Output> computeOutputs() {
       final List<RelationSource.Output> leftOutputs = left.outputs();
       final List<RelationSource.Output> rightOutputs = right.outputs();
       final int leftColumns = left.fields().size();
@@ -383,8 +397,14 @@ public final class JoinPlanner {
 
   // ---- the tree ----
 
+  /**
+   * The scope of a node, one for each node: a statement compiles many expressions against the same node, and what the scope records
+   * (the columns it was asked for) is read only from the scope of the {@code SELECT}, never from a scope of the join planner.
+   */
   private RelationScope scope(final Node node) {
-    return new RelationScope(node.fields(), catalog, tables.subqueries(), node.outputs(), tables.outer());
+    if (node.scope == null)
+      node.scope = new RelationScope(node.fields(), catalog, tables.subqueries(), node.outputs(), tables.outer());
+    return node.scope;
   }
 
   private ExpressionCompiler compiler(final Node node) {
