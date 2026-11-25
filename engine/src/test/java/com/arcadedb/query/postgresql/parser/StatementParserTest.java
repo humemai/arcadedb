@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.parser;
 
+import com.arcadedb.query.postgresql.PostgreSQLErrors;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.PostgreSQLInvalidEscapeException;
 import com.arcadedb.query.postgresql.PostgreSQLSyntaxException;
@@ -60,6 +61,35 @@ class StatementParserTest {
 
   private static String grouping(final String expression) {
     return print("SELECT " + expression).substring("SELECT ".length());
+  }
+
+  // ------------------------------------------------------------------------------------------------ ? for a parameter
+
+  /** A client or a language model that writes {@code ?}, as JDBC does, is told how this language writes parameters (fork #98). */
+  @Test
+  void aQuestionMarkWhereAParameterStandsSaysHowParametersAreWritten() {
+    for (final String statement : List.of("SELECT name FROM person WHERE pid = ?", "SELECT name FROM person WHERE pid=?",
+        "SELECT name FROM person WHERE pid IN (?, ?)", "SELECT name FROM person WHERE age BETWEEN ? AND ?",
+        "SELECT name FROM person WHERE name LIKE ?", "SELECT name FROM person LIMIT ?", "SELECT ? FROM person",
+        "INSERT INTO person (pid, name) VALUES (?, ?)", "UPDATE person SET age = ? WHERE pid = ?",
+        "DELETE FROM person WHERE pid = ?", "EXPLAIN SELECT name FROM person WHERE pid <> ?"))
+      assertThatThrownBy(() -> StatementParser.parse(statement)).as(statement).hasMessageContaining("$1, $2")
+          .satisfies(e -> assertThat(PostgreSQLErrors.sqlState(e)).isIn("42601", "0A000"));
+
+    final String statement = "SELECT name FROM person WHERE pid = ?";
+    assertThatThrownBy(() -> StatementParser.parse(statement)).satisfies(e -> {
+      assertThat(PostgreSQLErrors.sqlState(e)).isEqualTo("0A000");
+      assertThat(PostgreSQLErrors.position(e, statement)).isEqualTo(statement.indexOf('?') + 1);
+    });
+  }
+
+  @Test
+  void anErrorThatIsNotAboutAQuestionMarkParameterKeepsItsMessage() {
+    // a prefix operator, a ? in a string, an error before the ?, and a ? after an expression, where it is an operator
+    for (final String statement : List.of("SELECT ~ 5", "SELECT '?' FROM FROM person", "SELECT name FROM FROM person WHERE pid = ?",
+        "SELECT name FROM person WHERE address ? 'city' AND )"))
+      assertThatThrownBy(() -> StatementParser.parse(statement)).as(statement).message().doesNotContain("$1, $2");
+    assertThat(StatementParser.parse("SELECT '?', \"a?\" FROM person")).isNotNull();
   }
 
   // ------------------------------------------------------------------------------------------------ statements

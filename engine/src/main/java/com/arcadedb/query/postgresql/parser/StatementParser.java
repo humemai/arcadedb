@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.parser;
 
+import com.arcadedb.query.postgresql.PostgreSQLErrors;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.PostgreSQLSyntaxException;
 import com.arcadedb.query.postgresql.ast.Statement;
@@ -36,6 +37,10 @@ import org.antlr.v4.runtime.misc.ParseCancellationException;
 import org.antlr.v4.runtime.tree.ErrorNode;
 import org.antlr.v4.runtime.tree.ParseTreeListener;
 import org.antlr.v4.runtime.tree.TerminalNode;
+
+import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * The entry point of the parser of the {@code postgresql} language: the text of one statement in, the syntax tree out.
@@ -105,6 +110,14 @@ public final class StatementParser {
 
   /** The full parse, with the messages and the positions of the errors: what {@link #parse} did before the first stage existed. */
   static Statement parseFull(final String text) {
+    try {
+      return readFull(text);
+    } catch (final PostgreSQLSyntaxException | PostgreSQLFeatureNotSupportedException e) {
+      throw namingTheParameters(e, text);
+    }
+  }
+
+  private static Statement readFull(final String text) {
     final ThrowingListener errors = new ThrowingListener();
 
     final PostgreSQLLexer lexer = new PostgreSQLLexer(CharStreams.fromString(text));
@@ -129,6 +142,56 @@ public final class StatementParser {
       throw Diagnostics.refusal(collector.firstName, collector.first);
 
     return new AstBuilder().build(root);
+  }
+
+  /** What stands before a place where an expression begins: a {@code ?} there is meant as a parameter. */
+  private static final Set<String> BEFORE_AN_EXPRESSION = Set.of("(", ",", "=", "<", ">", "<=", ">=", "<>", "!=", "+", "-", "*",
+      "/", "%", "^", "||", "SELECT", "DISTINCT", "WHERE", "AND", "OR", "NOT", "ON", "HAVING", "BY", "LIKE", "ILIKE", "BETWEEN", "LIMIT",
+      "OFFSET", "CASE", "WHEN", "THEN", "ELSE", "RETURNING");
+
+  /** A {@code ?} written against the operator before it, which the scanner of PostgreSQL reads as one operator: {@code pid=?}. */
+  private static final Pattern GLUED_QUESTION_MARK = Pattern.compile("(=|<>|!=|<=|>=|<|>|\\+|-|\\*|/|%|\\|\\|)\\?");
+
+  /**
+   * The error of a statement that failed at or after a {@code ?} written where a parameter stands, as in JDBC and in the {@code sql}
+   * language, says how this language writes parameters (fork issue #98). The statement is refused either way, with the same
+   * SQLSTATE. Any other error, one that comes before such a {@code ?} included, is returned as it is.
+   */
+  private static RuntimeException namingTheParameters(final RuntimeException error, final String text) {
+    final Token mark = questionMarkParameter(text);
+    if (mark == null)
+      return error;
+    final int position = PostgreSQLErrors.position(error, text);
+    // the scanner and PostgreSQL both count characters: the position from 1, the index of the token from 0
+    if (position != 0 && position <= mark.getStartIndex())
+      return error;
+    final String message = "A ? parameter is not supported by the postgresql language: write the parameters as $1, $2 and so on ("
+        + Diagnostics.position(mark) + ")";
+    return error instanceof PostgreSQLSyntaxException ? new PostgreSQLSyntaxException(message)
+        : new PostgreSQLFeatureNotSupportedException(message);
+  }
+
+  /**
+   * The first {@code ?} of the statement that stands where an expression begins, {@code null} when there is none. After an
+   * expression {@code ?} is an operator of PostgreSQL ({@code address ? 'city'}).
+   */
+  private static Token questionMarkParameter(final String text) {
+    if (text.indexOf('?') < 0)
+      return null;
+    final PostgreSQLLexer lexer = new PostgreSQLLexer(CharStreams.fromString(text));
+    // the error of the statement is reported by the caller
+    lexer.removeErrorListeners();
+    String previous = null;
+    for (final Token token : lexer.getAllTokens()) {
+      if (token.getChannel() != Token.DEFAULT_CHANNEL)
+        continue;
+      final String word = token.getText();
+      if ("?".equals(word) && (previous == null || BEFORE_AN_EXPRESSION.contains(previous))
+          || GLUED_QUESTION_MARK.matcher(word).matches())
+        return token;
+      previous = word.toUpperCase(Locale.ROOT);
+    }
+    return null;
   }
 
   /**
