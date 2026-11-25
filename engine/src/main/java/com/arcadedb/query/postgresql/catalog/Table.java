@@ -136,6 +136,14 @@ public final class Table {
     this.identityColumn = identity;
   }
 
+  /** This table with only these of its foreign keys. */
+  Table withForeignKeys(final List<ForeignKey> keys) {
+    if (keys.size() == foreignKeys.size())
+      return this;
+    return new Table(name, kind, documentType, columns, primaryKey, uniqueKeys, keys, superTables, subTables, edgeStorage,
+        sourceTable, targetTable, walkFromTables);
+  }
+
   /** The name of the table: the name of its type, exactly. */
   public String name() {
     return name;

@@ -95,6 +95,9 @@ class MissingObjectRefusalCensusTest {
       + "language, a database setting, a JSON element), refused in that protocol's terms";
   private static final String DATA       = "a row of the imported data referencing a vertex the import did not create: a data error";
 
+  private static final String SQLSTATE   = "a name or operator a postgresql statement does not resolve: the statement's own error, "
+      + "which the PostgreSQL wire answers with the SQLSTATE PostgreSQL gives it";
+
   /** The reviewed constructions, as {@code class#method} relative to {@code com/arcadedb}, each with why it stays. */
   private static final Map<String, String> REVIEWED = new TreeMap<>(Map.ofEntries(//
       Map.entry("bench/data/DatasetGenerator#loadWords",
@@ -208,7 +211,13 @@ class MissingObjectRefusalCensusTest {
       Map.entry("query/sql/parser/CreateIndexStatement#executeDDL", VARIABLE),
       Map.entry("query/sql/parser/CreatePropertyStatement#resolveTypeName", VARIABLE),
       Map.entry("query/sql/parser/CreateTypeAbstractStatement#executeDDL", VARIABLE),
-      Map.entry("integration/importer/format/JsonlImporterFormat#loadEdge", DATA)));
+      Map.entry("integration/importer/format/JsonlImporterFormat#loadEdge", DATA),
+      Map.entry("query/postgresql/PostgreSQLReferenceException#undefinedColumn", SQLSTATE),
+      Map.entry("query/postgresql/PostgreSQLUndefinedColumnException#<init>", SQLSTATE),
+      Map.entry("query/postgresql/PostgreSQLUndefinedSchemaException#<init>", SQLSTATE),
+      Map.entry("query/postgresql/PostgreSQLUndefinedTableException#<init>", SQLSTATE),
+      Map.entry("query/postgresql/eval/PostgreSQLEvaluationException#noOperator", SQLSTATE),
+      Map.entry("query/postgresql/plan/join/JoinPlanner#usingOutput", SQLSTATE)));
 
   @Test
   void noRefusalOfAMissingObjectIsAnUnclassifiedException() throws Exception {

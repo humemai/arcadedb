@@ -10,8 +10,11 @@ repos:
       - id: trailing-whitespace
         # JavaCC writes its token tables with a space after each comma, and the build regenerates the GraphQL parser
         # whenever graphql.jjt is newer than it, so every grammar change brought the whitespace back (#9224, #11451)
-        exclude: ^graphql/src/main/java/com/arcadedb/graphql/parser/GraphQLParser\w*\.java$
+        # and the pgwire expected files are the exact output of psql, which the wire corpus test compares byte for byte:
+        # psql pads its columns and ends a table with an empty line (also excluded from end-of-file-fixer)
+        exclude: ^(graphql/src/main/java/com/arcadedb/graphql/parser/GraphQLParser\w*\.java|postgresw/src/test/resources/pgwire/expected/.*\.out)$
       - id: end-of-file-fixer
+        exclude: ^postgresw/src/test/resources/pgwire/expected/.*\.out$
       - id: mixed-line-ending
       - id: detect-aws-credentials
         args:

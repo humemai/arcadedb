@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.plan.infoschema;
 
+import com.arcadedb.database.Database;
 import com.arcadedb.query.postgresql.PostgreSQLUndefinedTableException;
 import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.TableReference;
@@ -139,7 +140,8 @@ public final class InformationSchema {
    *
    * @throws PostgreSQLUndefinedTableException ({@code 42P01}) when the schema is this one and the name is not a view of it
    */
-  public static RelationSource resolve(final TableReference.Table reference, final RelationalCatalog catalog) {
+  public static RelationSource resolve(final TableReference.Table reference, final RelationalCatalog catalog,
+      final Database database) {
     final List<Name> name = reference.name();
     if (name.size() != 2 || !isSchema(name.get(0)))
       return null;
@@ -147,7 +149,7 @@ public final class InformationSchema {
     for (final View view : VIEWS)
       if (view.name().equals(viewName)) {
         final String relation = reference.alias() != null ? reference.alias().value() : view.name();
-        return new InformationSchemaSource(view, relation, () -> view.rows().apply(catalog));
+        return new InformationSchemaSource(view, relation, () -> view.rows().apply(catalog.readableBy(database)));
       }
     throw new PostgreSQLUndefinedTableException(SCHEMA + "." + viewName);
   }

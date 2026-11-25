@@ -58,14 +58,19 @@ class PostgresQueryLanguagesTest {
 
   @Test
   void aLeadingMarkerSelectsThePermittedLanguage() {
-    assertThat(DEFAULTS.select("{cypher}MATCH (n) RETURN n")).isEqualTo(new PostgresQueryLanguages.Selection("cypher", "MATCH (n) RETURN n"));
-    assertThat(DEFAULTS.select("  {SqlScript}  BEGIN; COMMIT;")).isEqualTo(new PostgresQueryLanguages.Selection("sqlscript", "BEGIN; COMMIT;"));
-    assertThat(DEFAULTS.select("{sql}SELECT 1")).isEqualTo(new PostgresQueryLanguages.Selection("sql", "SELECT 1"));
+    assertSelected("{cypher}MATCH (n) RETURN n", "cypher", "MATCH (n) RETURN n");
+    assertSelected("  {SqlScript}  BEGIN; COMMIT;", "sqlscript", "BEGIN; COMMIT;");
+    assertSelected("{sql}SELECT 1", "sql", "SELECT 1");
     // Comments in front of the marker, nested ones included, are not the first token
-    assertThat(DEFAULTS.select("-- tool:: user 1\r\n/* a /* nested */ comment */\t{cypher} MATCH (n) RETURN n"))//
-        .isEqualTo(new PostgresQueryLanguages.Selection("cypher", "MATCH (n) RETURN n"));
+    assertSelected("-- tool:: user 1\r\n/* a /* nested */ comment */\t{cypher} MATCH (n) RETURN n", "cypher", "MATCH (n) RETURN n");
     // Only the first marker is one: the second is text of the selected engine
-    assertThat(DEFAULTS.select("{cypher}RETURN '{gremlin}' AS x")).isEqualTo(new PostgresQueryLanguages.Selection("cypher", "RETURN '{gremlin}' AS x"));
+    assertSelected("{cypher}RETURN '{gremlin}' AS x", "cypher", "RETURN '{gremlin}' AS x");
+  }
+
+  /** The offset of a selection is where its text starts in the statement, which places the position of an error. */
+  private static void assertSelected(final String statement, final String language, final String text) {
+    assertThat(DEFAULTS.select(statement)).as(statement)
+        .isEqualTo(new PostgresQueryLanguages.Selection(language, text, statement.indexOf(text)));
   }
 
   @Test

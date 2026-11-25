@@ -133,6 +133,9 @@ class SchemaPresentationReadableWalkCensusTest {
       Map.entry("query/opencypher/optimizer/statistics/StatisticsProvider#calculateAverageDegree", PLANNER),
       Map.entry("query/sql/executor/FetchFromLightweightEdgeTypeStep#init", PLANNER),
       Map.entry("query/sql/parser/FindReferencesStatement#resolveTypesToScan", READ_THROUGH_GATE),
+      Map.entry("query/postgresql/catalog/RelationalCatalog#of",
+          "the relational view the postgresql binder resolves names against, whose records are read through the per-bucket gate: "
+              + "information_schema and the wire catalog present only RelationalCatalog#readableBy of it"),
       // GREMLIN
       Map.entry("gremlin/ArcadeCountGlobalStep#processNextStart", "a traversal: the count reads every bucket through the per-bucket gate, which refuses a denied type"),
       Map.entry("gremlin/ArcadeGraph#edges", READ_THROUGH_GATE),

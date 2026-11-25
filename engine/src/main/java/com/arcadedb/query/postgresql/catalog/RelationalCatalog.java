@@ -30,6 +30,8 @@ import com.arcadedb.schema.Schema;
 import com.arcadedb.schema.TimeSeriesType;
 import com.arcadedb.schema.Type;
 import com.arcadedb.schema.VertexType;
+import com.arcadedb.security.SecurityDatabaseUser;
+import com.arcadedb.security.SecurityHelper;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -121,6 +123,29 @@ public final class RelationalCatalog {
     for (final Draft draft : drafts.values())
       tables.add(table(draft, schema, drafts));
     return new RelationalCatalog(database.getName(), tables);
+  }
+
+  /**
+   * This catalog as the user bound to the database's context may see it: the tables of the types that user may read, and the
+   * foreign keys between them. This catalog itself holds every type, since the binder resolves names against it and every user of
+   * the database shares it, so whatever presents it to a caller ({@code information_schema}, the wire catalog) presents this one.
+   * With no user bound it is this catalog.
+   */
+  public RelationalCatalog readableBy(final Database database) {
+    final SecurityDatabaseUser user = SecurityHelper.currentUser(database);
+    if (user == null)
+      return this;
+
+    final Set<String> readable = new HashSet<>();
+    for (final DocumentType type : SecurityHelper.readableTypes(database, user))
+      readable.add(type.getName());
+
+    final List<Table> visible = new ArrayList<>(tables.size());
+    for (final Table table : tables)
+      if (readable.contains(table.name()))
+        visible.add(table.withForeignKeys(
+            table.foreignKeys().stream().filter(key -> readable.contains(key.referencedTable())).toList()));
+    return new RelationalCatalog(databaseName, visible);
   }
 
   public String databaseName() {

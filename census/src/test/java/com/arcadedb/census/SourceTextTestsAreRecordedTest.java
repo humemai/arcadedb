@@ -80,6 +80,8 @@ class SourceTextTestsAreRecordedTest {
           NAMED_FILES + ": OpenApiModelReflectionFeature and the native pom"),
       entry("server/src/test/java/com/arcadedb/server/support/SupportDiagnosticsConfigurationTest.java",
           NAMED_FILES + ": SupportDiagnostics"),
+      entry("postgresw/src/test/java/com/arcadedb/postgres/PostgreSQLSqlBranchCensusTest.java",
+          NAMED_FILES + ": PostgresNetworkExecutor, with a decision per source line that names sql"),
       // TEST SOURCES
       entry("server/src/test/java/com/arcadedb/server/HardcodedTestServerPortsTest.java", TEST_SOURCES + "; and ports are folded literals"),
       entry("server/src/test/java/com/arcadedb/server/InlineMocksOfJitWarmTypesTest.java", TEST_SOURCES),
