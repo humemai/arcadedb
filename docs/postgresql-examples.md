@@ -888,7 +888,7 @@ ArcadeDB `sql`: no query. It has no outer join between records on a value, and I
 ArcadeDB `sql` refuses this text:
 
 ```sql
-SELECT p.name AS person, m.name AS memory FROM person p FULL JOIN memory m ON m.age = p.age ORDER BY person, memory;
+SELECT p.name AS person, m.name AS memory FROM person p FULL JOIN memory m ON m.age = p.age;
 ```
 
 ArcadeDB openCypher:
