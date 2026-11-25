@@ -25,7 +25,8 @@ import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 
 /**
  * The errors of the engine that a write can meet, as the SQLSTATE a PostgreSQL client expects. An exception of this language
- * passes unchanged; the exceptions of the engine become:
+ * passes unchanged; the exceptions of the engine become, each with the engine's exception as its cause (so that every protocol
+ * classifies it as it does for the other languages: a conflict, a retry, an invalid value):
  *
  * <table>
  * <caption>Engine exceptions and SQLSTATEs</caption>
@@ -49,11 +50,12 @@ public final class WriteErrors {
     if (error instanceof DuplicatedKeyException duplicate)
       return new PostgreSQLEvaluationException("23505",
           "duplicate key value violates unique constraint \"" + duplicate.getIndexName() + "\": key " + duplicate.getKeys()
-              + " already exists");
+              + " already exists", duplicate);
     if (error instanceof ConcurrentModificationException)
-      return new PostgreSQLEvaluationException("40001", "could not serialize access due to concurrent update: " + error.getMessage());
+      return new PostgreSQLEvaluationException("40001", "could not serialize access due to concurrent update: " + error.getMessage(),
+          error);
     if (error instanceof ValidationException validation)
-      return new PostgreSQLEvaluationException(validationState(validation.getKind()), validation.getMessage());
+      return new PostgreSQLEvaluationException(validationState(validation.getKind()), validation.getMessage(), validation);
     return error;
   }
 

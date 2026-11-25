@@ -20,6 +20,9 @@ package com.arcadedb.exception;
 
 import com.arcadedb.engine.timeseries.TimeSeriesWalkCoarsenedException;
 import com.arcadedb.index.fulltext.FullTextQueryParseException;
+import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+
+import java.util.function.Predicate;
 
 /**
  * The kind of failure a wire protocol has to report, decided once over ArcadeDB's exception hierarchy so every
@@ -191,6 +194,12 @@ public enum ErrorCategory {
       new Rule(TypeMismatchException.class, VALIDATION),
       // a function or procedure argument whose value the callee is not defined for, a CommandExecutionException too (issue #11589)
       new Rule(InvalidArgumentException.class, VALIDATION),
+      // a statement of the postgresql language refused while it is typed, evaluated or written, a CommandExecutionException too
+      // (a division by zero was a server fault outside the PostgreSQL wire). After the rows above: a duplicate key, a concurrent
+      // update and a violated constraint carry the engine's exception as their cause, which decides there. A refusal for
+      // resources (SQLSTATE class 53) is not matched and stays SERVER
+      new Rule(PostgreSQLEvaluationException.class, VALIDATION,
+          e -> ((PostgreSQLEvaluationException) e).isStatementError()),
       new Rule(IllegalArgumentException.class, VALIDATION),
       new Rule(TimeoutException.class, TIMEOUT) };
 
@@ -199,10 +208,15 @@ public enum ErrorCategory {
    * although it extends {@code type} (a {@link DatabaseNotFoundException} is permanent, the {@link DatabaseNotAvailableException}
    * it extends clears by itself) is a rule of its own, above it.
    */
-  private record Rule(Class<? extends Throwable> type, ErrorCategory category) {
+  private record Rule(Class<? extends Throwable> type, ErrorCategory category, Predicate<Throwable> applies) {
+    Rule(final Class<? extends Throwable> type, final ErrorCategory category) {
+      this(type, category, null);
+    }
+
     /** The frame of the chain that makes this rule decide, or {@code null} when the rule does not apply to it. */
     Throwable find(final Throwable error) {
-      return CauseChain.find(error, type);
+      final Throwable found = CauseChain.find(error, type);
+      return found == null || applies == null || applies.test(found) ? found : null;
     }
   }
 
