@@ -97,7 +97,7 @@ class ValuesCorpusTest extends TestHelper {
   private static String sqlState(final Throwable error) {
     for (Throwable cause = error; cause != null; cause = cause.getCause()) {
       try {
-        final Object state = cause.getClass().getMethod("getSQLState").invoke(cause);
+        final Object state = cause.getClass().getMethod("getSqlState").invoke(cause);
         if (state != null)
           return state.toString();
       } catch (final ReflectiveOperationException ignored) {

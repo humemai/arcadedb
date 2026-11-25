@@ -75,7 +75,7 @@ class ValuesWriteTest extends TestHelper {
       while (cause != null && !(cause instanceof PostgreSQLEvaluationException))
         cause = cause.getCause();
       assertThat(cause).as("%s: %s", sql, e).isNotNull();
-      assertThat(((PostgreSQLEvaluationException) cause).getSQLState()).as(sql + ": " + cause.getMessage()).isEqualTo(sqlState);
+      assertThat(((PostgreSQLEvaluationException) cause).getSqlState()).as(sql + ": " + cause.getMessage()).isEqualTo(sqlState);
     }
   }
 

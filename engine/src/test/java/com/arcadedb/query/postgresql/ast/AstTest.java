@@ -146,6 +146,7 @@ class AstTest {
       case Expression.Case e -> "case";
       case Expression.Cast e -> "cast";
       case Expression.FunctionCall e -> "function";
+      case Expression.ArrayConstructor e -> "array";
       case Expression.SpecialFunction e -> "special";
     };
     assertThat(kind).isEqualTo("integer");
