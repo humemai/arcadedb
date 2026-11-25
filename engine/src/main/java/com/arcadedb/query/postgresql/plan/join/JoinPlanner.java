@@ -45,9 +45,12 @@ import com.arcadedb.query.postgresql.plan.join.Pushdown.Conjunct;
 import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.EdgeType;
 import com.arcadedb.schema.Schema;
+import com.arcadedb.security.SecurityHelper;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -1064,14 +1067,18 @@ public final class JoinPlanner {
 
   /** The edge types with declared endpoint tables that connect a table of one side to a table of the other, as {@code name (a to b)}. */
   private List<String> connectingEdgeTypes(final Set<String> leftTables, final Set<String> rightTables) {
-    final Schema schema = database.getSchema();
+    // the sentence reaches the client: only what the user may read is named
+    final Collection<? extends DocumentType> types = SecurityHelper.readableTypes(database);
+    final Set<String> readable = new HashSet<>();
+    for (final DocumentType type : types)
+      readable.add(type.getName());
     final List<String> found = new ArrayList<>();
-    for (final DocumentType type : schema.getTypes()) {
+    for (final DocumentType type : types) {
       if (!(type instanceof EdgeType edgeType))
         continue;
       final String source = EdgeEndpoints.sourceTable(edgeType);
       final String target = EdgeEndpoints.targetTable(edgeType);
-      if (source == null || target == null || !schema.existsType(source) || !schema.existsType(target))
+      if (source == null || target == null || !readable.contains(source) || !readable.contains(target))
         continue;
       if (connects(leftTables, rightTables, source, target) || connects(rightTables, leftTables, source, target))
         found.add(edgeType.getName() + " (" + source + " to " + target + ")");

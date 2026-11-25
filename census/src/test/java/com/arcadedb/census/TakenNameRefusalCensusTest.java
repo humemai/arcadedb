@@ -59,6 +59,9 @@ class TakenNameRefusalCensusTest {
   private static final String VARIABLE           = "a variable of the statement, not a schema object";
   private static final String SEALED_FILE        = "a sealed file in the directory, which no schema object holds";
 
+  private static final String DUPLICATE_KEY      = "a row whose key a unique index holds, answered by the PostgreSQL wire as SQLSTATE "
+      + "23505 (unique_violation): not a schema object name";
+
   /** The refusals that word a taken name but are not a schema object's, each with why. */
   private static final Map<String, String> NOT_A_SCHEMA_OBJECT_NAME = new TreeMap<>(Map.ofEntries(//
       Map.entry("database/LocalDatabase#create", "the embedded DatabaseFactory.create() on a path that holds a database: the server "
@@ -70,6 +73,9 @@ class TakenNameRefusalCensusTest {
           + "the path is built from a fresh file id, so it is an internal invariant, not a name a caller chose"),//
       Map.entry("schema/LocalSchema#createBucketIndex", "a bucket index named after the bucket and System.nanoTime(): an internal "
           + "invariant, not a caller's name"),//
+      // A DUPLICATE KEY OF A ROW IN THE postgresql LANGUAGE
+      Map.entry("query/postgresql/plan/WriteErrors#translate", DUPLICATE_KEY),//
+      Map.entry("query/postgresql/plan/WritePlanner#checkUnique", DUPLICATE_KEY),//
       // IF NOT EXISTS (OR ignoreIfExists) ANSWERED BY AN INDEX OF ANOTHER DEFINITION: A 400 BY DESIGN (#6921, #7228, #5765)
       Map.entry("query/sql/parser/CreateIndexStatement#executeDDL", ANOTHER_DEFINITION),//
       Map.entry("schema/IndexBuilder#conflictWithExistingIndex", ANOTHER_DEFINITION),//

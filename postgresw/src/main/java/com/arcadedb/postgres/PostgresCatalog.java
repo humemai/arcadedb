@@ -2027,7 +2027,7 @@ public class PostgresCatalog {
       if (tablesByName == null) {
         final Map<String, Table> tables = new HashMap<>();
         if (relational)
-          for (final Table table : RelationalCatalog.of(database).tables())
+          for (final Table table : RelationalCatalog.of(database).readableBy(database).tables())
             tables.put(table.name(), table);
         tablesByName = tables;
       }

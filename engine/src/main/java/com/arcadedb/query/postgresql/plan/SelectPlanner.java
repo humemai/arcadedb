@@ -199,7 +199,7 @@ public class SelectPlanner {
       if (cte != null)
         return cteSource(cte, reference.alias() != null ? reference.alias().value() : cte.name().value());
     }
-    final RelationSource view = InformationSchema.resolve(reference, catalog);
+    final RelationSource view = InformationSchema.resolve(reference, catalog, database);
     return view != null ? view : planTable(reference);
   }
 
