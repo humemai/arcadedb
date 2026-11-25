@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The relational catalog of the {@code postgresql} language on the wire (fork issue #12, step W2, with the decisions of fork issue
@@ -293,6 +294,57 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
       assertThat(query(connection, "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname = 'public'")).containsExactly("public");
       final DatabaseMetaData metaData = connection.getMetaData();
       assertThat(rows(metaData.getSchemas(), "TABLE_SCHEM")).contains("public");
+    }
+  }
+
+  // ------------------------------------------------------------------------------- the shapes of SQLAlchemy reflection (#64)
+
+  @Test
+  void anArrayConstructorFiltersTheKindOfARelation() throws Exception {
+    try (final Connection connection = connect(LANGUAGE_OPTION)) {
+      assertThat(query(connection, "SELECT c.relname FROM pg_catalog.pg_class c WHERE c.relkind = ANY (ARRAY['r'::VARCHAR, "
+          + "'p'::VARCHAR]) ORDER BY c.relname")).containsExactlyElementsOf(TABLES);
+      assertThat(query(connection, "SELECT c.relname FROM pg_catalog.pg_class c WHERE c.relkind = ANY (ARRAY['v'])")).isEmpty();
+    }
+  }
+
+  @Test
+  void theColumnsOfAKeyAreUnnestedInTheSelectListAndAggregatedInOrder() throws Exception {
+    try (final Connection connection = connect(LANGUAGE_OPTION)) {
+      assertThat(query(connection, "SELECT conname, unnest(conkey) AS attnum, generate_subscripts(conkey, 1) AS ord "
+          + "FROM pg_catalog.pg_constraint WHERE conname = 'works_at_pkey'")).containsExactly("works_at_pkey|1|1");
+      // the subscripts of an int2vector start at 0
+      assertThat(query(connection, "SELECT unnest(i.indkey) AS attnum, generate_subscripts(i.indkey, 1) AS ord "
+          + "FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid = i.indexrelid WHERE c.relname = 'person_pid_key'"))
+          .containsExactly("5|0");
+      assertThat(query(connection, "SELECT a.relname, array_agg(CAST(a.attname AS TEXT) ORDER BY a.attnum DESC) AS cols FROM "
+          + "(SELECT c.relname, t.attname, t.attnum FROM pg_catalog.pg_class c JOIN pg_catalog.pg_attribute t ON t.attrelid = c.oid "
+          + "WHERE c.relname = 'company') AS a GROUP BY a.relname")).containsExactly("company|{\"name\",\"cid\",\"id\"}");
+    }
+  }
+
+  @Test
+  void aRelationJoinedTwiceIsReadThroughTheEntryTheNameNames() throws Exception {
+    try (final Connection connection = connect(LANGUAGE_OPTION)) {
+      // the shape of SQLAlchemy's foreign keys: pg_namespace once under an alias, and once by its name
+      assertThat(query(connection, "SELECT c.conname, pg_namespace.nspname FROM pg_catalog.pg_class "
+          + "JOIN pg_catalog.pg_constraint c ON c.conrelid = pg_class.oid AND c.contype = 'f' "
+          + "LEFT OUTER JOIN pg_catalog.pg_class AS cls_ref ON cls_ref.oid = c.confrelid "
+          + "LEFT OUTER JOIN pg_catalog.pg_namespace AS nsp_ref ON cls_ref.relnamespace = nsp_ref.oid "
+          + "JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace "
+          + "WHERE pg_class.relname = 'works_at' ORDER BY c.conname"))
+          .containsExactly("works_at_source_id_fkey|public", "works_at_target_id_fkey|public");
+    }
+  }
+
+  @Test
+  void theOperatorClassesAreNoneForTheLanguageAndRefusedForAnotherOne() throws Exception {
+    try (final Connection connection = connect(LANGUAGE_OPTION)) {
+      assertThat(query(connection, "SELECT oid, opcname FROM pg_catalog.pg_opclass WHERE NOT opcdefault")).isEmpty();
+    }
+    try (final Connection connection = connect(null)) {
+      assertThatThrownBy(() -> query(connection, "SELECT oid, opcname FROM pg_catalog.pg_opclass WHERE NOT opcdefault"))
+          .isInstanceOf(SQLException.class).extracting(e -> ((SQLException) e).getSQLState()).isEqualTo("0A000");
     }
   }
 }

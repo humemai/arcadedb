@@ -39,13 +39,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * runs in a container of its own and connects to the in-process server through {@code host.testcontainers.internal}, the language
  * chosen the way a client chooses it, with the startup parameter {@code options}.
  * <p>
- * <b>SQLAlchemy, what works and what does not.</b> {@code get_columns} is answered. {@code get_table_names} lists the four tables and also
- * the names of the indexes (it filters with {@code relkind = ANY (ARRAY[...])}, an array constructor this catalog does not evaluate, so
- * the filter is not applied), and {@code get_foreign_keys} lists each key more than once (a left join of {@code pg_class} to
- * {@code pg_constraint} and {@code pg_description} that is not reduced to one row per constraint). {@code get_pk_constraint},
- * {@code get_unique_constraints} and {@code get_indexes} are refused: they unnest {@code conkey} with {@code unnest} and
- * {@code generate_subscripts} in a select list, aggregate with {@code array_agg ... ORDER BY}, and read {@code pg_opclass}. None of
- * that is a relational name: it is the evaluator of the wire catalog, and each is its own issue.
+ * The reflection of SQLAlchemy is checked call by call, and then as a whole with {@code MetaData.reflect()}, which is what an
+ * application that maps the existing tables runs (fork issue #64).
  * <p>
  * Needs a Docker daemon: without one the tests are skipped. They run in the wire module job of
  * {@code pg-prototype-engine-tests.yml}, where there is one.
@@ -142,7 +137,7 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
       import logging
       import sys
 
-      from sqlalchemy import create_engine, inspect
+      from sqlalchemy import MetaData, UniqueConstraint, create_engine, inspect
       from sqlalchemy.engine import URL
 
       url = URL.create("postgresql+psycopg", username="root", password="@PASSWORD@", host="host.testcontainers.internal",
@@ -173,6 +168,25 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
                                   for fk in inspector.get_foreign_keys("orders")])
       show("unique", lambda: [[u["name"], u["column_names"]] for u in inspector.get_unique_constraints("person")])
       show("indexes", lambda: sorted([i["name"], i["column_names"], i["unique"]] for i in inspector.get_indexes("person")))
+      show("views", lambda: inspector.get_view_names())
+      show("schemas", lambda: sorted(inspector.get_schema_names()))
+      show("has table", lambda: [inspector.has_table("person"), inspector.has_table("person_pid_key"),
+                                 inspector.has_table("nosuch")])
+      show("checks", lambda: inspector.get_check_constraints("person"))
+      show("comment", lambda: inspector.get_table_comment("person"))
+      show("options", lambda: inspector.get_table_options("person"))
+
+
+      def reflect():
+          metadata = MetaData()
+          metadata.reflect(bind=engine)
+          return [[table.name, [c.name for c in table.columns], [c.name for c in table.primary_key.columns],
+                   sorted([key.parent.name, key.target_fullname] for key in table.foreign_keys),
+                   sorted([u.name, [c.name for c in u.columns]] for u in table.constraints if isinstance(u, UniqueConstraint))]
+                  for table in sorted(metadata.tables.values(), key=lambda t: t.name)]
+
+
+      show("reflect", reflect)
       """;
 
   @Test
@@ -190,23 +204,30 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
 
       final List<String> out = Arrays.stream(result.getStdout().strip().split("\\R")).toList();
 
-      // what SQLAlchemy reads from this catalog today
       assertThat(out).as(result.getStderr()).contains(
-          "columns|[[\"id\", \"TEXT\", false], [\"source_id\", \"TEXT\", false], [\"target_id\", \"TEXT\", false], [\"since\", \"INTEGER\", true]]");
-      // the four tables are in the list; the list has more, see the class comment
+          "tables|[\"company\", \"orders\", \"person\", \"works_at\"]",
+          "columns|[[\"id\", \"TEXT\", false], [\"source_id\", \"TEXT\", false], [\"target_id\", \"TEXT\", false], [\"since\", \"INTEGER\", true]]",
+          "pk|[[\"id\"], \"works_at_pkey\"]",
+          // one entry for each key
+          "fks|[[\"works_at_source_id_fkey\", [\"source_id\"], \"person\", [\"id\"]], "
+              + "[\"works_at_target_id_fkey\", [\"target_id\"], \"company\", [\"id\"]]]",
+          "orders fks|[[\"orders_buyer_fkey\", [\"buyer\"], \"person\", [\"id\"]]]",
+          "unique|[[\"person_pid_key\", [\"pid\"]]]",
+          "indexes|[[\"person_pid_key\", [\"pid\"], true]]",
+          "views|[]",
+          "has table|[true, false, false]",
+          "checks|[]",
+          "comment|{\"text\": null}",
+          "options|{}",
+          "reflect|[[\"company\", [\"id\", \"cid\", \"name\"], [\"id\"], [], [[\"company_cid_key\", [\"cid\"]]]], "
+              + "[\"orders\", [\"id\", \"address\", \"buyer\", \"oid\", \"pid\", \"placed\", \"tags\", \"total\"], [\"id\"], "
+              + "[[\"buyer\", \"person.id\"]], [[\"orders_oid_key\", [\"oid\"]]]], "
+              + "[\"person\", [\"id\", \"age\", \"city\", \"name\", \"pid\"], [\"id\"], [], [[\"person_pid_key\", [\"pid\"]]]], "
+              + "[\"works_at\", [\"id\", \"source_id\", \"target_id\", \"since\"], [\"id\"], "
+              + "[[\"source_id\", \"person.id\"], [\"target_id\", \"company.id\"]], []]]");
+      // the schemas of PostgreSQL's own are filtered out by SQLAlchemy's NOT LIKE ... ESCAPE
       assertThat(out).as(result.getStderr())
-          .anyMatch(line -> line.startsWith("tables|[\"company\", \"orders\", \"person\", \"works_at\""));
-      // both foreign keys are in the list, each of them more than once, see the class comment
-      assertThat(out).as(result.getStderr()).anyMatch(line -> line.startsWith("fks|")
-          && line.contains("[\"works_at_source_id_fkey\", [\"source_id\"], \"person\", [\"id\"]]")
-          && line.contains("[\"works_at_target_id_fkey\", [\"target_id\"], \"company\", [\"id\"]]"));
-      assertThat(out).as(result.getStderr()).anyMatch(line -> line.startsWith("orders fks|")
-          && line.contains("[\"orders_buyer_fkey\", [\"buyer\"], \"person\", [\"id\"]]"));
-
-      // KNOWN, see the class comment: the three that SQLAlchemy asks with a shape this catalog declines. When one of them is
-      // answered this assertion fails, and the line moves up to the checks above
-      assertThat(out).as(result.getStderr()).anyMatch(line -> line.startsWith("pk|ERROR"))
-          .anyMatch(line -> line.startsWith("unique|ERROR")).anyMatch(line -> line.startsWith("indexes|ERROR"));
+          .anyMatch(line -> line.startsWith("schemas|") && line.contains("\"public\"") && !line.contains("\"pg_"));
     }
   }
 }
