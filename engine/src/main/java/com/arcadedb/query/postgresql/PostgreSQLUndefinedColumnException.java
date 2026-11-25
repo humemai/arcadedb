@@ -18,6 +18,8 @@
  */
 package com.arcadedb.query.postgresql;
 
+import java.util.List;
+
 /**
  * The table has no such column: SQLSTATE {@code 42703} (undefined_column). The columns of a table are the properties its type
  * declares, so the hint says how to make a property that records carry but the schema does not declare into a column.
@@ -26,9 +28,9 @@ public class PostgreSQLUndefinedColumnException extends PostgreSQLCatalogExcepti
   /** undefined_column */
   public static final String SQLSTATE = "42703";
 
-  public PostgreSQLUndefinedColumnException(final String column, final String table) {
+  public PostgreSQLUndefinedColumnException(final String column, final String table, final List<String> columns) {
     super(SQLSTATE, "column " + quote(column) + " of relation " + quote(table) + " does not exist",
-        "a table has the properties its type declares as columns, nothing else: declare the property with CREATE PROPERTY "
-            + table + "." + column + " <type> in the sql language");
+        columnList(table, columns) + "; a table has the properties its type declares as columns, nothing else: declare the "
+            + "property with CREATE PROPERTY " + table + "." + column + " <type> in the sql language");
   }
 }

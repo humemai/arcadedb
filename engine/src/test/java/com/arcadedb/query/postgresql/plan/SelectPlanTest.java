@@ -40,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The plan of one table on the {@code small} fixture of fork issue #2: names bound through the catalog, the select list, the
@@ -258,6 +259,21 @@ class SelectPlanTest extends TestHelper {
     assertThat(state("SELECT x.name FROM person")).isEqualTo("42P01");
     assertThat(state("SELECT name FROM nosuch.person")).isEqualTo("3F000");
     assertThat(state("SELECT nosuch")).as("no table, so no column").isEqualTo("42703");
+  }
+
+  @Test
+  void anUnknownNameIsReportedWithWhatCanBeNamed() {
+    assertThatThrownBy(() -> rows("SELECT nam FROM person")).isInstanceOf(PostgreSQLCatalogException.class)
+        .hasMessageContaining("column \"nam\" does not exist")
+        .hasMessageContaining("Hint: the columns of person are id, age, city, name, pid; ");
+    assertThatThrownBy(() -> rows("SELECT p.nam FROM person p")).hasMessageContaining("column \"p.nam\" does not exist")
+        .hasMessageContaining("the columns of p are id, age, city, name, pid; ");
+    assertThatThrownBy(() -> rows("SELECT (SELECT count(*) FROM orders o WHERE nope = 1) FROM person p"))
+        .hasMessageContaining("the columns of o are ").hasMessageNotContaining("the columns of p are ");
+    assertThatThrownBy(() -> rows("SELECT pid FROM person UNION SELECT oid FROM orders ORDER BY nosuch"))
+        .hasMessageContaining("the columns of the UNION result are pid; ");
+    assertThatThrownBy(() -> rows("SELECT name FROM persons")).isInstanceOf(PostgreSQLCatalogException.class)
+        .hasMessageContaining("relation \"persons\" does not exist");
   }
 
   @Test

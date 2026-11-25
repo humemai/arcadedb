@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql.plan;
 
 import com.arcadedb.query.postgresql.PostgreSQLAmbiguousIdentifierException;
+import com.arcadedb.query.postgresql.PostgreSQLCatalogException;
 import com.arcadedb.query.postgresql.PostgreSQLReferenceException;
 import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.Name;
@@ -34,7 +35,10 @@ import com.arcadedb.query.postgresql.plan.infoschema.InformationSchema;
 
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Resolves the column references of one {@code SELECT} against the columns its {@code FROM} clause produces: the binder. A
@@ -52,6 +56,8 @@ import java.util.List;
  * The scope knows columns by their position in the rows of the source, so it serves a join as well as a table.
  */
 public final class RelationScope implements ExpressionCompiler.Scope {
+  private static final int MAX_LISTED_RELATIONS = 5;
+
   private final List<RelationSource.Field> fields;
   private final RelationalCatalog          catalog;
   private final SubqueryPlanner            subqueries;
@@ -114,7 +120,7 @@ public final class RelationScope implements ExpressionCompiler.Scope {
       if (column.quoted())
         break;
     }
-    throw PostgreSQLReferenceException.undefinedColumn(column.value());
+    throw PostgreSQLReferenceException.undefinedColumn(column.value(), visibleColumns(null));
   }
 
   @Override
@@ -157,8 +163,9 @@ public final class RelationScope implements ExpressionCompiler.Scope {
       try {
         return outer.column(reference);
       } catch (final PostgreSQLReferenceException notThereEither) {
-        // the relation is the outer query's but has no such column (42703) says more than that this scope lacks the relation
-        throw "42P01".equals(notThereEither.getSqlState()) ? notHere : notThereEither;
+        // the relation is the outer query's but has no such column (42703) says more than that this scope lacks the relation; an
+        // unqualified name is reported with the columns of this query
+        throw reference.qualifier().isEmpty() || "42P01".equals(notThereEither.getSqlState()) ? notHere : notThereEither;
       }
     }
   }
@@ -219,7 +226,24 @@ public final class RelationScope implements ExpressionCompiler.Scope {
       if (column.quoted())
         break;
     }
-    throw PostgreSQLReferenceException.undefinedColumn(relation == null ? column.value() : relation.value() + "." + column.value());
+    throw PostgreSQLReferenceException.undefinedColumn(relation == null ? column.value() : relation.value() + "." + column.value(),
+        visibleColumns(relation));
+  }
+
+  /**
+   * What a statement could have named instead of a column that does not exist, for the hint of the error: the columns of every
+   * relation of this query, or of the relation the name is qualified with. {@code null} when no relation has a name.
+   */
+  private String visibleColumns(final Name relation) {
+    final Map<String, List<String>> columns = new LinkedHashMap<>();
+    for (final RelationSource.Field field : fields)
+      if (!field.relation().isEmpty() && (relation == null || sameRelation(relation, field.relation())))
+        columns.computeIfAbsent(field.relation(), name -> new ArrayList<>()).add(field.name());
+    if (columns.isEmpty())
+      return null;
+    return columns.entrySet().stream().limit(MAX_LISTED_RELATIONS)
+        .map(entry -> PostgreSQLCatalogException.columnList(entry.getKey(), entry.getValue()))
+        .collect(Collectors.joining("; "));
   }
 
   private boolean hasRelation(final Name relation) {

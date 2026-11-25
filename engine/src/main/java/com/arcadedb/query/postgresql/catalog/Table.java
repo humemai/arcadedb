@@ -202,7 +202,7 @@ public final class Table {
   public Column column(final Identifier identifier) {
     final Column column = findColumn(identifier);
     if (column == null)
-      throw new PostgreSQLUndefinedColumnException(identifier.text(), name);
+      throw new PostgreSQLUndefinedColumnException(identifier.text(), name, columns.stream().map(Column::name).toList());
     return column;
   }
 
