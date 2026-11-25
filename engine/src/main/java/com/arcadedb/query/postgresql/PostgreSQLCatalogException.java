@@ -20,6 +20,8 @@ package com.arcadedb.query.postgresql;
 
 import com.arcadedb.exception.CommandParsingException;
 
+import java.util.List;
+
 /**
  * A name that the relational view does not resolve: an unknown or ambiguous table, column or schema. It carries the SQLSTATE a
  * PostgreSQL client understands, as {@link PostgreSQLFeatureNotSupportedException} does for a statement outside the subset, so
@@ -34,6 +36,8 @@ import com.arcadedb.exception.CommandParsingException;
  * A hint, when there is one, is part of the message (the wire writes the message only) and is also available on its own.
  */
 public class PostgreSQLCatalogException extends CommandParsingException {
+  private static final int MAX_LISTED_COLUMNS = 40;
+
   private final String sqlState;
   private final String hint;
 
@@ -50,6 +54,18 @@ public class PostgreSQLCatalogException extends CommandParsingException {
   /** What the user can do about it, {@code null} when there is nothing to add to the message. */
   public String getHint() {
     return hint;
+  }
+
+  /**
+   * The columns a statement can name, for the hint of an unknown column: {@code the columns of person are id, age, name}. A long
+   * list is cut, so the message stays readable.
+   */
+  public static String columnList(final String relation, final List<String> columns) {
+    final StringBuilder out = new StringBuilder("the columns of ").append(relation).append(" are ")
+        .append(String.join(", ", columns.subList(0, Math.min(columns.size(), MAX_LISTED_COLUMNS))));
+    if (columns.size() > MAX_LISTED_COLUMNS)
+      out.append(" and ").append(columns.size() - MAX_LISTED_COLUMNS).append(" more");
+    return out.toString();
   }
 
   static String quote(final String name) {

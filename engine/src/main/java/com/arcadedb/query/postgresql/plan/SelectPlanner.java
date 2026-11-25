@@ -20,6 +20,7 @@ package com.arcadedb.query.postgresql.plan;
 
 import com.arcadedb.database.Database;
 import com.arcadedb.query.postgresql.PostgreSQLAmbiguousIdentifierException;
+import com.arcadedb.query.postgresql.PostgreSQLCatalogException;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.PostgreSQLReferenceException;
 import com.arcadedb.query.postgresql.PostgreSQLSyntaxException;
@@ -963,7 +964,8 @@ public class SelectPlanner {
       final int position = outputIndex(item.expression(), names);
       if (position < 0) {
         if (item.expression() instanceof Expression.ColumnRef reference)
-          throw PostgreSQLReferenceException.undefinedColumn(reference.column().value());
+          throw PostgreSQLReferenceException.undefinedColumn(reference.column().value(),
+              PostgreSQLCatalogException.columnList("the " + operation + " result", names));
         throw new PostgreSQLFeatureNotSupportedException("invalid " + operation + " ORDER BY clause: only result column names "
             + "and positions can be used, not expressions or functions");
       }

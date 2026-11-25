@@ -256,7 +256,8 @@ class CatalogRulesTest extends TestHelper {
     assertThatThrownBy(() -> person.column("nickname"))
         .isInstanceOfSatisfying(PostgreSQLUndefinedColumnException.class, e -> {
           assertThat(e.getSqlState()).isEqualTo("42703");
-          assertThat(e.getHint()).contains("CREATE PROPERTY person.nickname");
+          assertThat(e.getHint()).startsWith("the columns of person are ").contains("name")
+              .contains("CREATE PROPERTY person.nickname");
         })
         .hasMessageContaining("column \"nickname\" of relation \"person\" does not exist")
         .hasMessageContaining("Hint: ");
