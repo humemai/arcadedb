@@ -133,6 +133,12 @@ class PostgreSQLValuesWireTest extends PostgresWireProtocolTestBase {
         assertThat(new JSONObject(rows.getString("home")).toMap()).isEqualTo(Map.of("city", "Delft"));
         assertThat(new JSONArray(rows.getString("past")).toList()).isEqualTo(List.of(Map.of("city", "Gouda")));
       }
+      // an array in any jsonb column, a LIST OF MAP too, is sent as JSON and not as a PostgreSQL array
+      statement.executeUpdate("UPDATE memory SET items = '[{\"a\": 1}]' WHERE mid = 1");
+      try (final java.sql.ResultSet rows = statement.executeQuery("SELECT items FROM memory WHERE mid = 1")) {
+        assertThat(rows.next()).isTrue();
+        assertThat(new JSONArray(rows.getString("items")).toList()).isEqualTo(List.of(Map.of("a", 1)));
+      }
     }
   }
 
