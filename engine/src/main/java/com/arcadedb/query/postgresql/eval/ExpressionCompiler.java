@@ -1126,8 +1126,8 @@ public final class ExpressionCompiler {
       items.add(compile(element));
     final PgType element = commonType(items, "ARRAY");
     if (!ValueInput.isElementType(element))
-      throw PostgreSQLEvaluationException.unsupported(
-          "An array of " + element.displayName() + " is not supported: one dimension of booleans, numbers, text or bytea");
+      throw PostgreSQLEvaluationException.unsupported("An array of " + element.displayName()
+          + " is not supported: one dimension of booleans, numbers, text, bytea, dates or timestamps");
     final Evaluable[] converted = coerceAll(items, element, "ARRAY").toArray(new Evaluable[0]);
     return new Evaluable.Node(PgType.ARRAY, "_" + element.typeName(), row -> {
       final List<Object> out = new ArrayList<>(converted.length);

@@ -78,7 +78,13 @@ class ColumnTypeTest extends TestHelper {
     assertThat(ColumnType.of(Type.LIST, null)).isEqualTo(ColumnType.TEXT_ARRAY);
     assertThat(ColumnType.of(Type.LIST, "")).isEqualTo(ColumnType.TEXT_ARRAY);
     assertThat(ColumnType.of(Type.LIST, "STRING")).isEqualTo(ColumnType.TEXT_ARRAY);
-    assertThat(ColumnType.of(Type.LIST, "DATE")).isEqualTo(ColumnType.TEXT_ARRAY);
+    assertThat(ColumnType.of(Type.LIST, "DATE")).isEqualTo(ColumnType.DATE_ARRAY);
+    assertThat(ColumnType.of(Type.LIST, "DATETIME")).isEqualTo(ColumnType.TIMESTAMP_ARRAY);
+    assertThat(ColumnType.of(Type.LIST, "DATETIME_SECOND")).isEqualTo(ColumnType.TIMESTAMP_ARRAY);
+    assertThat(ColumnType.of(Type.LIST, "DATETIME_MICROS")).isEqualTo(ColumnType.TIMESTAMP_ARRAY);
+    assertThat(ColumnType.of(Type.LIST, "DATETIME_NANOS")).isEqualTo(ColumnType.TIMESTAMP_ARRAY);
+    // a list of links is shown as text
+    assertThat(ColumnType.of(Type.LIST, "LINK")).isEqualTo(ColumnType.TEXT_ARRAY);
     assertThat(ColumnType.of(Type.LIST, "BOOLEAN")).isEqualTo(ColumnType.BOOL_ARRAY);
     assertThat(ColumnType.of(Type.LIST, "INTEGER")).isEqualTo(ColumnType.INT4_ARRAY);
     assertThat(ColumnType.of(Type.LIST, "SHORT")).isEqualTo(ColumnType.INT4_ARRAY);

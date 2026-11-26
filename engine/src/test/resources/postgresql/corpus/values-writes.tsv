@@ -75,3 +75,24 @@ err-bytea-digit	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payl
 err-bytea-escape	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (163, 'a\\q')	{"result":{"error":"22P02"},"after":[{"columns":["mid","payload"],"types":["int4","bytea"],"rows":[[1,[1,2]]]}]}
 err-bytea-from-int	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (164, 1)	{"result":{"error":"42804"},"after":[{"columns":["mid","payload"],"types":["int4","bytea"],"rows":[[1,[1,2]]]}]}
 err-bytea-from-text	ok	SELECT mid, payload FROM memory	INSERT INTO memory (mid, payload) VALUES (165, 'a'::text)	{"result":{"error":"42804"},"after":[{"columns":["mid","payload"],"types":["int4","bytea"],"rows":[[1,[1,2]]]}]}
+insert-days-literal	ok	SELECT cid, days, moments FROM calendar	INSERT INTO calendar (cid, days) VALUES (200, '{2026-01-05,2026-02-01}') RETURNING cid, days	pending-server
+insert-days-spaces	ok	SELECT cid, days, moments FROM calendar	INSERT INTO calendar (cid, days) VALUES (201, ' { 2026-1-5 , "2026-02-01" } ') RETURNING cid, days	pending-server
+insert-days-constructor	ok	SELECT cid, days, moments FROM calendar	INSERT INTO calendar (cid, days) VALUES (202, ARRAY['2026-01-05'::date, '2026-02-01']) RETURNING cid, days	pending-server
+insert-days-cast	ok	SELECT cid, days, moments FROM calendar	INSERT INTO calendar (cid, days) VALUES (203, '{2026-01-05}'::date[]) RETURNING cid, days	pending-server
+insert-days-empty	ok	SELECT cid, days, moments FROM calendar	INSERT INTO calendar (cid, days) VALUES (204, '{}') RETURNING cid, days	pending-server
+insert-days-empty-constructor-cast	ok	SELECT cid, days, moments FROM calendar	INSERT INTO calendar (cid, days) VALUES (205, ARRAY[]::date[]) RETURNING cid, days	pending-server
+insert-days-from-timestamps	ok	SELECT cid, days, moments FROM calendar	INSERT INTO calendar (cid, days) VALUES (206, '{"2026-01-05 23:59:00"}'::timestamp[]) RETURNING cid, days	pending-server
+insert-moments-literal	ok	SELECT cid, days, moments FROM calendar	INSERT INTO calendar (cid, moments) VALUES (207, '{"2026-01-05 10:20:30.123456","2026-02-01T00:00:00",2026-03-01}') RETURNING cid, moments	pending-server
+insert-moments-rounded	ok	SELECT cid, days, moments FROM calendar	INSERT INTO calendar (cid, moments) VALUES (208, '{"2026-01-05 10:20:30.1234567"}') RETURNING cid, moments	pending-server
+insert-moments-constructor	ok	SELECT cid, days, moments FROM calendar	INSERT INTO calendar (cid, moments) VALUES (209, ARRAY['2026-01-05 10:20:30'::timestamp]) RETURNING cid, moments	pending-server
+insert-moments-from-dates	ok	SELECT cid, days, moments FROM calendar	INSERT INTO calendar (cid, moments) VALUES (210, '{2026-01-05}'::date[]) RETURNING cid, moments	pending-server
+update-calendar-returning	ok	SELECT cid, days, moments FROM calendar	UPDATE calendar SET days = '{2026-03-04}', moments = ARRAY['2026-03-04 05:06:07'::timestamp] WHERE cid = 1 RETURNING cid, days, moments	pending-server
+update-days-null	ok	SELECT cid, days, moments FROM calendar	UPDATE calendar SET days = NULL WHERE cid = 1 RETURNING cid, days	pending-server
+insert-select-calendar	ok	SELECT cid, days, moments FROM calendar	INSERT INTO calendar (cid, days, moments) SELECT cid + 10, days, moments FROM calendar	pending-server
+err-days-unclosed	ok	SELECT cid, days FROM calendar	INSERT INTO calendar (cid, days) VALUES (220, '{2026-01-05')	pending-server
+err-days-bad-element	ok	SELECT cid, days FROM calendar	INSERT INTO calendar (cid, days) VALUES (221, '{2026-01-05,abc}')	pending-server
+err-days-out-of-range	ok	SELECT cid, days FROM calendar	INSERT INTO calendar (cid, days) VALUES (222, '{2026-02-30}')	pending-server
+err-moments-out-of-range	ok	SELECT cid, moments FROM calendar	INSERT INTO calendar (cid, moments) VALUES (223, '{"2026-01-05 25:00:00"}')	pending-server
+err-days-from-text-constructor	ok	SELECT cid, days FROM calendar	INSERT INTO calendar (cid, days) VALUES (224, ARRAY['2026-01-05'])	pending-server
+err-days-from-text	ok	SELECT cid, days FROM calendar	INSERT INTO calendar (cid, days) VALUES (225, '{2026-01-05}'::text)	pending-server
+err-days-from-int-array	ok	SELECT cid, days FROM calendar	INSERT INTO calendar (cid, days) VALUES (226, ARRAY[1])	pending-server

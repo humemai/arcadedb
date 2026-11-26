@@ -18,6 +18,8 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
+import com.arcadedb.query.postgresql.catalog.ColumnType;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
@@ -28,6 +30,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -423,6 +427,22 @@ public final class Casts {
   }
 
   // ---- values of records and parameters ----
+
+  /**
+   * A value of a column of a record, as {@link #fromEngine} reads it into {@code type}, the type of {@code column}. The elements of
+   * a {@code date[]} and of a {@code timestamp[]} are read into the canonical class of the element type too, whatever date class the
+   * record holds them in.
+   */
+  public static Object fromColumn(final Object raw, final ColumnType column, final PgType type) {
+    if (raw instanceof List<?> list && (column == ColumnType.DATE_ARRAY || column == ColumnType.TIMESTAMP_ARRAY)) {
+      final PgType element = PgType.of(column.elementType());
+      final List<Object> out = new ArrayList<>(list.size());
+      for (final Object item : list)
+        out.add(fromEngine(item, element));
+      return out;
+    }
+    return fromEngine(raw, type);
+  }
 
   /**
    * A value of a record, a parameter or an aggregate in the canonical class of {@code type}. A type that no operator takes

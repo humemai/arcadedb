@@ -142,6 +142,47 @@ class PostgreSQLValuesWireTest extends PostgresWireProtocolTestBase {
     }
   }
 
+  /** Lists of dates and of date times are date[] and timestamp[] in the catalog and on the wire (fork issue #146). */
+  @Test
+  void listsOfDatesAndDateTimesAreDateAndTimestampArrays() throws SQLException {
+    try (final Connection connection = connect()) {
+      try (final Statement statement = connection.createStatement();
+          final java.sql.ResultSet columns = statement.executeQuery("SELECT column_name, data_type, udt_name "
+              + "FROM information_schema.columns WHERE table_name = 'calendar' AND data_type = 'ARRAY' ORDER BY ordinal_position")) {
+        final List<String> types = new ArrayList<>();
+        while (columns.next())
+          types.add(columns.getString(1) + " " + columns.getString(2) + " " + columns.getString(3));
+        assertThat(types).containsExactly("days ARRAY _date", "moments ARRAY _timestamp");
+      }
+      // the columns that pgjdbc reads from pg_attribute and pg_type
+      try (final java.sql.ResultSet columns = connection.getMetaData().getColumns(null, null, "calendar", "%")) {
+        final List<String> types = new ArrayList<>();
+        while (columns.next())
+          types.add(columns.getString("COLUMN_NAME") + " " + columns.getString("TYPE_NAME"));
+        assertThat(types).contains("days _date", "moments _timestamp");
+      }
+      try (final PreparedStatement statement = connection
+          .prepareStatement("INSERT INTO calendar (cid, days, moments) VALUES (?, ?, ?)")) {
+        assertThat(statement.getParameterMetaData().getParameterTypeName(2)).isEqualTo("_date");
+        assertThat(statement.getParameterMetaData().getParameterTypeName(3)).isEqualTo("_timestamp");
+        statement.setInt(1, 2);
+        statement.setArray(2, connection.createArrayOf("date", new Object[] { java.sql.Date.valueOf("2026-01-05") }));
+        statement.setArray(3,
+            connection.createArrayOf("timestamp", new Object[] { java.sql.Timestamp.valueOf("2026-01-05 10:20:30.123456") }));
+        assertThat(statement.executeUpdate()).isEqualTo(1);
+      }
+      try (final Statement statement = connection.createStatement();
+          final java.sql.ResultSet rows = statement.executeQuery("SELECT days, moments FROM calendar WHERE cid = 2")) {
+        assertThat(rows.getMetaData().getColumnTypeName(1)).isEqualTo("_date");
+        assertThat(rows.getMetaData().getColumnTypeName(2)).isEqualTo("_timestamp");
+        assertThat(rows.next()).isTrue();
+        assertThat((Object[]) rows.getArray(1).getArray()).containsExactly(java.sql.Date.valueOf("2026-01-05"));
+        assertThat((Object[]) rows.getArray(2).getArray())
+            .containsExactly(java.sql.Timestamp.valueOf("2026-01-05 10:20:30.123456"));
+      }
+    }
+  }
+
   private Result stored(final int mid) {
     try (final ResultSet resultSet = getServerDatabase(0, getDatabaseName()).query("sql", "SELECT FROM memory WHERE mid = ?", mid)) {
       return resultSet.next();
