@@ -4,6 +4,8 @@ Fork only (`humemai/arcadedb`, branch `feat/postgresql-prototype`). This page sh
 
 The page starts from the nine tasks of the timed study on fork issue #13, with sample values: point lookup, latest rows, grouped count and sum, filtered read, neighbour list, single insert, update by key, delete by key, and batch insert.
 
+**Which one to write.** Write PostgreSQL SQL (the `postgresql` language) for records: filters, totals, and changes. Write openCypher when the question is about connections, especially paths of varying length. Both read and write the same records.
+
 ## How to read this page
 
 - The line above a block names the systems that run that text. Where ArcadeDB `sql` and ArcadeDB `postgresql` are on one line, their text is the same.
