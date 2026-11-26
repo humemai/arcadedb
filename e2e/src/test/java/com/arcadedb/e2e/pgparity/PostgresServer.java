@@ -43,6 +43,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 /**
  * A real PostgreSQL server for the parity harness: the official image in a Testcontainers container, one JDBC connection, and
@@ -150,6 +151,18 @@ final class PostgresServer implements AutoCloseable {
       rs.next();
       return rs.getString(1);
     }
+  }
+
+  /**
+   * One more connection of the same database, for a scenario of more than one session. A {@code COMMIT} that the server answers
+   * with a rollback is not turned into an exception by the driver, so the caller sees what the server said.
+   */
+  Connection newConnection() throws SQLException {
+    final Properties properties = new Properties();
+    properties.setProperty("user", "postgres");
+    properties.setProperty("password", PASSWORD);
+    properties.setProperty("raiseExceptionOnSilentRollback", "false");
+    return DriverManager.getConnection(url, properties);
   }
 
   /** Runs a script of statements (the schema and the data of the fixture). */
