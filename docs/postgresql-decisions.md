@@ -26,7 +26,7 @@ The 25 questions of [#1](https://github.com/humemai/arcadedb/issues/1) about the
 | ---: | --- | --- |
 | 9 | What `id` is | Changed by #38 (merged in #44). A type's own `id` property is the column `id` (the primary key when a unique index covers it), and the record id is `rid`. Without one, `id` is the record id. A record id is `text`, such as `#12:3`. |
 | 10 | `source_id` and `target_id` | The record ids of the out and in vertices as text, read from the edge record without loading a vertex. |
-| 11 | Which table the edge foreign keys point to | Only what the edge type declares in its custom metadata (`source_table`, `target_table`). Never inferred from the data; no foreign key without a declaration. |
+| 11 | Which table the edge foreign keys point to | Only what the edge type declares in its custom metadata (`source_table`, `target_table`). Never inferred from the data; no foreign key without a declaration. A type that connects several vertex types names a common supertype. |
 | 12 | Inheritance | A supertype table includes the rows of its subtypes. `FROM ONLY t` leaves them out. |
 | 13 | Undeclared properties | Hidden: the table is the declared schema, and an unknown column is `42703` with a hint. |
 | 14 | A `LINK` column | Named as the property (`buyer`), holding the record id of the target as text, like `id`. |
