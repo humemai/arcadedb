@@ -184,6 +184,8 @@ public final class Column {
    * <li>{@code source_id} and {@code target_id}: the record id of the out and the in vertex as text, read from the edge, with no
    * vertex loaded. They hold record ids whatever the endpoint types call their own key.</li>
    * <li>A {@code LINK} property: the record id of the target as text.</li>
+   * <li>The embedded documents of a property declared {@code EMBEDDED OF T}, {@code LIST OF T} or {@code MAP OF T}: the objects
+   * of their properties ({@link EmbeddedValues}).</li>
    * <li>Any other property: the value as the record holds it, {@code null} when the record does not have the property (an absent
    * property and a {@code NULL} are the same thing). Converting it to the evaluator's value space is not the catalog's job.</li>
    * </ul>
@@ -205,6 +207,8 @@ public final class Column {
       final Object value = record.get(property);
       if (link && value instanceof Identifiable identifiable)
         return identifiable.getIdentity().toString();
+      if (type == ColumnType.JSONB && value != null)
+        return EmbeddedValues.read(record.getType().getPolymorphicPropertyIfExists(property), value);
       return value;
     }
     }

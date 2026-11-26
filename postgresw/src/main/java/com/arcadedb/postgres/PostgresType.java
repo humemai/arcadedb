@@ -1126,7 +1126,8 @@ public enum PostgresType {
     final String temporalText = temporalText(pgType, value);
     if (temporalText != null) {
       serializedValue = temporalText;
-    } else if (pgType == JSON && value != null && (value instanceof Collection<?> || value.getClass().isArray())) {
+    } else if ((pgType == JSON || pgType == JSONB) && value != null
+        && (value instanceof Collection<?> || value.getClass().isArray())) {
       // The column was announced as a json document holding an array (issue #5366): emit a real JSON array
       // instead of a Postgres array literal, so the payload matches the announced OID.
       serializedValue = serializeCollectionAsJson(
