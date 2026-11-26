@@ -141,6 +141,54 @@ class CreateTableTest extends TestHelper {
   }
 
   @Test
+  void anEdgeTableCanReferToATableWithoutAColumnId() {
+    run("CREATE TABLE tag (name text)");
+    run("CREATE TABLE topic (tid bigint PRIMARY KEY)");
+    run("INSERT INTO tag (name) VALUES ('red')");
+    run("INSERT INTO topic (tid) VALUES (7)");
+    // the record id reads under both names, and the catalog lists neither before a foreign key refers to the table
+    assertThat(lines("SELECT rid = id, name FROM tag")).containsExactly("true|red");
+    assertThat(lines("SELECT column_name FROM information_schema.columns WHERE table_name = 'tag' ORDER BY ordinal_position"))
+        .containsExactly("name");
+
+    run("CREATE TABLE tagged (source_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE,"
+        + " target_id text NOT NULL REFERENCES topic (rid) ON DELETE CASCADE)");
+    run("INSERT INTO tagged SELECT t.rid, p.id FROM tag t, topic p");
+
+    assertThat(columns("SELECT * FROM tag")).containsExactly("name");
+    assertThat(lines("SELECT t.name, p.tid FROM tag t JOIN tagged x ON x.source_id = t.rid JOIN topic p ON x.target_id = p.id"))
+        .containsExactly("red|7");
+    // the catalog lists the name that the foreign keys refer to, and not the other one
+    assertThat(lines("SELECT table_name, column_name FROM information_schema.columns WHERE table_name IN ('tag', 'topic')"
+        + " ORDER BY table_name, ordinal_position")).containsExactly("tag|name", "tag|rid", "topic|tid", "topic|rid");
+    assertThat(lines("SELECT constraint_name, unique_constraint_name FROM information_schema.referential_constraints"
+        + " ORDER BY constraint_name")).containsExactly("tagged_source_id_fkey|tag_rid_key", "tagged_target_id_fkey|topic_rid_key");
+    // the engine gives the record id, under either name
+    assertState("INSERT INTO tag (rid, name) VALUES ('#1:0', 'x')", "428C9");
+    assertState("INSERT INTO tag (id, name) VALUES ('#1:0', 'x')", "428C9");
+    assertState("UPDATE tag SET id = '#1:0'", "428C9");
+
+    run("DELETE FROM tag WHERE name = 'red'");
+    assertThat(lines("SELECT count(*) FROM tagged")).containsExactly("0");
+  }
+
+  @Test
+  void aTableWithAColumnRidOfItsOwnCannotBeReferredTo() {
+    run("CREATE TABLE tag (rid int, name text)");
+
+    assertState("CREATE TABLE tagged (source_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE,"
+        + " target_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE)", "0A000");
+  }
+
+  @Test
+  void aTypeThatSqlMadeWithoutAPropertyIdHasNoColumnRid() {
+    database.getSchema().createVertexType("tag");
+
+    assertState("CREATE TABLE tagged (source_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE,"
+        + " target_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE)", "42703");
+  }
+
+  @Test
   void aVectorKeepsItsDimensionsInEveryLanguage() {
     run("CREATE TABLE memory (id int PRIMARY KEY, embedding vector(3))");
     run("INSERT INTO memory VALUES (1, '[1,0,0]')");

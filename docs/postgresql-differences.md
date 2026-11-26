@@ -15,7 +15,7 @@ CREATE TABLE knows (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, source_i
 SELECT q.id AS qid, q.name AS name, k.since AS since FROM person p JOIN knows k ON k.source_id = p.rid JOIN person q ON k.target_id = q.rid WHERE p.id = 1 ORDER BY since;
 ```
 
-A PostgreSQL schema would usually point `knows.source_id` at `person (id)` and join on `p.id`. In `postgresql` the two ends of an edge hold record ids, so the join is on `rid`, or on `id` when the type has no `id` property of its own.
+A PostgreSQL schema would usually point `knows.source_id` at `person (id)` and join on `p.id`. In `postgresql` the two ends of an edge hold record ids, so the join is on `rid`, or on `id` when the type has no `id` property of its own (a table that `CREATE TABLE` made answers to both names).
 
 ## From the engine
 
@@ -47,8 +47,8 @@ CREATE TABLE knows (
 | area | PostgreSQL | `postgresql` |
 | --- | --- | --- |
 | Foreign keys | any columns | only the two ends of an edge, written as above (as column or table constraints). Every other `REFERENCES` is refused, a link column included |
-| A table that an edge table refers to | declares a column `rid` itself | needs a column `id` of its own, so that its record id is `rid`, a `text` |
-| The record id | none | readable by name (`rid`, or `id` in a table with no column `id`, where PostgreSQL raises `42703`), left out of `*` and of an `INSERT` without a column list, listed in the catalog once a foreign key refers to the table |
+| A table that an edge table refers to | declares a column `rid` itself | declares nothing when `CREATE TABLE` made it: its record id answers to `rid`, a `text`. A table that declares its own column `rid` cannot be referred to (`0A000`). A type that ArcadeDB `sql` made needs a property `id` of its own (`42703` without one) |
+| The record id | none | readable by name, as `rid`, and also as `id` in a table with no column `id` (PostgreSQL raises `42703` for a name that the table does not declare). In a table that declares a column `rid` and no column `id`, it is `id` only. Left out of `*` and of an `INSERT` without a column list. Once a foreign key refers to the table, the catalog lists it, under `rid` when that name reads it |
 | An end of an edge | any row of the referenced table | checked by writes of this language only: `sql` and openCypher do not read the declaration |
 | Keys over an end of an edge | any | only `(source_id, target_id)`, together |
 | Transactions | a rollback takes a new table back | the engine's schema is not transactional, so `CREATE TABLE` is refused in a transaction block, also one that a message of several statements opens on the wire |
@@ -106,7 +106,7 @@ Every refusal below is `0A000`.
 
 | # | choice | the main alternative |
 | ---: | --- | --- |
-| 1 | A type's own `id` property is the column `id` (the primary key when a unique index covers it), and the record id is `rid`. Without one, `id` is the record id | the record id always under one name |
+| 1 | A type's own `id` property is the column `id` (the primary key when a unique index covers it), and the record id is `rid`. Without one, `id` is the record id, and a table that `CREATE TABLE` made reads it as `rid` too | the record id always under one name |
 | 2 | A record id is `text`, such as `#12:3` | a number |
 | 3 | `source_id` and `target_id` hold record ids | the key of the vertex they point at, which reads the vertex for each edge row |
 | 4 | Edge ends are declared on the edge type: `CREATE EDGE TYPE knows CUSTOM source_table = 'person', target_table = 'person'`. Foreign keys come only from this and from link properties | a schema feature of the engine, or ends inferred from the data |

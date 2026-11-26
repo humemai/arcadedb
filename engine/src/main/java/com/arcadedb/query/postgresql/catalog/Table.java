@@ -40,7 +40,8 @@ import java.util.Objects;
  * declaration order, so this is the only order that is the same for every database and every run.</li>
  * <li>A table made by {@code CREATE TABLE} has its columns in the declared order, which its {@link TableDefinition} keeps, then
  * the record id, which is hidden: {@link #insertColumns()} leaves it out, and {@link #listedColumns()} has it only when a foreign
- * key refers to it.</li>
+ * key refers to it. When no property is named {@code id} or {@code rid}, the record id is there under both names, and only
+ * {@code rid} can be listed.</li>
  * <li>The table of a supertype has the rows of its subtypes, and only the columns declared on it. {@code FROM ONLY t} has the rows of
  * {@code t} itself: {@link #superTables()} and {@link #subTables()} say how the tables are related, and {@link #documentType()} is
  * what a scan asks for the buckets of the type with and without its subtypes.</li>
@@ -147,7 +148,7 @@ public final class Table {
     this.walkFromTables = List.copyOf(walkFromTables);
     Column identity = null;
     for (final Column column : columns)
-      if (column.kind() == Column.Kind.IDENTITY)
+      if (identity == null && column.kind() == Column.Kind.IDENTITY)
         identity = column;
     this.identityColumn = identity;
   }
@@ -181,9 +182,11 @@ public final class Table {
 
   /**
    * The column that holds the record id as text: {@code id}, or {@code rid} when the type has a property of its own named
-   * {@code id} (that property is then the column {@code id}, the decision of fork issue #38). {@code null} when the table has none:
-   * a lightweight edge table (no record), and a table whose type has both a property {@code id} and a property {@code rid}, where
-   * the two names are the user's and the record id has no name in the view.
+   * {@code id} (that property is then the column {@code id}, the decision of fork issue #38). A table made by
+   * {@code CREATE TABLE} with neither property has two such columns (fork issue #151): this one is {@code rid}, and a hidden
+   * {@code id} reads the same record id. {@code null} when the table has none: a lightweight edge table (no record), and a table
+   * whose type has both a property {@code id} and a property {@code rid}, where the two names are the user's and the record id has
+   * no name in the view.
    */
   public Column identityColumn() {
     return identityColumn;
@@ -199,14 +202,17 @@ public final class Table {
     for (final Key key : uniqueKeys)
       if (key.columns().equals(keyColumns))
         return key;
-    if (identityColumn != null && !identityColumn.isListed() && keyColumns.equals(List.of(identityColumn.name())))
-      return new Key(name + "_" + identityColumn.name() + "_key", keyColumns);
+    if (keyColumns.size() == 1) {
+      final Column column = columnsByName.get(keyColumns.get(0));
+      if (column != null && column.kind() == Column.Kind.IDENTITY && !column.isListed())
+        return new Key(name + "_" + column.name() + "_key", keyColumns);
+    }
     return null;
   }
 
   /** The columns that the catalog views show ({@link Column#isListed()}). */
   public List<Column> listedColumns() {
-    return identityColumn != null && !identityColumn.isListed() ? columns.stream().filter(Column::isListed).toList() : columns;
+    return columns.stream().allMatch(Column::isListed) ? columns : columns.stream().filter(Column::isListed).toList();
   }
 
   /** The columns that an {@code INSERT} without a column list fills, in order: every column but a hidden one. */

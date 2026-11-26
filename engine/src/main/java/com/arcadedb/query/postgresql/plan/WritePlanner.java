@@ -669,10 +669,7 @@ public final class WritePlanner {
       throw new PostgreSQLFeatureNotSupportedException("UPDATE ... FROM on the edge table " + table.name() + " is not supported");
     if (!update.returning().isEmpty())
       throw new PostgreSQLFeatureNotSupportedException("RETURNING with UPDATE ... FROM is not supported");
-    Column identity = null;
-    for (final Column candidate : table.columns())
-      if (candidate.kind() == Column.Kind.IDENTITY)
-        identity = candidate;
+    final Column identity = table.identityColumn();
     if (identity == null)
       throw new PostgreSQLFeatureNotSupportedException("UPDATE ... FROM needs the record id column, which " + table.name()
           + " does not have");

@@ -67,6 +67,8 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
 
   private static final String KNOWS = "CREATE TABLE knows (source_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE,"
       + " target_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE, since int, PRIMARY KEY (source_id, target_id))";
+  private static final String TAGGED = "CREATE TABLE tagged (source_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE,"
+      + " target_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE)";
 
   private static final List<String> INDEXES = List.of(
       "CREATE UNIQUE INDEX t1_a ON t1 (a)",
@@ -149,13 +151,20 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
         run(arcade, "CREATE TABLE person (id bigint PRIMARY KEY, name text)");
         run(postgres, KNOWS);
         run(arcade, KNOWS);
+        // a table without a column id (fork issue #151): the same edge table refers to its rid
+        run(postgres, "CREATE TABLE tag (name text, rid text NOT NULL UNIQUE DEFAULT gen_random_uuid()::text)");
+        run(arcade, "CREATE TABLE tag (name text)");
+        run(postgres, TAGGED);
+        run(arcade, TAGGED);
 
         for (final String write : List.of("INSERT INTO t1 VALUES (1, 'x'), (2, NULL)", "INSERT INTO t2 DEFAULT VALUES",
             "INSERT INTO t2 (id, v, x) VALUES (2, 3, '[1,2,3]')", "INSERT INTO t3 VALUES (1, 2, 'c')",
             "INSERT INTO t4 VALUES (1, NULL, NULL, 4), (2, NULL, 3, 4)", "INSERT INTO person VALUES (1, 'Ada'), (2, 'Bob')",
             "INSERT INTO knows SELECT a.rid, b.rid, 2020 FROM person a, person b WHERE a.id = 1 AND b.id = 2",
             "INSERT INTO t5 VALUES (1, '{2026-01-05,2026-02-01}', ARRAY['2026-01-05 10:20:30.123456'::timestamp])",
-            "INSERT INTO t5 (cid, moments) VALUES (2, '{}')")) {
+            "INSERT INTO t5 (cid, moments) VALUES (2, '{}')",
+            "INSERT INTO tag (name) VALUES ('red'), ('blue')",
+            "INSERT INTO tagged SELECT a.rid, b.rid FROM tag a, tag b WHERE a.name = 'red' AND b.name = 'blue'")) {
           run(postgres, write);
           run(arcade, write);
         }
@@ -172,9 +181,11 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
         same(postgres, arcade, "SELECT id, a, b, c, d, e, f, g, h, i, j, k, q, r, s, t, u, v, w FROM t2 ORDER BY id");
         same(postgres, arcade, "SELECT since FROM knows");
         sameArrays(postgres, arcade, "SELECT days, moments FROM t5 ORDER BY cid");
+        same(postgres, arcade, "SELECT a.name AS source, b.name AS target FROM tag a JOIN tagged t ON t.source_id = a.rid"
+            + " JOIN tag b ON t.target_id = b.rid");
 
-        for (final String table : List.of("t1", "t2", "t3", "t4", "t5", "person", "knows")) {
-          // rid: PostgreSQL declares it, ArcadeDB lists the record id that it gives person
+        for (final String table : List.of("t1", "t2", "t3", "t4", "t5", "person", "knows", "tag", "tagged")) {
+          // rid: PostgreSQL declares it, ArcadeDB lists the record id that it gives person and tag
           same(postgres, arcade, "SELECT column_name, ordinal_position, data_type, udt_name, is_nullable, column_default"
               + " FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '" + table
               + "' AND column_name <> 'rid' ORDER BY ordinal_position");
@@ -183,8 +194,9 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
               + " ON k.constraint_name = c.constraint_name AND k.table_name = c.table_name"
               + " WHERE c.table_name = '" + table + "' ORDER BY c.constraint_name, k.ordinal_position");
         }
-        same(postgres, arcade, "SELECT column_name, ordinal_position, data_type, is_nullable FROM information_schema.columns"
-            + " WHERE table_name = 'person' ORDER BY ordinal_position");
+        for (final String table : List.of("person", "tag"))
+          same(postgres, arcade, "SELECT column_name, ordinal_position, data_type, is_nullable FROM information_schema.columns"
+              + " WHERE table_name = '" + table + "' ORDER BY ordinal_position");
         same(postgres, arcade, "SELECT constraint_name, unique_constraint_name, match_option, update_rule, delete_rule"
             + " FROM information_schema.referential_constraints ORDER BY constraint_name");
 
