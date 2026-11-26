@@ -16,7 +16,6 @@
  * SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
  * SPDX-License-Identifier: Apache-2.0
  */
-package com.arcadedb.e2e.pgparity;
 package com.arcadedb.postgres;
 
 import com.arcadedb.GlobalConfiguration;
