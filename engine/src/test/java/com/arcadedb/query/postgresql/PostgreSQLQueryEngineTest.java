@@ -82,7 +82,7 @@ class PostgreSQLQueryEngineTest extends TestHelper {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = { "CREATE TABLE t (a int)", "DROP TABLE person", "WITH RECURSIVE x AS (SELECT 1) SELECT * FROM x", "(TABLE person)",
+  @ValueSource(strings = { "CREATE VIEW v AS SELECT 1", "DROP TABLE person", "WITH RECURSIVE x AS (SELECT 1) SELECT * FROM x", "(TABLE person)",
       "SET search_path = x", "SAVEPOINT a", "ROLLBACK TO a", "INSERT INTO person VALUES (1) ON CONFLICT ON CONSTRAINT c DO NOTHING",
       "DELETE FROM person USING orders", "", "   " })
   void analyzeRefusesEverythingOutsideTheLanguageWithFeatureNotSupported(final String statement) {
@@ -101,9 +101,9 @@ class PostgreSQLQueryEngineTest extends TestHelper {
 
   @Test
   void theRefusalNamesTheWordItsPositionAndTheWayOut() {
-    assertThatThrownBy(() -> engine().analyze("\n  CREATE TABLE person (a int)"))
+    assertThatThrownBy(() -> engine().analyze("\n  CREATE VIEW v AS SELECT 1"))
         .isInstanceOf(PostgreSQLFeatureNotSupportedException.class)
-        .hasMessageContaining("CREATE is not supported by the postgresql language")
+        .hasMessageContaining("CREATE VIEW is not supported by the postgresql language")
         .hasMessageContaining("line 2, column 3")
         .hasMessageContaining("{sql}");
   }

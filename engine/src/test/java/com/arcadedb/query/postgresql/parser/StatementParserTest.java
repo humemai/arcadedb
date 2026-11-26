@@ -437,8 +437,9 @@ class StatementParserTest {
 
   static Stream<String[]> refusals() {
     return Stream.of(
-        new String[] { "\n  create table a (x int)", "CREATE is not supported by the postgresql language (line 2, column 3)" },
-        new String[] { "CREATE TABLE t (a int)", "CREATE is not supported" },
+        new String[] { "\n  create view a as select 1", "CREATE VIEW is not supported by the postgresql language (line 2, column 3)" },
+        new String[] { "CREATE TEMP TABLE t (a int)",
+            "A temporary or unlogged table is not supported by the postgresql language (line 1, column 8)" },
         new String[] { "DROP TABLE t", "DROP is not supported" },
         new String[] { "SET search_path = x", "SET is not supported" },
         new String[] { "WITH RECURSIVE x AS (SELECT 1) SELECT * FROM x", "WITH RECURSIVE is not supported by the postgresql language (line 1, column 6)" },
@@ -493,7 +494,7 @@ class StatementParserTest {
 
   @Test
   void aStatementOutsideTheLanguageIsToldHowToRunIt() {
-    assertThatThrownBy(() -> StatementParser.parse("CREATE TABLE a (x int)")).hasMessageContaining("{sql}");
+    assertThatThrownBy(() -> StatementParser.parse("CREATE VIEW a AS SELECT 1")).hasMessageContaining("{sql}");
     assertThatThrownBy(() -> StatementParser.parse("WITH RECURSIVE x AS (SELECT 1) SELECT 1")).hasMessageNotContaining("{sql}");
   }
 

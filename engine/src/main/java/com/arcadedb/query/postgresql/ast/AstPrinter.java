@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql.ast;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -62,7 +63,48 @@ public final class AstPrinter {
       case UpdateStatement update -> print(update);
       case DeleteStatement delete -> print(delete);
       case TransactionStatement transaction -> transaction.kind().name();
+      case CreateTableStatement create -> print(create);
     };
+  }
+
+  private static String print(final CreateTableStatement create) {
+    final List<String> elements = new ArrayList<>();
+    for (final CreateTableStatement.Column column : create.columns()) {
+      final StringBuilder text = new StringBuilder(print(column.name())).append(' ').append(print(column.type()));
+      for (final CreateTableStatement.Constraint constraint : column.constraints())
+        text.append(' ').append(print(constraint));
+      elements.add(text.toString());
+    }
+    for (final CreateTableStatement.Constraint constraint : create.constraints())
+      elements.add(print(constraint));
+    return "CREATE TABLE " + (create.ifNotExists() ? "IF NOT EXISTS " : "") + dotted(create.table()) + " ("
+        + String.join(", ", elements) + ")";
+  }
+
+  private static String print(final CreateTableStatement.Constraint constraint) {
+    final String name = constraint.name() == null ? "" : "CONSTRAINT " + print(constraint.name()) + " ";
+    final String columns = constraint.columns().isEmpty() ? "" : " " + parenthesised(constraint.columns());
+    return name + switch (constraint.kind()) {
+      case NOT_NULL -> "NOT NULL";
+      case NULL -> "NULL";
+      case DEFAULT -> "DEFAULT (" + print(constraint.value()) + ")";
+      case UNIQUE -> "UNIQUE" + columns;
+      case PRIMARY_KEY -> "PRIMARY KEY" + columns;
+      case FOREIGN_KEY -> {
+        final CreateTableStatement.Reference reference = constraint.reference();
+        yield (columns.isEmpty() ? "" : "FOREIGN KEY" + columns + " ") + "REFERENCES " + dotted(reference.table())
+            + (reference.columns().isEmpty() ? "" : " " + parenthesised(reference.columns())) + " ON DELETE "
+            + reference.onDelete().name().replace('_', ' ') + " ON UPDATE " + reference.onUpdate().name().replace('_', ' ');
+      }
+    };
+  }
+
+  private static String dotted(final List<Name> name) {
+    return name.stream().map(AstPrinter::print).collect(Collectors.joining("."));
+  }
+
+  private static String parenthesised(final List<Name> names) {
+    return names.stream().map(AstPrinter::print).collect(Collectors.joining(", ", "(", ")"));
   }
 
   private static String print(final InsertStatement insert) {

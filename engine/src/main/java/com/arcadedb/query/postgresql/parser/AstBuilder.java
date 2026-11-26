@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql.parser;
 
 import com.arcadedb.query.postgresql.PostgreSQLInvalidEscapeException;
+import com.arcadedb.query.postgresql.ast.CreateTableStatement;
 import com.arcadedb.query.postgresql.ast.DeleteStatement;
 import com.arcadedb.query.postgresql.ast.EmptyStatement;
 import com.arcadedb.query.postgresql.ast.ExplainStatement;
@@ -82,9 +83,108 @@ final class AstBuilder {
         return new ExplainWriteStatement(position(command.getStart()), write(explain.writeStmt()));
       return new ExplainStatement(position(command.getStart()), query(explain.selectStmt()));
     }
+    if (stmt instanceof CreateTableCommandContext command)
+      return createTable(command.createTableStmt());
     if (stmt instanceof EmptyCommandContext)
       return new EmptyStatement(position(stmt.getStart()));
     throw new IllegalStateException("A statement the parser did not refuse has no tree: " + stmt.getText());
+  }
+
+  // ------------------------------------------------------------------------------------------------ CREATE TABLE
+
+  private CreateTableStatement createTable(final CreateTableStmtContext context) {
+    final CreateTableElementsContext body = (CreateTableElementsContext) context.createTableBody();
+    final List<CreateTableStatement.Column> columns = new ArrayList<>();
+    final List<CreateTableStatement.Constraint> constraints = new ArrayList<>();
+    for (final TableElementContext element : body.items) {
+      if (element instanceof ColumnElementContext column) {
+        final List<CreateTableStatement.Constraint> own = new ArrayList<>();
+        for (final ColumnOptionContext option : column.constraints)
+          own.add(columnConstraint(option));
+        columns.add(new CreateTableStatement.Column(position(column.getStart()), name(column.column), typeName(column.typename()),
+            own));
+      } else
+        constraints.add(tableConstraint(((ConstraintElementContext) element).tableConstraint()));
+    }
+    return new CreateTableStatement(position(context.getStart()), qualifiedName(context.table, context.table.getStart()),
+        context.EXISTS() != null, columns, constraints);
+  }
+
+  private CreateTableStatement.Constraint columnConstraint(final ColumnOptionContext option) {
+    final Name name = option.constraintName == null ? null : name(option.constraintName);
+    final ColumnConstraintElemContext element = option.columnConstraintElem();
+    final SourcePosition position = position(option.getStart());
+    if (element instanceof ReferencesColumnConstraintContext references)
+      return new CreateTableStatement.Constraint(position, CreateTableStatement.Kind.FOREIGN_KEY, name, List.of(), null,
+          reference(references.references()));
+    if (element instanceof DefaultConstraintContext value)
+      return new CreateTableStatement.Constraint(position, CreateTableStatement.Kind.DEFAULT, name, List.of(),
+          bExpression(value.bExpr()), null);
+    final CreateTableStatement.Kind kind;
+    if (element instanceof NotNullConstraintContext)
+      kind = CreateTableStatement.Kind.NOT_NULL;
+    else if (element instanceof NullConstraintContext)
+      kind = CreateTableStatement.Kind.NULL;
+    else if (element instanceof UniqueColumnConstraintContext)
+      kind = CreateTableStatement.Kind.UNIQUE;
+    else if (element instanceof PrimaryKeyColumnConstraintContext)
+      kind = CreateTableStatement.Kind.PRIMARY_KEY;
+    else
+      throw new IllegalStateException("A constraint the parser did not refuse has no tree: " + element.getText());
+    return new CreateTableStatement.Constraint(position, kind, name, List.of(), null, null);
+  }
+
+  private CreateTableStatement.Constraint tableConstraint(final TableConstraintContext context) {
+    final Name name = context.constraintName == null ? null : name(context.constraintName);
+    final TableConstraintElemContext element = context.tableConstraintElem();
+    final SourcePosition position = position(context.getStart());
+    if (element instanceof UniqueTableConstraintContext unique)
+      return new CreateTableStatement.Constraint(position, CreateTableStatement.Kind.UNIQUE, name, names(unique.columns), null,
+          null);
+    if (element instanceof PrimaryKeyTableConstraintContext primary)
+      return new CreateTableStatement.Constraint(position, CreateTableStatement.Kind.PRIMARY_KEY, name, names(primary.columns),
+          null, null);
+    final ForeignKeyTableConstraintContext foreign = (ForeignKeyTableConstraintContext) element;
+    return new CreateTableStatement.Constraint(position, CreateTableStatement.Kind.FOREIGN_KEY, name, names(foreign.columns),
+        null, reference(foreign.references()));
+  }
+
+  private List<Name> names(final List<ColIdContext> contexts) {
+    final List<Name> names = new ArrayList<>(contexts.size());
+    for (final ColIdContext context : contexts)
+      names.add(name(context));
+    return names;
+  }
+
+  private CreateTableStatement.Reference reference(final ReferencesContext context) {
+    CreateTableStatement.Action onDelete = null;
+    CreateTableStatement.Action onUpdate = null;
+    for (final ReferenceOptionContext option : context.actions) {
+      if (option instanceof OnDeleteOptionContext delete) {
+        if (onDelete != null)
+          throw Diagnostics.syntaxError(option.getStart());
+        onDelete = action(delete.referenceAction());
+      } else {
+        if (onUpdate != null)
+          throw Diagnostics.syntaxError(option.getStart());
+        onUpdate = action(((OnUpdateOptionContext) option).referenceAction());
+      }
+    }
+    return new CreateTableStatement.Reference(position(context.getStart()),
+        qualifiedName(context.table, context.table.getStart()), names(context.columns),
+        onDelete == null ? CreateTableStatement.Action.NO_ACTION : onDelete,
+        onUpdate == null ? CreateTableStatement.Action.NO_ACTION : onUpdate);
+  }
+
+  private static CreateTableStatement.Action action(final ReferenceActionContext context) {
+    if (context instanceof NoActionContext)
+      return CreateTableStatement.Action.NO_ACTION;
+    if (context instanceof RestrictActionContext)
+      return CreateTableStatement.Action.RESTRICT;
+    if (context instanceof CascadeActionContext)
+      return CreateTableStatement.Action.CASCADE;
+    return context instanceof SetNullActionContext ? CreateTableStatement.Action.SET_NULL
+        : CreateTableStatement.Action.SET_DEFAULT;
   }
 
   // ------------------------------------------------------------------------------------------------------ writes
