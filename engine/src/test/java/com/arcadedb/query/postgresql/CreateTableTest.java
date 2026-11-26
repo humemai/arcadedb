@@ -149,6 +149,14 @@ class CreateTableTest extends TestHelper {
   }
 
   @Test
+  void anEdgeTableNeedsTablesWithAColumnId() {
+    run("CREATE TABLE tag (name text)");
+
+    assertState("CREATE TABLE tagged (source_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE,"
+        + " target_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE)", "42703");
+  }
+
+  @Test
   void aNameThatIsTakenIsRefusedUnlessTheStatementAllowsIt() {
     database.getSchema().createVertexType("Person");
 
