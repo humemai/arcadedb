@@ -17,7 +17,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 package com.arcadedb.e2e.pgparity;
-package com.arcadedb.e2e.pgparity;
 
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
