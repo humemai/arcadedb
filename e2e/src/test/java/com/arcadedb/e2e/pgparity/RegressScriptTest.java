@@ -160,6 +160,15 @@ class RegressScriptTest {
   }
 
   @Test
+  void theTablesAStatementNames() {
+    assertThat(RegressSql.tablePositions(RegressSql.tokens(
+        "SELECT a, b FROM t1 x, pg_temp.t2 LEFT JOIN t3 ON x.a = t3.a WHERE a IN (1, c) ORDER BY a, d;")))
+        .containsExactly("t1", "pg_temp.t2", "t3");
+    assertThat(RegressSql.tablePositions(RegressSql.tokens("UPDATE ONLY t SET a = 1, b = 2;"))).containsExactly("only", "t");
+    assertThat(RegressSql.writeTargets(RegressSql.tokens("INSERT INTO s.t (a) VALUES (1);"))).containsExactly("s.t");
+  }
+
+  @Test
   void theListOfWhatIsOutOfScope() {
     final RegressOutOfScope outOfScope = RegressOutOfScope.load();
     final Set<String> catalog = Set.of("pg_class");

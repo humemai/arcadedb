@@ -60,6 +60,10 @@ final class RegressDatabase implements AutoCloseable {
   record Table(String key, String schema, String name, List<Column> columns, List<String> primaryKey,
       List<List<String>> uniqueKeys, List<String> writeLimits, boolean nested, long rowCount, String signature,
       String fingerprint) {
+    /** Whether {@code schema.name} names this table; {@code pg_temp} is the temporary schema of the session. */
+    boolean isCalled(final String inSchema, final String called) {
+      return name.equals(called) && (schema.equals(inSchema) || "pg_temp".equals(inSchema) && schema.startsWith("pg_temp"));
+    }
   }
 
   /** The tables a statement reads or writes, as the plan of the server names them. */
@@ -395,7 +399,7 @@ final class RegressDatabase implements AutoCloseable {
 
   private String keyOf(final String schema, final String name) {
     for (final Table table : tables.values())
-      if (table.schema().equals(schema) && table.name().equals(name))
+      if (table.isCalled(schema, name))
         return table.key();
     return schema + "." + name;
   }

@@ -276,12 +276,11 @@ final class RegressRun {
     if (relations != null) {
       relations.all().stream().filter(before::containsKey).forEach(uses::add);
       relations.written().stream().filter(before::containsKey).forEach(writes::add);
+      // the planner leaves out a table that it does not have to read
+      uses.addAll(resolve(RegressSql.tablePositions(tokens), before));
     } else {
       uses.addAll(named(tokens, before));
-      for (final String target : RegressSql.writeTargets(tokens))
-        before.values().stream()
-            .filter(table -> target.equals(table.key()) || target.equals(table.schema() + "." + table.name()))
-            .forEach(table -> writes.add(table.key()));
+      writes.addAll(resolve(RegressSql.writeTargets(tokens), before));
     }
     String blocked = null;
     for (final String table : uses)
@@ -392,6 +391,18 @@ final class RegressRun {
     return contents;
   }
 
+  /** The tables that written names mean: a bare name, or one with its schema. */
+  private static Set<String> resolve(final Set<String> names, final Map<String, RegressDatabase.Table> tables) {
+    final Set<String> resolved = new LinkedHashSet<>();
+    for (final String name : names) {
+      final int dot = name.indexOf('.');
+      for (final RegressDatabase.Table table : tables.values())
+        if (table.key().equals(name) || dot > 0 && table.isCalled(name.substring(0, dot), name.substring(dot + 1)))
+          resolved.add(table.key());
+    }
+    return resolved;
+  }
+
   /** The tables that the words of a statement name. */
   private static Set<String> named(final List<RegressSql.Token> tokens, final Map<String, RegressDatabase.Table> tables) {
     final Set<String> named = new LinkedHashSet<>();
@@ -401,7 +412,7 @@ final class RegressRun {
         continue;
       final String qualifier = i >= 2 && tokens.get(i - 1).isSymbol(".") ? tokens.get(i - 2).name() : null;
       for (final RegressDatabase.Table table : tables.values())
-        if (table.name().equals(name) && (qualifier == null ? table.key().equals(name) : table.schema().equals(qualifier)))
+        if (qualifier == null ? table.key().equals(name) : table.isCalled(qualifier, name))
           named.add(table.key());
     }
     return named;

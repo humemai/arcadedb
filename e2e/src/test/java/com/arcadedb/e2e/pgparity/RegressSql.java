@@ -19,6 +19,7 @@
 package com.arcadedb.e2e.pgparity;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -201,6 +202,36 @@ final class RegressSql {
       if (!token.isSymbol("("))
         return token.type() == Type.WORD ? token.text().toLowerCase(Locale.ROOT) : "";
     return "";
+  }
+
+  private static final Set<String> BEFORE_A_TABLE = Set.of("from", "join", "into", "update", "only", "table");
+
+  private static final Set<String> AFTER_A_FROM_LIST = Set.of("select", "where", "group", "having", "window", "order", "limit",
+      "offset", "union", "intersect", "except", "set", "values", "returning");
+
+  /**
+   * The names that stand where a statement names a table: after {@code FROM}, {@code JOIN}, {@code INTO}, {@code UPDATE},
+   * {@code ONLY} or {@code TABLE}, and after a comma of a {@code FROM} list. A name keeps its schema when it is written with one.
+   */
+  static Set<String> tablePositions(final List<Token> tokens) {
+    final Set<String> names = new LinkedHashSet<>();
+    final Set<Integer> inFromList = new HashSet<>();
+    for (int i = 0; i < tokens.size(); i++) {
+      final Token token = tokens.get(i);
+      if (token.is("from"))
+        inFromList.add(token.depth());
+      else if (token.type() == Type.WORD && AFTER_A_FROM_LIST.contains(token.name()))
+        inFromList.remove(token.depth());
+      final boolean introduces = token.type() == Type.WORD && BEFORE_A_TABLE.contains(token.name())
+          || token.isSymbol(",") && inFromList.contains(token.depth());
+      if (!introduces || i + 1 >= tokens.size() || tokens.get(i + 1).name() == null)
+        continue;
+      if (i + 3 < tokens.size() && tokens.get(i + 2).isSymbol(".") && tokens.get(i + 3).name() != null)
+        names.add(tokens.get(i + 1).name() + "." + tokens.get(i + 3).name());
+      else
+        names.add(tokens.get(i + 1).name());
+    }
+    return names;
   }
 
   /**
