@@ -65,7 +65,7 @@ final class RegressServer implements AutoCloseable {
    */
   static RegressServer start(final Path regress, final int burnedObjectIds) throws Exception {
     final GenericContainer<?> container = PostgresServer.container(IMAGE, Map.of("POSTGRES_HOST_AUTH_METHOD", "trust"),
-        "postgres", "-c", "fsync=off", "-c", "autovacuum=off", "-c", "max_prepared_transactions=2");
+        "postgres", "-c", "fsync=off", "-c", "autovacuum=off");
     if (regress != null)
       container.withCopyFileToContainer(MountableFile.forHostPath(regress.resolve("data")), SOURCE_DIRECTORY + "/data");
     System.out.println("pgregress: starting " + IMAGE);
@@ -116,6 +116,8 @@ final class RegressServer implements AutoCloseable {
   /** The database {@code regression}, new and empty, on a server without what an earlier file left outside of its database. */
   RegressDatabase freshDatabase() {
     clean();
+    // fails with the reason of the server when the database of the file before cannot be removed
+    column("DROP DATABASE IF EXISTS " + RegressDatabase.NAME + " WITH (FORCE)");
     column("CREATE DATABASE " + RegressDatabase.NAME);
     return new RegressDatabase(container.getHost(), container.getMappedPort(5432));
   }

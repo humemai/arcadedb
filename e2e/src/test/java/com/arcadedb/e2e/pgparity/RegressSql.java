@@ -234,6 +234,42 @@ final class RegressSql {
     return names;
   }
 
+  /** Whether the statement is a {@code CREATE TABLE}, with {@code TEMP}, {@code UNLOGGED} and the like or without. */
+  static boolean createsTable(final List<Token> tokens) {
+    if (tokens.isEmpty() || !tokens.get(0).is("create"))
+      return false;
+    for (int i = 1; i < tokens.size() && i < 4; i++)
+      if (tokens.get(i).is("table"))
+        return true;
+    return false;
+  }
+
+  /**
+   * The tables a {@code CREATE TABLE} takes something from: those of {@link #tablePositions}, and the names after
+   * {@code REFERENCES}, {@code LIKE} and {@code PARTITION OF}, and in the list of {@code INHERITS}. A column that has the name
+   * of a table is not one of them.
+   */
+  static Set<String> sourcesOfCreateTable(final List<Token> tokens) {
+    final Set<String> names = new LinkedHashSet<>(tablePositions(tokens));
+    boolean inherits = false;
+    for (int i = 0; i + 1 < tokens.size(); i++) {
+      final Token token = tokens.get(i);
+      if (token.is("inherits"))
+        inherits = true;
+      else if (inherits && token.isSymbol(")"))
+        inherits = false;
+      final boolean introduces = token.is("references") || token.is("like") || token.is("of")
+          || inherits && (token.isSymbol("(") || token.isSymbol(","));
+      if (!introduces || tokens.get(i + 1).name() == null)
+        continue;
+      if (i + 3 < tokens.size() && tokens.get(i + 2).isSymbol(".") && tokens.get(i + 3).name() != null)
+        names.add(tokens.get(i + 1).name() + "." + tokens.get(i + 3).name());
+      else
+        names.add(tokens.get(i + 1).name());
+    }
+    return names;
+  }
+
   /**
    * The names a statement writes to, read from its words: for the statements whose plan the server does not give. A name keeps
    * its schema when it is written with one.
