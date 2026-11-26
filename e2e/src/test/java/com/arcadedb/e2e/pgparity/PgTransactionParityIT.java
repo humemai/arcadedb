@@ -60,6 +60,8 @@ class PgTransactionParityIT {
 
   private static PostgresServer pg;
   private static String         schema;
+  /** What makes the server generate {@code id} and take the edges of a deleted vertex, as for the write corpus. */
+  private static String         writes;
 
   /** One statement of session {@code A} or {@code B}; {@code waits} marks the statement that the server holds on a lock. */
   private record Step(char session, String sql, boolean waits) {
@@ -83,6 +85,7 @@ class PgTransactionParityIT {
       directory = directory.getParent();
     assertTrue(directory != null, "small-schema.sql not found");
     schema = Files.readString(directory.resolve("engine/src/test/resources/postgresql/small-schema.sql"), StandardCharsets.UTF_8);
+    writes = Files.readString(directory.resolve("engine/src/test/resources/postgresql/small-writes.sql"), StandardCharsets.UTF_8);
     pg = PostgresServer.start();
   }
 
@@ -168,6 +171,7 @@ class PgTransactionParityIT {
   private static Run onServer(final List<Step> steps) throws Exception {
     pg.load("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
     pg.load(schema);
+    pg.load(writes);
     try (final Session first = serverSession(); final Session second = serverSession()) {
       return run(steps, Map.of('A', first, 'B', second), true);
     }
