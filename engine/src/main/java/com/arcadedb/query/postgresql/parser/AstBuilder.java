@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql.parser;
 
 import com.arcadedb.query.postgresql.PostgreSQLInvalidEscapeException;
+import com.arcadedb.query.postgresql.ast.CreateIndexStatement;
 import com.arcadedb.query.postgresql.ast.CreateTableStatement;
 import com.arcadedb.query.postgresql.ast.DeleteStatement;
 import com.arcadedb.query.postgresql.ast.EmptyStatement;
@@ -85,6 +86,8 @@ final class AstBuilder {
     }
     if (stmt instanceof CreateTableCommandContext command)
       return createTable(command.createTableStmt());
+    if (stmt instanceof CreateIndexCommandContext command)
+      return createIndex(command.createIndexStmt());
     if (stmt instanceof EmptyCommandContext)
       return new EmptyStatement(position(stmt.getStart()));
     throw new IllegalStateException("A statement the parser did not refuse has no tree: " + stmt.getText());
@@ -185,6 +188,36 @@ final class AstBuilder {
       return CreateTableStatement.Action.CASCADE;
     return context instanceof SetNullActionContext ? CreateTableStatement.Action.SET_NULL
         : CreateTableStatement.Action.SET_DEFAULT;
+  }
+
+  // ------------------------------------------------------------------------------------------------ CREATE INDEX
+
+  private CreateIndexStatement createIndex(final CreateIndexStmtContext context) {
+    final RelationExprContext relation = context.relationExpr();
+    final List<CreateIndexStatement.Element> elements = new ArrayList<>();
+    for (final IndexElementContext item : context.elements) {
+      final ColumnIndexElementContext element = (ColumnIndexElementContext) item;
+      elements.add(new CreateIndexStatement.Element(position(element.getStart()), name(element.column),
+          element.operatorClass == null ? null : name(element.operatorClass)));
+    }
+    final List<CreateIndexStatement.Parameter> parameters = new ArrayList<>();
+    for (final IndexParameterContext parameter : context.parameters) {
+      final IntegerValueContext value = (IntegerValueContext) parameter.indexParameterValue();
+      parameters.add(new CreateIndexStatement.Parameter(position(parameter.getStart()), name(parameter.name),
+          longValue(value.ICONST().getSymbol())));
+    }
+    return new CreateIndexStatement(position(context.getStart()), context.UNIQUE() != null, context.EXISTS() != null,
+        context.name == null ? null : name(context.name), qualifiedName(relation.qualifiedName(), relation.getStart()),
+        context.method == null ? null : name(context.method), elements, parameters);
+  }
+
+  /** The value of an integer parameter; one that no long holds is out of every range, and reads as the largest long. */
+  private static long longValue(final Token token) {
+    try {
+      return Long.parseLong(token.getText().replace("_", ""));
+    } catch (final NumberFormatException e) {
+      return Long.MAX_VALUE;
+    }
   }
 
   // ------------------------------------------------------------------------------------------------------ writes

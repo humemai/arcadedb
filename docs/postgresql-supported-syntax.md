@@ -10,6 +10,9 @@ Where the language behaves differently from PostgreSQL, and why, is on the [diff
 
 | Construct | State | Notes |
 |---|---|---|
+| `CREATE [UNIQUE] INDEX [[IF NOT EXISTS] name] ON t [USING btree] (column [, ...])` | supported | The tree index of the engine. On `source_id`, `target_id`, or a record id only the name is recorded. The limits are on the [differences page](postgresql-differences.md#create-index). Fork issue #125. |
+| `CREATE INDEX ON t USING hnsw (embedding vector_l2_ops \| vector_cosine_ops \| vector_ip_ops) [WITH (m = .., ef_construction = ..)]` | supported | An `LSM_VECTOR` index over a column declared `vector(n)`; the nearest-neighbour queries use it as they use one made with `sql`. |
+| `DROP INDEX`, other methods and operator classes, expression and partial indexes, `INCLUDE`, `DESC`, `NULLS`, `CONCURRENTLY` | refused, `0A000` | |
 | `CREATE TABLE [IF NOT EXISTS] t (column type [NULL \| NOT NULL] [DEFAULT constant] [UNIQUE] [PRIMARY KEY], ..., [CONSTRAINT name] UNIQUE (...) \| PRIMARY KEY (...))` | supported | Makes a vertex type; a unique index for each key. `SELECT *`, an `INSERT` without a column list, and the columns and keys in `information_schema` are those of PostgreSQL 18 (`PostgreSQLCreateTableTest`). The types and the limits are on the [differences page](postgresql-differences.md#create-table). Fork issue #118. |
 | `source_id text NOT NULL REFERENCES t (rid) ON DELETE CASCADE` and the same for `target_id` | supported | The table is an edge type between the rows of the referenced tables; deleting a row deletes its edges. Every other `REFERENCES` is refused, `0A000`. |
 | `CREATE TABLE` in a transaction block; `TEMP`, `CHECK`, `serial`, identity and generated columns, `INHERITS`, `PARTITION BY`, `LIKE`, `CREATE TABLE ... AS`, type modifiers other than `vector(n)` | refused, `0A000` | The position of the refusal is in the error. |

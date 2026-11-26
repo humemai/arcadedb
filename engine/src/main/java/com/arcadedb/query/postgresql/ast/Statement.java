@@ -21,9 +21,9 @@ package com.arcadedb.query.postgresql.ast;
 /**
  * A statement: {@code stmt} of {@code gram.y}. The statements of the language are a {@code SELECT} and an {@code EXPLAIN} of
  * one, the writes {@code INSERT}, {@code UPDATE} and {@code DELETE} with their {@code EXPLAIN}, the transaction statements,
- * {@code CREATE TABLE}, and the empty statement. Every other statement is refused with SQLSTATE 0A000 before a tree exists. The parser takes exactly one
+ * {@code CREATE TABLE}, {@code CREATE INDEX}, and the empty statement. Every other statement is refused with SQLSTATE 0A000 before a tree exists. The parser takes exactly one
  * statement; a text with a second statement after a semicolon is a syntax error, as the extended protocol of PostgreSQL has it.
  */
 public sealed interface Statement extends Node permits SelectStatement, SetOperationStatement, WithStatement, ExplainStatement, ExplainWriteStatement, EmptyStatement, WriteStatement,
-    TransactionStatement, CreateTableStatement {
+    TransactionStatement, CreateTableStatement, CreateIndexStatement {
 }

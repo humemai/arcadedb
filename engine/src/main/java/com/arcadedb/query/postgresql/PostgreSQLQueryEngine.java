@@ -24,6 +24,7 @@ import com.arcadedb.database.DatabaseInternal;
 import com.arcadedb.query.OperationType;
 import com.arcadedb.query.QueryEngine;
 import com.arcadedb.query.postgresql.ast.AstPrinter;
+import com.arcadedb.query.postgresql.ast.CreateIndexStatement;
 import com.arcadedb.query.postgresql.ast.CreateTableStatement;
 import com.arcadedb.query.postgresql.ast.DeleteStatement;
 import com.arcadedb.query.postgresql.ast.EmptyStatement;
@@ -39,6 +40,7 @@ import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.parser.StatementParser;
+import com.arcadedb.query.postgresql.plan.CreateIndexPlan;
 import com.arcadedb.query.postgresql.plan.CreateTablePlan;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.postgresql.plan.QueryPlan;
@@ -60,7 +62,8 @@ import java.util.Set;
  * {@code opencypher} and with no effect on either. It reads, and its parser reads the writes ({@code INSERT}, {@code UPDATE},
  * {@code DELETE}) and the transaction statements too. {@code INSERT}, {@code UPDATE} and {@code DELETE} run on document, vertex and
  * edge tables ({@link WritePlanner}, fork issue #29), {@code BEGIN}, {@code COMMIT} and {@code ROLLBACK} are the transaction of
- * the database, and {@code CREATE TABLE} makes a vertex or an edge type ({@link CreateTablePlan}, fork issue #118). A statement goes through three steps:
+ * the database, {@code CREATE TABLE} makes a vertex or an edge type ({@link CreateTablePlan}, fork issue #118), and
+ * {@code CREATE INDEX} a tree or a vector index ({@link CreateIndexPlan}, fork issue #125). A statement goes through three steps:
  * <ol>
  * <li>the parser ({@link StatementParser}): text that is not PostgreSQL syntax is refused with SQLSTATE {@code 42601},
  * PostgreSQL syntax outside the subset ({@code WITH RECURSIVE}, a {@code NATURAL} join, other DDL) with {@code 0A000};</li>
@@ -95,7 +98,10 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   /** {@code BEGIN}, {@code COMMIT} and {@code ROLLBACK} read and write nothing themselves: a request about the transaction. */
   private static final AnalyzedQuery TRANSACTION = new Analysis(false, true, OperationType.READ);
 
-  /** {@code CREATE TABLE} changes the schema: the servers run it on the leader and ask for the permission to change it. */
+  /**
+   * {@code CREATE TABLE} and {@code CREATE INDEX} change the schema: the servers run them on the leader and ask for the permission
+   * to change it.
+   */
   private static final AnalyzedQuery SCHEMA_CHANGE = new Analysis(false, false, OperationType.SCHEMA);
 
   private record Analysis(boolean idempotent, boolean transactionControl, OperationType operation) implements AnalyzedQuery {
@@ -187,6 +193,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       case DeleteStatement ignored -> DELETE;
       case TransactionStatement ignored -> TRANSACTION;
       case CreateTableStatement ignored -> SCHEMA_CHANGE;
+      case CreateIndexStatement ignored -> SCHEMA_CHANGE;
       default -> READ;
     };
   }
@@ -255,13 +262,19 @@ public class PostgreSQLQueryEngine implements QueryEngine {
             "current transaction is aborted, commands ignored until end of transaction block");
       }
       if (readOnly && (statement instanceof WriteStatement || statement instanceof TransactionStatement
-          || statement instanceof CreateTableStatement))
+          || statement instanceof CreateTableStatement || statement instanceof CreateIndexStatement))
         throw new PostgreSQLEvaluationException("25006", "cannot execute " + statementName(statement)
             + " in a read-only query: run it with command (" + statement.position() + ")");
       if (statement instanceof TransactionStatement transaction)
         return transaction(transaction.kind(), state);
-      if (statement instanceof CreateTableStatement create)
-        return createTable(create, state);
+      if (statement instanceof CreateTableStatement create) {
+        requireNoBlock(state, create);
+        return new CreateTablePlan(database, catalog(), create).execute();
+      }
+      if (statement instanceof CreateIndexStatement create) {
+        requireNoBlock(state, create);
+        return new CreateIndexPlan(database, catalog(), create).execute();
+      }
       if (statement instanceof ExplainWriteStatement explain)
         return explain(new WritePlanner(database, catalog(), parameters).plan(explain.statement()).steps());
       if (statement instanceof WriteStatement write)
@@ -284,15 +297,14 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
-   * The schema of the engine is not transactional, a rollback does not take a type back, so {@code CREATE TABLE} is refused in a
-   * transaction block with SQLSTATE {@code 0A000}: one that this language opened, or the caller. A transaction that a server opened
-   * around one request, as its auto-commit, is not a block.
+   * The schema of the engine is not transactional, a rollback does not take a type or an index back, so {@code CREATE} is refused
+   * in a transaction block with SQLSTATE {@code 0A000}: one that this language opened, or the caller. A transaction that a server
+   * opened around one request, as its auto-commit, is not a block.
    */
-  private ResultSet createTable(final CreateTableStatement create, final Block state) {
+  private void requireNoBlock(final Block state, final Statement create) {
     if (state.open || database.isTransactionActive() && !database.getTransaction().isImplicit())
-      throw new PostgreSQLFeatureNotSupportedException("CREATE TABLE inside a transaction block is not supported by the postgresql"
-          + " language, because a rollback would not take the table back (" + create.position() + ")");
-    return new CreateTablePlan(database, catalog(), create).execute();
+      throw new PostgreSQLFeatureNotSupportedException(statementName(create) + " inside a transaction block is not supported by"
+          + " the postgresql language, because a rollback would not take it back (" + create.position() + ")");
   }
 
   /**
@@ -346,6 +358,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       case DeleteStatement ignored -> "DELETE";
       case ExplainWriteStatement ignored -> "EXPLAIN of a write";
       case CreateTableStatement ignored -> "CREATE TABLE";
+      case CreateIndexStatement ignored -> "CREATE INDEX";
       case TransactionStatement transaction -> transaction.kind().name();
       default -> throw new IllegalStateException("Not a write: " + statement);
     };
@@ -413,7 +426,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
 
   /** The columns of a statement planned with described parameters; for {@code EXPLAIN} those of the statement it explains. */
   private List<PostgreSQLResultSet.Column> plannedColumns(final Statement statement, final Parameters parameters) {
-    if (statement instanceof TransactionStatement || statement instanceof CreateTableStatement)
+    if (statement instanceof TransactionStatement || statement instanceof CreateTableStatement
+        || statement instanceof CreateIndexStatement)
       return List.of();
     if (statement instanceof ExplainWriteStatement explain)
       return new WritePlanner(database, catalog(), parameters).plan(explain.statement()).columns();

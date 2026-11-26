@@ -41,8 +41,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * {@code CREATE TABLE} of the {@code postgresql} language against PostgreSQL 18 (fork issue #118): the same text runs on both over
- * JDBC, and {@code SELECT *}, an {@code INSERT} without a column list, the columns and the keys of {@code information_schema} and
+ * {@code CREATE TABLE} and {@code CREATE INDEX} of the {@code postgresql} language against PostgreSQL 18 with pgvector (fork
+ * issues #118 and #125): the same text runs on both over JDBC, and {@code SELECT *}, an {@code INSERT} without a column list, the columns and the keys of {@code information_schema} and
  * the SQLSTATE of each error have to be equal. The one text that differs is a table that an edge table refers to: PostgreSQL has
  * to declare the column {@code rid} that ArcadeDB gives every record.
  * <p>
@@ -66,7 +66,25 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
   private static final String KNOWS = "CREATE TABLE knows (source_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE,"
       + " target_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE, since int, PRIMARY KEY (source_id, target_id))";
 
+  private static final List<String> INDEXES = List.of(
+      "CREATE UNIQUE INDEX t1_a ON t1 (a)",
+      "CREATE INDEX ON t1 (a, b)",
+      "CREATE INDEX IF NOT EXISTS t1_a ON t1 (b)",
+      "CREATE INDEX knows_source ON knows (source_id)",
+      "CREATE INDEX ON t2 USING hnsw (x vector_l2_ops)",
+      "CREATE TABLE near (id int PRIMARY KEY, e vector(3))",
+      "INSERT INTO near VALUES (0, '[0,1,0]'), (1, '[1,1,0]'), (2, '[2,1,0]'), (3, '[3,1,0]'), (4, '[4,1,0]'), (5, '[5,1,0]'),"
+          + " (6, '[6,1,0]'), (7, '[7,1,0]')",
+      "CREATE INDEX ON near USING hnsw (e vector_l2_ops) WITH (m = 16, ef_construction = 64)");
+
   private static final List<String> ERRORS = List.of(
+      "CREATE INDEX t1_a ON t1 (b)",
+      "CREATE INDEX ON t1 (nosuch)",
+      "CREATE INDEX ON nosuch (a)",
+      "CREATE UNIQUE INDEX ON t4 (d)",
+      "INSERT INTO t1 VALUES (9, 'x')",
+      "CREATE INDEX ON near USING hnsw (e)",
+      "CREATE INDEX ON near USING hnsw (e vector_cosine_ops) WITH (m = 1)",
       "CREATE TABLE t1 (a int)",
       "CREATE TABLE e (a int, a text)",
       "CREATE TABLE e (xmin int)",
@@ -135,6 +153,12 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
           run(postgres, write);
           run(arcade, write);
         }
+
+        for (final String index : INDEXES) {
+          run(postgres, index);
+          run(arcade, index);
+        }
+        same(postgres, arcade, "SELECT id FROM near ORDER BY e <-> '[2.2,1,0]' LIMIT 4");
 
         for (final String table : List.of("t1", "t3", "t4"))
           same(postgres, arcade, "SELECT * FROM " + table + " ORDER BY 1");
