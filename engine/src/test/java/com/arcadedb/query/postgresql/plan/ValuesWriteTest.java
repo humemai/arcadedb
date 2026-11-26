@@ -208,15 +208,10 @@ class ValuesWriteTest extends TestHelper {
   }
 
   @Test
-  void anEmbeddedDocumentIsNotWrittenYetAndANarrowArrayKeepsItsRange() {
-    database.transaction(() -> {
-      database.getSchema().createDocumentType("place").createProperty("city", Type.STRING);
-      database.getSchema().createDocumentType("visit").createProperty("at", Type.EMBEDDED, "place");
-      database.getSchema().getType("visit").createProperty("small", Type.ARRAY_OF_SHORTS);
-    });
-    assertState("INSERT INTO visit (at) VALUES ('{\"city\": \"Delft\"}')", "0A000");
+  void aNarrowArrayKeepsItsRange() {
+    database.transaction(() -> database.getSchema().createDocumentType("visit").createProperty("small", Type.ARRAY_OF_SHORTS));
     assertState("INSERT INTO visit (small) VALUES ('{40000}')", "22003");
-    command("INSERT INTO visit (at, small) VALUES (NULL, '{1,2}')");
+    command("INSERT INTO visit (small) VALUES ('{1,2}')");
     assertThat(list(single("sql", "SELECT FROM visit").getProperty("small"))).hasSize(2);
   }
 }

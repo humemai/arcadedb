@@ -18,9 +18,14 @@
  */
 package com.arcadedb.postgres;
 
+import com.arcadedb.database.Database;
 import com.arcadedb.query.postgresql.ValuesFixture;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
+import com.arcadedb.schema.Type;
+import com.arcadedb.schema.VertexType;
+import com.arcadedb.serializer.json.JSONArray;
+import com.arcadedb.serializer.json.JSONObject;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
@@ -28,6 +33,7 @@ import java.sql.DriverManager;
 import java.sql.ParameterMetaData;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
@@ -108,6 +114,26 @@ class PostgreSQLValuesWireTest extends PostgresWireProtocolTestBase {
     assertThat(((Number) ((Map<?, ?>) row.getProperty("meta")).get("k")).intValue()).isEqualTo(2);
     assertThat((byte[]) row.getProperty("payload")).containsExactly(0xde, 0xad);
     assertThat((float[]) row.getProperty("embedding")).containsExactly(1f, 0f, 0.5f);
+  }
+
+  /** An embedded document is written from its object and sent back as that object, with no @type or @cat (fork issue #145). */
+  @Test
+  void embeddedDocumentsReadAsTheObjectsThatWereWritten() throws SQLException {
+    final Database database = getServerDatabase(0, getDatabaseName());
+    database.transaction(() -> {
+      database.getSchema().createDocumentType("address").createProperty("city", Type.STRING);
+      final VertexType person = database.getSchema().createVertexType("person");
+      person.createProperty("home", Type.EMBEDDED, "address");
+      person.createProperty("past", Type.LIST, "address");
+    });
+    try (final Connection connection = connect(); final Statement statement = connection.createStatement()) {
+      statement.executeUpdate("INSERT INTO person (home, past) VALUES ('{\"city\": \"Delft\"}', '[{\"city\": \"Gouda\"}]')");
+      try (final java.sql.ResultSet rows = statement.executeQuery("SELECT home, past FROM person")) {
+        assertThat(rows.next()).isTrue();
+        assertThat(new JSONObject(rows.getString("home")).toMap()).isEqualTo(Map.of("city", "Delft"));
+        assertThat(new JSONArray(rows.getString("past")).toList()).isEqualTo(List.of(Map.of("city", "Gouda")));
+      }
+    }
   }
 
   private Result stored(final int mid) {

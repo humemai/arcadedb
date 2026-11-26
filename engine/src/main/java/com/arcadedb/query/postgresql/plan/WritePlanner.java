@@ -874,7 +874,7 @@ public final class WritePlanner {
    */
   private Object toEngine(final Database db, final Table table, final Column column, final Object value) {
     if (StoredValues.applies(column))
-      return StoredValues.of(table, column, value);
+      return StoredValues.of(db, table, column, value);
     if (!column.isLink())
       return value;
     final String text = (String) value;

@@ -62,6 +62,23 @@ CREATE TABLE knows (
 
 `NOT NULL`, unique keys, defaults, and the dimensions of a `vector(n)` are kept by the schema of the engine, so they hold for writes of every language.
 
+## Embedded documents
+
+A property declared `EMBEDDED OF address`, `LIST OF address`, or `MAP OF address`, for a document type `address`, is a `jsonb` column. `CREATE TABLE` does not declare one; use ArcadeDB `sql`.
+
+```sql
+INSERT INTO person (name, home) VALUES ('Fay', '{"city": "Delft", "zip": "1000AA"}');
+SELECT home FROM person WHERE name = 'Fay';
+```
+
+| area | `jsonb` in PostgreSQL | `postgresql` |
+| --- | --- | --- |
+| What is stored | the JSON | an embedded document of the type for the object, for each element of the array (`LIST`), or for each value of the object (`MAP`), which `sql` and openCypher read as such |
+| Reading | the JSON | the object, without `@type` and `@cat`. A document of a subtype, which only another language writes, keeps both keys |
+| What can be written | any JSON | an object that reads back as written. Refused with `0A000`: a value that the type converts to another one (a number for a text property, `"2026-1-5"` for a date), a `null` in place of a document in an array or a map, and the keys `@type` and `@cat` |
+| Constraints | `CHECK` | those of the document type hold, so a missing `MANDATORY` property is `23502` |
+| Not written | | an `EMBEDDED` property with no declared type, and a collection of links (`0A000`) |
+
 ## Choices, open to change
 
 | # | choice | the main alternative |
