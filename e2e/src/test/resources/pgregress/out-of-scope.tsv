@@ -1,0 +1,34 @@
+# The closed list of what the regression harness (fork issue #119) counts as out of scope. This file is the only place that says
+# so, and a change to it goes through a pull request. Everything else that the postgresql language cannot do is refused.
+#
+# The reasons are the three of the issue:
+#   1  PostgreSQL itself answers differently in two runs on two fresh databases (now(), random(), object ids)
+#   2  the statement shows PostgreSQL internals that the language does not model: EXPLAIN plan text, pg_catalog, and system
+#      columns such as ctid
+#   3  the statement administers the PostgreSQL server: tablespaces, replication, and server-side C code
+#
+# Columns, tab separated:
+#   id       names the entry in the results, each has its own count
+#   reason   1, 2 or 3
+#   pattern  a regular expression on the statement in one line (words in lower case, one blank between tokens, every string
+#            as '?' except the one after "language"), or:
+#              @catalog-relation  a word of the statement is the name of a table or view of pg_catalog on the server
+#              @server-function   the statement calls a function that a statement before it defined with server-side C code
+#              @two-runs          measured, never matched: the two runs of PostgreSQL answered differently
+#   why      the reason in words, as it stands in the results
+# The first entry that matches a statement counts.
+id	reason	pattern	why
+tablespace	3	^(create|alter|drop) tablespace\b	administers tablespaces
+publication	3	^(create|alter|drop) (publication|subscription)\b	administers logical replication
+replication-function	3	\bpg_((create|drop|copy)_(logical|physical)_replication_slot|replication_slot_advance|replication_origin_\w+|logical_slot_\w+|logical_emit_message) \(	administers replication
+c-function	3	^create (or replace )?(function|procedure) .* language (c|internal)\b	defines server-side C code
+c-function-call	3	@server-function	calls server-side C code that the regression files define
+language-handler	3	^(create|alter|drop) (or replace )?(trusted )?(procedural )?language\b	installs a procedural language, which is server-side C code
+extension	3	^(create|alter|drop) extension\b	installs an extension, which is server-side C code
+access-method	3	^(create|drop) access method\b	defines an access method, which is server-side C code
+load	3	^load\b	loads server-side C code
+explain	2	^explain\b	EXPLAIN shows the plan of PostgreSQL, which the language does not model
+catalog-qualified	2	(?<![\w$])pg_catalog \.	names an object of pg_catalog
+catalog-relation	2	@catalog-relation	reads or changes a table or view of pg_catalog
+system-column	2	(?<![\w$"])(ctid|xmin|xmax|cmin|cmax|tableoid)(?![\w$"])	uses a system column
+two-runs	1	@two-runs	PostgreSQL answers it differently in two runs on two fresh databases

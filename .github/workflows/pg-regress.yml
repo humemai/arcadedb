@@ -1,0 +1,113 @@
+#
+# Copyright © 2021-present Arcade Data Ltd (info@arcadedata.com)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
+# SPDX-License-Identifier: Apache-2.0
+#
+
+# Fork only (humemai/arcadedb, PostgreSQL-style SQL prototype): PostgreSQL's regression files, statement by statement, on
+# PostgreSQL 18.7 and on the postgresql language (fork issue #119, rules in docs/postgresql-regression-rules.md). The files are
+# fetched at the tag by .github/scripts/pg_regress.sh and are not committed.
+#
+# A pull request that changes the harness runs its self-tests and the eight files of the syntax corpus, with PostgreSQL on both
+# sides and with ArcadeDB. The job fails when the harness fails, never because of a verdict of ArcadeDB. Start it by hand for
+# any other set of files ("all" for every file). Drop this file when anything goes upstream.
+name: PostgreSQL prototype - regression files
+
+on:
+  pull_request:
+    branches:
+      - feat/postgresql-prototype
+    paths:
+      - ".github/workflows/pg-regress.yml"
+      - ".github/scripts/pg_regress.sh"
+      - "e2e/src/test/java/com/arcadedb/e2e/pgparity/Regress*.java"
+      - "e2e/src/test/java/com/arcadedb/e2e/pgparity/PgRegress*.java"
+      - "e2e/src/test/java/com/arcadedb/e2e/pgparity/ArcadeSide.java"
+      - "e2e/src/test/java/com/arcadedb/e2e/pgparity/PostgresServer.java"
+      - "e2e/src/test/resources/pgregress/**"
+  workflow_dispatch:
+    inputs:
+      files:
+        description: "Regression files, separated by commas, or all. Empty: the eight files of the syntax corpus"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  regress:
+    name: PostgreSQL regression files
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    env:
+      PGREGRESS_FILES: ${{ inputs.files }}
+      PGREGRESS_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK 21 and Maven
+        uses: ./.github/actions/pg-maven-setup
+
+      - name: Build the e2e module and what it depends on
+        id: build
+        run: ./mvnw install -DskipTests --batch-mode --errors --show-version -pl e2e -am
+
+      - name: Self-tests, and the files with PostgreSQL on both sides
+        run: .github/scripts/pg_regress.sh --skip-build --self-test --subject postgresql "$PGREGRESS_FILES"
+
+      - name: The files on ArcadeDB
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: .github/scripts/pg_regress.sh --skip-build --subject arcadedb "$PGREGRESS_FILES"
+
+      - name: Counts of the run
+        if: always()
+        run: |
+          for subject in arcadedb postgresql; do
+            if [ -f "e2e/target/pgregress/${subject}/summary.md" ]; then
+              {
+                echo "## PostgreSQL regression files: ${subject}"
+                echo
+                cat "e2e/target/pgregress/${subject}/summary.md"
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+      - name: Upload the verdicts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pgregress-results
+          path: e2e/target/pgregress/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload the test reports of a red run
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pgregress-test-reports
+          path: e2e/target/failsafe-reports/*
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Where the Maven files came from
+        if: always()
+        run: bash .github/scripts/pg_maven_report.sh
