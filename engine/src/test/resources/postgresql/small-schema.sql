@@ -40,7 +40,7 @@ CREATE TABLE orders (
   total numeric,
   CONSTRAINT orders_pkey PRIMARY KEY (id),
   CONSTRAINT orders_oid_key UNIQUE (oid),
-  CONSTRAINT orders_buyer_fkey FOREIGN KEY (buyer) REFERENCES person (id)
+  CONSTRAINT orders_buyer_fkey FOREIGN KEY (buyer) REFERENCES person (id) NOT ENFORCED
 );
 INSERT INTO orders (id, address, buyer, oid, pid, placed, tags, total) VALUES ('#3:0', '{"city":"Delft","zip":"1000AA"}'::jsonb, '#2:0', 100, 1, '2026-01-05', ARRAY['gift', 'express']::text[], 25.50);
 INSERT INTO orders (id, address, buyer, oid, pid, placed, tags, total) VALUES ('#3:1', '{"city":"Delft","zip":"1000AA"}'::jsonb, '#2:0', 101, 1, '2026-01-07', ARRAY['gift']::text[], 10.00);
@@ -55,8 +55,8 @@ CREATE TABLE works_at (
   target_id text NOT NULL,
   since int4,
   CONSTRAINT works_at_pkey PRIMARY KEY (id),
-  CONSTRAINT works_at_source_id_fkey FOREIGN KEY (source_id) REFERENCES person (id),
-  CONSTRAINT works_at_target_id_fkey FOREIGN KEY (target_id) REFERENCES company (id)
+  CONSTRAINT works_at_source_id_fkey FOREIGN KEY (source_id) REFERENCES person (id) ON DELETE CASCADE,
+  CONSTRAINT works_at_target_id_fkey FOREIGN KEY (target_id) REFERENCES company (id) ON DELETE CASCADE
 );
 INSERT INTO works_at (id, source_id, target_id, since) VALUES ('#4:0', '#2:0', '#1:0', 2019);
 INSERT INTO works_at (id, source_id, target_id, since) VALUES ('#4:1', '#2:0', '#1:0', 2022);

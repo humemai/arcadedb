@@ -47,9 +47,11 @@ import java.util.Map;
  * @param referencedTable   the table a foreign key refers to, {@code null} for a primary or unique key
  * @param referencedColumns the columns of the referenced table, in the order of the referenced key; empty for a primary or unique key
  * @param referencedKey     the name of the primary or unique key that a foreign key refers to, {@code null} for a primary or unique key
+ * @param cascadesOnDelete  whether deleting the referenced row deletes the referencing one, see {@link Table.ForeignKey#cascadesOnDelete()}
+ * @param enforced          whether the engine holds the constraint, see {@link Table.ForeignKey#enforced()}; a primary or unique key is held
  */
 record Constraint(String name, String table, String type, List<String> columns, String referencedTable,
-    List<String> referencedColumns, String referencedKey) {
+    List<String> referencedColumns, String referencedKey, boolean cascadesOnDelete, boolean enforced) {
 
   static final String PRIMARY_KEY = "PRIMARY KEY";
   static final String UNIQUE      = "UNIQUE";
@@ -57,6 +59,10 @@ record Constraint(String name, String table, String type, List<String> columns, 
 
   boolean isForeignKey() {
     return FOREIGN_KEY.equals(type);
+  }
+
+  private static Constraint key(final String table, final String type, final Table.Key key) {
+    return new Constraint(key.name(), table, type, key.columns(), null, List.of(), null, false, true);
   }
 
   /**
@@ -70,14 +76,14 @@ record Constraint(String name, String table, String type, List<String> columns, 
     final List<Constraint> out = new ArrayList<>();
     for (final Table table : catalog.tables()) {
       if (table.primaryKey() != null)
-        out.add(new Constraint(table.primaryKey().name(), table.name(), PRIMARY_KEY, table.primaryKey().columns(), null, List.of(),
-            null));
+        out.add(key(table.name(), PRIMARY_KEY, table.primaryKey()));
       for (final Table.Key key : table.uniqueKeys())
-        out.add(new Constraint(key.name(), table.name(), UNIQUE, key.columns(), null, List.of(), null));
+        out.add(key(table.name(), UNIQUE, key));
       for (final Table.ForeignKey foreignKey : table.foreignKeys()) {
         final Table referenced = byName.get(foreignKey.referencedTable());
         out.add(new Constraint(foreignKey.name(), table.name(), FOREIGN_KEY, foreignKey.columns(), referenced.name(),
-            foreignKey.referencedColumns(), referenced.keyOn(foreignKey.referencedColumns()).name()));
+            foreignKey.referencedColumns(), referenced.keyOn(foreignKey.referencedColumns()).name(), foreignKey.cascadesOnDelete(),
+            foreignKey.enforced()));
       }
     }
     return out;

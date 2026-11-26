@@ -170,17 +170,19 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
   void getImportedKeysOfAnEdgeTableAreItsTwoEnds() throws Exception {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
       assertThat(rows(connection.getMetaData().getImportedKeys(null, null, "works_at"), "PKTABLE_NAME", "PKCOLUMN_NAME",
-          "FKTABLE_NAME", "FKCOLUMN_NAME", "KEY_SEQ", "FK_NAME", "PK_NAME")).containsExactlyInAnyOrder(
-          "person|id|works_at|source_id|1|works_at_source_id_fkey|person_pkey",
-          "company|id|works_at|target_id|1|works_at_target_id_fkey|company_pkey");
+          "FKTABLE_NAME", "FKCOLUMN_NAME", "KEY_SEQ", "FK_NAME", "PK_NAME", "DELETE_RULE")).containsExactlyInAnyOrder(
+          // 0 is importedKeyCascade: deleting a vertex deletes its edges
+          "person|id|works_at|source_id|1|works_at_source_id_fkey|person_pkey|0",
+          "company|id|works_at|target_id|1|works_at_target_id_fkey|company_pkey|0");
     }
   }
 
   @Test
   void getImportedKeysOfADocumentTableIsItsLink() throws Exception {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
+      // 3 is importedKeyNoAction
       assertThat(rows(connection.getMetaData().getImportedKeys(null, null, "orders"), "PKTABLE_NAME", "PKCOLUMN_NAME", "FKTABLE_NAME",
-          "FKCOLUMN_NAME", "FK_NAME")).containsExactly("person|id|orders|buyer|orders_buyer_fkey");
+          "FKCOLUMN_NAME", "FK_NAME", "DELETE_RULE")).containsExactly("person|id|orders|buyer|orders_buyer_fkey|3");
     }
   }
 
@@ -217,8 +219,20 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
       assertThat(query(connection, "SELECT conname, pg_catalog.pg_get_constraintdef(oid, true) FROM pg_catalog.pg_constraint "
           + "WHERE conrelid = 'works_at'::regclass ORDER BY conname")).containsExactly("works_at_pkey|PRIMARY KEY (id)",
-          "works_at_source_id_fkey|FOREIGN KEY (source_id) REFERENCES person(id)",
-          "works_at_target_id_fkey|FOREIGN KEY (target_id) REFERENCES company(id)");
+          "works_at_source_id_fkey|FOREIGN KEY (source_id) REFERENCES person(id) ON DELETE CASCADE",
+          "works_at_target_id_fkey|FOREIGN KEY (target_id) REFERENCES company(id) ON DELETE CASCADE");
+      assertThat(query(connection, "SELECT conname, pg_catalog.pg_get_constraintdef(oid, true) FROM pg_catalog.pg_constraint "
+          + "WHERE conname = 'orders_buyer_fkey'")).containsExactly(
+          "orders_buyer_fkey|FOREIGN KEY (buyer) REFERENCES person(id) NOT ENFORCED");
+    }
+  }
+
+  @Test
+  void aForeignKeySaysWhatTheEngineDoesOnDelete() throws Exception {
+    try (final Connection connection = connect(LANGUAGE_OPTION)) {
+      assertThat(query(connection, "SELECT conname, confdeltype, conenforced, convalidated FROM pg_catalog.pg_constraint "
+          + "WHERE contype = 'f' ORDER BY conname")).containsExactly("orders_buyer_fkey|a|f|f", "works_at_source_id_fkey|c|t|t",
+          "works_at_target_id_fkey|c|t|t");
     }
   }
 

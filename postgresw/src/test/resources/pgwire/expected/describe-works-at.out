@@ -8,6 +8,6 @@
 Indexes:
     "works_at_pkey" PRIMARY KEY, btree (id)
 Foreign-key constraints:
-    "works_at_source_id_fkey" FOREIGN KEY (source_id) REFERENCES person(id)
-    "works_at_target_id_fkey" FOREIGN KEY (target_id) REFERENCES company(id)
+    "works_at_source_id_fkey" FOREIGN KEY (source_id) REFERENCES person(id) ON DELETE CASCADE
+    "works_at_target_id_fkey" FOREIGN KEY (target_id) REFERENCES company(id) ON DELETE CASCADE
 

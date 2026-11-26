@@ -250,10 +250,12 @@ final class PostgresCatalogIndexes {
    * @param oid             the OID of the constraint
    * @param attnums         the numbers of the referencing columns in the table
    * @param referencedIndex the OID of the index of the key it refers to, {@code pg_constraint.conindid}
+   * @param cascades        whether deleting the referenced row deletes the referencing one: an end of an edge
+   * @param enforced        whether the engine holds the key: not for a {@code LINK} property
    */
   record Reference(String name, DocumentType type, int tableOid, int oid, String[] columns, int[] attnums,
                    DocumentType referencedType, int referencedTableOid, String[] referencedColumns, int[] referencedAttnums,
-                   int referencedIndex) {
+                   int referencedIndex, boolean cascades, boolean enforced) {
   }
 
   /** The indexes and the foreign keys of a database as a statement of the {@code postgresql} language sees them. */
@@ -380,7 +382,7 @@ final class PostgresCatalogIndexes {
         final Info target = keyIndexes.getOrDefault(referenced.name(), Map.of()).get(key.referencedColumns());
         references.add(new Reference(key.name(), type, tableOid.applyAsInt(type), freeOid("constraint:" + key.name(), used, firstOid,
             oidSpace), columns, attnums, referenced.documentType(), tableOid.applyAsInt(referenced.documentType()),
-            referencedColumns, referencedAttnums, target == null ? 0 : target.oid()));
+            referencedColumns, referencedAttnums, target == null ? 0 : target.oid(), key.cascadesOnDelete(), key.enforced()));
       }
     }
     return new Keys(infos, references);
@@ -583,7 +585,8 @@ final class PostgresCatalogIndexes {
   static Object[] constraintValues(final Info index, final int schemaOid) {
     return new Object[] { "oid", index.constraintOid(), "conname", index.name(), "connamespace", schemaOid, "contype",
         index.primary() ? "p" : "u",
-        "condeferrable", Boolean.FALSE, "condeferred", Boolean.FALSE, "convalidated", Boolean.TRUE, "conrelid", index.tableOid(),
+        "condeferrable", Boolean.FALSE, "condeferred", Boolean.FALSE, "conenforced", Boolean.TRUE, "convalidated", Boolean.TRUE,
+        "conrelid", index.tableOid(),
         "contypid", 0, "conindid", index.oid(), "conparentid", 0, "confrelid", 0, "confupdtype", " ", "confdeltype", " ",
         "confmatchtype", " ", "conislocal", Boolean.TRUE, "coninhcount", 0, "connoinherit", Boolean.TRUE, "conkey",
         keyNumbers(index) };
@@ -612,16 +615,18 @@ final class PostgresCatalogIndexes {
   }
 
   /**
-   * The {@code pg_constraint} columns of a foreign key, name and value in turn. The actions are NO ACTION ({@code a}) and the match
-   * type is SIMPLE ({@code s}), what the {@code referential_constraints} view of the language says too (NO ACTION, match
-   * {@code NONE}): the language declares no other rule, so this catalog does not either.
+   * The {@code pg_constraint} columns of a foreign key, name and value in turn. The update action is NO ACTION ({@code a}) and the
+   * match type is SIMPLE ({@code s}). The delete action and {@code conenforced} say what the engine does, as the
+   * {@code referential_constraints} and {@code table_constraints} views of the language do: the key of an end of an edge is CASCADE
+   * ({@code c}), and the key of a {@code LINK} property is not enforced, which PostgreSQL also marks as not validated.
    */
   static Object[] referenceValues(final Reference key, final int schemaOid) {
     return new Object[] { "oid", key.oid(), "conname", key.name(), "connamespace", schemaOid, "contype", "f", "condeferrable",
-        Boolean.FALSE, "condeferred", Boolean.FALSE, "convalidated", Boolean.TRUE, "conrelid", key.tableOid(), "contypid", 0,
-        "conindid", key.referencedIndex(), "conparentid", 0, "confrelid", key.referencedTableOid(), "confupdtype", "a",
-        "confdeltype", "a", "confmatchtype", "s", "conislocal", Boolean.TRUE, "coninhcount", 0, "connoinherit", Boolean.TRUE,
-        "conkey", numbers(key.attnums()), "confkey", numbers(key.referencedAttnums()) };
+        Boolean.FALSE, "condeferred", Boolean.FALSE, "conenforced", key.enforced(), "convalidated", key.enforced(), "conrelid",
+        key.tableOid(), "contypid", 0, "conindid", key.referencedIndex(), "conparentid", 0, "confrelid", key.referencedTableOid(),
+        "confupdtype", "a", "confdeltype", key.cascades() ? "c" : "a", "confmatchtype", "s", "conislocal", Boolean.TRUE,
+        "coninhcount", 0, "connoinherit", Boolean.TRUE, "conkey", numbers(key.attnums()), "confkey",
+        numbers(key.referencedAttnums()) };
   }
 
   private static List<Integer> numbers(final int[] attnums) {
@@ -631,7 +636,10 @@ final class PostgresCatalogIndexes {
     return numbers;
   }
 
-  /** {@code pg_get_constraintdef} of a foreign key, as PostgreSQL prints it: {@code FOREIGN KEY (a) REFERENCES t(id)}. */
+  /**
+   * {@code pg_get_constraintdef} of a foreign key, as PostgreSQL prints it: {@code FOREIGN KEY (a) REFERENCES t(id)}, followed by
+   * {@code ON DELETE CASCADE} for the end of an edge and by {@code NOT ENFORCED} for a {@code LINK} property.
+   */
   static String referenceDefinition(final Reference key) {
     final StringBuilder definition = new StringBuilder("FOREIGN KEY (");
     for (int k = 0; k < key.columns().length; k++) {
@@ -645,7 +653,12 @@ final class PostgresCatalogIndexes {
         definition.append(", ");
       definition.append(quoteIdentifier(key.referencedColumns()[k]));
     }
-    return definition.append(')').toString();
+    definition.append(')');
+    if (key.cascades())
+      definition.append(" ON DELETE CASCADE");
+    if (!key.enforced())
+      definition.append(" NOT ENFORCED");
+    return definition.toString();
   }
 
   /** The {@code pg_am} columns of an access method. */

@@ -94,6 +94,19 @@ public final class Table {
       /** {@code target_id}, from the declared target table of the edge type. */
       EDGE_TARGET
     }
+
+    /** Whether this is an end of an edge: deleting the vertex it refers to deletes the edge, which is {@code ON DELETE CASCADE}. */
+    public boolean cascadesOnDelete() {
+      return origin != Origin.LINK_PROPERTY;
+    }
+
+    /**
+     * Whether the engine holds the key. It holds the ends of an edge. It does not hold a {@code LINK} property: the record a link
+     * points at can be deleted and the link stays, so the key is {@code NOT ENFORCED}.
+     */
+    public boolean enforced() {
+      return origin != Origin.LINK_PROPERTY;
+    }
   }
 
   private final String              name;

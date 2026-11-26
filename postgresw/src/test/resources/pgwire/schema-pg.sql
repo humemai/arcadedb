@@ -5,8 +5,8 @@
 -- the ends of an edge first, then the declared properties by name. Record ids are made up here: no case prints one.
 CREATE TABLE person (id text PRIMARY KEY, age integer, city varchar, name varchar, pid integer UNIQUE);
 CREATE TABLE company (id text PRIMARY KEY, cid integer UNIQUE, name varchar);
-CREATE TABLE works_at (id text PRIMARY KEY, source_id text NOT NULL REFERENCES person (id), target_id text NOT NULL REFERENCES company (id), since integer);
-CREATE TABLE orders (id text PRIMARY KEY, address jsonb, buyer text REFERENCES person (id), oid integer UNIQUE, pid integer, placed date, tags text[], total numeric);
+CREATE TABLE works_at (id text PRIMARY KEY, source_id text NOT NULL REFERENCES person (id) ON DELETE CASCADE, target_id text NOT NULL REFERENCES company (id) ON DELETE CASCADE, since integer);
+CREATE TABLE orders (id text PRIMARY KEY, address jsonb, buyer text REFERENCES person (id) NOT ENFORCED, oid integer UNIQUE, pid integer, placed date, tags text[], total numeric);
 
 INSERT INTO person VALUES ('p1', 36, 'Delft', 'Ada', 1), ('p2', 41, 'Delft', 'Bo', 2), ('p3', NULL, 'Leiden', 'Cy', 3), ('p4', 29, 'Leiden', 'Di', 4), ('p5', 52, 'Utrecht', 'Ed', 5);
 INSERT INTO company VALUES ('c10', 10, 'Acme'), ('c20', 20, 'Birch'), ('c30', 30, 'Cedar');
