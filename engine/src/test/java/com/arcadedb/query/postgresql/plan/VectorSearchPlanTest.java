@@ -204,6 +204,18 @@ class VectorSearchPlanTest extends TestHelper {
     assertThat(plan(IP)).startsWith("+ VECTOR INDEX SEARCH item[embedding] k=3 (DOT_PRODUCT)");
   }
 
+  /**
+   * The same on the {@code vec-small} rows themselves, where {@code c} is not a unit vector (fork issue #11): the index of four
+   * rows reads all of them and gives the order of the exact scan.
+   */
+  @Test
+  void dotProductIndexOnVecSmallGivesTheOrderOfTheExactScan() {
+    VecSmallFixture.createIndex(database, "DOT_PRODUCT");
+    VecSmallFixture.load(database);
+    assertThat(column(IP)).containsExactly("c", "a", "b");
+    assertThat(plan(IP)).startsWith("+ VECTOR INDEX SEARCH item[embedding] k=3 (DOT_PRODUCT)");
+  }
+
   @Test
   void theIndexSuppliesCandidatesAndTheDistanceInTheSelectListIsTheExactOne() {
     VecSmallFixture.createIndex(database, "EUCLIDEAN");

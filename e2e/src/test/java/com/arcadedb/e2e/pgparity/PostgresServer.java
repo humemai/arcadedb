@@ -76,7 +76,12 @@ final class PostgresServer implements AutoCloseable {
   }
 
   static PostgresServer start() throws Exception {
-    final GenericContainer<?> container = new GenericContainer<>(IMAGE)
+    return start(IMAGE);
+  }
+
+  /** {@link #start()} with another image of the same family, one that carries an extension. */
+  static PostgresServer start(final String image) throws Exception {
+    final GenericContainer<?> container = new GenericContainer<>(image)
         .withExposedPorts(5432)
         // The engine orders and compares text by code point (the byte order of UTF-8), which is the C collation of PostgreSQL, so the
         // server the engine is compared with runs with C too. The C locale makes initdb pick SQL_ASCII unless the encoding is given.
@@ -86,7 +91,7 @@ final class PostgresServer implements AutoCloseable {
         .withStartupTimeout(Duration.ofSeconds(120))
         // the image logs this twice: once for the temporary server of the init scripts, once for the real one
         .waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*\\s", 2));
-    System.out.println("pgparity: starting " + IMAGE);
+    System.out.println("pgparity: starting " + image);
     container.start();
 
     final String url = "jdbc:postgresql://" + container.getHost() + ":" + container.getMappedPort(5432) + "/parity";
