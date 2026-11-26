@@ -47,7 +47,7 @@ The 25 questions of [#1](https://github.com/humemai/arcadedb/issues/1) about the
 
 | # | question | answer |
 | ---: | --- | --- |
-| 22 | Support, place, and sameness | A join is supported by an edge pattern, a `LINK` to `id`, or an index on a join key. The warning goes to the server log only. The same statement is the parsed text with its literals replaced. |
+| 22 | Support, place, and sameness | A join is supported by an edge pattern, a `LINK` to the record id of its target, or an index on a join key. The warning goes to the server log only. The same statement is the parsed text with its literals replaced. |
 
 ## Wire and catalog
 
