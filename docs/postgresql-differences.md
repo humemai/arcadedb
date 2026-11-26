@@ -1,6 +1,6 @@
 # How `postgresql` differs from PostgreSQL
 
-The `postgresql` language (a prototype in the fork `humemai/arcadedb`) aims to give PostgreSQL 18's answer or to refuse with an error. This page lists where it behaves differently, in three groups: what comes from the ArcadeDB engine, what is a choice and open to change, and what is not built yet. **Which of the choices would you change?**
+The `postgresql` language (a prototype in the fork `humemai/arcadedb`) aims to give PostgreSQL 18's answer or to refuse with an error. It is for tables: rows, keys, and joins. Questions about connections, such as paths of any length or graph patterns, belong in openCypher. It cannot match PostgreSQL in everything, because ArcadeDB stores records rather than tables, so the aim is that most PostgreSQL use works as it does there, and that every known difference is listed here. The page has four groups: what comes from the ArcadeDB engine, what is a choice and open to change, what is not built yet, and the answers that are still wrong. **Which of the choices would you change?**
 
 ## Example: a join through an edge type
 
@@ -28,6 +28,7 @@ Changing these means changing the ArcadeDB engine.
 | Two writers on one row | by default the second waits, then writes | neither waits; the commit that comes last fails with `40001` and has to be retried |
 | Savepoints | supported | the language refuses `SAVEPOINT`; over the wire it is accepted and does nothing, and `ROLLBACK TO SAVEPOINT` is refused |
 | Ends of an edge type | a foreign key is declared | the schema does not record which types an edge type connects, so the prototype needs a declaration (choice 4) |
+| A foreign key on a `LINK` column | enforced: the referenced row cannot be deleted, or the declared `ON DELETE` rule runs | listed in `information_schema`, but not enforced: the delete succeeds, and a later insert can take the freed record id, so the link then points at another record, in `sql` and openCypher too (seen on `dc591c4d1c`) |
 
 ## Choices, open to change
 
@@ -62,5 +63,6 @@ These should match PostgreSQL and do not yet.
 | --- | --- |
 | `ILIKE` on non-ASCII letters | folds them, while PostgreSQL with the `C` collation does not |
 | `CURRENT_DATE`, `LOCALTIMESTAMP` | read the clock for each row, not once per transaction (from reading the code, not tested) |
+| the foreign keys of an edge table in `information_schema.referential_constraints` | `delete_rule` says `NO ACTION`, while deleting a vertex deletes its edges, which PostgreSQL calls `CASCADE` |
 
 More detail: [supported syntax](postgresql-supported-syntax.md), the [decisions](postgresql-decisions.md), and the design issues [#1](https://github.com/humemai/arcadedb/issues/1), [#38](https://github.com/humemai/arcadedb/issues/38), [#29](https://github.com/humemai/arcadedb/issues/29), and [#10](https://github.com/humemai/arcadedb/issues/10).

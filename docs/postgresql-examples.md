@@ -4,7 +4,7 @@ Fork only (`humemai/arcadedb`, branch `feat/postgresql-prototype`). This page sh
 
 The page starts from the nine tasks of the timed study on fork issue #13, with sample values: point lookup, latest rows, grouped count and sum, filtered read, neighbour list, single insert, update by key, delete by key, and batch insert.
 
-**Which one to write.** Write PostgreSQL SQL (the `postgresql` language) for records: filters, totals, and changes. Write openCypher when the question is about connections, especially paths of varying length. Both read and write the same records.
+**Which one to write.** Write PostgreSQL SQL (the `postgresql` language) for records: filters, totals, and changes. Write openCypher when the question is about connections, especially paths of varying length. Both work on the same stored records, but each shows its own view of them: `postgresql` shows only the properties that a type declares, and openCypher matches vertex and edge types only, so a document is not a node there.
 
 ## How to read this page
 
