@@ -166,6 +166,62 @@ class TraversalSmallFixtureTest extends TestHelper {
     rule(true);
   }
 
+  // ---- the rows of the openCypher MATCH statement over the same records (fork issue #8) ----
+
+  private static final String CYPHER_FIRST = "MATCH (p:person)-[w:works_at]->(c:company) RETURN p.name AS a, c.name AS b, w.since AS s";
+
+  private List<List<Object>> cypherRows(final String cypher) {
+    try (final ResultSet resultSet = database.query("opencypher", cypher)) {
+      final List<List<Object>> out = new ArrayList<>();
+      while (resultSet.hasNext()) {
+        final Result result = resultSet.next();
+        final List<Object> values = new ArrayList<>();
+        for (final String name : List.of("a", "b", "s"))
+          if (result.getPropertyNames().contains(name))
+            values.add(result.getProperty(name));
+        out.add(values);
+      }
+      return out;
+    }
+  }
+
+  private void assertSameRowsAsCypher(final String sql, final String cypher) {
+    final List<String> expected = multiset(cypherRows(cypher));
+    assertThat(expected).as(cypher).isNotEmpty();
+    rule(true);
+    assertThat(multiset(rows(sql))).as("rule on: %s", sql).isEqualTo(expected);
+    rule(false);
+    assertThat(multiset(rows(sql))).as("rule off: %s", sql).isEqualTo(expected);
+    rule(true);
+  }
+
+  @Test
+  void theRowsAreTheRowsOfTheCypherMatchStatement() {
+    assertSameRowsAsCypher(FIRST, CYPHER_FIRST);
+    assertSameRowsAsCypher(FIRST_ONE,
+        "MATCH (p:person)-[w:works_at]->(c:company) WHERE p.pid = 1 RETURN p.name AS a, c.name AS b, w.since AS s");
+    assertSameRowsAsCypher(LEFT,
+        "MATCH (p:person) OPTIONAL MATCH (p)-[w:works_at]->(c:company) RETURN p.name AS a, c.name AS b, w.since AS s");
+    assertSameRowsAsCypher(INCOMING,
+        "MATCH (c:company) OPTIONAL MATCH (c)<-[w:works_at]-(p:person) RETURN c.name AS a, p.name AS b");
+    assertSameRowsAsCypher(INCOMING_ONE,
+        "MATCH (c:company) WHERE c.cid = 10 OPTIONAL MATCH (c)<-[w:works_at]-(p:person) RETURN c.name AS a, p.name AS b");
+  }
+
+  @Test
+  void withBothEndsBoundTheRowsAreTheRowsOfCypherAndParallelEdgesStayTwoRows() {
+    final String both = "MATCH (p:person)-[w:works_at]->(c:company) WHERE p.pid = 1 AND c.cid = 10 "
+        + "RETURN p.name AS a, c.name AS b, w.since AS s";
+    assertThat(cypherRows(both)).hasSize(2);
+    // the edge between the two ends in the FROM order: walked from the bound start, the far end read for each edge row
+    assertSameRowsAsCypher(FIRST + " WHERE p.pid = 1 AND c.cid = 10", both);
+    // both ends before the edge in the FROM order: the left input is a join of two tables, so the join is not a walk
+    final String endsFirst = "SELECT p.name, c.name, w.since FROM person p CROSS JOIN company c JOIN works_at w "
+        + "ON w.source_id = p.id AND w.target_id = c.id WHERE p.pid = 1 AND c.cid = 10";
+    assertSameRowsAsCypher(endsFirst, both);
+    assertThat(lines(endsFirst)).noneMatch(line -> line.trim().startsWith("TRAVERSE"));
+  }
+
   @Test
   void theResultCarriesThePlanOfTheTraversal() {
     try (final PostgreSQLResultSet result = (PostgreSQLResultSet) database.query("postgresql", FIRST_ONE)) {
