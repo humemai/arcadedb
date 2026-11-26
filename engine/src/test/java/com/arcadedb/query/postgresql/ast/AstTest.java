@@ -162,6 +162,7 @@ class AstTest {
       case WriteStatement s -> "write";
       case TransactionStatement s -> "transaction";
       case CreateTableStatement s -> "create table";
+      case CreateIndexStatement s -> "create index";
     };
     assertThat(statementKind).isEqualTo("empty");
 
