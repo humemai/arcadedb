@@ -164,6 +164,16 @@ public class PostgresCatalog {
       this(name, type, notNull, defaultValue, false);
     }
   }
+
+  /**
+   * The text {@code pg_attrdef} holds for the record id of the {@code postgresql} language (fork issue #137). It names where the
+   * value comes from and is no function a statement can call. An ORM reads a new key back with {@code RETURNING} when the column
+   * has a default or an identity it can use, and SQLAlchemy cannot use an identity on a text column. PostgreSQL has no
+   * {@code pg_attrdef} row for an identity column, so this is the only place that differs: {@code attidentity} and
+   * {@code information_schema.columns} say of the column what PostgreSQL says of an identity.
+   */
+  private static final String RECORD_ID_DEFAULT = "arcadedb_record_id()";
+
   /**
    * How much work one statement may do, in rows read plus sub-select tokens re-read. Nesting depth alone does not
    * bound it: a correlated sub-select runs once per row of the query around it, so {@code EXISTS} nested 32 deep
@@ -2613,6 +2623,8 @@ public class PostgresCatalog {
         ++ordinal;
         final PostgresType pgType = column.type();
         final Object defaultValue = column.defaultValue();
+        // what atthasdef and pg_attrdef say: the declared default, or the one of the record id, which information_schema lacks
+        final Object attributeDefault = column.generatedAlways() ? RECORD_ID_DEFAULT : defaultValue;
         final boolean notNull = column.notNull();
 
         // a column no parent has is the relation's own: a property it declares, or a column the query of a view projects
@@ -2621,7 +2633,7 @@ public class PostgresCatalog {
 
         final Row row = relationRow(context, type)//
             .with("pg_attribute", attributeValues(oidOf(type.getName()), column.name(), ordinal, pgType, notNull,
-                defaultValue != null, local, inheritedCount, column.generatedAlways()));
+                attributeDefault != null, local, inheritedCount, column.generatedAlways()));
         if (table)
           row.with("information_schema.columns", "table_catalog", schema, "table_schema", schema, "table_name",
                 type.getName(), "column_name", column.name(), "ordinal_position", ordinal,//
@@ -2639,11 +2651,11 @@ public class PostgresCatalog {
                 "numeric_precision_radix", numericPrecisionRadix(pgType), "numeric_scale", numericScale(pgType),
                 "datetime_precision", datetimePrecision(pgType));
 
-        if (defaultValue != null)
+        if (attributeDefault != null)
           // pg_attrdef's adbin is a parsed expression that pg_get_expr() prints; here it holds the text
-          // pg_get_expr() is to print, the same text information_schema.columns reports.
-          row.with("pg_attrdef", "adrelid", oidOf(type.getName()), "adnum", ordinal, "adbin", defaultValue.toString(),
-              "adsrc", defaultValue.toString());
+          // pg_get_expr() is to print, which for a declared default is the one information_schema.columns reports.
+          row.with("pg_attrdef", "adrelid", oidOf(type.getName()), "adnum", ordinal, "adbin", attributeDefault.toString(),
+              "adsrc", attributeDefault.toString());
 
         // The type row a client joins pg_attribute to in order to name the column's type. It describes the
         // column's own type, which is the only reading of that join that makes sense.
