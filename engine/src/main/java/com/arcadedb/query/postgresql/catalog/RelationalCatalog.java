@@ -82,6 +82,12 @@ import java.util.Set;
  * {@code NULL}.</li>
  * <li>The table of a supertype has the rows of its subtypes, {@code FROM ONLY} has its own.</li>
  * <li>Names are looked up by the rules of {@link Identifier}.</li>
+ * <li><b>A table made by {@code CREATE TABLE}</b> (fork issue #118) has a {@link TableDefinition}, and is shown as it declared
+ * itself: the columns in the declared order, {@code text} where it said so, its defaults, and the declared primary key and unique
+ * constraints under their names, with no primary key when it declared none. Its record id keeps the name that the rules above give
+ * it, comes last and is hidden from {@code *} and from an {@code INSERT} without a column list ({@link Column#isHidden()}). The
+ * catalog lists it, as a unique key, only when a foreign key refers to it ({@link Column#isListed()}). A type without a definition
+ * is shown as before.</li>
  * </ul>
  */
 public final class RelationalCatalog {
@@ -119,9 +125,23 @@ public final class RelationalCatalog {
     for (final DocumentType type : types)
       drafts.put(type.getName(), draft(type, tableNames));
 
+    // the tables that a foreign key refers to: they list their record id, see the class comment
+    final Set<String> referenced = new HashSet<>();
+    for (final Draft draft : drafts.values()) {
+      if (draft.kind == Table.Kind.EDGE) {
+        referenced.add(declaredVertexTable(EdgeEndpoints.sourceTable((EdgeType) draft.type), drafts));
+        referenced.add(declaredVertexTable(EdgeEndpoints.targetTable((EdgeType) draft.type), drafts));
+      }
+      for (final String linkedType : draft.linkTargets.values()) {
+        final DocumentType target = schema.getTypeOrNull(linkedType);
+        if (target != null)
+          referenced.add(target.getName());
+      }
+    }
+
     final List<Table> tables = new ArrayList<>(drafts.size());
     for (final Draft draft : drafts.values())
-      tables.add(table(draft, schema, drafts));
+      tables.add(table(draft, schema, drafts, referenced.contains(draft.name)));
     return new RelationalCatalog(database.getName(), tables);
   }
 
@@ -227,10 +247,12 @@ public final class RelationalCatalog {
     final String             referable;
     final List<String>       superTables;
     final List<String>       subTables;
+    /** what {@code CREATE TABLE} declared, {@code null} for a type that it did not make */
+    final TableDefinition    definition;
 
     Draft(final DocumentType type, final Table.Kind kind, final Table.EdgeStorage storage, final List<Column> columns,
         final Map<String, String> linkTargets, final Table.Key primaryKey, final List<Table.Key> uniqueKeys, final String referable,
-        final List<String> superTables, final List<String> subTables) {
+        final List<String> superTables, final List<String> subTables, final TableDefinition definition) {
       this.type = type;
       this.name = type.getName();
       this.kind = kind;
@@ -242,6 +264,7 @@ public final class RelationalCatalog {
       this.referable = referable;
       this.superTables = superTables;
       this.subTables = subTables;
+      this.definition = definition;
     }
   }
 
@@ -252,6 +275,7 @@ public final class RelationalCatalog {
     final Table.EdgeStorage storage = edgeType == null ? null : storageOf(edgeType);
 
     final Map<String, Property> properties = declaredProperties(type);
+    final TableDefinition definition = TableDefinition.of(type);
     // the id rule and its collision rule, see the class comment: a declared property wins the name it has
     final String identity = properties.containsKey(Column.ID) ? (properties.containsKey(Column.RID) ? null : Column.RID) : Column.ID;
     final List<Column> columns = new ArrayList<>();
@@ -282,11 +306,19 @@ public final class RelationalCatalog {
       shownByProperty.put(property.getName(), shown);
 
       final boolean link = property.getType() == Type.LINK;
-      columns.add(new Column(shown, ColumnType.of(property.getType(), property.getOfType()), !property.isNotNull(), Column.Kind.PROPERTY,
-          property.getName(), link));
+      ColumnType columnType = ColumnType.of(property.getType(), property.getOfType());
+      if (columnType == ColumnType.VARCHAR && definition != null && definition.textColumns().contains(property.getName()))
+        columnType = ColumnType.TEXT;
+      Column column = new Column(shown, columnType, !property.isNotNull(), Column.Kind.PROPERTY, property.getName(), link);
+      // a default that a later statement dropped is not shown
+      if (definition != null && property.getDefaultValue() != null)
+        column = column.withDefaultText(definition.defaults().get(property.getName()));
+      columns.add(column);
       if (link && property.getOfType() != null && !property.getOfType().isBlank())
         linkTargets.put(shown, property.getOfType());
     }
+    if (definition != null)
+      inDeclaredOrder(columns, definition.columns());
 
     final List<String> superTables = tableNamesOf(type.getSuperTypes(), tableNames);
     final List<String> subTables = tableNamesOf(type.getSubTypes(), tableNames);
@@ -302,8 +334,19 @@ public final class RelationalCatalog {
         if (key.columns().equals(List.of(Column.ID)))
           ownId = key;
 
-    final Table.Key primaryKey;
-    if (ownId != null && (hasRecordIds || identity == null)) {
+    Table.Key primaryKey;
+    if (definition != null) {
+      // the declared keys that still have their unique index; the record id is added when a foreign key refers to the table
+      primaryKey = null;
+      final List<Table.Key> others = new ArrayList<>(uniqueKeys.size());
+      for (final Table.Key key : uniqueKeys)
+        if (definition.primaryKey() != null && key.columns().equals(definition.primaryKey().columns()))
+          primaryKey = definition.primaryKey();
+        else
+          others.add(new Table.Key(definition.uniqueName(key.columns(), key.name()), key.columns()));
+      uniqueKeys.clear();
+      uniqueKeys.addAll(others);
+    } else if (ownId != null && (hasRecordIds || identity == null)) {
       // the property id is the primary key, and the record id, when the view has a column for it, is a unique key of its own
       uniqueKeys.remove(ownId);
       if (hasRecordIds) {
@@ -326,10 +369,22 @@ public final class RelationalCatalog {
       primaryKey = null;
 
     return new Draft(type, kind, storage, columns, linkTargets, primaryKey, uniqueKeys, hasRecordIds ? identity : null, superTables,
-        subTables);
+        subTables, definition);
   }
 
-  private static Table table(final Draft draft, final Schema schema, final Map<String, Draft> drafts) {
+  /**
+   * Orders the columns of a table made by {@code CREATE TABLE}: the declared ones as declared, then any that a later statement
+   * added, as they were, then the record id.
+   */
+  private static void inDeclaredOrder(final List<Column> columns, final List<String> declared) {
+    final Map<String, Integer> positions = new HashMap<>();
+    for (final String name : declared)
+      positions.put(name, positions.size());
+    columns.sort(Comparator.comparingInt((Column column) -> column.kind() == Column.Kind.IDENTITY ? Integer.MAX_VALUE
+        : positions.getOrDefault(column.name(), declared.size())));
+  }
+
+  private static Table table(final Draft draft, final Schema schema, final Map<String, Draft> drafts, final boolean referenced) {
     final List<Table.ForeignKey> foreignKeys = new ArrayList<>();
     String sourceTable = null;
     String targetTable = null;
@@ -338,10 +393,10 @@ public final class RelationalCatalog {
       sourceTable = declaredVertexTable(EdgeEndpoints.sourceTable(edgeType), drafts);
       targetTable = declaredVertexTable(EdgeEndpoints.targetTable(edgeType), drafts);
       if (sourceTable != null)
-        foreignKeys.add(new Table.ForeignKey(draft.name + "_" + Column.SOURCE_ID + "_fkey", List.of(Column.SOURCE_ID), sourceTable,
+        foreignKeys.add(new Table.ForeignKey(foreignKeyName(draft, Column.SOURCE_ID), List.of(Column.SOURCE_ID), sourceTable,
             List.of(drafts.get(sourceTable).referable), Table.ForeignKey.Origin.EDGE_SOURCE));
       if (targetTable != null)
-        foreignKeys.add(new Table.ForeignKey(draft.name + "_" + Column.TARGET_ID + "_fkey", List.of(Column.TARGET_ID), targetTable,
+        foreignKeys.add(new Table.ForeignKey(foreignKeyName(draft, Column.TARGET_ID), List.of(Column.TARGET_ID), targetTable,
             List.of(drafts.get(targetTable).referable), Table.ForeignKey.Origin.EDGE_TARGET));
     }
 
@@ -368,8 +423,25 @@ public final class RelationalCatalog {
             walkFrom.add(other.name);
     }
 
-    return new Table(draft.name, draft.kind, draft.type, draft.columns, draft.primaryKey, draft.uniqueKeys, foreignKeys,
+    List<Column> columns = draft.columns;
+    List<Table.Key> uniqueKeys = draft.uniqueKeys;
+    if (draft.definition != null && draft.referable != null) {
+      columns = columns.stream()
+          .map(column -> column.kind() == Column.Kind.IDENTITY ? column.hide(referenced) : column).toList();
+      if (referenced) {
+        uniqueKeys = new ArrayList<>(uniqueKeys);
+        uniqueKeys.add(new Table.Key(draft.name + "_" + draft.referable + "_key", List.of(draft.referable)));
+        uniqueKeys.sort(Comparator.comparing((Table.Key key) -> String.join(",", key.columns())));
+      }
+    }
+    return new Table(draft.name, draft.kind, draft.type, columns, draft.primaryKey, uniqueKeys, foreignKeys,
         draft.superTables, draft.subTables, draft.storage, sourceTable, targetTable, walkFrom);
+  }
+
+  /** The name of the foreign key of an end of an edge table: the declared one, else the one PostgreSQL would give it. */
+  private static String foreignKeyName(final Draft draft, final String column) {
+    final String declared = draft.definition == null ? null : draft.definition.foreignKeys().get(column);
+    return declared != null ? declared : draft.name + "_" + column + "_fkey";
   }
 
   /**

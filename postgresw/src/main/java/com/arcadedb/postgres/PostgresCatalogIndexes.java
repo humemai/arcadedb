@@ -288,7 +288,7 @@ final class PostgresCatalogIndexes {
       final Map<String, Integer> numbers = new HashMap<>();
       final Map<String, String> shownByProperty = new HashMap<>();
       int ordinal = 0;
-      for (final com.arcadedb.query.postgresql.catalog.Column column : table.columns()) {
+      for (final com.arcadedb.query.postgresql.catalog.Column column : table.listedColumns()) {
         numbers.put(column.name(), ++ordinal);
         if (column.property() != null)
           shownByProperty.put(column.property(), column.name());
@@ -390,7 +390,7 @@ final class PostgresCatalogIndexes {
     final int[] numbers = new int[names.length];
     for (int k = 0; k < names.length; k++) {
       int ordinal = 0;
-      for (final com.arcadedb.query.postgresql.catalog.Column column : table.columns()) {
+      for (final com.arcadedb.query.postgresql.catalog.Column column : table.listedColumns()) {
         ++ordinal;
         if (column.name().equals(names[k]))
           numbers[k] = ordinal;

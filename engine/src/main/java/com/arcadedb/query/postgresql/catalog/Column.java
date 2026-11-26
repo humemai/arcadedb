@@ -62,20 +62,70 @@ public final class Column {
   private final Kind       kind;
   private final String     property;
   private final boolean    link;
+  private final boolean    hidden;
+  private final boolean    listed;
+  private final String     defaultText;
 
   Column(final String name, final ColumnType type, final boolean nullable, final Kind kind, final String property,
       final boolean link) {
+    this(name, type, nullable, kind, property, link, false, true, null);
+  }
+
+  private Column(final String name, final ColumnType type, final boolean nullable, final Kind kind, final String property,
+      final boolean link, final boolean hidden, final boolean listed, final String defaultText) {
     this.name = Objects.requireNonNull(name);
     this.type = Objects.requireNonNull(type);
     this.nullable = nullable;
     this.kind = Objects.requireNonNull(kind);
     this.property = property;
     this.link = link;
+    this.hidden = hidden;
+    this.listed = listed;
+    this.defaultText = defaultText;
+  }
+
+  /**
+   * A column that no table holds yet: what {@code CREATE TABLE} reads a default value for, before the type and its property
+   * exist.
+   */
+  public static Column declaration(final String name, final ColumnType type) {
+    return new Column(name, type, true, Kind.PROPERTY, name, false);
   }
 
   /** The same column, not nullable: a property that is the primary key of its table. */
   Column notNull() {
-    return new Column(name, type, false, kind, property, link);
+    return new Column(name, type, false, kind, property, link, hidden, listed, defaultText);
+  }
+
+  /** The same column, hidden: see {@link #isHidden()} and, for {@code listInCatalog}, {@link #isListed()}. */
+  Column hide(final boolean listInCatalog) {
+    return new Column(name, type, nullable, kind, property, link, true, listInCatalog, defaultText);
+  }
+
+  /** The same column with the text that {@code column_default} shows for it. */
+  Column withDefaultText(final String text) {
+    return new Column(name, type, nullable, kind, property, link, hidden, listed, text);
+  }
+
+  /**
+   * Whether the column is readable by its name only: not part of {@code *} or of an {@code INSERT} without a column list. It is
+   * the record id of a table made by {@code CREATE TABLE} (fork issue #118): the statement did not declare it.
+   */
+  public boolean isHidden() {
+    return hidden;
+  }
+
+  /**
+   * Whether the catalog views show the column: every column but the record id of a table made by {@code CREATE TABLE} that no
+   * foreign key refers to.
+   */
+  public boolean isListed() {
+    return listed;
+  }
+
+  /** The default as {@code information_schema.columns.column_default} shows it, {@code null} when the view shows none. */
+  public String defaultText() {
+    return defaultText;
   }
 
   /** The name of the column as the statement refers to it. */
