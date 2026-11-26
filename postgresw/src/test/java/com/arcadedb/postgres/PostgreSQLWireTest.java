@@ -327,6 +327,42 @@ class PostgreSQLWireTest extends PostgresWireProtocolTestBase {
       }
   }
 
+  /** {@code DISCARD ALL} is what a connection pooler runs between two clients (fork issue #12). */
+  @Test
+  void discardAllPutsTheLanguageOfTheConnectionBackToItsStartupValue() throws Exception {
+    for (final boolean simple : new boolean[] { false, true }) {
+      // chosen by the startup options: that is the reset value, so the connection still speaks the language
+      try (final Connection connection = connect(LANGUAGE_OPTION, simple); final Statement st = connection.createStatement()) {
+        st.execute("SET arcadedb.language = 'sql'");
+        st.execute("DISCARD ALL");
+        assertThat(query(connection, "SHOW arcadedb.language")).as("simple=" + simple).containsExactly("postgresql");
+        assertThat(query(connection, JOIN)).isEqualTo(JOIN_ROWS);
+      }
+      // chosen by SET: DISCARD ALL drops it and the connection speaks sql again
+      try (final Connection connection = connect(null, simple); final Statement st = connection.createStatement()) {
+        st.execute("SET arcadedb.language = 'postgresql'");
+        assertThat(query(connection, JOIN)).isEqualTo(JOIN_ROWS);
+        st.execute("DISCARD ALL");
+        assertThat(query(connection, "SHOW arcadedb.language")).as("simple=" + simple).containsExactly("sql");
+        assertThatThrownBy(() -> query(connection, JOIN)).isInstanceOf(PSQLException.class);
+      }
+    }
+  }
+
+  @Test
+  void discardAllInsideATransactionBlockOfTheLanguageIsRefused() throws Exception {
+    try (final Connection connection = connect(LANGUAGE_OPTION, false); final Statement st = connection.createStatement()) {
+      connection.setAutoCommit(false);
+      assertThat(query(connection, "SELECT count(*) FROM person")).containsExactly("5");
+      assertThatThrownBy(() -> st.execute("DISCARD ALL")).isInstanceOf(PSQLException.class)
+          .satisfies(e -> assertThat(((PSQLException) e).getSQLState()).isEqualTo("25001"));
+      connection.rollback();
+      connection.setAutoCommit(true);
+      st.execute("DISCARD ALL");
+      assertThat(query(connection, JOIN)).isEqualTo(JOIN_ROWS);
+    }
+  }
+
   @Test
   void aTransactionBlockCommitsAndRollsBack() throws Exception {
     try (final Connection connection = connect(LANGUAGE_OPTION, false); final Statement st = connection.createStatement()) {
