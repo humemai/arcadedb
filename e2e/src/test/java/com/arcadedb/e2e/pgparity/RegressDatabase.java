@@ -190,10 +190,9 @@ final class RegressDatabase implements AutoCloseable {
     if (wire.transactionState() == 'E')
       return Set.of();
     final boolean inBlock = wire.transactionState() == 'T';
-    final Supplier<String[]> read = () -> select(
-        "SELECT pg_catalog.pg_snapshot_xmax(pg_catalog.pg_current_snapshot())::pg_catalog.text, "
-            + "pg_catalog.pg_current_xact_id_if_assigned()::pg_catalog.text").get(0);
-    final String[] now = inBlock ? probe(false, read) : read.get();
+    // in the neutral settings, so that a time limit or a search path that the file set does not reach this query
+    final String[] now = probe(true, () -> select("SELECT pg_snapshot_xmax(pg_current_snapshot())::text, "
+        + "pg_current_xact_id_if_assigned()::text").get(0));
     final boolean writingNow = inBlock && now[1] != null;
     final String mark = now[0] + "/" + now[1];
     if (mark.equals(marker) && !writing && !writingNow)

@@ -394,8 +394,17 @@ final class RegressArcade implements RegressSubject {
         writeLimits.put(key, String.join(", ", table.writeLimits()));
     } catch (final RuntimeException e) {
       block(table, key, e);
-      if (schema.existsType(key))
-        schema.dropType(key);
+      drop(key);
+    }
+  }
+
+  /** Removes a type that must not stay; one that cannot be removed stays, and its table is blocked all the same. */
+  private void drop(final String key) {
+    try {
+      if (database().getSchema().existsType(key))
+        database().getSchema().dropType(key);
+    } catch (final RuntimeException e) {
+      blocked.putIfAbsent(key, "its type cannot be removed: " + e.getMessage());
     }
   }
 

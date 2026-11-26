@@ -65,9 +65,9 @@ Each file starts on a fresh database on both sides. The files listed in [`setup.
 
 - When the tables of the two sides differ after a statement, the harness copies the table from PostgreSQL into ArcadeDB through the engine's own API, never through the language under test.
 - A copy is checked: its `information_schema` and its rows must equal PostgreSQL's. Otherwise the table is blocked, with the reason.
-- These tables are not copied, so they are blocked: a column type that ArcadeDB cannot hold, inheritance or partitions, a schema other than `public` (temporary tables excepted), and more than 200,000 rows.
-- A table that has something the copy does not carry, and that decides what a write does, is blocked for writes only: a check constraint, a foreign key on either end, an exclusion constraint, a deferrable key, a unique index that is no constraint, a default, an identity or generated column, a trigger, a rule, or row security. A statement that only reads it is judged.
-- The tables a statement uses are those of the plan that PostgreSQL makes for it. A statement without a plan (DDL, utility statements, statements that PostgreSQL refuses before planning) uses the tables whose names are among its words.
+- These tables are not copied, so they are blocked: a column type that ArcadeDB cannot hold, a foreign key of its own (the copy would differ in its keys), inheritance or partitions, a schema other than `public` (temporary tables excepted), and more than 200,000 rows.
+- A table that has something the copy does not carry, and that decides what a write does, is blocked for writes only: a check constraint, a foreign key that refers to it, an exclusion constraint, a deferrable key, a unique index that is no constraint, a default, an identity or generated column, a trigger, a rule, or row security. A statement that only reads it is judged.
+- The tables a statement uses are those of the plan that PostgreSQL makes for it, and those its text names after `FROM`, `JOIN`, `INTO`, `UPDATE`, `ONLY`, `TABLE`, or a comma of a `FROM` list, because a plan leaves out a table that it does not have to read. A statement without a plan (DDL, utility statements, statements that PostgreSQL refuses before planning) uses the tables whose names are among its words.
 - The transaction block of ArcadeDB follows the one of PostgreSQL, so that a refused statement inside a block does not turn every later statement of the block into an error.
 - The summary counts the judged statements that used a copied table.
 
