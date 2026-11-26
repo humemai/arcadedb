@@ -23,6 +23,7 @@ import com.arcadedb.query.postgresql.SmallFixture;
 import com.arcadedb.serializer.json.JSONArray;
 import com.arcadedb.serializer.json.JSONObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.Testcontainers;
 import org.testcontainers.containers.GenericContainer;
@@ -47,8 +48,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * of the matrix. The issue asks for a report of them and does not require them to pass; the lines that start with
  * {@code bi-report} are that report, and the assertions pin what was seen.
  * <p>
- * Needs a Docker daemon: without one the tests are skipped.
+ * The images are large and are pulled by their {@code latest} tag, so the tests do not run with the others: set the system
+ * property {@code pgwire.bi} to {@code true} to run them. They need a Docker daemon; without one they are skipped.
  */
+@EnabledIfSystemProperty(named = "pgwire.bi", matches = "true")
 class PostgreSQLBiClientsTest extends PostgresWireProtocolTestBase {
   private static final String JOIN = "SELECT p.name, o.oid FROM orders o JOIN person p ON o.pid = p.pid ORDER BY o.oid";
   private static final List<String> JOIN_ROWS = List.of("Ada|100", "Ada|101", "Bo|102", "Di|103", "Di|104");
