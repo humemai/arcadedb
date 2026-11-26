@@ -327,8 +327,7 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
       show("join", joined)
 
 
-      def write(base):
-          company, person, works_at = base.classes.company, base.classes.person, base.classes.works_at
+      def write(company, person, works_at):
           with Session(engine) as session:
               cedar = session.scalars(select(company).where(company.cid == 30)).one()
               fay = person(pid=6, name="Fay", age=33, city="Delft")
@@ -341,7 +340,7 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
 
 
       # the reflected record id carries no identity for SQLAlchemy, so it does not read the new key back
-      show("write", lambda: write(Base))
+      show("write", lambda: write(Company, Person, WorksAt))
 
       Declared = automap_base()
 
@@ -357,7 +356,7 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
 
 
       Declared.prepare(autoload_with=engine)
-      show("write with the keys declared", lambda: write(Declared))
+      show("write with the keys declared", lambda: write(Declared.classes.company, person, works_at))
       """;
 
   @Test
