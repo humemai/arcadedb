@@ -271,7 +271,7 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
       import logging
       import sys
 
-      from sqlalchemy import create_engine, select
+      from sqlalchemy import Column, FetchedValue, Text, create_engine, select
       from sqlalchemy.engine import URL
       from sqlalchemy.ext.automap import automap_base
       from sqlalchemy.orm import Session
@@ -327,19 +327,37 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
       show("join", joined)
 
 
-      def write():
+      def write(base):
+          company, person, works_at = base.classes.company, base.classes.person, base.classes.works_at
           with Session(engine) as session:
-              cedar = session.scalars(select(Company).where(Company.cid == 30)).one()
-              fay = Person(pid=6, name="Fay", age=33, city="Delft")
+              cedar = session.scalars(select(company).where(company.cid == 30)).one()
+              fay = person(pid=6, name="Fay", age=33, city="Delft")
               session.add(fay)
-              session.add(WorksAt(person=fay, company=cedar, since=2026))
+              session.add(works_at(person=fay, company=cedar, since=2026))
               session.commit()
           with Session(engine) as session:
-              cedar = session.scalars(select(Company).where(Company.cid == 30)).one()
+              cedar = session.scalars(select(company).where(company.cid == 30)).one()
               return sorted([w.person.name, w.since] for w in cedar.works_at_collection)
 
 
-      show("write", write)
+      # the reflected record id carries no identity for SQLAlchemy, so it does not read the new key back
+      show("write", lambda: write(Base))
+
+      Declared = automap_base()
+
+
+      class person(Declared):
+          __tablename__ = "person"
+          id = Column(Text, primary_key=True, server_default=FetchedValue())
+
+
+      class works_at(Declared):
+          __tablename__ = "works_at"
+          id = Column(Text, primary_key=True, server_default=FetchedValue())
+
+
+      Declared.prepare(autoload_with=engine)
+      show("write with the keys declared", lambda: write(Declared))
       """;
 
   @Test
@@ -356,13 +374,17 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
 
       final List<String> out = Arrays.stream(result.getStdout().strip().split("\\R")).toList();
       System.out.println("automap: " + String.join("\nautomap: ", out));
-      assertThat(out).as(result.getStderr()).containsExactly(
+      assertThat(out).as(result.getStderr()).hasSize(6).contains(
           "classes|[\"company\", \"orders\", \"person\", \"works_at\"]",
           "relationships|[[\"company\", [\"works_at_collection\"]], [\"orders\", [\"person\"]], "
               + "[\"person\", [\"orders_collection\", \"works_at_collection\"]], [\"works_at\", [\"company\", \"person\"]]]",
           "navigate|[[[\"Acme\", 2019], [\"Acme\", 2022]], [\"Ada\", \"Ada\", \"Bo\"], \"Bo\", [100, 101]]",
           "join|[[\"Ada\", \"Acme\", 2019], [\"Bo\", \"Acme\", 2020], [\"Cy\", \"Birch\", 2021], [\"Ada\", \"Acme\", 2022], [\"Di\", \"Birch\", 2023]]",
-          "write|[[\"Fay\", 2026]]");
+          "write with the keys declared|[[\"Fay\", 2026]]");
+      // an unexpected thing for a PostgreSQL user, recorded in fork issue #15: the ORM inserts the person without asking for its
+      // key, so the relationship has no source. PostgreSQL's own identity column would be read back with RETURNING.
+      assertThat(out).anyMatch(line -> line.startsWith("write|ERROR IntegrityError")
+          && line.contains("null value in column \"source_id\""));
     }
   }
 }
