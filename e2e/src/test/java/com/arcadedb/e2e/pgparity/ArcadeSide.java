@@ -88,14 +88,15 @@ final class ArcadeSide implements AutoCloseable {
   }
 
   /**
-   * Runs one statement in {@code language} and keeps everything it answered, or the SQLSTATE of its refusal. The engine reports
+   * Runs one statement in {@code language}, with {@code parameters} bound to {@code $1}, {@code $2} and so on, and keeps
+   * everything it answered, or the SQLSTATE of its refusal. The engine reports
    * no column types yet, so the types of the table are {@code null}; a result without rows reports no labels either. The
    * {@code postgresql} language answers a {@code PostgreSQLResultSet}: its labels are the ones PostgreSQL would send, duplicates
    * included ({@code SELECT p.name, c.name} has two {@code name}), while a row is a map whose second duplicate has a suffix, so
    * the labels come from {@code columns()} and the values are read by the unique key of each column.
    */
-  Outcome run(final String language, final String sql) {
-    try (final ResultSet rs = database.query(language, sql)) {
+  Outcome run(final String language, final String sql, final Object... parameters) {
+    try (final ResultSet rs = database.query(language, sql, parameters)) {
       final List<String> described = rs instanceof PostgreSQLResultSet answer
           ? answer.columns().stream().map(PostgreSQLResultSet.Column::name).toList() : null;
       final List<String> describedKeys = rs instanceof PostgreSQLResultSet answer

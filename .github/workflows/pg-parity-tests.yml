@@ -92,12 +92,12 @@ jobs:
       - name: Build the e2e module and what it depends on
         run: ./mvnw install -DskipTests --batch-mode --errors --show-version -pl e2e -am
 
-      # -Pintegration turns the integration tests on. -Dit.test names the three classes of the pgparity package: every other
+      # -Pintegration turns the integration tests on. -Dit.test names the classes of the pgparity package: every other
       # class of the module needs the ArcadeDB image that this workflow does not build.
       - name: Run the parity harness
         run: >-
           ./mvnw verify -Pintegration --batch-mode --errors --show-version -pl e2e
-          -Dit.test=PostgresServerIT,PgParityIT,PgTpchParityIT,PgIdRuleParityIT
+          -Dit.test=PostgresServerIT,PgParityIT,PgTpchParityIT,PgIdRuleParityIT,PgParameterParityIT
           -Dpgparity.regenerate="${PGPARITY_REGENERATE}"
           -Dpgparity.tpch.dir="${RUNNER_TEMP}/tpch"
 
