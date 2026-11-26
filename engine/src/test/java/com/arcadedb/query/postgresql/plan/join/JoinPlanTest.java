@@ -347,6 +347,37 @@ class JoinPlanTest extends TestHelper {
     }
   }
 
+  // ---- the acceptance statements of fork issue #6 ----
+
+  @Test
+  void theOrStatementJoinsOnTheTermThatBothBranchesShare() {
+    final String sql = "SELECT o.oid FROM orders o, person p WHERE (o.pid = p.pid AND p.city = 'Delft') "
+        + "OR (o.pid = p.pid AND o.total < 6) ORDER BY o.oid";
+    assertThat(rows(sql)).containsExactly(row(100), row(101), row(102), row(103));
+    // the shared equality is the key of the join, so it is no cross product: a nested loop would hold every pair
+    assertThat(plan(sql)).containsPattern("(HASH JOIN|INDEX NESTED LOOP) INNER ON \\(?o\\.pid = p\\.pid");
+  }
+
+  @Test
+  void bothJoinsOfTheThreeTableEdgeStatementAreSupportedByTheEdge() {
+    final String sql = "SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id "
+        + "JOIN company c ON w.target_id = c.id ORDER BY p.name, w.since";
+    assertThat(rows(sql)).containsExactly(row("Ada", "Acme", 2019), row("Ada", "Acme", 2022), row("Bo", "Acme", 2020),
+        row("Cy", "Birch", 2021), row("Di", "Birch", 2023));
+    assertThat(plan(sql).split("supported by edge:", -1)).as("one class per join").hasSize(3);
+  }
+
+  @Test
+  void theFirstStatementIsAnIndexNestedLoopOnceTheOuterTableIsNoLargerThanTheIndexedOne() {
+    final String sql = "SELECT p.name, o.oid FROM orders o JOIN person p ON o.pid = p.pid ORDER BY o.oid";
+    // six orders and five people: the join builds the smaller side by hash, and its class is still "index"
+    assertThat(plan(sql)).contains("HASH JOIN INNER").contains("(build p)").contains("supported by index:");
+    database.transaction(() -> database.newVertex(SmallFixture.PERSON).set("pid", 6).set("name", "Fay").save());
+    assertThat(plan(sql)).contains("INDEX NESTED LOOP INNER").contains("FETCH FROM INDEX person[pid]")
+        .contains("supported by index:").doesNotContain("HASH JOIN");
+    assertThat(rows(sql)).containsExactly(row("Ada", 100), row("Ada", 101), row("Bo", 102), row("Di", 103), row("Di", 104));
+  }
+
   // ---- the memory cap ----
 
   @Test
@@ -354,7 +385,7 @@ class JoinPlanTest extends TestHelper {
     final String hash = "SELECT p.name FROM person p LEFT JOIN orders o ON o.pid = p.pid";
     assertThatThrownBy(() -> planned(hash, 100L).execute(database)).isInstanceOfSatisfying(PostgreSQLEvaluationException.class, e -> {
       assertThat(e.getSqlState()).isEqualTo("53200");
-      assertThat(e.getMessage()).contains("out of memory").contains("Hint:");
+      assertThat(e.getMessage()).contains("out of memory").contains("more than 100 bytes").contains("Hint:");
     });
     final String nested = "SELECT a.name FROM person a JOIN person b ON a.pid < b.pid";
     assertThatThrownBy(() -> planned(nested, 100L).execute(database)).isInstanceOfSatisfying(PostgreSQLEvaluationException.class,
