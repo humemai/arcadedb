@@ -58,6 +58,7 @@ stmt
   | deleteStmt SEMI?       # deleteCommand
   | transactionStmt SEMI?  # transactionCommand
   | explainStmt SEMI?      # explainCommand
+  | createTableStmt SEMI?  # createTableCommand
   | unsupportedTransactionStmt skipRest SEMI?   # unsupportedTransactionCommand
   | unsupportedStatement skipRest SEMI?   # unsupportedCommand
   | SEMI?                  # emptyCommand
@@ -68,6 +69,7 @@ explainStmt
   | EXPLAIN writeStmt
   | EXPLAIN unsupportedExplainOption skipRest
   | EXPLAIN unsupportedStatement skipRest
+  | EXPLAIN unsupportedExplainedCreate skipRest
   ;
 
 writeStmt
@@ -85,10 +87,122 @@ unsupportedExplainOption
 
 // the first words of every other statement of PostgreSQL (WITH, VALUES, TABLE and a parenthesised query start a selectStmt)
 unsupportedStatement
-  : ALTER | ANALYSE | ANALYZE | CALL | CHECKPOINT | CLOSE | CLUSTER | COMMENT | COPY | CREATE
+  : ALTER | ANALYSE | ANALYZE | CALL | CHECKPOINT | CLOSE | CLUSTER | COMMENT | COPY
+  // CREATE of anything but a table, which createTableStmt reads
+  | CREATE ~(TABLE | TEMP | TEMPORARY | UNLOGGED | LOCAL | GLOBAL)
   | DEALLOCATE | DECLARE | DISCARD | DO | DROP | EXECUTE | FETCH | GRANT | IMPORT | LISTEN | LOAD
   | LOCK | MERGE | MOVE | NOTIFY | PREPARE | REASSIGN | REFRESH | REINDEX | RELEASE | RESET | REVOKE | SAVEPOINT
   | SECURITY | SET | SHOW | TRUNCATE | UNLISTEN | VACUUM
+  ;
+
+unsupportedExplainedCreate
+  : CREATE (TABLE | TEMP | TEMPORARY | UNLOGGED | LOCAL | GLOBAL)
+  ;
+
+// ============================================================================
+// CREATE TABLE (CreateStmt of gram.y), fork issue #118. Every other form of the statement that PostgreSQL has starts with
+// words that a rule named unsupported... matches, so it is 0A000 at those words and a text that PostgreSQL cannot read is 42601
+// ============================================================================
+
+createTableStmt
+  : CREATE unsupportedTableKind skipRest
+  | CREATE TABLE (IF NOT EXISTS)? table=qualifiedName createTableBody
+  ;
+
+unsupportedTableKind
+  : TEMP | TEMPORARY | UNLOGGED | LOCAL | GLOBAL
+  ;
+
+createTableBody
+  : LPAREN (items+=tableElement (COMMA items+=tableElement)*)? RPAREN (unsupportedTableOption skipRest)?  # createTableElements
+  | unsupportedTableForm skipRest                                                                       # createTableOtherForm
+  ;
+
+// OF a type, PARTITION OF a table, and CREATE TABLE ... AS with its options
+unsupportedTableForm
+  : OF
+  | PARTITION OF
+  | AS
+  | USING
+  | WITH
+  | WITHOUT
+  | ON
+  | TABLESPACE
+  | LPAREN colId (COMMA colId)* RPAREN AS
+  ;
+
+unsupportedTableOption
+  : INHERITS | PARTITION | USING | WITH | WITHOUT | ON | TABLESPACE
+  ;
+
+tableElement
+  : column=colId typename constraints+=columnOption*   # columnElement
+  | tableConstraint                                # constraintElement
+  | unsupportedTableElement skipRest               # otherElement
+  ;
+
+unsupportedTableElement
+  : LIKE
+  ;
+
+columnOption
+  : (CONSTRAINT constraintName=colId)? columnConstraintElem
+  ;
+
+columnConstraintElem
+  : NOT NULL                                # notNullConstraint
+  | NULL                                    # nullConstraint
+  | UNIQUE (NULLS DISTINCT)?                # uniqueColumnConstraint
+  | PRIMARY KEY                             # primaryKeyColumnConstraint
+  | DEFAULT bExpr                           # defaultConstraint
+  | REFERENCES references                   # referencesColumnConstraint
+  | unsupportedColumnConstraint skipRest    # otherColumnConstraint
+  ;
+
+unsupportedColumnConstraint
+  : CHECK | GENERATED | COLLATE | STORAGE | COMPRESSION | OPTIONS | DEFERRABLE | INITIALLY | ENFORCED | NO | NULLS | WITH
+  | USING | NOT DEFERRABLE | NOT ENFORCED
+  ;
+
+references
+  : table=qualifiedName (LPAREN columns+=colId (COMMA columns+=colId)* RPAREN)? actions+=referenceOption*
+  ;
+
+referenceOption
+  : ON DELETE referenceAction                 # onDeleteOption
+  | ON UPDATE referenceAction                 # onUpdateOption
+  | unsupportedReferenceOption skipRest       # otherReferenceOption
+  ;
+
+unsupportedReferenceOption
+  : MATCH
+  ;
+
+referenceAction
+  : NO ACTION                                                  # noAction
+  | RESTRICT                                                   # restrictAction
+  | CASCADE                                                    # cascadeAction
+  | SET NULL (LPAREN colId (COMMA colId)* RPAREN)?             # setNullAction
+  | SET DEFAULT (LPAREN colId (COMMA colId)* RPAREN)?          # setDefaultAction
+  ;
+
+tableConstraint
+  : (CONSTRAINT constraintName=colId)? tableConstraintElem (unsupportedConstraintOption skipRest)?
+  ;
+
+tableConstraintElem
+  : UNIQUE (NULLS DISTINCT)? LPAREN columns+=colId (COMMA columns+=colId)* RPAREN                       # uniqueTableConstraint
+  | PRIMARY KEY LPAREN columns+=colId (COMMA columns+=colId)* RPAREN                                    # primaryKeyTableConstraint
+  | FOREIGN KEY LPAREN columns+=colId (COMMA columns+=colId)* RPAREN REFERENCES references              # foreignKeyTableConstraint
+  | unsupportedTableConstraint skipRest                                                                 # otherTableConstraint
+  ;
+
+unsupportedTableConstraint
+  : CHECK | EXCLUDE | NOT NULL | UNIQUE NULLS NOT | UNIQUE USING | PRIMARY KEY USING
+  ;
+
+unsupportedConstraintOption
+  : INCLUDE | WITH | USING | DEFERRABLE | NOT | INITIALLY | NO | ENFORCED
   ;
 
 // ============================================================================

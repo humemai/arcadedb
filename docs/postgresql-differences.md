@@ -30,6 +30,38 @@ Changing these means changing the ArcadeDB engine.
 | Ends of an edge type | a foreign key is declared | the schema does not record which types an edge type connects, so the prototype needs a declaration (choice 4) |
 | A foreign key on a `LINK` column | enforced: the referenced row cannot be deleted, or the declared `ON DELETE` rule runs | listed as not enforced (`enforced` `NO`, `NOT ENFORCED`), because the delete of the referenced row succeeds, and a later insert can take the freed record id, so the link then points at another record, in `sql` and openCypher too (seen on `dc591c4d1c`). Unlike a `NOT ENFORCED` key in PostgreSQL, an `INSERT` or `UPDATE` through this language still refuses a link to a missing record (`23503`) |
 
+## `CREATE TABLE`
+
+A table is a vertex type, so openCypher matches its rows. A table that declares both ends of an edge is an edge type. Every refusal below is `0A000`.
+
+```sql
+CREATE TABLE person (id bigint PRIMARY KEY, name text);
+CREATE TABLE knows (
+  source_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE,
+  target_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE,
+  since int
+);
+```
+
+| area | PostgreSQL | `postgresql` |
+| --- | --- | --- |
+| Foreign keys | any columns | only the two ends of an edge, written as above (as column or table constraints). Every other `REFERENCES` is refused, a link column included |
+| A table that an edge table refers to | declares a column `rid` itself | needs a column `id` of its own, so that its record id is `rid`, a `text` |
+| The record id | none | readable by name (`rid`, or `id` in a table with no column `id`, where PostgreSQL raises `42703`), left out of `*` and of an `INSERT` without a column list, listed in the catalog once a foreign key refers to the table |
+| An end of an edge | any row of the referenced table | checked by writes of this language only: `sql` and openCypher do not read the declaration |
+| Keys over an end of an edge | any | only `(source_id, target_id)`, together |
+| Transactions | a rollback takes a new table back | the engine's schema is not transactional, so `CREATE TABLE` is refused in a transaction block, also one that a message of several statements opens on the wire |
+| Names | `person` and `"Person"` are two tables | an unquoted name that finds a table in another case counts as taken (`42P07`) |
+| Column types | all, with modifiers | `bool`, `int2`, `int4`, `int8`, `float4`, `float8`, `numeric`, `text`, `varchar`, `bytea`, `date`, `timestamp`, `jsonb`, `vector` and `vector(n)`, and arrays of `bool`, `int4`, `int8`, `float4`, `float8`, `numeric`, `bytea`, and `text`. No other type modifier |
+| A `jsonb` column | any JSON | a JSON object; an array or a scalar is refused when it is written |
+| Constraints | all | `NULL`, `NOT NULL`, `UNIQUE`, `PRIMARY KEY`, `DEFAULT`. No `CHECK`, `EXCLUDE`, `serial`, identity or generated columns, deferrable constraints, `NULLS NOT DISTINCT`, or table options (`TEMP`, `INHERITS`, `PARTITION BY`, `LIKE`, `AS`, `WITH`) |
+| Defaults | any expression | a constant, for `bool`, the number types, `text`, and `varchar` |
+| Keys | any type with an index | `bool`, the number types, `text`, `varchar`, `date`, and `timestamp` |
+| `23505` | names the constraint | names the index of the engine |
+| `NOT NULL` in `information_schema.table_constraints` | listed as a `CHECK` constraint | not listed; `is_nullable` says it |
+
+`NOT NULL`, unique keys, defaults, and the dimensions of a `vector(n)` are kept by the schema of the engine, so they hold for writes of every language.
+
 ## Choices, open to change
 
 | # | choice | the main alternative |
@@ -50,7 +82,7 @@ Changing these means changing the ArcadeDB engine.
 
 | area | state |
 | --- | --- |
-| `CREATE`, `ALTER`, `DROP` | refused; types are made with ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
+| `ALTER`, `DROP`, and every `CREATE` but `CREATE TABLE` | refused; use ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
 | Types | no `uuid`, `timestamptz`, `time`, or `char(n)` |
 | Queries | refused: `array_agg`, the JSON aggregates, most window frames, `ntile`, named windows, `WITH RECURSIVE`, `= ANY`, `->>`, `LATERAL`, `NATURAL` joins, `SIMILAR TO` |
 | Large operations | joins, `GROUP BY`, derived tables, `WITH`, and set operations fail with `53200` over a memory limit instead of spilling to disk |

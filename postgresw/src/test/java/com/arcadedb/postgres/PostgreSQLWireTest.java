@@ -447,7 +447,7 @@ class PostgreSQLWireTest extends PostgresWireProtocolTestBase {
       assertThat(sqlStateOf(readUntilReadyForQuery(in))).isEqualTo("42883");
       sendSimpleQuery(out, "SELECT 1 / 0");
       assertThat(sqlStateOf(readUntilReadyForQuery(in))).isEqualTo("22012");
-      sendSimpleQuery(out, "CREATE TABLE t (a int)");
+      sendSimpleQuery(out, "CREATE VIEW t AS SELECT 1");
       assertThat(sqlStateOf(readUntilReadyForQuery(in))).isEqualTo("0A000");
       sendSimpleQuery(out, "COPY person TO STDOUT");
       assertThat(sqlStateOf(readUntilReadyForQuery(in))).isEqualTo("0A000");

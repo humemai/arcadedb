@@ -46,8 +46,8 @@ import java.util.Map;
  * <li>a typed {@code LIST} and the primitive arrays hold no null element;</li>
  * <li>an {@code EMBEDDED} property, a collection of embedded documents or of links, and a list of dates are not written.</li>
  * </ul>
- * A vector that does not have the dimensions of the {@code LSM_VECTOR} index of its property is {@code 22000}, as pgvector
- * refuses a value of the wrong dimensions for a {@code vector(n)} column.
+ * A vector that does not have the dimensions of its column ({@code vector(n)}) or of the {@code LSM_VECTOR} index of its property
+ * is {@code 22000}, as pgvector refuses a value of the wrong dimensions for a {@code vector(n)} column.
  */
 final class StoredValues {
   private StoredValues() {
@@ -166,6 +166,12 @@ final class StoredValues {
   }
 
   private static void checkDimensions(final Table table, final Column column, final float[] vector) {
+    // the property of a column declared vector(n) has n as its least and its most number of values
+    final Property property = table.documentType().getPolymorphicPropertyIfExists(column.property());
+    if (property != null && property.getMin() != null && property.getMin().equals(property.getMax())
+        && !property.getMin().equals(Integer.toString(vector.length)))
+      throw new PostgreSQLEvaluationException("22000",
+          "expected " + property.getMin() + " dimensions, not " + vector.length);
     final TypeIndex index = table.documentType().getPolymorphicIndexByProperties(column.property());
     if (index == null || index.getType() != Schema.INDEX_TYPE.LSM_VECTOR)
       return;

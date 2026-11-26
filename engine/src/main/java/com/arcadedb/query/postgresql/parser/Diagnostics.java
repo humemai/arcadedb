@@ -83,7 +83,18 @@ final class Diagnostics {
       Map.entry("unsupportedDeleteUsing", "DELETE with USING"),
       Map.entry("unsupportedCurrentOf", "WHERE CURRENT OF"),
       Map.entry("unsupportedTransactionMode", "A transaction mode (ISOLATION LEVEL, READ ONLY, DEFERRABLE)"),
-      Map.entry("unsupportedTransactionChain", "AND CHAIN"));
+      Map.entry("unsupportedTransactionChain", "AND CHAIN"),
+      Map.entry("unsupportedTableKind", "A temporary or unlogged table"),
+      Map.entry("unsupportedExplainedCreate", "CREATE"),
+      Map.entry("unsupportedTableForm", "This form of CREATE TABLE (OF, PARTITION OF, AS or a table option)"),
+      Map.entry("unsupportedTableOption",
+          "A table option (INHERITS, PARTITION BY, USING, WITH, ON COMMIT or TABLESPACE)"),
+      Map.entry("unsupportedTableElement", "LIKE in CREATE TABLE"),
+      Map.entry("unsupportedColumnConstraint",
+          "This column option (CHECK, GENERATED, COLLATE, storage, a deferrable or unenforced constraint and the like)"),
+      Map.entry("unsupportedReferenceOption", "MATCH in a foreign key"),
+      Map.entry("unsupportedTableConstraint", "This table constraint (CHECK, EXCLUDE, NOT NULL, NULLS NOT DISTINCT or USING INDEX)"),
+      Map.entry("unsupportedConstraintOption", "An option of a table constraint (INCLUDE, WITH, DEFERRABLE and the like)"));
 
   private static final Set<Integer> NOT_WRITES = Set.of(PostgreSQLParser.WITH, PostgreSQLParser.VALUES, PostgreSQLParser.TABLE,
       PostgreSQLParser.LPAREN);
@@ -120,8 +131,8 @@ final class Diagnostics {
     final String what = DESCRIPTIONS.containsKey(ruleName) ? DESCRIPTIONS.get(ruleName) : words(ruleName, marker);
     String message = what + " is not supported by the postgresql language (" + position(start) + ")";
     if ("unsupportedStatement".equals(ruleName) && !NOT_WRITES.contains(start.getType()))
-      message += ": the language runs SELECT, INSERT, UPDATE, DELETE and the transaction statements, use the sql language for it"
-          + " (the {sql} marker on the wire)";
+      message += ": the language runs SELECT, INSERT, UPDATE, DELETE, CREATE TABLE and the transaction statements, use the sql"
+          + " language for it (the {sql} marker on the wire)";
     return new PostgreSQLFeatureNotSupportedException(message);
   }
 

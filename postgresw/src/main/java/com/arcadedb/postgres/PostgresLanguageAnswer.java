@@ -198,6 +198,8 @@ final class PostgresLanguageAnswer {
       return "DELETE " + count;
     if (words.startsWith("EXPLAIN"))
       return "EXPLAIN";
+    if (words.startsWith("CREATE TABLE"))
+      return "CREATE TABLE";
     return "SELECT " + count;
   }
 }
