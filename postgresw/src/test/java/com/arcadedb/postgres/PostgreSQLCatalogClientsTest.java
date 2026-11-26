@@ -230,4 +230,160 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
           .anyMatch(line -> line.startsWith("schemas|") && line.contains("\"public\"") && !line.contains("\"pg_"));
     }
   }
+
+  // ---------------------------------------------------------------------- the test of fork issue #15: a PostgreSQL user
+
+  /** The statements of the hand-written test: a join over the edge table, a report, a row, a relationship, and a delete. */
+  private static final String USER_SQL = """
+      SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON c.id = w.target_id ORDER BY w.since;
+      SELECT c.name, count(*) AS employees, min(w.since) AS first_year FROM company c JOIN works_at w ON w.target_id = c.id GROUP BY c.name ORDER BY employees DESC, c.name;
+      INSERT INTO person (pid, name, age, city) VALUES (6, 'Fay', 33, 'Delft') RETURNING pid, name;
+      INSERT INTO works_at (source_id, target_id, since) SELECT p.id, c.id, 2026 FROM person p, company c WHERE p.pid = 6 AND c.name = 'Cedar' RETURNING since;
+      SELECT p.name, c.name FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON c.id = w.target_id WHERE p.pid = 6;
+      DELETE FROM person WHERE pid = 6;
+      SELECT count(*) FROM works_at;
+      """;
+
+  @Test
+  void aPostgreSQLUserWritesTheirOwnSqlInPsql() throws Exception {
+    requireDocker();
+    try (final GenericContainer<?> container = client(PSQL_IMAGE)) {
+      container.start();
+      container.copyFileToContainer(Transferable.of(USER_SQL), "/tmp/user.sql");
+
+      final Container.ExecResult result = psql(container, "-q -A -t -F '|' -v ON_ERROR_STOP=1 -f /tmp/user.sql");
+      assertThat(result.getExitCode()).as(result.getStderr()).isZero();
+      assertThat(result.getStderr()).isBlank();
+      assertThat(lines(result.getStdout())).containsExactly(
+          // the join over the edge table, Ada twice for her two edges
+          "Ada|Acme|2019", "Bo|Acme|2020", "Cy|Birch|2021", "Ada|Acme|2022", "Di|Birch|2023",
+          // the report
+          "Acme|3|2019", "Birch|2|2021",
+          // a new row, a new relationship, and the join that reads them
+          "6|Fay", "2026", "Fay|Cedar",
+          // the delete of the row takes its relationship with it
+          "5");
+    }
+  }
+
+  private static final String AUTOMAP_SCRIPT = """
+      import json
+      import logging
+      import sys
+
+      from sqlalchemy import Column, FetchedValue, Text, create_engine, select
+      from sqlalchemy.engine import URL
+      from sqlalchemy.ext.automap import automap_base
+      from sqlalchemy.orm import Session
+
+      url = URL.create("postgresql+psycopg", username="root", password="@PASSWORD@", host="host.testcontainers.internal",
+                       port=@PORT@, database="@DATABASE@",
+                       query={"sslmode": "disable", "options": "-c arcadedb.language=postgresql"})
+      logging.basicConfig(stream=sys.stderr)
+      logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
+      engine = create_engine(url)
+      Base = automap_base()
+      Base.prepare(autoload_with=engine)
+
+
+      def show(label, function):
+          # one line per step, so that one failure does not hide the others
+          try:
+              print(label + "|" + json.dumps(function(), default=str))
+          except Exception as e:
+              print(label + "|ERROR " + type(e).__name__ + " " + str(e).replace("\\n", " ")[:600])
+
+
+      show("classes", lambda: sorted(Base.classes.keys()))
+      Person = Base.classes.person
+      Company = Base.classes.company
+      Orders = Base.classes.orders
+      WorksAt = Base.classes.works_at
+      show("relationships", lambda: [[cls.__name__, sorted(r.key for r in cls.__mapper__.relationships)]
+                                     for cls in (Company, Orders, Person, WorksAt)])
+
+
+      def navigate():
+          with Session(engine) as session:
+              ada = session.scalars(select(Person).where(Person.pid == 1)).one()
+              acme = session.scalars(select(Company).where(Company.cid == 10)).one()
+              order = session.scalars(select(Orders).where(Orders.oid == 102)).one()
+              return [sorted([w.company.name, w.since] for w in ada.works_at_collection),
+                      sorted(w.person.name for w in acme.works_at_collection), order.person.name,
+                      sorted(o.oid for o in ada.orders_collection)]
+
+
+      show("navigate", navigate)
+
+
+      def joined():
+          with Session(engine) as session:
+              query = (select(Person.name, Company.name, WorksAt.since)
+                       .join(WorksAt, WorksAt.source_id == Person.id).join(Company, Company.id == WorksAt.target_id)
+                       .order_by(WorksAt.since))
+              return [list(row) for row in session.execute(query)]
+
+
+      show("join", joined)
+
+
+      def write(company, person, works_at):
+          with Session(engine) as session:
+              cedar = session.scalars(select(company).where(company.cid == 30)).one()
+              fay = person(pid=6, name="Fay", age=33, city="Delft")
+              session.add(fay)
+              session.add(works_at(person=fay, company=cedar, since=2026))
+              session.commit()
+          with Session(engine) as session:
+              cedar = session.scalars(select(company).where(company.cid == 30)).one()
+              return sorted([w.person.name, w.since] for w in cedar.works_at_collection)
+
+
+      # the reflected record id carries no identity for SQLAlchemy, so it does not read the new key back
+      show("write", lambda: write(Company, Person, WorksAt))
+
+      Declared = automap_base()
+
+
+      class person(Declared):
+          __tablename__ = "person"
+          id = Column(Text, primary_key=True, server_default=FetchedValue())
+
+
+      class works_at(Declared):
+          __tablename__ = "works_at"
+          id = Column(Text, primary_key=True, server_default=FetchedValue())
+
+
+      Declared.prepare(autoload_with=engine)
+      show("write with the keys declared", lambda: write(Declared.classes.company, person, works_at))
+      """;
+
+  @Test
+  void sqlalchemyAutomapGivesWorkingRelationships() throws Exception {
+    requireDocker();
+    try (final GenericContainer<?> python = client(PYTHON_IMAGE)) {
+      python.start();
+      python.execInContainer("mkdir", "-p", "/work");
+      python.copyFileToContainer(Transferable.of(AUTOMAP_SCRIPT.replace("@PORT@", String.valueOf(getServerPostgresPort()))
+          .replace("@DATABASE@", getDatabaseName()).replace("@PASSWORD@", DEFAULT_PASSWORD_FOR_TESTS)), "/work/automap.py");
+      final Container.ExecResult result = python.execInContainer("uv", "run", "--no-project", "--with", "sqlalchemy", "--with",
+          "psycopg[binary]", "python", "-I", "/work/automap.py");
+      assertThat(result.getExitCode()).as(result.getStderr()).isZero();
+
+      final List<String> out = Arrays.stream(result.getStdout().strip().split("\\R")).toList();
+      System.out.println("automap: " + String.join("\nautomap: ", out));
+      assertThat(out).as(result.getStderr()).hasSize(6).contains(
+          "classes|[\"company\", \"orders\", \"person\", \"works_at\"]",
+          "relationships|[[\"company\", [\"works_at_collection\"]], [\"orders\", [\"person\"]], "
+              + "[\"person\", [\"orders_collection\", \"works_at_collection\"]], [\"works_at\", [\"company\", \"person\"]]]",
+          "navigate|[[[\"Acme\", 2019], [\"Acme\", 2022]], [\"Ada\", \"Ada\", \"Bo\"], \"Bo\", [100, 101]]",
+          "join|[[\"Ada\", \"Acme\", 2019], [\"Bo\", \"Acme\", 2020], [\"Cy\", \"Birch\", 2021], [\"Ada\", \"Acme\", 2022], [\"Di\", \"Birch\", 2023]]",
+          "write with the keys declared|[[\"Fay\", 2026]]");
+      // an unexpected thing for a PostgreSQL user, recorded in fork issue #15: the ORM inserts the person without asking for its
+      // key, so the relationship has no source. PostgreSQL's own identity column would be read back with RETURNING.
+      assertThat(out).anyMatch(line -> line.startsWith("write|ERROR IntegrityError")
+          && line.contains("null value in column \"source_id\""));
+    }
+  }
 }
