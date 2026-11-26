@@ -8,5 +8,5 @@ Indexes:
     "company_pkey" PRIMARY KEY, btree (id)
     "company_cid_key" UNIQUE CONSTRAINT, btree (cid)
 Referenced by:
-    TABLE "works_at" CONSTRAINT "works_at_target_id_fkey" FOREIGN KEY (target_id) REFERENCES company(id)
+    TABLE "works_at" CONSTRAINT "works_at_target_id_fkey" FOREIGN KEY (target_id) REFERENCES company(id) ON DELETE CASCADE
 

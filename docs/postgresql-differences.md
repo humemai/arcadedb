@@ -24,11 +24,11 @@ Changing these means changing the ArcadeDB engine.
 | area | PostgreSQL | `postgresql` |
 | --- | --- | --- |
 | Record ids | none | every record has one, given by the engine; a statement cannot set it (`428C9`) |
-| Deleting a vertex | follows the `ON DELETE` rule of each foreign key | its edges are always deleted |
+| Deleting a vertex | follows the `ON DELETE` rule of each foreign key | its edges are always deleted, so the foreign keys of an edge table are listed as `ON DELETE CASCADE`, and no other rule can be chosen |
 | Two writers on one row | by default the second waits, then writes | neither waits; the commit that comes last fails with `40001` and has to be retried |
 | Savepoints | supported | the language refuses `SAVEPOINT`; over the wire it is accepted and does nothing, and `ROLLBACK TO SAVEPOINT` is refused |
 | Ends of an edge type | a foreign key is declared | the schema does not record which types an edge type connects, so the prototype needs a declaration (choice 4) |
-| A foreign key on a `LINK` column | enforced: the referenced row cannot be deleted, or the declared `ON DELETE` rule runs | listed in `information_schema`, but not enforced: the delete succeeds, and a later insert can take the freed record id, so the link then points at another record, in `sql` and openCypher too (seen on `dc591c4d1c`) |
+| A foreign key on a `LINK` column | enforced: the referenced row cannot be deleted, or the declared `ON DELETE` rule runs | listed as not enforced (`enforced` `NO`, `NOT ENFORCED`), because the delete of the referenced row succeeds, and a later insert can take the freed record id, so the link then points at another record, in `sql` and openCypher too (seen on `dc591c4d1c`). Unlike a `NOT ENFORCED` key in PostgreSQL, an `INSERT` or `UPDATE` through this language still refuses a link to a missing record (`23503`) |
 
 ## Choices, open to change
 
@@ -63,6 +63,5 @@ These should match PostgreSQL and do not yet.
 | --- | --- |
 | `ILIKE` on non-ASCII letters | folds them, while PostgreSQL with the `C` collation does not |
 | `CURRENT_DATE`, `LOCALTIMESTAMP` | read the clock for each row, not once per transaction (from reading the code, not tested) |
-| the foreign keys of an edge table in `information_schema.referential_constraints` | `delete_rule` says `NO ACTION`, while deleting a vertex deletes its edges, which PostgreSQL calls `CASCADE` |
 
 More detail: [supported syntax](postgresql-supported-syntax.md), the [decisions](postgresql-decisions.md), and the design issues [#1](https://github.com/humemai/arcadedb/issues/1), [#38](https://github.com/humemai/arcadedb/issues/38), [#29](https://github.com/humemai/arcadedb/issues/29), and [#10](https://github.com/humemai/arcadedb/issues/10).

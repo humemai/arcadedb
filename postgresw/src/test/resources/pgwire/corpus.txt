@@ -20,6 +20,10 @@
 \d person_pid_key
 == describe-missing
 \d nosuch
+== foreign-key-rules
+SELECT conname, confdeltype, conenforced, convalidated FROM pg_catalog.pg_constraint WHERE contype = 'f' ORDER BY conname;
+SELECT constraint_name, delete_rule FROM information_schema.referential_constraints ORDER BY constraint_name;
+SELECT constraint_name, enforced FROM information_schema.table_constraints WHERE constraint_type = 'FOREIGN KEY' ORDER BY constraint_name;
 == select-join
 SELECT p.name, o.oid FROM orders o JOIN person p ON o.pid = p.pid ORDER BY o.oid;
 == select-group

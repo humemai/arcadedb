@@ -60,8 +60,11 @@ import static com.arcadedb.query.postgresql.plan.infoschema.InfoType.YES_OR_NO;
  * column, {@code columns.maximum_cardinality}, and
  * {@code tables.self_referencing_column_name}, {@code reference_generation}, the user-defined type columns and
  * {@code commit_action}. What is a constant: {@code is_deferrable} and {@code initially_deferred} are {@code NO} (the keys are
- * declared, nothing checks them and nothing defers them), {@code enforced} is {@code YES}, {@code match_option} is {@code NONE}
- * and the update and delete rules are {@code NO ACTION}, as a {@code CREATE TABLE} without these clauses gives.
+ * declared, nothing checks them and nothing defers them), {@code match_option} is {@code NONE} and the update rule is
+ * {@code NO ACTION}, as a {@code CREATE TABLE} without these clauses gives. {@code delete_rule} and {@code enforced} say what the
+ * engine does: the foreign keys of the ends of an edge are {@code CASCADE}, because deleting a vertex deletes its edges, and the
+ * foreign key of a {@code LINK} property has {@code enforced = 'NO'} (delete rule {@code NO ACTION}), because the record a link
+ * points at can be deleted.
  * Not-null columns are {@code is_nullable = 'NO'}; PostgreSQL also lists each of them as a {@code CHECK} constraint in
  * {@code table_constraints}, with a name made of object ids, and the engine does not (it has no check constraints).
  */
@@ -241,7 +244,7 @@ public final class InformationSchema {
     final List<Object[]> rows = new ArrayList<>();
     for (final Constraint constraint : Constraint.of(catalog))
       rows.add(row(view, db, RelationalCatalog.SCHEMA, constraint.name(), db, RelationalCatalog.SCHEMA, constraint.table(),
-          constraint.type(), "NO", "NO", "YES", Constraint.UNIQUE.equals(constraint.type()) ? "YES" : null));
+          constraint.type(), "NO", "NO", yesNo(constraint.enforced()), Constraint.UNIQUE.equals(constraint.type()) ? "YES" : null));
     return rows;
   }
 
@@ -263,7 +266,7 @@ public final class InformationSchema {
     for (final Constraint constraint : Constraint.of(catalog))
       if (constraint.isForeignKey())
         rows.add(row(view, db, RelationalCatalog.SCHEMA, constraint.name(), db, RelationalCatalog.SCHEMA,
-            constraint.referencedKey(), "NONE", "NO ACTION", "NO ACTION"));
+            constraint.referencedKey(), "NONE", "NO ACTION", constraint.cascadesOnDelete() ? "CASCADE" : "NO ACTION"));
     return rows;
   }
 

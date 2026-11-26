@@ -481,8 +481,8 @@ public class PostgresCatalog {
     relation("pg_index", null, "indexrelid", "indrelid", "indnatts", "indnkeyatts", "indisunique", "indnullsnotdistinct",
         "indisprimary", "indisexclusion", "indimmediate", "indisclustered", "indisvalid", "indcheckxmin", "indisready",
         "indislive", "indisreplident", "indkey", "indcollation", "indclass", "indoption", "indexprs", "indpred");
-    relation("pg_constraint", null, "oid", "conname", "connamespace", "contype", "condeferrable", "condeferred", "convalidated",
-        "conrelid", "contypid", "conindid", "conparentid", "confrelid", "confupdtype", "confdeltype", "confmatchtype",
+    relation("pg_constraint", null, "oid", "conname", "connamespace", "contype", "condeferrable", "condeferred", "conenforced",
+        "convalidated", "conrelid", "contypid", "conindid", "conparentid", "confrelid", "confupdtype", "confdeltype", "confmatchtype",
         "conislocal", "coninhcount", "connoinherit", "conkey", "confkey", "conpfeqop", "conppeqop", "conffeqop", "confdelsetcols",
         "conexclop", "conbin");
     relation("pg_indexes", null, "schemaname", "tablename", "indexname", "tablespace", "indexdef");
@@ -589,7 +589,8 @@ public class PostgresCatalog {
         "indimmediate", "indisclustered", "indisvalid", "indcheckxmin", "indisready", "indislive", "indisreplident");
     columnTypes("pg_constraint", PostgresType.INTEGER, "oid", "connamespace", "conrelid", "contypid", "conindid", "conparentid",
         "confrelid", "coninhcount");
-    columnTypes("pg_constraint", PostgresType.BOOLEAN, "condeferrable", "condeferred", "convalidated", "conislocal", "connoinherit");
+    columnTypes("pg_constraint", PostgresType.BOOLEAN, "condeferrable", "condeferred", "conenforced", "convalidated", "conislocal",
+        "connoinherit");
     columnTypes("pg_constraint", PostgresType.ARRAY_INT, "conkey", "confkey");
     columnTypes("information_schema.key_column_usage", PostgresType.INTEGER, "ordinal_position");
     columnTypes("pg_inherits", PostgresType.INTEGER, "inhrelid", "inhparent", "inhseqno");

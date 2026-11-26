@@ -122,7 +122,8 @@ public final class SmallSchemaSql {
       lines.add("  CONSTRAINT " + name(key.name()) + " UNIQUE (" + names(key.columns()) + ")");
     for (final Table.ForeignKey foreignKey : table.foreignKeys())
       lines.add("  CONSTRAINT " + name(foreignKey.name()) + " FOREIGN KEY (" + names(foreignKey.columns()) + ") REFERENCES "
-          + name(foreignKey.referencedTable()) + " (" + names(foreignKey.referencedColumns()) + ")");
+          + name(foreignKey.referencedTable()) + " (" + names(foreignKey.referencedColumns()) + ")"
+          + (foreignKey.cascadesOnDelete() ? " ON DELETE CASCADE" : "") + (foreignKey.enforced() ? "" : " NOT ENFORCED"));
     out.append("CREATE TABLE ").append(name(table.name())).append(" (\n").append(String.join(",\n", lines)).append("\n);\n");
   }
 

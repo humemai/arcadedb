@@ -227,7 +227,8 @@ class InformationSchemaTest extends TestHelper {
     assertThat(rows("SELECT * FROM information_schema.table_constraints ORDER BY constraint_name")).containsExactly(
         row(db, "public", "company_cid_key", db, "public", "company", "UNIQUE", "NO", "NO", "YES", "YES"),
         row(db, "public", "company_pkey", db, "public", "company", "PRIMARY KEY", "NO", "NO", "YES", null),
-        row(db, "public", "orders_buyer_fkey", db, "public", "orders", "FOREIGN KEY", "NO", "NO", "YES", null),
+        // the engine does not hold a link when the record it points at is deleted
+        row(db, "public", "orders_buyer_fkey", db, "public", "orders", "FOREIGN KEY", "NO", "NO", "NO", null),
         row(db, "public", "orders_oid_key", db, "public", "orders", "UNIQUE", "NO", "NO", "YES", "YES"),
         row(db, "public", "orders_pkey", db, "public", "orders", "PRIMARY KEY", "NO", "NO", "YES", null),
         row(db, "public", "person_pid_key", db, "public", "person", "UNIQUE", "NO", "NO", "YES", "YES"),
@@ -258,8 +259,8 @@ class InformationSchemaTest extends TestHelper {
     final String db = database.getName();
     assertThat(rows("SELECT * FROM information_schema.referential_constraints ORDER BY constraint_name")).containsExactly(
         row(db, "public", "orders_buyer_fkey", db, "public", "person_pkey", "NONE", "NO ACTION", "NO ACTION"),
-        row(db, "public", "works_at_source_id_fkey", db, "public", "person_pkey", "NONE", "NO ACTION", "NO ACTION"),
-        row(db, "public", "works_at_target_id_fkey", db, "public", "company_pkey", "NONE", "NO ACTION", "NO ACTION"));
+        row(db, "public", "works_at_source_id_fkey", db, "public", "person_pkey", "NONE", "NO ACTION", "CASCADE"),
+        row(db, "public", "works_at_target_id_fkey", db, "public", "company_pkey", "NONE", "NO ACTION", "CASCADE"));
   }
 
   @Test

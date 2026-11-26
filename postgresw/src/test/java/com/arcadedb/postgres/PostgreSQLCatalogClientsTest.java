@@ -110,23 +110,23 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
       assertThat(lines(edge.getStdout())).containsSubsequence("Table \"public.works_at\"", "id | text | | not null | generated always as identity",
           "source_id | text | | not null |", "target_id | text | | not null |", "since | integer | | |", "Indexes:",
           "\"works_at_pkey\" PRIMARY KEY, btree (id)", "Foreign-key constraints:",
-          "\"works_at_source_id_fkey\" FOREIGN KEY (source_id) REFERENCES person(id)",
-          "\"works_at_target_id_fkey\" FOREIGN KEY (target_id) REFERENCES company(id)");
+          "\"works_at_source_id_fkey\" FOREIGN KEY (source_id) REFERENCES person(id) ON DELETE CASCADE",
+          "\"works_at_target_id_fkey\" FOREIGN KEY (target_id) REFERENCES company(id) ON DELETE CASCADE");
 
       final Container.ExecResult vertex = psql(container, "-q -c '\\d person'");
       assertThat(vertex.getExitCode()).as(vertex.getStderr()).isZero();
       assertThat(lines(vertex.getStdout())).containsSubsequence("Table \"public.person\"", "id | text | | not null | generated always as identity",
           "age | integer | | |", "city | character varying | | |", "name | character varying | | |", "pid | integer | | |", "Indexes:",
           "\"person_pkey\" PRIMARY KEY, btree (id)", "\"person_pid_key\" UNIQUE CONSTRAINT, btree (pid)", "Referenced by:",
-          "TABLE \"orders\" CONSTRAINT \"orders_buyer_fkey\" FOREIGN KEY (buyer) REFERENCES person(id)",
-          "TABLE \"works_at\" CONSTRAINT \"works_at_source_id_fkey\" FOREIGN KEY (source_id) REFERENCES person(id)");
+          "TABLE \"orders\" CONSTRAINT \"orders_buyer_fkey\" FOREIGN KEY (buyer) REFERENCES person(id) NOT ENFORCED",
+          "TABLE \"works_at\" CONSTRAINT \"works_at_source_id_fkey\" FOREIGN KEY (source_id) REFERENCES person(id) ON DELETE CASCADE");
 
       // a table with a link has the foreign key of it
       final Container.ExecResult document = psql(container, "-q -c '\\d orders'");
       assertThat(document.getExitCode()).as(document.getStderr()).isZero();
       assertThat(lines(document.getStdout())).containsSubsequence("Table \"public.orders\"", "id | text | | not null | generated always as identity",
           "\"orders_pkey\" PRIMARY KEY, btree (id)", "\"orders_oid_key\" UNIQUE CONSTRAINT, btree (oid)",
-          "Foreign-key constraints:", "\"orders_buyer_fkey\" FOREIGN KEY (buyer) REFERENCES person(id)");
+          "Foreign-key constraints:", "\"orders_buyer_fkey\" FOREIGN KEY (buyer) REFERENCES person(id) NOT ENFORCED");
     }
   }
 
@@ -166,6 +166,8 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
                                  for fk in inspector.get_foreign_keys("works_at")))
       show("orders fks", lambda: [[fk["name"], fk["constrained_columns"], fk["referred_table"], fk["referred_columns"]]
                                   for fk in inspector.get_foreign_keys("orders")])
+      show("fk options", lambda: sorted([fk["name"], fk.get("options", {}).get("ondelete")]
+                                        for table in ("orders", "works_at") for fk in inspector.get_foreign_keys(table)))
       show("unique", lambda: [[u["name"], u["column_names"]] for u in inspector.get_unique_constraints("person")])
       show("indexes", lambda: sorted([i["name"], i["column_names"], i["unique"]] for i in inspector.get_indexes("person")))
       show("views", lambda: inspector.get_view_names())
@@ -212,6 +214,8 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
           "fks|[[\"works_at_source_id_fkey\", [\"source_id\"], \"person\", [\"id\"]], "
               + "[\"works_at_target_id_fkey\", [\"target_id\"], \"company\", [\"id\"]]]",
           "orders fks|[[\"orders_buyer_fkey\", [\"buyer\"], \"person\", [\"id\"]]]",
+          "fk options|[[\"orders_buyer_fkey\", null], [\"works_at_source_id_fkey\", \"CASCADE\"], "
+              + "[\"works_at_target_id_fkey\", \"CASCADE\"]]",
           "unique|[[\"person_pid_key\", [\"pid\"]]]",
           "indexes|[[\"person_pid_key\", [\"pid\"], true]]",
           "views|[]",

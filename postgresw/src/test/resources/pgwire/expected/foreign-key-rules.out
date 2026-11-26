@@ -1,0 +1,21 @@
+         conname         | confdeltype | conenforced | convalidated
+-------------------------+-------------+-------------+--------------
+ orders_buyer_fkey       | a           | f           | f
+ works_at_source_id_fkey | c           | t           | t
+ works_at_target_id_fkey | c           | t           | t
+(3 rows)
+
+     constraint_name     | delete_rule
+-------------------------+-------------
+ orders_buyer_fkey       | NO ACTION
+ works_at_source_id_fkey | CASCADE
+ works_at_target_id_fkey | CASCADE
+(3 rows)
+
+     constraint_name     | enforced
+-------------------------+----------
+ orders_buyer_fkey       | NO
+ works_at_source_id_fkey | YES
+ works_at_target_id_fkey | YES
+(3 rows)
+
