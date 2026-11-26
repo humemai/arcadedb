@@ -31,9 +31,13 @@ permissions:
 # share a group - each merge keeps its own complete run, and a red main still points at one commit.
 # (A shared main group would not do: GitHub keeps one pending run per group and silently cancels
 # the one it replaces, so merges landing close together would skip their middle commits.)
+# Fork only: the long-lived branch of the PostgreSQL-style SQL prototype is the exception. Its pushes share one group per
+# branch and a newer merge cancels the run of the older one, because merges land close together there and a pile of full
+# runs holds back the checks of everything else. Only the head of that branch needs a full result. Drop this when anything
+# goes upstream.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref == 'refs/heads/feat/postgresql-prototype' && github.ref) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/feat/postgresql-prototype') }}
 
 jobs:
   # Repo/workflow hygiene only: formatting, the meta-checks below, and the CI scripts' own self-test.
