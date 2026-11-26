@@ -187,6 +187,7 @@ class PgTransactionParityIT {
 
   private static Run run(final List<Step> steps, final Map<Character, Session> sessions, final boolean server) throws Exception {
     final List<Future<String>> sent = new ArrayList<>();
+    Future<String> waiting = null;
     for (final Step step : steps) {
       final Future<String> outcome = sessions.get(step.session()).send(step.sql());
       sent.add(outcome);
@@ -194,8 +195,15 @@ class PgTransactionParityIT {
         // the server holds it on the row lock of the other session until that one ends
         Thread.sleep(1500);
         assertFalse(outcome.isDone(), "the server did not make the statement wait: " + step.sql());
-      } else
+        waiting = outcome;
+      } else {
         outcome.get(60, TimeUnit.SECONDS);
+        // the end of the other transaction lets the held statement go on: it has finished before the next step runs
+        if (waiting != null && "COMMIT".equals(step.sql())) {
+          waiting.get(60, TimeUnit.SECONDS);
+          waiting = null;
+        }
+      }
     }
     final List<String> outcomes = new ArrayList<>();
     for (final Future<String> outcome : sent)
