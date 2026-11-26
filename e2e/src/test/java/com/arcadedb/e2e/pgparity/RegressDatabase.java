@@ -50,14 +50,16 @@ final class RegressDatabase implements AutoCloseable {
    *
    * @param key         the name for a table of {@code public} and for a temporary table, {@code schema.name} for any other table
    *                    and for a table that a temporary table of the same name hides
-   * @param uniqueKeys  the columns of each primary key and unique constraint
+   * @param primaryKey  the columns of the primary key, empty when the table has none
+   * @param uniqueKeys  the columns of each unique constraint
    * @param writeLimits what the table has that decides what a write does and that the engine API cannot give a copy
    * @param nested      part of inheritance or partitioning
    * @param signature   everything above as one text: it changes when the definition does
    * @param fingerprint the number of rows and a hash of them: it changes when the contents do
    */
-  record Table(String key, String schema, String name, List<Column> columns, List<List<String>> uniqueKeys,
-      List<String> writeLimits, boolean nested, long rowCount, String signature, String fingerprint) {
+  record Table(String key, String schema, String name, List<Column> columns, List<String> primaryKey,
+      List<List<String>> uniqueKeys, List<String> writeLimits, boolean nested, long rowCount, String signature,
+      String fingerprint) {
   }
 
   /** The tables a statement reads or writes, as the plan of the server names them. */
@@ -259,11 +261,14 @@ final class RegressDatabase implements AutoCloseable {
         if ("true".equals(row[9]))
           writeLimits.add("a default, identity or generated column " + row[5]);
       }
+      List<String> primaryKey = List.of();
       final List<List<String>> uniqueKeys = new ArrayList<>();
       for (final String[] rule : rules.getOrDefault(entry.getKey(), List.of())) {
         signature.append('|').append(rule[1]).append(' ').append(rule[3]);
         final boolean unique = rule[1].equals("p") || rule[1].equals("u");
-        if (unique)
+        if (rule[1].equals("p"))
+          primaryKey = List.of(rule[2].split("\t"));
+        else if (rule[1].equals("u"))
           uniqueKeys.add(List.of(rule[2].split("\t")));
         if (!unique || "true".equals(rule[4]))
           writeLimits.add(switch (rule[1]) {
@@ -275,7 +280,8 @@ final class RegressDatabase implements AutoCloseable {
             default -> "a " + rule[1];
           });
       }
-      found.add(new Table(key, schema, name, of, uniqueKeys, writeLimits, "true".equals(first[4]), 0, signature.toString(), null));
+      found.add(new Table(key, schema, name, of, primaryKey, uniqueKeys, writeLimits, "true".equals(first[4]), 0,
+          signature.toString(), null));
       qualified.add(identifier(schema) + "." + identifier(name));
     }
 
@@ -284,9 +290,9 @@ final class RegressDatabase implements AutoCloseable {
     for (int i = 0; i < found.size(); i++) {
       final Table table = found.get(i);
       final String[] print = fingerprints.get(i);
-      result.put(table.key(), new Table(table.key(), table.schema(), table.name(), table.columns(), table.uniqueKeys(),
-          table.writeLimits(), table.nested(), print == null ? -1 : Long.parseLong(print[1]), table.signature(),
-          print == null ? "unreadable" : print[1] + ":" + print[2]));
+      result.put(table.key(), new Table(table.key(), table.schema(), table.name(), table.columns(), table.primaryKey(),
+          table.uniqueKeys(), table.writeLimits(), table.nested(), print == null ? -1 : Long.parseLong(print[1]),
+          table.signature(), print == null ? "unreadable" : print[1] + ":" + print[2]));
     }
     return result;
   }

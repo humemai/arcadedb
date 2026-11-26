@@ -70,6 +70,20 @@ final class RegressValues {
       return new Holder(scalar, null);
     if (pgType.equals("jsonb"))
       return new Holder(Type.MAP, null);
+    // the arrays as CREATE TABLE of the language holds them
+    switch (pgType) {
+    case "_int4" -> {
+      return new Holder(Type.ARRAY_OF_INTEGERS, null);
+    }
+    case "_int8" -> {
+      return new Holder(Type.ARRAY_OF_LONGS, null);
+    }
+    case "_float8" -> {
+      return new Holder(Type.ARRAY_OF_DOUBLES, null);
+    }
+    default -> {
+    }
+    }
     if (pgType.startsWith("_")) {
       final Type element = SCALARS.get(pgType.substring(1));
       if (element != null)
@@ -208,16 +222,23 @@ final class RegressValues {
             yield map;
           throw new Unsupported("a jsonb value that is not an object cannot be held");
         }
+        case "_int4" -> elements(text).stream().mapToInt(Integer::parseInt).toArray();
+        case "_int8" -> elements(text).stream().mapToLong(Long::parseLong).toArray();
+        case "_float8" -> elements(text).stream().mapToDouble(Double::parseDouble).toArray();
         default -> {
           if (!type.startsWith("_"))
             throw new Unsupported("a value of type " + type + " cannot be held");
           final List<Object> list = new ArrayList<>();
-          for (final String element : elements(text))
+          for (final String element : elements(text)) {
+            if (element == null)
+              throw new Unsupported("an array with a NULL element cannot be held");
             list.add(toEngine(type.substring(1), element));
+          }
           yield list;
         }
       };
-    } catch (final IllegalArgumentException | DateTimeParseException e) {
+    } catch (final IllegalArgumentException | DateTimeParseException | NullPointerException e) {
+      // a NULL element of an array of numbers is a NullPointerException here
       throw new Unsupported("the value '" + text + "' of type " + type + " cannot be held");
     }
   }

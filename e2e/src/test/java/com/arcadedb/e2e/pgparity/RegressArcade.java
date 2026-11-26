@@ -27,6 +27,8 @@ import com.arcadedb.event.AfterRecordUpdateListener;
 import com.arcadedb.graph.MutableVertex;
 import com.arcadedb.query.postgresql.PostgreSQLErrors;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
+import com.arcadedb.query.postgresql.catalog.Table;
+import com.arcadedb.query.postgresql.catalog.TableDefinition;
 import com.arcadedb.query.postgresql.corpus.Values;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.sql.executor.Result;
@@ -433,9 +435,33 @@ final class RegressArcade implements RegressSubject {
         property.setMandatory(true);
       }
     }
-    for (final List<String> key : table.uniqueKeys())
+    final List<List<String>> keys = new ArrayList<>(table.uniqueKeys());
+    if (!table.primaryKey().isEmpty())
+      keys.add(table.primaryKey());
+    for (final List<String> key : keys)
       database().getSchema().createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, table.name(), key.toArray(new String[0]));
+    type.setCustomValue(TableDefinition.CUSTOM_KEY, definition(table).toJson());
     database().transaction(() -> insert(table, values));
+  }
+
+  /**
+   * What a table made by {@code CREATE TABLE} of the language keeps beside its schema (fork issue #118), so that a copy is shown
+   * as such a table: the columns in their order, the text columns, and the keys. No default: a table that has one is copied
+   * without it and blocked for writes.
+   */
+  private static TableDefinition definition(final RegressDatabase.Table table) {
+    final List<String> columns = new ArrayList<>();
+    final Set<String> text = new LinkedHashSet<>();
+    for (final RegressDatabase.Column column : table.columns()) {
+      columns.add(column.name());
+      if (column.type().equals("text"))
+        text.add(column.name());
+    }
+    final Table.Key primaryKey = table.primaryKey().isEmpty() ? null : new Table.Key(table.name() + "_pkey", table.primaryKey());
+    final List<Table.Key> uniqueKeys = new ArrayList<>();
+    for (final List<String> key : table.uniqueKeys())
+      uniqueKeys.add(new Table.Key(table.name() + "_" + String.join("_", key) + "_key", key));
+    return new TableDefinition(columns, text, primaryKey, uniqueKeys, Map.of(), Map.of());
   }
 
   private static List<Object[]> values(final RegressDatabase reference, final RegressDatabase.Table table) {
