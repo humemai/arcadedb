@@ -1,6 +1,6 @@
 # The pgvector statements of the postgresql language (fork issue #11), with expected answers that come from the definitions of the
-# operators and not from a server: the official postgres:18 image of the parity run has no pgvector, and the extension is not added
-# to it. Every case is flagged doc. The engine tests read this file (PgVectorDocCorpusTest); the parity harness does not.
+# operators. Every case is flagged doc. The engine tests read this file (PgVectorDocCorpusTest), and the parity run compares its
+# cells and the engine with a PostgreSQL 18 server that has pgvector (PgVectorParityIT, image pgvector/pgvector:pg18).
 # Columns, separated by one TAB: id, order, tol, status, statement, expected. The cells are those of answers.tsv (see its header):
 # order is ordered or multiset, tol is a floating point tolerance, statement escapes backslash, tab and line feed, expected is
 # {"columns":[labels],"types":[type names],"rows":[[cells]]} or {"error":"SQLSTATE"}.

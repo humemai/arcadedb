@@ -37,8 +37,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Runs the statements of {@code pgvector-doc.tsv} through the {@code postgresql} language on the {@code vec-small} fixture and
  * compares them with the cells written from the definitions of the pgvector operators, by the rules of {@link ResultComparator}.
- * The official PostgreSQL 18 image has no pgvector, so these cases are flagged {@code doc} and are not part of the parity run; the
- * file header names the section of the README that each cell comes from.
+ * The cases are flagged {@code doc}: the file header names the section of the README that each cell comes from. The parity run
+ * compares the same cells with a pgvector server ({@code PgVectorParityIT} of the e2e module).
  */
 class PgVectorDocCorpusTest extends TestHelper {
 
