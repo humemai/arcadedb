@@ -331,20 +331,20 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
       show("join", joined)
 
 
-      def write(company, person, works_at):
+      def write(company, person, works_at, pid, name):
           with Session(engine) as session:
               cedar = session.scalars(select(company).where(company.cid == 30)).one()
-              fay = person(pid=6, name="Fay", age=33, city="Delft")
-              session.add(fay)
-              session.add(works_at(person=fay, company=cedar, since=2026))
+              new = person(pid=pid, name=name, age=33, city="Delft")
+              session.add(new)
+              session.add(works_at(person=new, company=cedar, since=2026))
               session.commit()
           with Session(engine) as session:
               cedar = session.scalars(select(company).where(company.cid == 30)).one()
               return sorted([w.person.name, w.since] for w in cedar.works_at_collection)
 
 
-      # the reflected record id carries no identity for SQLAlchemy, so it does not read the new key back
-      show("write", lambda: write(Company, Person, WorksAt))
+      # the reflected record id has a default, so the ORM reads the new key back and gives it to the relationship
+      show("write", lambda: write(Company, Person, WorksAt, 6, "Fay"))
 
       Declared = automap_base()
 
@@ -360,7 +360,7 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
 
 
       Declared.prepare(autoload_with=engine)
-      show("write with the keys declared", lambda: write(Declared.classes.company, person, works_at))
+      show("write with the keys declared", lambda: write(Declared.classes.company, person, works_at, 7, "Gil"))
       """;
 
   @Test
@@ -383,11 +383,9 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
               + "[\"person\", [\"orders_collection\", \"works_at_collection\"]], [\"works_at\", [\"company\", \"person\"]]]",
           "navigate|[[[\"Acme\", 2019], [\"Acme\", 2022]], [\"Ada\", \"Ada\", \"Bo\"], \"Bo\", [100, 101]]",
           "join|[[\"Ada\", \"Acme\", 2019], [\"Bo\", \"Acme\", 2020], [\"Cy\", \"Birch\", 2021], [\"Ada\", \"Acme\", 2022], [\"Di\", \"Birch\", 2023]]",
-          "write with the keys declared|[[\"Fay\", 2026]]");
-      // an unexpected thing for a PostgreSQL user, recorded in fork issue #15: the ORM inserts the person without asking for its
-      // key, so the relationship has no source. PostgreSQL's own identity column would be read back with RETURNING.
-      assertThat(out).anyMatch(line -> line.startsWith("write|ERROR IntegrityError")
-          && line.contains("null value in column \"source_id\""));
+          // the mapped classes as automap builds them, nothing declared (fork issue #137), and then with the keys declared
+          "write|[[\"Fay\", 2026]]",
+          "write with the keys declared|[[\"Fay\", 2026], [\"Gil\", 2026]]");
     }
   }
 }

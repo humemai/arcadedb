@@ -129,6 +129,15 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
     }
   }
 
+  /** The record id has a default, which an ORM needs to read a new key back, and no other column has one (fork issue #137). */
+  @Test
+  void getColumnsGivesTheRecordIdADefault() throws Exception {
+    try (final Connection connection = connect(LANGUAGE_OPTION)) {
+      assertThat(rows(connection.getMetaData().getColumns(null, null, "person", "%"), "COLUMN_NAME", "COLUMN_DEF"))
+          .containsExactly("id|arcadedb_record_id()", "age|null", "city|null", "name|null", "pid|null");
+    }
+  }
+
   /** The columns the catalog reports are the columns of {@code SELECT *}, with the same type names (fork issue #10 acceptance). */
   @Test
   void theColumnsOfTheCatalogAreTheColumnsOfSelectStar() throws Exception {

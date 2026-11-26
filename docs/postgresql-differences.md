@@ -75,7 +75,7 @@ CREATE TABLE knows (
 | 7 | Only declared properties are columns | one more `jsonb` column for the rest |
 | 8 | Maps are `jsonb`, lists are arrays | keep ArcadeDB's own type names |
 | 9 | A `jsonb` object keeps its key order, and a decimal is stored as a double when a double holds it, so `sql` and openCypher read what was written | sort keys and store decimals, as PostgreSQL does |
-| 10 | A record id column is reported as an identity column in `information_schema`, so clients leave it out of an `INSERT` | report a plain column |
+| 10 | A record id column is reported as an identity column in `information_schema` and `pg_attribute`, so clients leave it out of an `INSERT`. Unlike an identity column in PostgreSQL, it also has a default in `pg_attrdef`, `arcadedb_record_id()` (`atthasdef` true, a label and not a function a statement can call), so that the SQLAlchemy ORM reads a new key back with `RETURNING`; `column_default` stays `NULL` (fork issue [#137](https://github.com/humemai/arcadedb/issues/137)) | report a plain column, and declare the key in each ORM class |
 | 11 | A separate language with its own grammar and evaluator; `sql` is unchanged | extend `sql` |
 
 ## Not built yet
