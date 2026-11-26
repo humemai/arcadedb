@@ -63,4 +63,4 @@ These should match PostgreSQL and do not yet.
 | `ILIKE` on non-ASCII letters | folds them, while PostgreSQL with the `C` collation does not |
 | `CURRENT_DATE`, `LOCALTIMESTAMP` | read the clock for each row, not once per transaction (from reading the code, not tested) |
 
-More detail: [supported syntax](postgresql-supported-syntax.md), and the design issues [#1](https://github.com/humemai/arcadedb/issues/1), [#38](https://github.com/humemai/arcadedb/issues/38), [#29](https://github.com/humemai/arcadedb/issues/29), and [#10](https://github.com/humemai/arcadedb/issues/10).
+More detail: [supported syntax](postgresql-supported-syntax.md), the [decisions](postgresql-decisions.md), and the design issues [#1](https://github.com/humemai/arcadedb/issues/1), [#38](https://github.com/humemai/arcadedb/issues/38), [#29](https://github.com/humemai/arcadedb/issues/29), and [#10](https://github.com/humemai/arcadedb/issues/10).
