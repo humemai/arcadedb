@@ -25,7 +25,7 @@ Changing these means changing the ArcadeDB engine.
 | --- | --- | --- |
 | Record ids | none | every record has one, given by the engine; a statement cannot set it (`428C9`) |
 | Deleting a vertex | follows the `ON DELETE` rule of each foreign key | its edges are always deleted |
-| Two writers on one row | by default the second waits | the second commit fails with `40001` and has to be retried (not yet compared with a server) |
+| Two writers on one row | by default the second waits, then writes | neither waits; the commit that comes last fails with `40001` and has to be retried |
 | Savepoints | supported | the language refuses `SAVEPOINT`; over the wire it is accepted and does nothing, and `ROLLBACK TO SAVEPOINT` is refused |
 | Ends of an edge type | a foreign key is declared | the schema does not record which types an edge type connects, so the prototype needs a declaration (choice 4) |
 
