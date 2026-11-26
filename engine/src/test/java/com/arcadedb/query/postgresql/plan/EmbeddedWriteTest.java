@@ -30,6 +30,7 @@ import com.arcadedb.schema.Type;
 import com.arcadedb.schema.VertexType;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +53,7 @@ class EmbeddedWriteTest extends TestHelper {
       address.createProperty("city", Type.STRING).setMandatory(true);
       address.createProperty("zip", Type.STRING);
       address.createProperty("since", Type.DATE);
+      address.createProperty("seen", Type.DATETIME);
       address.createProperty("floor", Type.INTEGER);
       address.createProperty("at", Type.EMBEDDED, "place");
       schema.createDocumentType("business").addSuperType("address");
@@ -156,6 +158,23 @@ class EmbeddedWriteTest extends TestHelper {
     assertThat(at.keySet().stream().map(String::valueOf).toList()).containsExactly("lat");
     assertThat(((Number) at.get("lat")).doubleValue()).isEqualTo(52.01);
     assertDocument(((Document) stored("home", "Di")).get("at"), "place");
+  }
+
+  @Test
+  void aDateTimeIsAcceptedOnlyWithTheMillisecondsItReadsBackWith() {
+    final String insert = "INSERT INTO person (name, home) VALUES ('%s', '{\"city\": \"Delft\", \"seen\": \"%s\"}')";
+    // each of these would be stored, and would read back as another text
+    for (final String other : List.of("2026-01-05 10:11:12", "2026-01-05 10:11:12.1", "2026-01-05 10:11:12.123456",
+        "2026-01-05T10:11:12.123"))
+      assertState(insert.formatted("x", other), "0A000");
+    assertThat(rows("sql", "SELECT FROM person")).isEmpty();
+
+    command(insert.formatted("Ina", "2026-01-05 10:11:12.000"));
+    command(insert.formatted("Jo", "2026-01-05 10:11:12.123"));
+
+    assertThat(value("home", "Ina")).isEqualTo(Map.of("city", "Delft", "seen", "2026-01-05 10:11:12.000"));
+    assertThat(value("home", "Jo")).isEqualTo(Map.of("city", "Delft", "seen", "2026-01-05 10:11:12.123"));
+    assertThat(((Document) stored("home", "Jo")).get("seen")).isEqualTo(LocalDateTime.of(2026, 1, 5, 10, 11, 12, 123_000_000));
   }
 
   @Test
