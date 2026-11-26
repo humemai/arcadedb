@@ -41,6 +41,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -80,18 +81,28 @@ final class PostgresServer implements AutoCloseable {
     return start(IMAGE);
   }
 
-  /** {@link #start()} with another image of the same family, one that carries an extension. */
-  static PostgresServer start(final String image) throws Exception {
-    final GenericContainer<?> container = new GenericContainer<>(image)
+  /**
+   * A server of the image, not yet started, with the C collation and the UTF8 encoding: the base of every server of this
+   * package.
+   */
+  static GenericContainer<?> container(final String image, final Map<String, String> environment, final String... command) {
+    final Map<String, String> variables = new HashMap<>(environment);
+    // The engine orders and compares text by code point (the byte order of UTF-8), which is the C collation of PostgreSQL, so the
+    // server the engine is compared with runs with C too. The C locale makes initdb pick SQL_ASCII unless the encoding is given.
+    variables.put("POSTGRES_INITDB_ARGS", "--locale=C --encoding=UTF8");
+    return new GenericContainer<>(image)
         .withExposedPorts(5432)
-        // The engine orders and compares text by code point (the byte order of UTF-8), which is the C collation of PostgreSQL, so the
-        // server the engine is compared with runs with C too. The C locale makes initdb pick SQL_ASCII unless the encoding is given.
-        .withEnv(Map.of("POSTGRES_PASSWORD", PASSWORD, "POSTGRES_DB", "parity", "POSTGRES_INITDB_ARGS",
-            "--locale=C --encoding=UTF8"))
-        .withCommand("postgres", "-c", "fsync=off")
+        .withEnv(variables)
+        .withCommand(command)
         .withStartupTimeout(Duration.ofSeconds(120))
         // the image logs this twice: once for the temporary server of the init scripts, once for the real one
         .waitingFor(Wait.forLogMessage(".*database system is ready to accept connections.*\\s", 2));
+  }
+
+  /** {@link #start()} with another image of the same family, one that carries an extension. */
+  static PostgresServer start(final String image) throws Exception {
+    final GenericContainer<?> container = container(image, Map.of("POSTGRES_PASSWORD", PASSWORD, "POSTGRES_DB", "parity"),
+        "postgres", "-c", "fsync=off");
     System.out.println("pgparity: starting " + image);
     container.start();
 

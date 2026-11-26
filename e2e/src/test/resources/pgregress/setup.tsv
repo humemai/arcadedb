@@ -1,0 +1,20 @@
+# The files of the regression suite that run before a file, on both sides, to give it the tables and objects it expects: the
+# regression harness (fork issue #119) runs each file on a fresh database, while pg_regress runs them all in one. The entries
+# beside test_setup are the dependencies that the comments of parallel_schedule name. The statements of these files are not
+# judged there; each file is judged when it is run itself.
+#
+# Columns, tab separated: the file ("*" for every other file), and the files to run before it, separated by commas ("-" for none)
+*	test_setup
+test_setup	-
+create_index	test_setup,create_misc
+multirangetypes	test_setup,rangetypes
+geometry	test_setup,point,lseg,line,box,path,polygon,circle
+horology	test_setup,date,time,timetz,timestamp,timestamptz,interval
+aggregates	test_setup,create_aggregate
+join	test_setup,create_misc
+psql	test_setup,create_am
+amutils	test_setup,point,lseg,line,box,path,polygon,circle,geometry,create_index_spgist,hash_index,brin
+select_parallel	test_setup,create_misc
+select_views	test_setup,create_view
+with	test_setup,create_misc
+self_test	-
