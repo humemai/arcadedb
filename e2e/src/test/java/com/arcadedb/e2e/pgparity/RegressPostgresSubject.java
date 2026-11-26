@@ -52,9 +52,9 @@ final class RegressPostgresSubject implements RegressSubject {
 
   @Override
   public Answer execute(final RegressPsql.Send send, final Supplier<String> copyData) {
-    database.changes();
+    database.changesAfter(send.sql());
     final Answer answer = database.execute(send.sql(), send.parameters(), copyData).answer();
-    touched = database.changes();
+    touched = database.changesAfter(send.sql());
     return answer;
   }
 

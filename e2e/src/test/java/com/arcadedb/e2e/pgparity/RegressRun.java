@@ -155,7 +155,7 @@ final class RegressRun {
         @Override
         public RegressDatabase.Executed statement(final RegressPsql.Send send, final Supplier<String> copyData) {
           final RegressDatabase.Executed executed = database.execute(send.sql(), send.parameters(), copyData);
-          recorded.put(send.key(), new Recorded(executed.answer(), contents(database, database.changes())));
+          recorded.put(send.key(), new Recorded(executed.answer(), contents(database, database.changesAfter(send.sql()))));
           return executed;
         }
 
@@ -298,7 +298,7 @@ final class RegressRun {
       return data[0];
     });
     final Supplier<String> sameData = () -> data[0] == null ? "" : data[0];
-    final Set<String> changed = database.changes();
+    final Set<String> changed = database.changesAfter(sql);
     final RegressSubject.Answer expected = executed.answer();
     if (expected.failed())
       result.serverErrors++;

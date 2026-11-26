@@ -22,6 +22,7 @@ import com.arcadedb.query.postgresql.corpus.Json;
 import com.arcadedb.query.postgresql.corpus.Values;
 import com.arcadedb.schema.Type;
 
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -146,13 +147,35 @@ final class RegressValues {
     return builder.toFormatter(Locale.US);
   }
 
+  /** A value of {@code bytea} in the hex form or the escape form, as the setting {@code bytea_output} chooses. */
   private static byte[] bytes(final String text) {
     if (!text.startsWith("\\x"))
-      throw new IllegalArgumentException("not the hex form of bytea");
+      return escaped(text);
     final byte[] bytes = new byte[(text.length() - 2) / 2];
     for (int i = 0; i < bytes.length; i++)
       bytes[i] = (byte) Integer.parseInt(text.substring(2 + 2 * i, 4 + 2 * i), 16);
     return bytes;
+  }
+
+  /** The escape form: two backslashes are one, a backslash and three octal digits are a byte, anything else its own byte. */
+  private static byte[] escaped(final String text) {
+    final ByteArrayOutputStream bytes = new ByteArrayOutputStream(text.length());
+    for (int i = 0; i < text.length(); i++) {
+      final char c = text.charAt(i);
+      if (c > 127)
+        throw new IllegalArgumentException("not a form of bytea");
+      if (c != '\\')
+        bytes.write(c);
+      else if (text.startsWith("\\\\", i)) {
+        bytes.write('\\');
+        i++;
+      } else if (i + 4 <= text.length()) {
+        bytes.write(Integer.parseInt(text.substring(i + 1, i + 4), 8));
+        i += 3;
+      } else
+        throw new IllegalArgumentException("not a form of bytea");
+    }
+    return bytes.toByteArray();
   }
 
   /** The elements of an array of one dimension, {@code {1,NULL,"a b"}}. */

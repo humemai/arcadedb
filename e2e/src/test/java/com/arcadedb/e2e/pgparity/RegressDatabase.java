@@ -79,6 +79,9 @@ final class RegressDatabase implements AutoCloseable {
 
   private static final Set<String> PLANNED = Set.of("select", "insert", "update", "delete", "merge", "with", "values", "table");
 
+  /** The first words of the statements that change no table. */
+  private static final Set<String> CHANGE_NOTHING = Set.of("begin", "start", "set", "reset", "show", "savepoint", "release");
+
   private final String               host;
   private final int                  port;
   private final Map<Integer, String> typeNames = new HashMap<>();
@@ -194,6 +197,14 @@ final class RegressDatabase implements AutoCloseable {
     marker = mark;
     writing = writingNow;
     return refresh();
+  }
+
+  /**
+   * {@link #changes} after a statement. Nothing is read after a statement that changes no table: a query of the harness between
+   * {@code BEGIN} and {@code SET TRANSACTION} would make the server refuse the latter.
+   */
+  Set<String> changesAfter(final String sql) {
+    return CHANGE_NOTHING.contains(RegressSql.firstWord(RegressSql.tokens(sql))) ? Set.of() : changes();
   }
 
   private Set<String> refresh() {

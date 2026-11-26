@@ -56,6 +56,14 @@ class RegressScriptTest {
   }
 
   @Test
+  void withoutStandardStringsABackslashEscapesInAPlainStringOnly() {
+    final RegressPsql psql = new RegressPsql("SELECT 'a\\';b';\nSELECT U&' \\' UESCAPE '!';\nSELECT 2;", Map.of());
+    psql.standardStrings = false;
+    assertThat(sends(psql)).extracting(RegressPsql.Send::sql).containsExactly("SELECT 'a\\';b';",
+        "SELECT U&' \\' UESCAPE '!';", "SELECT 2;");
+  }
+
+  @Test
   void theBodyOfAFunctionKeepsItsSemicolons() {
     assertThat(statements("""
         CREATE OR REPLACE FUNCTION f(a int) RETURNS int LANGUAGE sql

@@ -66,7 +66,8 @@ final class RegressScript {
       } else if (source.startsWith("/*", position)) {
         keep(RegressSql.endOfComment(source, position));
       } else if (c == '\'') {
-        take(RegressSql.endOfQuoted(source, position, '\'', !standardStrings || afterEscapePrefix()));
+        // a backslash escapes in an E string, and with standard_conforming_strings off in a plain one: never in U&, B or X
+        take(RegressSql.endOfQuoted(source, position, '\'', afterPrefix('e') || !standardStrings && !afterOtherPrefix()));
       } else if (c == '"') {
         take(RegressSql.endOfQuoted(source, position, '"', false));
       } else if (c == '$') {
@@ -169,10 +170,17 @@ final class RegressScript {
     buffer.append(text);
   }
 
-  private boolean afterEscapePrefix() {
+  /** Whether the text so far ends with the letter that makes the string after it another kind of string. */
+  private boolean afterPrefix(final char letter) {
     final int length = buffer.length();
-    return length > 0 && Character.toLowerCase(buffer.charAt(length - 1)) == 'e'
+    return length > 0 && Character.toLowerCase(buffer.charAt(length - 1)) == letter
         && (length < 2 || !RegressSql.isNamePart(buffer.charAt(length - 2)));
+  }
+
+  private boolean afterOtherPrefix() {
+    final int length = buffer.length();
+    return afterPrefix('b') || afterPrefix('x')
+        || length > 1 && buffer.charAt(length - 1) == '&' && Character.toLowerCase(buffer.charAt(length - 2)) == 'u';
   }
 
   private void dollar() {
