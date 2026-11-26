@@ -225,9 +225,10 @@ public final class WritePlanner {
 
     // no column list: the first columns of the table, as many as the rows have
     if (!explicitColumns && !(insert.source() instanceof InsertStatement.DefaultValues)) {
-      if (width > table.columns().size())
+      final List<Column> all = table.insertColumns();
+      if (width > all.size())
         throw new PostgreSQLEvaluationException("42601", "INSERT has more expressions than target columns");
-      targets.addAll(table.columns().subList(0, width));
+      targets.addAll(all.subList(0, width));
     }
     if (!(insert.source() instanceof InsertStatement.DefaultValues) && explicitColumns) {
       if (width > targets.size())

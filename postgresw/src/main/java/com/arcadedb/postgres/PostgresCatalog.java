@@ -3053,7 +3053,7 @@ public class PostgresCatalog {
    */
   private static List<Column> relationalColumns(final Table table) {
     final List<Column> columns = new ArrayList<>(table.columns().size());
-    for (final com.arcadedb.query.postgresql.catalog.Column column : table.columns())
+    for (final com.arcadedb.query.postgresql.catalog.Column column : table.listedColumns())
       columns.add(new Column(column.name(), PostgresLanguageAnswer.wireType(column.type().typeName()), !column.nullable(), null,
           column.isGeneratedAlways()));
     return columns;

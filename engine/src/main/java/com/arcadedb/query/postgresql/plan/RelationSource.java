@@ -49,8 +49,13 @@ public interface RelationSource {
    * @param name     the column name
    * @param type     the type the evaluator computes with
    * @param typeName the name of the type as the client sees it ({@code int4}, {@code _text})
+   * @param hidden   whether the column is readable by its name only: {@code *} leaves it out, and an unqualified name stands for
+   *                 another column of that name before it (the record id of a table made by {@code CREATE TABLE})
    */
-  record Field(String relation, String name, PgType type, String typeName) {
+  record Field(String relation, String name, PgType type, String typeName, boolean hidden) {
+    public Field(final String relation, final String name, final PgType type, final String typeName) {
+      this(relation, name, type, typeName, false);
+    }
   }
 
   /**

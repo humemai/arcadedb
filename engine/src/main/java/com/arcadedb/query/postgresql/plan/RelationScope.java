@@ -108,6 +108,12 @@ public final class RelationScope implements ExpressionCompiler.Scope {
       for (final RelationSource.Output output : outputs)
         if (same(column, output.name(), pass))
           matches.add(output);
+      if (matches.size() > 1) {
+        // a hidden column gives way to a column that its table shows
+        final List<RelationSource.Output> shown = matches.stream().filter(match -> !fields.get(match.index()).hidden()).toList();
+        if (shown.size() == 1)
+          return shown.get(0);
+      }
       if (matches.size() == 1)
         return matches.get(0);
       if (matches.size() > 1) {
@@ -221,6 +227,10 @@ public final class RelationScope implements ExpressionCompiler.Scope {
       }
       if (more != null) {
         more.add(0, first);
+        // a hidden column gives way to a column that its table shows
+        final List<Integer> shown = more.stream().filter(match -> !fields.get(match).hidden()).toList();
+        if (shown.size() == 1)
+          return shown.get(0);
         final List<String> names = new ArrayList<>();
         for (final int match : more)
           names.add(fields.get(match).relation().isEmpty() ? fields.get(match).name()
@@ -246,7 +256,7 @@ public final class RelationScope implements ExpressionCompiler.Scope {
   private String visibleColumns(final Name relation) {
     final Map<String, List<String>> columns = new LinkedHashMap<>();
     for (final RelationSource.Field field : fields)
-      if (!field.relation().isEmpty() && (relation == null || sameRelation(relation, field.relation())))
+      if (!field.hidden() && !field.relation().isEmpty() && (relation == null || sameRelation(relation, field.relation())))
         columns.computeIfAbsent(field.relation(), name -> new ArrayList<>()).add(field.name());
     if (columns.isEmpty())
       return null;
@@ -290,6 +300,8 @@ public final class RelationScope implements ExpressionCompiler.Scope {
     if (relation == null && outputs != null) {
       for (final RelationSource.Output output : outputs) {
         final RelationSource.Field field = fields.get(output.index());
+        if (field.hidden())
+          continue;
         if (output.type() != field.type())
           // a merged column of two types: its name stands for it, and is read in the common type
           out.add(new Expression.ColumnRef(star.position(), List.of(), new Name(star.position(), output.name(), true)));
@@ -300,7 +312,7 @@ public final class RelationScope implements ExpressionCompiler.Scope {
       return out;
     }
     for (final RelationSource.Field field : fields) {
-      if (relation != null && !sameRelation(relation, field.relation()))
+      if (field.hidden() || relation != null && !sameRelation(relation, field.relation()))
         continue;
       out.add(new Expression.ColumnRef(star.position(), List.of(new Name(star.position(), field.relation(), true)),
           new Name(star.position(), field.name(), true)));

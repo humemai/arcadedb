@@ -38,6 +38,9 @@ import java.util.Objects;
  * <li>The columns are the synthetic ones first, then the properties of the supertypes in the order of the supertypes, then the
  * properties of the type itself, each group sorted by name. The engine keeps declared properties in a hash map and records no
  * declaration order, so this is the only order that is the same for every database and every run.</li>
+ * <li>A table made by {@code CREATE TABLE} has its columns in the declared order, which its {@link TableDefinition} keeps, then
+ * the record id, which is hidden: {@link #insertColumns()} leaves it out, and {@link #listedColumns()} has it only when a foreign
+ * key refers to it.</li>
  * <li>The table of a supertype has the rows of its subtypes, and only the columns declared on it. {@code FROM ONLY t} has the rows of
  * {@code t} itself: {@link #superTables()} and {@link #subTables()} say how the tables are related, and {@link #documentType()} is
  * what a scan asks for the buckets of the type with and without its subtypes.</li>
@@ -173,14 +176,30 @@ public final class Table {
     return identityColumn;
   }
 
-  /** The primary key or the unique key over exactly these columns, in this order; {@code null} when there is none. */
+  /**
+   * The primary key or the unique key over exactly these columns, in this order; {@code null} when there is none. A record id that
+   * the catalog does not list ({@link Column#isListed()}) is unique too, although no view lists it as a key.
+   */
   public Key keyOn(final List<String> keyColumns) {
     if (primaryKey != null && primaryKey.columns().equals(keyColumns))
       return primaryKey;
     for (final Key key : uniqueKeys)
       if (key.columns().equals(keyColumns))
         return key;
+    if (identityColumn != null && !identityColumn.isListed() && keyColumns.equals(List.of(identityColumn.name())))
+      return new Key(name + "_" + identityColumn.name() + "_key", keyColumns);
     return null;
+  }
+
+  /** The columns that the catalog views show ({@link Column#isListed()}). */
+  public List<Column> listedColumns() {
+    return identityColumn != null && !identityColumn.isListed() ? columns.stream().filter(Column::isListed).toList() : columns;
+  }
+
+  /** The columns that an {@code INSERT} without a column list fills, in order: every column but a hidden one. */
+  public List<Column> insertColumns() {
+    return identityColumn != null && identityColumn.isHidden() ? columns.stream().filter(column -> !column.isHidden()).toList()
+        : columns;
   }
 
   /**
