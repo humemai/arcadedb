@@ -98,7 +98,8 @@ final class Assignments {
     if (from != PgType.ARRAY)
       return false;
     final PgType element = ValueInput.elementType(fromTypeName);
-    return element == null || element == target || target.isString() || (element.isNumber() && target.isNumber());
+    return element == null || element == target || target.isString() || (element.isNumber() && target.isNumber())
+        || (element.isDateTime() && target.isDateTime());
   }
 
   /**

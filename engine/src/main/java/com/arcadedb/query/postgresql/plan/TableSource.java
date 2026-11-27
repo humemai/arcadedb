@@ -343,7 +343,7 @@ public final class TableSource implements RelationSource {
   private Object[] row(final Document record) {
     final Object[] values = new Object[types.length];
     for (int i = 0; i < values.length; i++)
-      values[i] = Casts.fromEngine(catalogColumns.get(i).read(record), types[i]);
+      values[i] = Casts.fromColumn(catalogColumns.get(i).read(record), catalogColumns.get(i).type(), types[i]);
     columnsRead += values.length;
     return values;
   }
@@ -357,7 +357,7 @@ public final class TableSource implements RelationSource {
 
   private void fill(final Object[] values, final Document record, final int[] columns) {
     for (final int i : columns)
-      values[i] = Casts.fromEngine(catalogColumns.get(i).read(record), types[i]);
+      values[i] = Casts.fromColumn(catalogColumns.get(i).read(record), catalogColumns.get(i).type(), types[i]);
     columnsRead += columns.length;
   }
 

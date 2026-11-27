@@ -55,7 +55,8 @@ public final class ValueInput {
 
   /** Whether the language writes arrays of this element type. */
   public static boolean isElementType(final PgType type) {
-    return type != null && (type == PgType.BOOL || type.isNumber() || type.isString() || type == PgType.BYTEA);
+    return type != null
+        && (type == PgType.BOOL || type.isNumber() || type.isString() || type == PgType.BYTEA || type.isDateTime());
   }
 
   /**
@@ -449,7 +450,8 @@ public final class ValueInput {
         throw multidimensional();
       throw PostgreSQLEvaluationException.mismatch("an element of the array is not of type " + element.displayName());
     }
-    if (from == null || !(from == element || element.isString() || from.isNumber() && element.isNumber()))
+    if (from == null || !(from == element || element.isString() || from.isNumber() && element.isNumber()
+        || from.isDateTime() && element.isDateTime()))
       throw PostgreSQLEvaluationException.mismatch("an element of the array is not of type " + element.displayName());
     final Object canonical = Casts.fromEngine(item, from);
     if (from == element || from.isString() && element.isString())

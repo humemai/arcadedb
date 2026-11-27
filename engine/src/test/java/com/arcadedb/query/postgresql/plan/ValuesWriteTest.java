@@ -27,6 +27,8 @@ import com.arcadedb.schema.Type;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -205,6 +207,45 @@ class ValuesWriteTest extends TestHelper {
     assertState("INSERT INTO memory (mid, payload) VALUES (20, $1)", "42804", List.of(1));
     assertState("INSERT INTO memory (mid) VALUES ($1)", "42804", List.of(1));
     assertThat(((Number) single("postgresql", "SELECT count(*) AS n FROM memory").getProperty("n")).longValue()).isEqualTo(1L);
+  }
+
+  /** A list of dates is {@code date[]} and a list of date times is {@code timestamp[]} (fork issue #146). */
+  @Test
+  void listsOfDatesAndDateTimesAreWrittenAndRead() {
+    command("INSERT INTO calendar (cid, days, moments) VALUES (2, '{2026-01-05,2026-02-01}', '{\"2026-01-05 10:20:30.123456\"}')");
+    command("INSERT INTO calendar (cid, days, moments) VALUES (3, ARRAY['2026-01-05'::date, '2026-02-01'], "
+        + "ARRAY['2026-01-05 10:20:30.123456'::timestamp])");
+    command("INSERT INTO calendar (cid, days, moments) VALUES ($1, $2, $3)", 4,
+        List.of(LocalDate.of(2026, 1, 5), LocalDate.of(2026, 2, 1)),
+        List.of(LocalDateTime.of(2026, 1, 5, 10, 20, 30, 123_456_000)));
+    command("INSERT INTO calendar (cid, days, moments) VALUES ($1, $2, $3)", 5, "{2026-01-05,2026-02-01}",
+        "{\"2026-01-05 10:20:30.123456\"}");
+
+    for (int cid = 2; cid <= 5; cid++) {
+      final Result row = single("postgresql", "SELECT days, moments FROM calendar WHERE cid = " + cid);
+      assertThat(list(row.getProperty("days"))).as("row " + cid)
+          .isEqualTo(List.of(LocalDate.of(2026, 1, 5), LocalDate.of(2026, 2, 1)));
+      assertThat(list(row.getProperty("moments"))).as("row " + cid)
+          .isEqualTo(List.of(LocalDateTime.of(2026, 1, 5, 10, 20, 30, 123_456_000)));
+      // the record holds them as dates, so another language reads dates and not texts
+      assertThat(list(single("sql", "SELECT FROM calendar WHERE cid = " + cid).getProperty("days"))).as("sql, row " + cid)
+          .hasSize(2).noneMatch(day -> day instanceof String);
+    }
+  }
+
+  @Test
+  void whatAListOfDatesCannotHoldIsRefused() {
+    // a typed list holds no null element
+    assertState("INSERT INTO calendar (cid, days) VALUES (20, '{2026-01-05,NULL}')", "0A000");
+    assertState("INSERT INTO calendar (cid, moments) VALUES (20, ARRAY['2026-01-05'::timestamp, NULL])", "0A000");
+    // the input rules of the element type
+    assertState("INSERT INTO calendar (cid, days) VALUES (20, '{abc}')", "22007");
+    assertState("INSERT INTO calendar (cid, days) VALUES (20, '{2026-02-30}')", "22008");
+    assertState("INSERT INTO calendar (cid, days) VALUES (20, ARRAY[1])", "42804");
+    // a list of links stays text[] and stays refused
+    database.transaction(() -> database.getSchema().getType("calendar").createProperty("seen", Type.LIST, "LINK"));
+    assertState("INSERT INTO calendar (cid, seen) VALUES (20, '{#1:0}')", "0A000");
+    assertThat(((Number) single("postgresql", "SELECT count(*) AS n FROM calendar").getProperty("n")).longValue()).isEqualTo(1L);
   }
 
   @Test

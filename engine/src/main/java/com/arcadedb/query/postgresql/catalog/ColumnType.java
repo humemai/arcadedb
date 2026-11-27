@@ -36,6 +36,8 @@ import com.arcadedb.schema.Type;
  * {@code id} column.</li>
  * <li>{@code ARRAY_OF_FLOATS} is {@code vector} (pgvector's type, taken by the distance operators {@code <->}, {@code <=>} and
  * {@code <#>}), not {@code float4[]}, which is what the wire module announces for it today ({@code ColumnTypeWireParityTest}).</li>
+ * <li>A {@code LIST OF DATE} is {@code date[]} and a list of date times, of any precision, is {@code timestamp[]}, not
+ * {@code text[]} (fork issue #146). A list of links stays {@code text[]}.</li>
  * </ul>
  * A declared {@code LIST OF <t>} is typed from {@code <t>} (a scalar list is an array), an undeclared {@code LIST} is
  * {@code text[]}.
@@ -62,6 +64,8 @@ public enum ColumnType {
   NUMERIC_ARRAY("numeric[]", NUMERIC),
   BYTEA_ARRAY("bytea[]", BYTEA),
   TEXT_ARRAY("text[]", TEXT),
+  DATE_ARRAY("date[]", DATE),
+  TIMESTAMP_ARRAY("timestamp[]", TIMESTAMP),
   /** An {@code ARRAY_OF_FLOATS} property: a pgvector {@code vector}, a {@code float[]} of fixed length per column. */
   VECTOR("vector");
 
@@ -151,6 +155,8 @@ public enum ColumnType {
       case DOUBLE -> FLOAT8_ARRAY;
       case DECIMAL -> NUMERIC_ARRAY;
       case BINARY -> BYTEA_ARRAY;
+      case DATE -> DATE_ARRAY;
+      case DATETIME, DATETIME_MICROS, DATETIME_NANOS, DATETIME_SECOND -> TIMESTAMP_ARRAY;
       // nested lists, maps, embedded documents and the primitive arrays are not rectangular PostgreSQL arrays
       case MAP, EMBEDDED, LIST, ARRAY_OF_SHORTS, ARRAY_OF_INTEGERS, ARRAY_OF_LONGS, ARRAY_OF_FLOATS, ARRAY_OF_DOUBLES -> JSONB;
       default -> TEXT_ARRAY;

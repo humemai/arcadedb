@@ -57,7 +57,7 @@ import java.util.Objects;
  * <li>{@code EMBEDDED OF T}, {@code LIST OF T} and {@code MAP OF T} for a document type {@code T} hold an object, an array of
  * objects and an object of objects, each stored as an embedded document of {@code T} that reads back as the same object
  * ({@link EmbeddedValues}, fork issue #145);</li>
- * <li>an {@code EMBEDDED} property without a declared type, a collection of links, and a list of dates are not written.</li>
+ * <li>an {@code EMBEDDED} property without a declared type and a collection of links are not written.</li>
  * </ul>
  * A vector that does not have the dimensions of its column ({@code vector(n)}) or of the {@code LSM_VECTOR} index of its property
  * is {@code 22000}, as pgvector refuses a value of the wrong dimensions for a {@code vector(n)} column.

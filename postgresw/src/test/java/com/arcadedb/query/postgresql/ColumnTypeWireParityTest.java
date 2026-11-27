@@ -44,6 +44,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <li>{@code LINK} is {@code text}, the wire says {@code varchar}: it is the same kind of value as {@code id}, a record id as text.</li>
  * <li>{@code ARRAY_OF_FLOATS} is {@code vector}, the wire says {@code float4[]}: the pgvector operators take the type, and the wire
  * has no {@code vector} type yet (the wire step decides how it announces one).</li>
+ * <li>A {@code LIST OF DATE} is {@code date[]} and a list of date times is {@code timestamp[]} (fork issue #146), the wire says
+ * {@code text[]} for the other languages.</li>
  * </ul>
  */
 class ColumnTypeWireParityTest {
@@ -69,7 +71,7 @@ class ColumnTypeWireParityTest {
   }
 
   @Test
-  void theLanguageTypesAreTheWireTypesExceptTheTwoDecidedDifferences() {
+  void theLanguageTypesAreTheWireTypesExceptTheDecidedDifferences() {
     final Set<String> differing = new TreeSet<>();
     int compared = 0;
     for (final Type type : Type.values())
@@ -84,12 +86,15 @@ class ColumnTypeWireParityTest {
         final boolean json = wire == PostgresType.JSON && language == ColumnType.JSONB;
         final boolean link = type == Type.LINK && wire == PostgresType.VARCHAR && language == ColumnType.TEXT;
         final boolean vector = type == Type.ARRAY_OF_FLOATS && wireName(wire).equals("float4[]") && language == ColumnType.VECTOR;
-        assertThat(json || link || vector).as("%s: the wire says %s, the language says %s", label, wireName(wire), language).isTrue();
+        final boolean temporalList = type == Type.LIST && wire == PostgresType.ARRAY_TEXT
+            && (language == ColumnType.DATE_ARRAY || language == ColumnType.TIMESTAMP_ARRAY);
+        assertThat(json || link || vector || temporalList)
+            .as("%s: the wire says %s, the language says %s", label, wireName(wire), language).isTrue();
         differing.add(type.name());
       }
 
     assertThat(compared).isGreaterThan(Type.values().length * 20);
-    // a list differs only for the elements the wire announces as json
+    // a list differs only for the elements the wire announces as json, and for dates and date times
     assertThat(differing).containsExactly("ARRAY_OF_FLOATS", "EMBEDDED", "LINK", "LIST", "MAP");
   }
 
