@@ -132,6 +132,7 @@ final class ColumnNames {
       case Expression.BinaryOp op -> expression(op.left(), names) && expression(op.right(), names);
       case Expression.IsNull test -> expression(test.operand(), names);
       case Expression.InList in -> expression(in.operand(), names) && all(in.values(), names);
+      case Expression.Quantified quantified -> expression(quantified.operand(), names) && expression(quantified.array(), names);
       case Expression.Exists exists -> statement(exists.query(), names);
       case Expression.ScalarSubquery scalar -> statement(scalar.query(), names);
       case Expression.InSubquery in -> expression(in.operand(), names) && statement(in.query(), names);

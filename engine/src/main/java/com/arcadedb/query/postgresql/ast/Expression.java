@@ -259,6 +259,23 @@ public sealed interface Expression extends Node {
   }
 
   /**
+   * {@code a_expr op (ANY | SOME | ALL) (a_expr)}: a comparison of the operand with the elements of an array. The form with a
+   * subquery has no node of its own: {@code = ANY} and {@code <> ALL} of a subquery are an {@link InSubquery}.
+   *
+   * @param operator one of the six comparison operators
+   * @param all      true for {@code ALL}, false for {@code ANY} and {@code SOME}
+   */
+  record Quantified(SourcePosition position, BinaryOperator operator, Expression operand, Expression array, boolean all)
+      implements Expression {
+    public Quantified {
+      Objects.requireNonNull(position, "position");
+      Objects.requireNonNull(operator, "operator");
+      Objects.requireNonNull(operand, "operand");
+      Objects.requireNonNull(array, "array");
+    }
+  }
+
+  /**
    * {@code a_expr [NOT] BETWEEN [ASYMMETRIC] b_expr AND a_expr}. {@code BETWEEN SYMMETRIC} is not in the subset.
    *
    * @param negated true for {@code NOT BETWEEN}

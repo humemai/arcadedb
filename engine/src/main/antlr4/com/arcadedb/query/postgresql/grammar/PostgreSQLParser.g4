@@ -716,6 +716,8 @@ aExpr
   | aExpr NOT? op=(LIKE | ILIKE) pattern=aExpr                                # likeExpr
   | l=aExpr unsupportedPatternOperator pattern=aExpr ESCAPE escape=aExpr    # unsupportedPatternEscapeExpr
   | l=aExpr unsupportedPatternOperator r=aExpr                                # unsupportedPatternExpr
+  | l=aExpr op=(LT | GT | EQ | LE | GE | NE) quantifier=(ANY | SOME | ALL) LPAREN selectStmt RPAREN   # quantifiedSubqueryExpr
+  | l=aExpr op=(LT | GT | EQ | LE | GE | NE) quantifier=(ANY | SOME | ALL) LPAREN r=aExpr RPAREN      # quantifiedArrayExpr
   | aExpr unsupportedQuantifiedComparison                                     # unsupportedQuantifiedExpr
   | l=aExpr op=(LT | GT | EQ | LE | GE | NE) r=aExpr                          # comparisonExpr
   | aExpr IS NOT? NULL                                                        # isNullExpr
@@ -757,7 +759,7 @@ unsupportedPatternOperator
   ;
 
 unsupportedQuantifiedComparison
-  : (EQ | LT | GT | LE | GE | NE | PLUS | MINUS | STAR | SLASH | PERCENT | CARET | OP) (ANY | SOME | ALL) parenGroup
+  : (PLUS | MINUS | STAR | SLASH | PERCENT | CARET | OP) (ANY | SOME | ALL) parenGroup
   ;
 
 unsupportedIsForm

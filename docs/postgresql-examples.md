@@ -54,7 +54,7 @@ The page starts from the nine tasks of the timed study on fork issue #13, with s
 | Running totals with the default frame and a ROWS frame | no `sql` query | none | `sql` |
 | A moving window frame | no `sql` query | `postgresql` | `sql` |
 | Reading an array and a jsonb value | same | none | none |
-| Filtering on an element of an array | different | `postgresql` | none |
+| Filtering on an element of an array | different | none | none |
 | Filtering on a field of a jsonb value | different | `postgresql` | none |
 | Vector search for the two nearest rows | different | none | none |
 | Inserting one record and returning it | same | none | none |
@@ -1063,7 +1063,7 @@ Result:
 
 ### Filtering on an element of an array
 
-The prototype writes and reads arrays but refuses `= ANY`.
+`postgresql` and PostgreSQL 18 write the condition with `= ANY`, `sql` with `CONTAINS`, and openCypher with `IN`.
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 
@@ -1088,12 +1088,6 @@ Result:
 | id |
 | --- |
 | 1 |
-
-Result, ArcadeDB `postgresql` (differs):
-
-| SQLSTATE |
-| --- |
-| 0A000 |
 
 ### Filtering on a field of a jsonb value
 

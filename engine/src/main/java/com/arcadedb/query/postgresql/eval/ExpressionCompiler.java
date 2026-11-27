@@ -30,6 +30,7 @@ import com.arcadedb.query.postgresql.ast.Statement;
 import com.arcadedb.query.postgresql.ast.TableReference;
 import com.arcadedb.query.postgresql.ast.WithStatement;
 import com.arcadedb.query.postgresql.ast.TypeName;
+import com.arcadedb.serializer.json.JSONObject;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -143,6 +144,7 @@ public final class ExpressionCompiler {
       case Expression.IsNull e -> isNull(e);
       case Expression.InList e -> inList(e);
       case Expression.InSubquery e -> inSubquery(e);
+      case Expression.Quantified e -> quantified(e);
       case Expression.ScalarSubquery e -> scalarSubquery(e);
       case Expression.Exists e -> exists(e);
       case Expression.Between e -> between(e);
@@ -247,6 +249,10 @@ public final class ExpressionCompiler {
       out.addAll(e.values());
     }
     case Expression.InSubquery e -> out.add(e.operand());
+    case Expression.Quantified e -> {
+      out.add(e.operand());
+      out.add(e.array());
+    }
     case Expression.Exists e -> collectReferences(e.query(), out);
     case Expression.Between e -> {
       out.add(e.operand());
@@ -948,6 +954,137 @@ public final class ExpressionCompiler {
       comparisons.add(comparison(Expression.BinaryOperator.EQUAL, operand, compile(value)));
     final Evaluable any = orChain(comparisons);
     return e.negated() ? negate(any) : any;
+  }
+
+  /**
+   * {@code x op ANY (array)} and {@code x op ALL (array)} with the three-valued logic of PostgreSQL. A {@code NULL} array gives
+   * {@code NULL}; an empty one gives false for {@code ANY} and true for {@code ALL}, even for a {@code NULL} operand. Otherwise
+   * one true comparison decides {@code ANY} and one false comparison decides {@code ALL}, and without one the answer is
+   * {@code NULL} when a comparison was {@code NULL}. An array of no type (a literal, a parameter with no declared type) is one of
+   * the type of the operand.
+   */
+  private Evaluable quantified(final Expression.Quantified e) {
+    final Evaluable compiledOperand = compile(e.operand());
+    final Evaluable compiled = compile(e.array());
+    final PgType from = compiled.type();
+    if (from != PgType.UNKNOWN && from != PgType.ARRAY)
+      throw new PostgreSQLEvaluationException("42809", "op ANY/ALL (array) requires array on right side");
+
+    PgType element = from == PgType.ARRAY ? ValueInput.elementType(compiled.typeName()) : null;
+    // an array that a caller binds as a Java collection or array says what it holds with its values
+    if (element == null && compiled instanceof Evaluable.Constant constant && from == PgType.ARRAY)
+      element = elementTypeOfValues(constant.value());
+    if (element == null) {
+      // a literal or a parameter with no type, and an empty array that nothing else types
+      if (from == PgType.ARRAY && !(compiled instanceof Evaluable.Constant))
+        throw PostgreSQLEvaluationException.unsupported(
+            "The element type of this array is not known to the language: cast it, as in x::text[]");
+      element = compiledOperand.type() == PgType.UNKNOWN ? PgType.TEXT : textual(compiledOperand.type());
+    }
+    if (!ValueInput.isElementType(element))
+      throw PostgreSQLEvaluationException.unsupported("ANY and ALL over an array of " + element.displayName()
+          + " are not supported: one dimension of booleans, numbers, text, dates or timestamps");
+
+    final Evaluable operand = compiledOperand.type() == PgType.UNKNOWN ? implicit(compiledOperand, textual(element))
+        : compiledOperand;
+    if (operand == null)
+      throw PostgreSQLEvaluationException.noOperator(e.operator().symbol(), compiledOperand.type(), element);
+    final Evaluable array = from == PgType.UNKNOWN ? arrayOfUntyped(compiled, element) : compiled;
+    // the comparison of the operand with an element, typed as PostgreSQL types "operand op element"
+    final Evaluable compare = comparison(e.operator(), new Evaluable.Slot(operand.type(), operand.typeName(), 0),
+        new Evaluable.Slot(element, 1));
+
+    final PgType elementType = element;
+    final boolean all = e.all();
+    // = ANY and <> ALL over an array that no row changes are a lookup in a set
+    final boolean membership = e.operator() == (all ? Expression.BinaryOperator.NOT_EQUAL : Expression.BinaryOperator.EQUAL);
+    final Function<Object, Object> key = membership && array.isConstant() ? hashKey(operand.type(), elementType) : null;
+    if (key != null) {
+      final List<Object> items = elements(array.eval(new Object[0]), elementType);
+      final Set<Object> keys = new HashSet<>();
+      boolean hasNull = false;
+      if (items != null)
+        for (final Object item : items)
+          if (item == null)
+            hasNull = true;
+          else
+            keys.add(key.apply(item));
+      final boolean unknown = hasNull;
+      return new Evaluable.Node(PgType.BOOL, row -> {
+        if (items == null)
+          return null;
+        if (items.isEmpty())
+          return all;
+        final Object value = operand.eval(row);
+        if (value == null)
+          return null;
+        if (keys.contains(key.apply(value)))
+          return !all;
+        return unknown ? null : (Object) all;
+      }, operand, array);
+    }
+
+    return new Evaluable.Node(PgType.BOOL, row -> {
+      final List<Object> items = elements(array.eval(row), elementType);
+      if (items == null)
+        return null;
+      if (items.isEmpty())
+        return all;
+      final Object[] pair = new Object[] { operand.eval(row), null };
+      boolean unknown = false;
+      for (final Object item : items) {
+        pair[1] = item;
+        final Object result = compare.eval(pair);
+        if (result == null)
+          unknown = true;
+        else if ((Boolean) result != all)
+          return !all;
+      }
+      return unknown ? null : (Object) all;
+    }, operand, array);
+  }
+
+  /** A literal, a {@code NULL} or a parameter of no declared type as an array of {@code element}. */
+  private static Evaluable arrayOfUntyped(final Evaluable expression, final PgType element) {
+    if (!(expression instanceof Evaluable.Constant constant))
+      throw PostgreSQLEvaluationException.unsupported(
+          "The element type of this array is not known to the language: cast it, as in x::text[]");
+    final String typeName = "_" + element.typeName();
+    inferArrayParameter(constant, typeName);
+    // a bad literal is an error before any row is read
+    final Object value = ValueInput.toArray(constant.value(), element);
+    return new Evaluable.Node(PgType.ARRAY, typeName, row -> value, constant);
+  }
+
+  /** The elements of an array value in the canonical class of {@code element}, {@code null} for the array {@code NULL}. */
+  private static List<Object> elements(final Object array, final PgType element) {
+    if (array == null)
+      return null;
+    final List<?> items = ValueInput.asList(array);
+    if (items == null)
+      throw PostgreSQLEvaluationException.mismatch("a value of class " + array.getClass().getName() + " is not an array");
+    final List<Object> out = new ArrayList<>(items.size());
+    for (final Object item : items)
+      out.add(item == null || item == JSONObject.NULL ? null : Casts.fromEngine(item, element));
+    return out;
+  }
+
+  /** The type that the values of a bound array have in common, {@code null} for an array with no value that says one. */
+  private static PgType elementTypeOfValues(final Object array) {
+    final List<?> items = array == null ? null : ValueInput.asList(array);
+    if (items == null)
+      return null;
+    final List<Evaluable> values = new ArrayList<>(items.size());
+    for (final Object item : items) {
+      if (item == null || item == JSONObject.NULL)
+        continue;
+      final PgType type = PgType.ofJavaValue(item);
+      if (!ValueInput.isElementType(type))
+        throw PostgreSQLEvaluationException.unsupported(
+            "An element of a bound array has the unsupported class " + item.getClass().getName());
+      values.add(new Evaluable.Constant(type, null));
+    }
+    return values.isEmpty() ? null : commonType(values, "ARRAY");
   }
 
   /** {@code x BETWEEN a AND b} is {@code x >= a AND x <= b}. */

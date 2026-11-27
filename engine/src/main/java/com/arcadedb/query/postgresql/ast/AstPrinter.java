@@ -318,6 +318,8 @@ public final class AstPrinter {
       case Expression.IsNull isNull -> "(" + print(isNull.operand()) + (isNull.negated() ? " IS NOT NULL)" : " IS NULL)");
       case Expression.InList in ->
           "(" + print(in.operand()) + (in.negated() ? " NOT IN (" : " IN (") + printAll(in.values()) + "))";
+      case Expression.Quantified quantified -> "(" + print(quantified.operand()) + " " + quantified.operator().symbol()
+          + (quantified.all() ? " ALL (" : " ANY (") + print(quantified.array()) + "))";
       case Expression.Exists exists -> "EXISTS (" + print(exists.query()) + ")";
       case Expression.ScalarSubquery subquery -> "(" + print(subquery.query()) + ")";
       case Expression.InSubquery in ->
