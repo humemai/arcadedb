@@ -124,7 +124,6 @@ public final class PostgreSQLHints {
     rule("The operator class", "Write vector_l2_ops, vector_cosine_ops or vector_ip_ops");
     rule("The index parameter", "Leave the parameter out");
     // time
-    rule("time zone", "Run SET TIME ZONE 'UTC' and repeat the statement");
     rule("before the year 1", "Use a year from 1 to 9999");
     rule("unit \"", "A date has no time of day: read that field from a timestamp");
     rule("interval is added to or subtracted from", "Add the interval to a date or a timestamp, or subtract it");

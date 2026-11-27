@@ -43,10 +43,12 @@ import java.util.regex.Pattern;
  * <ul>
  * <li>{@link #parse(String, PgType)} is the input function: what a string literal or a cast from text becomes. A text that is no
  * value of the type is SQLSTATE {@code 22P02}, a value out of range is {@code 22003}. A date and a timestamp are read as
- * year-month-day only, a timestamp with an optional {@code Z} or offset; what another text answers ({@code 22007},
- * {@code 22008}, or {@code 0A000}) is in {@link DateTimeText}.</li>
+ * year-month-day only, a timestamp with an optional {@code Z} or offset; a {@code timestamptz} without one is a time of the
+ * session ({@link SessionTimeZone}). What another text answers ({@code 22007}, {@code 22008}, or {@code 0A000}) is in
+ * {@link DateTimeText}.</li>
  * <li>{@link #toText(Object, PgType)} is the output function, with the spelling PostgreSQL writes: {@code true}, {@code 1e+20},
- * {@code 2026-03-09 10:00:00}.</li>
+ * {@code 2026-03-09 10:00:00}, and for a {@code timestamptz} the time of the session with its offset,
+ * {@code 2026-03-09 19:00:00+09}.</li>
  * <li>{@link #cast(Object, PgType, PgType, int[])} is an explicit cast {@code x::t}: integers narrow with a range check,
  * {@code numeric} rounds half away from zero to an integer, floating point rounds half to even ({@code rint}), anything goes to
  * text and text goes to anything through the input function. A cast PostgreSQL does not have is {@code 42846}.</li>
@@ -114,7 +116,7 @@ public final class Casts {
     case TIMESTAMP:
       return formatTimestamp((LocalDateTime) value);
     case TIMESTAMPTZ:
-      return formatTimestamp(((OffsetDateTime) value).toLocalDateTime()) + "+00";
+      return formatInstant((OffsetDateTime) value);
     case VECTOR:
       return VectorDistance.toText((float[]) value);
     case JSONB:
@@ -166,6 +168,21 @@ public final class Casts {
       out.append('.').append(fraction, 0, end);
     }
     return out.toString();
+  }
+
+  /**
+   * A {@code timestamptz} as PostgreSQL writes it: the local time of the session, its offset then, and {@code BC} for a local time
+   * before the year 1.
+   */
+  private static String formatInstant(final OffsetDateTime value) {
+    final OffsetDateTime shown = SessionTimeZone.shown(value);
+    final LocalDateTime local = shown.toLocalDateTime();
+    final boolean bc = local.getYear() < 1;
+    final String text = formatTimestamp(bc ? local.withYear(1 - local.getYear()) : local);
+    final int offset = shown.getOffset().getTotalSeconds();
+    // Java writes a year of five digits with a plus sign
+    return (text.startsWith("+") ? text.substring(1) : text) + (offset < 0 ? '-' : '+') + SessionTimeZone.offsetDigits(offset)
+        + (bc ? " BC" : "");
   }
 
   // ---- input ----
@@ -347,21 +364,35 @@ public final class Casts {
     return localTime(matcher, text);
   }
 
-  /** A {@code timestamptz}: the time less its offset, and a time without a zone is one of the session, which is in UTC. */
+  /**
+   * A {@code timestamptz}: with a zone, the time less its offset; without one, a local time of the session (see
+   * {@link SessionTimeZone#instant}).
+   */
   private static OffsetDateTime parseInstant(final String text) {
     final Matcher matcher = timestampText(text, PgType.TIMESTAMPTZ);
     final int offset = offsetSeconds(matcher, text);
-    final LocalDateTime utc = localTime(matcher, text).minusSeconds(offset);
-    if (utc.getYear() < 1 || utc.getYear() > 9999)
-      throw PostgreSQLEvaluationException.unsupported("A timestamp with time zone that is before the year 1 or after the year"
-          + " 9999 in UTC is not supported: \"" + text + "\". Write a later or an earlier time");
-    return instant(utc);
+    final LocalDateTime written = localTime(matcher, text);
+    final boolean zoned = matcher.group(8) != null || matcher.group(9) != null;
+    final OffsetDateTime instant = zoned ? instant(written.minusSeconds(offset)) : SessionTimeZone.instant(written);
+    return inRange(instant, text);
   }
 
   /** The instant of a time in UTC, the one class a {@code timestamptz} has. */
   static OffsetDateTime instant(final LocalDateTime utc) {
-    SessionTimeZone.requireUtc();
     return utc.atOffset(ZoneOffset.UTC);
+  }
+
+  /** The instant of a local time of the session, which a cast of a {@code date} or a {@code timestamp} gives. */
+  private static OffsetDateTime instantOfLocal(final LocalDateTime local) {
+    return inRange(SessionTimeZone.instant(local), formatTimestamp(local));
+  }
+
+  /** {@code instant}, which has to be of the years that the language holds. */
+  private static OffsetDateTime inRange(final OffsetDateTime instant, final String text) {
+    if (instant.getYear() < 1 || instant.getYear() > 9999)
+      throw PostgreSQLEvaluationException.unsupported("A timestamp with time zone that is before the year 1 or after the year"
+          + " 9999 in UTC is not supported: \"" + text + "\". Write a later or an earlier time");
+    return instant;
   }
 
   private static Matcher timestampText(final String text, final PgType type) {
@@ -465,19 +496,19 @@ public final class Casts {
       if (from == PgType.TIMESTAMP)
         return ((LocalDateTime) value).toLocalDate();
       if (from == PgType.TIMESTAMPTZ)
-        return ((OffsetDateTime) value).toLocalDate();
+        return SessionTimeZone.shown((OffsetDateTime) value).toLocalDate();
       break;
     case TIMESTAMP:
       if (from == PgType.DATE)
         return ((LocalDate) value).atStartOfDay();
       if (from == PgType.TIMESTAMPTZ)
-        return applyModifier(((OffsetDateTime) value).toLocalDateTime(), to, typmod);
+        return applyModifier(SessionTimeZone.shown((OffsetDateTime) value).toLocalDateTime(), to, typmod);
       break;
     case TIMESTAMPTZ:
       if (from == PgType.DATE)
-        return instant(((LocalDate) value).atStartOfDay());
+        return instantOfLocal(((LocalDate) value).atStartOfDay());
       if (from == PgType.TIMESTAMP)
-        return applyModifier(instant((LocalDateTime) value), to, typmod);
+        return applyModifier(instantOfLocal((LocalDateTime) value), to, typmod);
       break;
     case VECTOR:
       if (from == PgType.ARRAY)
@@ -625,8 +656,10 @@ public final class Casts {
     case TIMESTAMP:
       return toTimestamp(raw);
     case TIMESTAMPTZ:
-      // a time that a record holds without a zone is one in UTC
-      return raw instanceof String text ? parseInstant(text) : instant(toTimestamp(raw));
+      if (raw instanceof String text)
+        return parseInstant(text);
+      // a date is midnight of the session, and a time that a record holds without a zone is one in UTC
+      return raw instanceof LocalDate date ? instantOfLocal(date.atStartOfDay()) : instant(toTimestamp(raw));
     case VECTOR:
       return VectorDistance.fromEngine(raw);
     case JSONB:

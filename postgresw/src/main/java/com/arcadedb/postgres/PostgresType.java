@@ -57,6 +57,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
+import java.time.format.SignStyle;
 import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -217,8 +218,11 @@ public enum PostgresType {
       .appendFraction(ChronoField.NANO_OF_SECOND, 0, 6, true).toFormatter();
   private static final DateTimeFormatter POSTGRES_TIMETZ_OUTPUT      = new DateTimeFormatterBuilder().append(POSTGRES_TIME_OUTPUT)
       .appendOffset("+HH:mm", "+00").toFormatter();
-  private static final DateTimeFormatter POSTGRES_TIMESTAMPTZ_OUTPUT = new DateTimeFormatterBuilder().appendPattern("uuuu-MM-dd ")
-      .append(POSTGRES_TIMETZ_OUTPUT).toFormatter();
+  // The offset of a timestamptz has seconds where the zone has them, as before standard time (+08:27:52), and a year before 1 is
+  // written with BC after it (fork issue #270)
+  private static final DateTimeFormatter POSTGRES_TIMESTAMPTZ_OUTPUT = new DateTimeFormatterBuilder()
+      .appendValue(ChronoField.YEAR_OF_ERA, 4, 10, SignStyle.NORMAL).appendPattern("-MM-dd ").append(POSTGRES_TIME_OUTPUT)
+      .appendOffset("+HH:mm:ss", "+00").appendText(ChronoField.ERA, Map.of(0L, " BC", 1L, "")).toFormatter();
 
   /**
    * Renders a record, a row, a map or a path of a json column as the HTTP API does (issue #11958), vertex edge counts left out as

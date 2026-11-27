@@ -70,6 +70,7 @@ import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.Schema;
 import com.arcadedb.utility.CollectionUtils;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -315,7 +316,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       if (statement instanceof ExplainWriteStatement explain)
         return explain(new WritePlanner(database, catalog(), timed).plan(explain.statement()).steps());
       if (statement instanceof WriteStatement write)
-        return new WritePlanner(database, catalog(), timed).plan(write).execute(database);
+        return inSessionZone(new WritePlanner(database, catalog(), timed).plan(write).execute(database));
       final SelectPlanner planner = new SelectPlanner(database, catalog(), timed);
       if (statement instanceof ExplainStatement explain) {
         final QueryPlan explained = planner.planQuery(explain.select());
@@ -325,12 +326,33 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       // a join that no edge, link or index supports: one warning in the log for each distinct statement (fork issue #9)
       if (!plan.warnings().isEmpty() && database.getConfiguration().getValueAsBoolean(GlobalConfiguration.POSTGRESQL_JOIN_WARNING))
         JoinWarnings.shared().warn(database.getName(), AstPrinter.fingerprint(statement), plan.warnings());
-      return plan.execute(database);
+      return inSessionZone(plan.execute(database));
     } catch (final RuntimeException e) {
       if (state.open && !state.failed && database.isTransactionActive())
         state.failed = true;
       throw e;
     }
+  }
+
+  /**
+   * The answer of a statement with every {@code timestamptz} at the offset of the session's time zone, which is how a server
+   * writes it (fork issue #270). The rows are changed here, at the end, so that inside a statement an instant has one form.
+   */
+  private static PostgreSQLResultSet inSessionZone(final PostgreSQLResultSet answer) {
+    final List<String> keys = PostgreSQLResultSet.uniqueKeys(answer.columns());
+    final List<String> instants = new ArrayList<>();
+    for (int i = 0; i < keys.size(); i++)
+      if (answer.columns().get(i).typeName().contains("timestamptz"))
+        instants.add(keys.get(i));
+    if (instants.isEmpty())
+      return answer;
+    while (answer.hasNext()) {
+      final ResultInternal row = (ResultInternal) answer.next();
+      for (final String key : instants)
+        row.setProperty(key, SessionTimeZone.shownValue(row.getProperty(key)));
+    }
+    answer.reset();
+    return answer;
   }
 
   /**

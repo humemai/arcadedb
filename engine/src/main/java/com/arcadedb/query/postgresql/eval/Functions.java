@@ -18,6 +18,8 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
+import com.arcadedb.query.postgresql.SessionTimeZone;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
@@ -66,20 +68,25 @@ public final class Functions {
   /**
    * {@code extract(field FROM date or timestamp)}: {@code numeric}, as since PostgreSQL 14. {@code dow} is 0 for Sunday,
    * {@code isodow} is 7 for Sunday, {@code week} is the ISO week, {@code epoch} counts seconds from 1970-01-01 00:00:00 (UTC for
-   * this language), {@code second} has microseconds as decimals. The time fields are not defined for a {@code date}.
+   * a {@code timestamptz}), {@code second} has microseconds as decimals. The time fields are not defined for a {@code date}. The
+   * other fields of a {@code timestamptz} are those of its local time in the session's zone, and {@code timezone} is the offset
+   * of that zone then, in seconds east of UTC (fork issue #270).
    *
-   * @param value a {@link LocalDate}, a {@link LocalDateTime}, or an {@link OffsetDateTime} in UTC ({@code timestamptz})
+   * @param value a {@link LocalDate}, a {@link LocalDateTime}, or an {@link OffsetDateTime} at the offset zero
+   *              ({@code timestamptz})
    */
   public static BigDecimal extract(final String field, final Object value) {
     final boolean isDate = value instanceof LocalDate;
     final boolean zoned = value instanceof OffsetDateTime;
+    final OffsetDateTime shown = zoned ? SessionTimeZone.shown((OffsetDateTime) value) : null;
     final LocalDateTime timestamp = isDate ? ((LocalDate) value).atStartOfDay()
-        : zoned ? ((OffsetDateTime) value).toLocalDateTime() : (LocalDateTime) value;
+        : zoned ? shown.toLocalDateTime() : (LocalDateTime) value;
     final LocalDate date = timestamp.toLocalDate();
     final String unit = field.toLowerCase(Locale.ROOT);
-    // the offset of the session, which is in UTC
-    if (zoned && (unit.equals("timezone") || unit.equals("timezone_hour") || unit.equals("timezone_minute")))
-      return integer(0);
+    if (zoned && (unit.equals("timezone") || unit.equals("timezone_hour") || unit.equals("timezone_minute"))) {
+      final int offset = shown.getOffset().getTotalSeconds();
+      return integer(unit.equals("timezone") ? offset : unit.equals("timezone_hour") ? offset / 3600 : offset / 60 % 60);
+    }
     switch (unit) {
     case "year":
       return integer(date.getYear());
@@ -106,7 +113,7 @@ public final class Functions {
     case "millennium":
       return integer(date.getYear() > 0 ? (date.getYear() - 1) / 1000 + 1 : -((-date.getYear()) / 1000 + 1));
     case "epoch": {
-      final long seconds = timestamp.toEpochSecond(ZoneOffset.UTC);
+      final long seconds = zoned ? shown.toEpochSecond() : timestamp.toEpochSecond(ZoneOffset.UTC);
       return BigDecimal.valueOf(seconds * 1_000_000L + timestamp.getNano() / 1000, 6);
     }
     case "hour":

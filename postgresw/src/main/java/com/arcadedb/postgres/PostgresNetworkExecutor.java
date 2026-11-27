@@ -1945,6 +1945,8 @@ public class PostgresNetworkExecutor extends Thread {
       for (int i = 0; i < parameters.length && portal.parameterTypes != null && i < portal.parameterTypes.size(); i++)
         if (portal.parameterTypes.get(i) == 0L && parameters[i] instanceof String text)
           parameters[i] = new UnknownText(text);
+        else if (parameters[i] instanceof String text && PostgresLanguageAnswer.isInstant(portal.parameterTypes.get(i)))
+          parameters[i] = PostgresLanguageAnswer.instants(portal.parameterTypes.get(i), text);
         else
           parameters[i] = PostgresLanguageAnswer.typedArray(portal.parameterTypes.get(i), parameters[i]);
       return parameters;
@@ -3844,9 +3846,10 @@ public class PostgresNetworkExecutor extends Thread {
             LogManager.instance().log(this, Level.INFO, "PSQL: bind deserializing param %d typeCode=%d formatCode=%d (thread=%s)",
                 i, typeCode, formatCode, Thread.currentThread().threadId());
           // a text of no declared type reaches the postgresql language as it was sent: the language reads it by the type of its
-          // context, so '{}' for a jsonb column is not first read as an empty array literal, as it is for sql (issue #2559)
-          final boolean textForTheLanguage = typeCode == 0L && formatCode == 0 && !portal.catalogQuery
-              && PostgresQueryLanguages.POSTGRESQL.equals(portal.language);
+          // context, so '{}' for a jsonb column is not first read as an empty array literal, as it is for sql (issue #2559). So
+          // does the text of a timestamptz, which without a zone is a time of the session (fork issue #270)
+          final boolean textForTheLanguage = (typeCode == 0L || PostgresLanguageAnswer.isInstant(typeCode)) && formatCode == 0
+              && !portal.catalogQuery && PostgresQueryLanguages.POSTGRESQL.equals(portal.language);
           // so does the text of a jsonb value, which the language reads itself: a JSON string, number or null stays a jsonb value.
           // The binary format has the version byte 1 ahead of the text
           final boolean jsonbForTheLanguage = typeCode == PostgresType.JSONB.code && !portal.catalogQuery
@@ -4959,6 +4962,13 @@ public class PostgresNetworkExecutor extends Thread {
               "invalid value for parameter \"" + PostgresSessionSettings.LANGUAGE + "\": " + languageRefusal, "22023");
           return false;
         }
+        // as PostgreSQL, a connection of the postgresql language does not start with a time zone that names none (fork issue #270)
+        try {
+          sessionSettings.readStartupTimeZone();
+        } catch (final PostgresSessionSettings.SettingException e) {
+          writeError(ERROR_SEVERITY.FATAL, e.getMessage(), e.sqlState);
+          return false;
+        }
       }
     } catch (final IOException e) {
       setErrorInTx();
@@ -6061,6 +6071,9 @@ public class PostgresNetworkExecutor extends Thread {
    * What a statement of the {@code postgresql} language takes from the session before it runs (fork issue #237): its time
    * zone, and a refusal when its {@code search_path} leaves out the one schema the language reads, where PostgreSQL would find
    * no table. A setting that this server accepts has an effect, or what depends on it is refused.
+   *
+   * A time zone that names none, which a connection can only have taken while its language was another one, refuses the
+   * statement too, see {@link SessionTimeZone#set}.
    *
    * @throws PostgresSessionSettings.SettingException {@code 0A000} for such a search_path
    */
