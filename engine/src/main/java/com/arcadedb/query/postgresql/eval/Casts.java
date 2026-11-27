@@ -123,6 +123,8 @@ public final class Casts {
       return VectorDistance.toText((float[]) value);
     case JSONB:
       return Jsonb.write(value);
+    case JSON:
+      return ((Json.Value) value).text();
     default:
       throw PostgreSQLEvaluationException.unsupported("The text form of a value of type " + type.displayName()
           + " is not supported");
@@ -219,6 +221,8 @@ public final class Casts {
       return VectorDistance.parse(text);
     case JSONB:
       return ValueInput.parseJson(text);
+    case JSON:
+      return Json.parse(text);
     case BYTEA:
       return ValueInput.parseBytea(text);
     default:
@@ -492,6 +496,10 @@ public final class Casts {
       return applyModifier(parse((String) value, to), to, typmod);
     if (from == PgType.JSONB && (to == PgType.BOOL || to.isNumber()))
       return Jsonb.cast(value, to, typmod);
+    if (from == PgType.JSONB && to == PgType.JSON)
+      return new Json.Value(Jsonb.write(value));
+    if (from == PgType.JSON && to == PgType.JSONB)
+      return ValueInput.parseJson(((Json.Value) value).text());
 
     switch (to) {
     case BOOL:
@@ -705,6 +713,10 @@ public final class Casts {
       if (raw instanceof com.arcadedb.serializer.json.JSONArray array)
         return array.toList();
       return raw instanceof String || raw instanceof Number || raw instanceof Boolean ? Jsonb.wrap(raw) : raw;
+    case JSON:
+      if (raw instanceof JsonbText sent)
+        return Json.parse(sent.text());
+      return raw instanceof String text ? Json.parse(text) : raw;
     case ARRAY:
       return raw instanceof com.arcadedb.serializer.json.JSONArray array ? array.toList() : raw;
     default:

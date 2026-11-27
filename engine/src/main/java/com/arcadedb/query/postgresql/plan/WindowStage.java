@@ -56,7 +56,8 @@ final class WindowStage {
   private static final Set<String> NON_AGGREGATE_FUNCTIONS = Set.of("row_number", "rank", "dense_rank", "lag", "lead",
       "first_value", "last_value");
   /** The aggregates that collect their rows, which the language does not run over a window. */
-  private static final Set<String> LIST_AGGREGATES = Set.of("string_agg", "array_agg", "jsonb_agg");
+  private static final Set<String> LIST_AGGREGATES = Set.of("string_agg", "array_agg", "jsonb_agg", "json_agg",
+      "json_object_agg", "jsonb_object_agg");
 
   /** One window function call, typed. */
   record Call(String name, PgType resultType, String resultTypeName, Evaluable[] partition, Evaluable[] orderKeys,
@@ -106,13 +107,16 @@ final class WindowStage {
       throw new PostgreSQLFeatureNotSupportedException("aggregate ORDER BY is not implemented for window functions");
 
     final Evaluable[] partition = new Evaluable[over.partitionBy().size()];
-    for (int i = 0; i < partition.length; i++)
+    for (int i = 0; i < partition.length; i++) {
       partition[i] = input.resolveOutput(input.compile(over.partitionBy().get(i)));
+      Comparison.requireEquality(partition[i].type());
+    }
     final Evaluable[] orderKeys = new Evaluable[over.orderBy().size()];
     final List<Comparator<Object>> orderings = new ArrayList<>();
     for (int i = 0; i < orderKeys.length; i++) {
       final SortItem item = over.orderBy().get(i);
       orderKeys[i] = input.resolveOutput(input.compile(item.expression()));
+      Comparison.refuseJsonOrder(orderKeys[i].type());
       if (!Comparison.isComparable(orderKeys[i].type()))
         throw new PostgreSQLFeatureNotSupportedException(
             "ORDER BY a value of type " + orderKeys[i].type().displayName() + " is not supported");

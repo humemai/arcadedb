@@ -19,9 +19,11 @@
 package com.arcadedb.query.postgresql.plan;
 
 import com.arcadedb.database.Database;
+import com.arcadedb.query.postgresql.eval.Casts;
 import com.arcadedb.query.postgresql.eval.Comparison;
 import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
+import com.arcadedb.query.postgresql.eval.Json;
 import com.arcadedb.query.postgresql.eval.Jsonb;
 import com.arcadedb.query.postgresql.eval.Numbers;
 import com.arcadedb.query.postgresql.eval.PgType;
@@ -87,7 +89,7 @@ public final class SelectPlan implements QueryPlan {
 
     /** An aggregate whose result depends on the order its rows come in, so that DISTINCT has to give them in PostgreSQL's order. */
     boolean collects() {
-      return "array_agg".equals(name) || "jsonb_agg".equals(name);
+      return "array_agg".equals(name) || "jsonb_agg".equals(name) || "json_agg".equals(name);
     }
   }
 
@@ -543,6 +545,79 @@ public final class SelectPlan implements QueryPlan {
           @Override
           public Object result() {
             return items == null ? null : new ArrayList<>(items);
+          }
+        };
+        case "json_agg" -> new Accumulator() {
+          private StringBuilder out;
+
+          @Override
+          public void add(final Object value) {
+            if (out == null)
+              out = new StringBuilder("[");
+            else {
+              out.append(", ");
+              // PostgreSQL starts a new line before an element that is an array
+              if (value != null && spec.argument().type() == PgType.ARRAY)
+                out.append("\n ");
+            }
+            Json.append(out, value, spec.argument().type(), spec.argument().typeName());
+          }
+
+          @Override
+          public Object result() {
+            return out == null ? null : new Json.Value(out + "]");
+          }
+        };
+        case "json_object_agg" -> new Accumulator() {
+          private StringBuilder out;
+
+          @Override
+          public void add(final Object key) {
+            add(key, null);
+          }
+
+          @Override
+          public void add(final Object key, final Object value) {
+            if (key == null)
+              throw new PostgreSQLEvaluationException("22004", "null value not allowed for object key");
+            if (out == null)
+              out = new StringBuilder("{ ");
+            else
+              out.append(", ");
+            Json.appendKey(out, key, spec.argument().type(), spec.argument().typeName());
+            out.append(" : ");
+            Json.append(out, value, spec.delimiter().type(), spec.delimiter().typeName());
+          }
+
+          @Override
+          public Object result() {
+            return out == null ? null : new Json.Value(out + " }");
+          }
+        };
+        // a name that comes twice keeps its last value, as jsonb does
+        case "jsonb_object_agg" -> new Accumulator() {
+          private Map<String, Object> members;
+
+          @Override
+          public void add(final Object key) {
+            add(key, null);
+          }
+
+          @Override
+          public void add(final Object key, final Object value) {
+            if (key == null)
+              throw new PostgreSQLEvaluationException("22023", "field name must not be null");
+            if (members == null)
+              members = new LinkedHashMap<>();
+            final PgType type = spec.argument().type();
+            final String name = type.isNumber() || type == PgType.BOOL ? Casts.toText(key, type)
+                : String.valueOf(Jsonb.of(key, type, spec.argument().typeName()));
+            members.put(name, value == null ? null : Jsonb.of(value, spec.delimiter().type(), spec.delimiter().typeName()));
+          }
+
+          @Override
+          public Object result() {
+            return members == null ? null : new LinkedHashMap<>(members);
           }
         };
         default -> new Accumulator() {

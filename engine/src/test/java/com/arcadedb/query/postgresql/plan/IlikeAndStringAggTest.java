@@ -174,7 +174,7 @@ class IlikeAndStringAggTest extends TestHelper {
   @Test
   void aggregatesTheLanguageDoesNotHaveAreRefusedAsNotSupported() {
     assertState("SELECT bool_and(age > 1) FROM person", "0A000");
-    assertState("SELECT json_agg(name) FROM person", "0A000");
+    assertState("SELECT every(age > 1) FROM person", "0A000");
     assertState("SELECT no_such_aggregate(name) FROM person", "42883");
   }
 }

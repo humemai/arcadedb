@@ -60,7 +60,7 @@ import java.util.Locale;
 public enum PgType {
   UNKNOWN("unknown"), BOOL("bool"), INT2("int2"), INT4("int4"), INT8("int8"), NUMERIC("numeric"), FLOAT4("float4"),
   FLOAT8("float8"), TEXT("text"), VARCHAR("varchar"), DATE("date"), TIMESTAMP("timestamp"), JSONB("jsonb"), BYTEA("bytea"),
-  ARRAY("array"), VECTOR("vector"), INTERVAL("interval"), TIMESTAMPTZ("timestamptz"), UUID("uuid");
+  ARRAY("array"), VECTOR("vector"), INTERVAL("interval"), TIMESTAMPTZ("timestamptz"), UUID("uuid"), JSON("json");
 
   private final String typeName;
 
@@ -118,7 +118,7 @@ public enum PgType {
 
   /** A type with no order and no cast from a value of another type but text: the operators it has are its own. */
   public boolean isOpaque() {
-    return this == JSONB || this == BYTEA || this == ARRAY;
+    return this == JSONB || this == BYTEA || this == ARRAY || this == JSON;
   }
 
   /** The type of a column of the relational view. */
@@ -154,6 +154,8 @@ public enum PgType {
       return UNKNOWN;
     if (value instanceof Jsonb.Scalar || value instanceof JsonbText)
       return JSONB;
+    if (value instanceof Json.Value)
+      return JSON;
     if (value instanceof Boolean)
       return BOOL;
     if (value instanceof Byte || value instanceof Short)
@@ -215,6 +217,7 @@ public enum PgType {
       case "timestamptz" -> TIMESTAMPTZ;
       case "vector" -> VECTOR;
       case "jsonb" -> JSONB;
+      case "json" -> JSON;
       case "bytea" -> BYTEA;
       case "interval" -> INTERVAL;
       default -> null;

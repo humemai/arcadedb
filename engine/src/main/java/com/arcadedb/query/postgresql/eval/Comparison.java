@@ -32,6 +32,18 @@ public final class Comparison {
   private Comparison() {
   }
 
+  /** {@code json} has no equality in PostgreSQL ({@code 42883}): a comparison of its text would be an answer of its own. */
+  public static void requireEquality(final PgType type) {
+    if (type == PgType.JSON)
+      throw new PostgreSQLEvaluationException("42883", "could not identify an equality operator for type json");
+  }
+
+  /** {@code json} has no order in PostgreSQL ({@code 42883}); the other types without one are refused by who sorts. */
+  public static void refuseJsonOrder(final PgType type) {
+    if (type == PgType.JSON)
+      throw new PostgreSQLEvaluationException("42883", "could not identify an ordering operator for type json");
+  }
+
   /** Whether the type has the comparison operators and an order; the opaque types and the unknown type do not. */
   public static boolean isComparable(final PgType type) {
     return type.isNumber() || type.isString() || type.isDateTime() || type == PgType.BOOL || type == PgType.UUID;

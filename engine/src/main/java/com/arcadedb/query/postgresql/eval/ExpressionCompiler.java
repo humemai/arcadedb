@@ -233,7 +233,8 @@ public final class ExpressionCompiler {
     if (call.name().size() > 2 || (call.name().size() == 2 && !"pg_catalog".equals(call.name().get(0).value())))
       return false;
     return switch (call.name().get(call.name().size() - 1).value()) {
-      case "count", "sum", "avg", "min", "max", "string_agg", "array_agg", "jsonb_agg" -> true;
+      case "count", "sum", "avg", "min", "max", "string_agg", "array_agg", "jsonb_agg", "json_agg", "jsonb_object_agg",
+          "json_object_agg" -> true;
       default -> false;
     };
   }
@@ -242,8 +243,8 @@ public final class ExpressionCompiler {
   private static final int MAX_VARCHAR_LENGTH = 10_485_760;
 
   /** Aggregates of PostgreSQL that the language does not have: refused with {@code 0A000}, not reported as unknown functions. */
-  private static final java.util.Set<String> UNSUPPORTED_AGGREGATES = java.util.Set.of("json_agg", "json_object_agg",
-      "jsonb_object_agg", "bool_and", "bool_or", "every", "bit_and", "bit_or", "bit_xor", "stddev",
+  private static final java.util.Set<String> UNSUPPORTED_AGGREGATES = java.util.Set.of("bool_and", "bool_or", "every",
+      "bit_and", "bit_or", "bit_xor", "stddev",
       "stddev_pop", "stddev_samp", "variance", "var_pop", "var_samp", "corr", "covar_pop", "covar_samp", "mode",
       "percentile_cont", "percentile_disc");
 
@@ -474,6 +475,10 @@ public final class ExpressionCompiler {
         result = PgType.TEXT;
       else if (result.isDateTime() && type.isDateTime())
         result = PgType.commonDateTime(result, type);
+      else if (result == PgType.JSON && type == PgType.JSONB || result == PgType.JSONB && type == PgType.JSON)
+        // one category in PostgreSQL, without an implicit cast between them
+        throw new PostgreSQLEvaluationException("42846",
+            what + " could not convert type " + type.displayName() + " to " + result.displayName());
       else
         throw PostgreSQLEvaluationException.mismatch(
             what + " types " + result.displayName() + " and " + type.displayName() + " cannot be matched");
@@ -630,6 +635,9 @@ public final class ExpressionCompiler {
     else if (a.isDateTime() && b.isDateTime())
       common = PgType.commonDateTime(a, b);
     else
+      throw PostgreSQLEvaluationException.noOperator(operator, a, b);
+    // json has no comparison operator in PostgreSQL
+    if (common == PgType.JSON)
       throw PostgreSQLEvaluationException.noOperator(operator, a, b);
     if (!Comparison.isComparable(common))
       throw PostgreSQLEvaluationException.unsupported(
@@ -881,7 +889,7 @@ public final class ExpressionCompiler {
     final Evaluable[] values = new Evaluable[args.length];
     for (int i = 0; i < values.length; i++) {
       values[i] = jsonInput(name, args[i]);
-      if (object && i % 2 == 0 && (values[i].type() == PgType.JSONB || values[i].type() == PgType.ARRAY))
+      if (object && i % 2 == 0 && Json.isNoKey(values[i].type()))
         throw new PostgreSQLEvaluationException("22023", "key value must be scalar, not array, composite, or json");
     }
     return new Evaluable.Node(PgType.JSONB, row -> {
@@ -903,6 +911,36 @@ public final class ExpressionCompiler {
             items.get(i + 1));
       }
       return out;
+    }, values);
+  }
+
+  /** {@code json_build_object} and {@code json_build_array}: the text that PostgreSQL writes, SQL {@code NULL} as {@code null}. */
+  private static Evaluable jsonBuild(final String name, final Evaluable[] args) {
+    final boolean object = name.endsWith("object");
+    if (object && args.length % 2 != 0)
+      throw new PostgreSQLEvaluationException("22023", "argument list must have even number of elements");
+    final Evaluable[] values = new Evaluable[args.length];
+    for (int i = 0; i < values.length; i++) {
+      values[i] = jsonInput(name, args[i]);
+      if (object && i % 2 == 0 && Json.isNoKey(values[i].type()))
+        throw new PostgreSQLEvaluationException("22023", "key value must be scalar, not array, composite, or json");
+    }
+    return new Evaluable.Node(PgType.JSON, row -> {
+      final StringBuilder out = new StringBuilder().append(object ? '{' : '[');
+      for (int i = 0; i < values.length; i++) {
+        final Object found = values[i].eval(row);
+        final boolean key = object && i % 2 == 0;
+        if (i > 0 && (key || !object))
+          out.append(", ");
+        if (key) {
+          if (found == null)
+            throw new PostgreSQLEvaluationException("22004", "null value not allowed for object key");
+          Json.appendKey(out, found, values[i].type(), values[i].typeName());
+          out.append(" : ");
+        } else
+          Json.append(out, found, values[i].type(), values[i].typeName());
+      }
+      return new Json.Value(out.append(object ? '}' : ']').toString());
     }, values);
   }
 
@@ -1118,7 +1156,7 @@ public final class ExpressionCompiler {
     final PgType type = expression.type();
     if (type.isString() || type == PgType.UNKNOWN)
       return implicit(expression, PgType.TEXT);
-    if (type.isOpaque() && type != PgType.JSONB)
+    if (type.isOpaque() && type != PgType.JSONB && type != PgType.JSON)
       throw PostgreSQLEvaluationException.unsupported("The text form of a value of type " + type.displayName() + " is not supported");
     return new Evaluable.Node(PgType.TEXT, row -> {
       final Object value = expression.eval(row);
@@ -1738,13 +1776,14 @@ public final class ExpressionCompiler {
       return new Evaluable.Constant(target,
           target == PgType.JSONB ? ValueInput.toJson(constant.value()) : Casts.cast(constant.value(), PgType.ARRAY, target, typmod));
     final PgType from = operand.type();
+    final boolean betweenJson = from == PgType.JSON && target == PgType.JSONB || from == PgType.JSONB && target == PgType.JSON;
     final boolean possible = from == target || (target == PgType.VECTOR && from == PgType.ARRAY) || from == PgType.UNKNOWN
-        || (target.isString() && (!from.isOpaque() || from == PgType.JSONB)) || from.isString()
+        || (target.isString() && (!from.isOpaque() || from == PgType.JSONB || from == PgType.JSON)) || from.isString() || betweenJson
         || (from == PgType.JSONB && (target.isNumber() || target == PgType.BOOL))
         || (from.isNumber() && target.isNumber()) || (from == PgType.BOOL && target == PgType.INT4)
         || (from == PgType.INT4 && target == PgType.BOOL) || (from.isDateTime() && target.isDateTime());
     // text, and a string literal, is read by the input function of any type; another type has no cast to jsonb or bytea
-    if (!possible || (target.isOpaque() && from != target && from != PgType.UNKNOWN && !from.isString()))
+    if (!possible || (target.isOpaque() && from != target && from != PgType.UNKNOWN && !from.isString() && !betweenJson))
       throw new PostgreSQLEvaluationException("42846", "cannot cast type " + from.displayName() + " to " + target.displayName());
     inferParameter(operand, target);
     if (operand instanceof Evaluable.Constant constant)
@@ -2087,6 +2126,9 @@ public final class ExpressionCompiler {
     case "jsonb_strip_nulls":
     case "jsonb_set":
       return jsonbFunction(name, args);
+    case "json_build_object":
+    case "json_build_array":
+      return jsonBuild(name, args);
     default:
       throw PostgreSQLEvaluationException.noFunction(name, types(args));
     }
@@ -2188,6 +2230,8 @@ public final class ExpressionCompiler {
     case LEAST: {
       final List<Evaluable> all = List.of(args);
       final PgType type = commonType(all, call.kind().name());
+      if (type == PgType.JSON)
+        throw new PostgreSQLEvaluationException("42883", "could not identify a comparison function for type json");
       if (!Comparison.isComparable(type))
         throw PostgreSQLEvaluationException.unsupported(call.kind().name() + " of type " + type.displayName() + " is not supported");
       final Evaluable[] coerced = coerceAll(all, type, call.kind().name()).toArray(new Evaluable[0]);
