@@ -21,6 +21,11 @@ package com.arcadedb.query.postgresql;
 import com.arcadedb.ContextConfiguration;
 import com.arcadedb.GlobalConfiguration;
 import com.arcadedb.database.DatabaseInternal;
+import com.arcadedb.exception.CauseChain;
+import com.arcadedb.exception.ConcurrentModificationException;
+import com.arcadedb.exception.DuplicatedKeyException;
+import com.arcadedb.exception.LockTimeoutException;
+import com.arcadedb.exception.WALVersionGapException;
 import com.arcadedb.query.OperationType;
 import com.arcadedb.query.QueryEngine;
 import com.arcadedb.query.postgresql.ast.AstPrinter;
@@ -32,6 +37,7 @@ import com.arcadedb.query.postgresql.ast.EmptyStatement;
 import com.arcadedb.query.postgresql.ast.ExplainStatement;
 import com.arcadedb.query.postgresql.ast.ExplainWriteStatement;
 import com.arcadedb.query.postgresql.ast.InsertStatement;
+import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.Statement;
 import com.arcadedb.query.postgresql.ast.TransactionStatement;
 import com.arcadedb.query.postgresql.ast.UpdateStatement;
@@ -56,10 +62,13 @@ import com.arcadedb.query.postgresql.plan.WritePlanner;
 import com.arcadedb.query.postgresql.plan.join.JoinWarnings;
 import com.arcadedb.query.sql.executor.ResultInternal;
 import com.arcadedb.query.sql.executor.ResultSet;
+import com.arcadedb.schema.Schema;
 import com.arcadedb.utility.CollectionUtils;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -405,6 +414,51 @@ public class PostgreSQLQueryEngine implements QueryEngine {
    */
   public record Description(List<PostgreSQLResultSet.Column> columns, List<PgType> parameterTypes,
       List<String> parameterTypeNames) {
+  }
+
+  /**
+   * For a server that runs a write as a transaction of its own and may run it again (fork issue #239): the exception of the
+   * engine that says another transaction got there first, so that a new transaction can succeed where {@code query} failed.
+   * That is a concurrent modification, or a lock that the commit did not get in time. For an {@code INSERT ... ON CONFLICT} it
+   * is also a duplicate of a key that the clause answers for: another transaction wrote the row after this one looked for it,
+   * and the new transaction finds it and does what the clause says, where PostgreSQL waits for that row. Every other duplicate
+   * is the answer of the statement, as in PostgreSQL.
+   *
+   * @param query the text of an {@code INSERT}, an {@code UPDATE}, or a {@code DELETE} that failed
+   * @param error what it failed with, the commit included
+   *
+   * @return the exception in the cause chain of {@code error}, or {@code null} when running the statement again is no answer
+   */
+  public RuntimeException conflictOf(final String query, final Throwable error) {
+    final ConcurrentModificationException changed = CauseChain.find(error, ConcurrentModificationException.class);
+    if (changed != null)
+      // a gap in the write-ahead log is a database that diverged, not another writer: running again does not mend it
+      return changed instanceof WALVersionGapException ? null : changed;
+    final LockTimeoutException locked = CauseChain.find(error, LockTimeoutException.class);
+    if (locked != null)
+      return locked;
+    final DuplicatedKeyException duplicate = CauseChain.find(error, DuplicatedKeyException.class);
+    if (duplicate != null && parse(query) instanceof InsertStatement insert && insert.onConflict() != null
+        && answersFor(insert.onConflict(), duplicate))
+      return duplicate;
+    return null;
+  }
+
+  /** Whether the unique index that holds the duplicate is one that the {@code ON CONFLICT} clause answers for. */
+  private boolean answersFor(final InsertStatement.OnConflict clause, final DuplicatedKeyException duplicate) {
+    // with no target the clause answers for every unique index
+    if (clause.target().isEmpty())
+      return true;
+    final Schema schema = database.getSchema();
+    if (!schema.existsIndex(duplicate.getIndexName()))
+      return false;
+    final Set<String> key = new HashSet<>();
+    for (final String property : schema.getIndexByName(duplicate.getIndexName()).getPropertyNames())
+      key.add(property.toLowerCase(Locale.ROOT));
+    final Set<String> target = new HashSet<>();
+    for (final Name name : clause.target())
+      target.add(name.value().toLowerCase(Locale.ROOT));
+    return key.equals(target);
   }
 
   /** The columns of {@link #describeStatement}, for a caller that does not need the types of the parameters. */

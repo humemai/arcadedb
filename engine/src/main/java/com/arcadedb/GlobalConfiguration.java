@@ -3575,6 +3575,14 @@ public enum GlobalConfiguration {
       The plan of EXPLAIN lists the same sentence whatever this setting is. Set to false to log nothing. Default is true""",
       Boolean.class, true),
 
+  POSTGRESQL_AUTOCOMMIT_RETRIES("arcadedb.postgresql.autocommitRetries", SCOPE.DATABASE, """
+      Maximum number of times the PostgreSQL protocol runs an INSERT, UPDATE, or DELETE of the postgresql query language again \
+      after a write conflict, when the statement is a transaction of its own (autocommit, and the only statement of its \
+      message). The wait before each run is that of arcadedb.txRetryDelayBase and arcadedb.txRetryDelay. A statement that \
+      conflicts every time answers SQLSTATE 40001, and statement_timeout bounds the runs together. Statements in a \
+      transaction block, a message of several statements, a database with a trigger, and a follower of a replicated database \
+      are not run again. 0 turns it off. Default is 50""", Integer.class, 50),
+
   // BOLT (Neo4j)
   BOLT_PORT("arcadedb.bolt.port", SCOPE.SERVER,
       "TCP/IP port number used for incoming connections for BOLT plugin. Default is 7687", Integer.class, 7687),

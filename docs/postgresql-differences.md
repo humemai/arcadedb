@@ -27,13 +27,34 @@ Changing these means changing the ArcadeDB engine.
 | --- | --- | --- |
 | Record ids | none | every record has one, given by the engine; a statement cannot set it (`428C9`) |
 | Deleting a vertex | follows the `ON DELETE` rule of each foreign key | its edges are always deleted, so the foreign keys of an edge table are listed as `ON DELETE CASCADE`, and no other rule can be chosen |
-| Two writers on one row | by default the second waits, then writes | neither waits; the commit that comes last fails with `40001` and has to be retried |
+| Two writers on one row | by default the second waits, then writes | neither waits; the commit that comes last fails with `40001` and has to be retried. Over the PostgreSQL protocol a single autocommit write is retried by the server, see [write conflicts](#write-conflicts) |
 | `SERIALIZABLE` | supported | not available. Over the wire, `BEGIN ISOLATION LEVEL SERIALIZABLE` is `0A000` and leaves a failed block, so every statement is `25P02` until `ROLLBACK` and none is committed on its own; write `BEGIN ISOLATION LEVEL REPEATABLE READ`. Through the engine API a refused `BEGIN` opens no block (fork issue [#236](https://github.com/humemai/arcadedb/issues/236)) |
 | `READ ONLY` | a transaction mode, a session default, and a setting | `BEGIN READ ONLY` and `START TRANSACTION READ ONLY` work over the wire, where a statement that writes is `25006`. The other spellings (`SET TRANSACTION READ ONLY`, `SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY`, `default_transaction_read_only`) and `READ ONLY` through the engine API are `0A000` |
 | An unknown column (`42703`) | the hint names a close column, except for the column that an `INSERT` or an `UPDATE` writes to | the hint names a close column there too, and lists the columns the statement can name. Only declared properties are columns (choice 7), so a property that records carry but the type does not declare is unknown (fork issue [#220](https://github.com/humemai/arcadedb/issues/220)) || Savepoints | supported | the language refuses `SAVEPOINT`; over the wire it is accepted and does nothing, and `ROLLBACK TO SAVEPOINT` is refused |
 | Ends of an edge type | a foreign key is declared | the schema does not record which types an edge type connects, so the prototype needs a declaration (choice 4) |
 | `date[]` and `timestamp[]` | any array | the columns of a `LIST OF DATE` and of a `LIST OF DATETIME` (any precision), declared in ArcadeDB `sql` or by `CREATE TABLE`, where `timestamp[]` is a `LIST OF DATETIME_MICROS`. A null element is refused (`0A000`), as in every typed list. A list of links is `text[]` and is not written |
 | A foreign key on a `LINK` column | enforced: the referenced row cannot be deleted, or the declared `ON DELETE` rule runs | listed as not enforced (`enforced` `NO`, `NOT ENFORCED`), because the delete of the referenced row succeeds, and a later insert can take the freed record id, so the link then points at another record, in `sql` and openCypher too (seen on `dc591c4d1c`). Unlike a `NOT ENFORCED` key in PostgreSQL, an `INSERT` or `UPDATE` through this language still refuses a link to a missing record (`23503`) |
+
+## Write conflicts
+
+PostgreSQL makes the second writer of a row wait. The engine locks no row: of two transactions that change the same data, the one that commits last fails. Over the PostgreSQL protocol, the server runs a statement again when it is a transaction of its own, so a single `INSERT`, `UPDATE`, or `DELETE` in autocommit needs no retry loop (fork issue [#239](https://github.com/humemai/arcadedb/issues/239)). Nothing of a run that failed is sent to the client, so a row of `RETURNING` arrives once.
+
+| what the client sends | on a write conflict |
+| --- | --- |
+| one `INSERT`, `UPDATE`, or `DELETE` in autocommit: the only statement of a simple query, or the only `Execute` before its `Sync` | run again in a new transaction, at most 50 more times (`arcadedb.postgresql.autocommitRetries`, `0` turns it off), after a random wait that grows from 2 ms to 100 ms (`arcadedb.txRetryDelayBase`, `arcadedb.txRetryDelay`). `40001` when every run fails, `57014` when `statement_timeout` passes first |
+| statements in a transaction block | `40001`: send `ROLLBACK` if the block is still open, then run the whole transaction again |
+| a simple query with several statements, several `Execute` messages before one `Sync` (a JDBC batch, a pipeline), or an `Execute` followed by `Flush` | `40001`, and none of them is applied: send them again. To have one retried, send it on its own |
+| any write on a database that has a trigger (made in ArcadeDB `sql`) | `40001`: run the statement again. A trigger can do work that a rollback does not take back |
+| a write on a follower of a replicated database | the leader runs it, and the follower does not run it again |
+
+What stays different from PostgreSQL:
+
+- A statement that waits in PostgreSQL can still fail here with `40001`, when many sessions write the same rows and every run meets a conflict.
+- Each run is a new transaction, so `now()` and the clock defaults give the time of the run that commits, not the time the statement arrived.
+- Each run takes new values from the counter of a `serial` or identity column, so the gaps are larger. PostgreSQL has gaps too.
+- A record listener of a plugin, or of an application that embeds the server, runs once for each run.
+- `INSERT ... ON CONFLICT` is also run again when another transaction inserted its key in the meantime, and then does what its clause says, as PostgreSQL does after it waited. In a transaction block, or in a message of several statements, it fails with `23505` or `40001` instead. Every other duplicate key is `23505` at once, as in PostgreSQL.
+- Through the engine API (`db.command`) a statement runs once.
 
 ## `CREATE TABLE`
 

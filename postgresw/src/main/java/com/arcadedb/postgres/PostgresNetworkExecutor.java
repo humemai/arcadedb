@@ -322,6 +322,11 @@ public class PostgresNetworkExecutor extends Thread {
    */
   private boolean  simpleQueryBlockContinues  = false;
   /**
+   * True once a portal of the current extended-protocol run was run, until its Sync: a write that comes after one is not the
+   * only statement of the run's implicit transaction, and is not run again after a conflict (fork issue #239).
+   */
+  private boolean  executedSinceSync          = false;
+  /**
    * The type of the frontend message being handled, for the main loop's catch-all: it decides whether an exception
    * escaping a handler raises {@link #skipUntilSync} (extended protocol) or not (simple query protocol).
    */
@@ -614,6 +619,7 @@ public class PostgresNetworkExecutor extends Thread {
     if (DEBUG)
       LogManager.instance().log(this, Level.INFO, "PSQL: sync (thread=%s)", Thread.currentThread().threadId());
 
+    executedSinceSync = false;
     if (skipUntilSync || errorInTransaction) {
       // DISCARDED PREVIOUS MESSAGES TILL THIS POINT. The block the discarded messages belonged to goes with
       // them: PostgreSQL rolls back the WHOLE run of extended-protocol messages this Sync terminates when any
@@ -758,7 +764,10 @@ public class PostgresNetworkExecutor extends Thread {
         // already ran it) reuses the materialized result instead of running it again: issue #6458's follow-up
         // Execute(s) depend on this same fullResultSet being run exactly once.
         try {
-          beginImplicitTransactionBlock(portal);
+          final boolean ownTransaction = isRetriedOnItsOwn(portal, portalName);
+          executedSinceSync = true;
+          if (!ownTransaction)
+            beginImplicitTransactionBlock(portal);
           final Map<String, PostgresType> fixedColumns = fixedColumnsOf(portal, true);
           if (fixedColumns != null)
             // A projection of declared properties names its columns from the schema (issue #6659): the statement is
@@ -778,7 +787,10 @@ public class PostgresNetworkExecutor extends Thread {
             // empty result, and goes back before anything is written to the client
             try (final QueryAdmissionGate.Ticket ignored = QueryAdmissionGate.getInstance().admit();
                 final RunningStatement ignoredStatement = startStatement(portal.language, portal.query)) {
-              portal.fullResultSet = browseAndCacheBoundedResultSet(runPortalQuery(portal));
+              if (ownTransaction)
+                runPortalAsItsOwnTransaction(portal, true);
+              else
+                portal.fullResultSet = browseAndCacheBoundedResultSet(runPortalQuery(portal));
               portal.executed = true;
               if (!isRowless(portal))
                 resolvePortalColumns(portal, true);
@@ -1108,9 +1120,13 @@ public class PostgresNetworkExecutor extends Thread {
             .log(this, Level.INFO, "PSQL: execute (portal=%s) (limit=%d)-> %s (thread=%s)", portalName, limit, portal,
                 Thread.currentThread().threadId());
 
+      // A write that is a transaction of its own is run, committed, and after a conflict run again before a row of it is
+      // sent, so it opens no implicit block (fork issue #239). Decided first: running it counts as a statement of the run
+      final boolean ownTransaction = isRetriedOnItsOwn(portal, null);
+      executedSinceSync = true;
       // Not "apply, then decide": applyTransactionControl() clears the marker it acted on, so a guard inside
       // beginImplicitTransactionBlock() reading portal.transactionControl afterwards would never see one.
-      if (!applyTransactionControl(portal))
+      if (!applyTransactionControl(portal) && !ownTransaction)
         beginImplicitTransactionBlock(portal);
       // A SET is applied here and not at Parse (issue #8135), for the same reason as the transaction control above.
       applyPendingSetting(sessionSettings, portal);
@@ -1176,7 +1192,10 @@ public class PostgresNetworkExecutor extends Thread {
             // The query admission slot (issue #9518) covers the query and its column resolution, as in Describe
             try (final QueryAdmissionGate.Ticket ignored = QueryAdmissionGate.getInstance().admit();
                 final RunningStatement ignoredStatement = startStatement(portal.language, portal.query)) {
-              portal.fullResultSet = browseAndCacheBoundedResultSet(runPortalQuery(portal));
+              if (ownTransaction)
+                runPortalAsItsOwnTransaction(portal, false);
+              else
+                portal.fullResultSet = browseAndCacheBoundedResultSet(runPortalQuery(portal));
               portal.executed = true;
               profile.addEngineNanos(System.nanoTime() - engineStart);
               // Execute never answers with a RowDescription (issue #8244): PostgreSQL's protocol reserves it for
@@ -1672,13 +1691,21 @@ public class PostgresNetworkExecutor extends Thread {
           } else {
             applySessionToLanguage(query.language);
             checkReadOnlyBlock(query.language, query.query);
+            // a write that is the whole message is a transaction of its own, run again after a conflict (fork issue #239)
+            final boolean ownTransaction = !multiStatementQuery && mayRunAsItsOwnTransaction(query.language, query.query);
             beginSimpleQueryBlock();
             admission = QueryAdmissionGate.getInstance().admit();
             statement = startStatement(query.language, query.query);
-            final ResultSet engineAnswer = database.command(query.language, toEngineText(query.language, query.query),
-                server.getConfiguration());
-            languageAnswer = PostgresLanguageAnswer.of(engineAnswer, database);
-            resultSet = languageAnswer != null ? languageAnswer.rows() : engineAnswer;
+            if (ownTransaction) {
+              final SimpleAnswer answer = runAsItsOwnTransaction(query);
+              languageAnswer = answer.language();
+              resultSet = new IteratorResultSet(answer.rows().iterator());
+            } else {
+              final ResultSet engineAnswer = database.command(query.language, toEngineText(query.language, query.query),
+                  server.getConfiguration());
+              languageAnswer = PostgresLanguageAnswer.of(engineAnswer, database);
+              resultSet = languageAnswer != null ? languageAnswer.rows() : engineAnswer;
+            }
           }
         }
       }
@@ -1746,6 +1773,69 @@ public class PostgresNetworkExecutor extends Thread {
       QueryProfile.popCurrent();
     }
     return false;
+  }
+
+  /** What a simple query that ran as a transaction of its own answered: held until its commit. */
+  private record SimpleAnswer(PostgresLanguageAnswer language, List<Result> rows) {
+  }
+
+  /**
+   * Whether a statement that nothing else shares a transaction with may be run by {@link PostgresAutocommitRetry}: one of
+   * the {@code postgresql} language, in autocommit with no transaction open, on the node that runs it. A follower of a
+   * replicated database is not that node: its leader runs the write.
+   */
+  private boolean mayRunAsItsOwnTransaction(final String language, final String query) {
+    return PostgresQueryLanguages.POSTGRESQL.equals(language) && !explicitTransactionStarted && !database.isTransactionActive()
+        && !isHAFollower() && PostgresAutocommitRetry.mayRun((DatabaseInternal) database, query);
+  }
+
+  /**
+   * Whether the statement of this portal is run as a transaction of its own, and again after a conflict, instead of in the
+   * implicit block that a Sync commits (fork issue #239): a write that {@link #mayRunAsItsOwnTransaction may be}, the first
+   * statement of its run, with nothing but the Sync behind it. Several Execute messages before one Sync share one
+   * transaction, and running one of them again would not take the others along.
+   *
+   * @param described the name of the portal when a Describe is about to run it, {@code null} at an Execute
+   */
+  private boolean isRetriedOnItsOwn(final PostgresPortal portal, final String described) {
+    if (executedSinceSync || portal.executed || !portal.isExpectingResult || portal.ignoreExecution || portal.catalogQuery
+        || portal.emptyQuery || portal.copyStatement != null || portal.transactionControl != null
+        || !mayRunAsItsOwnTransaction(portal.language, portal.query))
+      return false;
+    try {
+      return PostgresAutocommitRetry.onlySyncFollows(channel.getDataInput(), described);
+    } catch (final IOException e) {
+      // the read of the next message meets the same failure, and answers it
+      return false;
+    }
+  }
+
+  /**
+   * Runs the write of a portal in a transaction that is committed before anything of the answer is sent, so a run that is
+   * lost to a conflict has told the client nothing: a row of RETURNING reaches it once.
+   */
+  private void runPortalAsItsOwnTransaction(final PostgresPortal portal, final boolean describing) {
+    PostgresAutocommitRetry.run((DatabaseInternal) database, portal.query, () -> {
+      portal.fullResultSet = browseAndCacheBoundedResultSet(runPortalQuery(portal));
+      if (!isRowless(portal)) {
+        if (!portal.columnsDescribed)
+          resolvePortalColumns(portal, describing);
+        checkEncodable(portal.fullResultSet, portal.columns, portal.resultFormats);
+      }
+      return portal.fullResultSet;
+    });
+  }
+
+  /** The simple query counterpart of {@link #runPortalAsItsOwnTransaction}. */
+  private SimpleAnswer runAsItsOwnTransaction(final Query query) {
+    return PostgresAutocommitRetry.run((DatabaseInternal) database, query.query, () -> {
+      final PostgresLanguageAnswer answer = PostgresLanguageAnswer.of(
+          database.command(query.language, toEngineText(query.language, query.query), server.getConfiguration()), database);
+      final List<Result> rows = browseAndCacheBoundedResultSet(answer.rows());
+      if (!answer.rowless())
+        checkEncodable(rows, answer.wireColumns(), null);
+      return new SimpleAnswer(answer, rows);
+    });
   }
 
   private void recordPostgresProfile(final QueryProfile profile, final String language, final String queryText) {
@@ -3216,20 +3306,7 @@ public class PostgresNetworkExecutor extends Thread {
    */
   private void writeDataRow(final Result row, final Map<String, PostgresType> columns, final List<Integer> resultFormats,
       final Binary bufferData, final Binary bufferValues) throws IOException {
-    bufferValues.putShort((short) columns.size()); // Int16 The number of column values that follow (possibly zero).
-
-    int colIndex = 0;
-    final Map<String, Object> properties = ResultInternal.propertiesOf(row);
-    for (final Map.Entry<String, PostgresType> postgresTypeEntry : columns.entrySet()) {
-      final String propertyName = postgresTypeEntry.getKey();
-      final Object value = columnValue(row, propertyName, properties);
-
-      final PostgresType columnType = postgresTypeEntry.getValue();
-      if (resolveResultFormat(resultFormats, colIndex++) == 1)
-        columnType.serializeAsBinary(columnType, bufferValues, value);
-      else
-        columnType.serializeAsText(columnType, bufferValues, value);
-    }
+    encodeValues(row, columns, resultFormats, bufferValues);
 
     bufferValues.flip();
     final int dataRowLength = 4 + bufferValues.getByteBuffer().limit();
@@ -3248,6 +3325,38 @@ public class PostgresNetworkExecutor extends Thread {
 
     bufferData.clear();
     bufferValues.clear();
+  }
+
+  /** The body of one DataRow: the number of columns, then each value in the format the client asked for. */
+  private static void encodeValues(final Result row, final Map<String, PostgresType> columns, final List<Integer> resultFormats,
+      final Binary bufferValues) {
+    bufferValues.putShort((short) columns.size()); // Int16 The number of column values that follow (possibly zero).
+
+    int colIndex = 0;
+    final Map<String, Object> properties = ResultInternal.propertiesOf(row);
+    for (final Map.Entry<String, PostgresType> postgresTypeEntry : columns.entrySet()) {
+      final String propertyName = postgresTypeEntry.getKey();
+      final Object value = columnValue(row, propertyName, properties);
+
+      final PostgresType columnType = postgresTypeEntry.getValue();
+      if (resolveResultFormat(resultFormats, colIndex++) == 1)
+        columnType.serializeAsBinary(columnType, bufferValues, value);
+      else
+        columnType.serializeAsText(columnType, bufferValues, value);
+    }
+  }
+
+  /**
+   * Encodes every row once and keeps nothing, before the commit of a write whose rows are sent after it: a value that
+   * cannot be sent has to fail the statement while its write can still be taken back, as it does in PostgreSQL.
+   */
+  private static void checkEncodable(final List<Result> rows, final Map<String, PostgresType> columns,
+      final List<Integer> resultFormats) {
+    final Binary bufferValues = new Binary();
+    for (final Result row : rows) {
+      encodeValues(row, columns, resultFormats, bufferValues);
+      bufferValues.clear();
+    }
   }
 
   /**
