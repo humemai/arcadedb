@@ -802,7 +802,7 @@ public final class CreateTablePlan {
       return clock;
     }
     if (expression instanceof Expression.FunctionCall call && call.args().isEmpty() && !call.distinct() && !call.star()
-        && call.over() == null
+        && call.over() == null && call.filter() == null
         && (call.name().size() == 1 || call.name().size() == 2 && "pg_catalog".equals(call.name().get(0).value()))) {
       final String name = call.name().get(call.name().size() - 1).value().toLowerCase(Locale.ROOT);
       if ("now".equals(name))

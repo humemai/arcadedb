@@ -33,7 +33,7 @@ The page starts from the nine tasks of the timed study on fork issue #13, with s
 | IS DISTINCT FROM | different | none | none |
 | Case-insensitive match with ILIKE | same | none | none |
 | Joining strings with string_agg | different | none | none |
-| Collecting values into an array | different | `postgresql` | none |
+| Collecting values into an array | different | none | none |
 | A table of constants with VALUES | different | none | none |
 | A generated uuid | different | none | none |
 | A cast with a type modifier | no `sql` query | none | `sql`, openCypher |
@@ -392,8 +392,6 @@ Result:
 | Delft, Leiden, Utrecht |
 
 ### Collecting values into an array
-
-The prototype refuses `array_agg`.
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 

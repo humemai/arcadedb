@@ -509,7 +509,7 @@ err-string-agg-one-argument	multiset	-	ok	SELECT string_agg(name) FROM person	{"
 err-string-agg-int-delimiter	multiset	-	ok	SELECT string_agg(name, 1) FROM person	{"error":"42883"}
 err-string-agg-in-where	multiset	-	ok	SELECT name FROM person WHERE string_agg(name, ',') = 'x'	{"error":"42803"}
 agg-string-agg-over-window	ordered	-	pending	SELECT pid, string_agg(name, ',') OVER (PARTITION BY city) AS names FROM person ORDER BY pid	{"columns":["pid","names"],"types":["int4","text"],"rows":[[1,"Ada,Bo"],[2,"Ada,Bo"],[3,"Cy,Di"],[4,"Cy,Di"],[5,"Ed"]]}
-agg-array-agg	multiset	-	pending	SELECT array_agg(pid) AS ids FROM person WHERE pid < 3	{"columns":["ids"],"types":["_int4"],"rows":[[[1,2]]]}
+agg-array-agg	multiset	-	ok	SELECT array_agg(pid) AS ids FROM person WHERE pid < 3	{"columns":["ids"],"types":["_int4"],"rows":[[[1,2]]]}
 corr-count-in-select-list	ordered	-	ok	SELECT p.name, (SELECT count(*) FROM orders o WHERE o.pid = p.pid) AS n FROM person p ORDER BY p.pid	{"columns":["name","n"],"types":["varchar","int8"],"rows":[["Ada",2],["Bo",1],["Cy",0],["Di",2],["Ed",0]]}
 corr-count-in-where	ordered	-	ok	SELECT p.name FROM person p WHERE (SELECT count(*) FROM orders o WHERE o.pid = p.pid) >= 2 ORDER BY p.pid	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Di"]]}
 corr-edge-degree	ordered	-	ok	SELECT p.name, (SELECT count(*) FROM works_at w WHERE w.source_id = p.rid) AS jobs FROM person p ORDER BY p.pid	{"columns":["name","jobs"],"types":["varchar","int8"],"rows":[["Ada",2],["Bo",1],["Cy",1],["Di",1],["Ed",0]]}

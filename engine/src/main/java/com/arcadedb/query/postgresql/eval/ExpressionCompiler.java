@@ -233,7 +233,7 @@ public final class ExpressionCompiler {
     if (call.name().size() > 2 || (call.name().size() == 2 && !"pg_catalog".equals(call.name().get(0).value())))
       return false;
     return switch (call.name().get(call.name().size() - 1).value()) {
-      case "count", "sum", "avg", "min", "max", "string_agg" -> true;
+      case "count", "sum", "avg", "min", "max", "string_agg", "array_agg", "jsonb_agg" -> true;
       default -> false;
     };
   }
@@ -242,8 +242,8 @@ public final class ExpressionCompiler {
   private static final int MAX_VARCHAR_LENGTH = 10_485_760;
 
   /** Aggregates of PostgreSQL that the language does not have: refused with {@code 0A000}, not reported as unknown functions. */
-  private static final java.util.Set<String> UNSUPPORTED_AGGREGATES = java.util.Set.of("array_agg", "json_agg", "jsonb_agg",
-      "json_object_agg", "jsonb_object_agg", "bool_and", "bool_or", "every", "bit_and", "bit_or", "bit_xor", "stddev",
+  private static final java.util.Set<String> UNSUPPORTED_AGGREGATES = java.util.Set.of("json_agg", "json_object_agg",
+      "jsonb_object_agg", "bool_and", "bool_or", "every", "bit_and", "bit_or", "bit_xor", "stddev",
       "stddev_pop", "stddev_samp", "variance", "var_pop", "var_samp", "corr", "covar_pop", "covar_samp", "mode",
       "percentile_cont", "percentile_disc");
 
@@ -299,7 +299,13 @@ public final class ExpressionCompiler {
         out.add(e.otherwise());
     }
     case Expression.Cast e -> out.add(e.operand());
-    case Expression.FunctionCall e -> out.addAll(e.args());
+    case Expression.FunctionCall e -> {
+      out.addAll(e.args());
+      for (final SortItem sort : e.orderBy())
+        out.add(sort.expression());
+      if (e.filter() != null)
+        out.add(e.filter());
+    }
     case Expression.ArrayConstructor e -> out.addAll(e.elements());
     case Expression.SpecialFunction e -> out.addAll(e.args());
     default -> {
@@ -1902,6 +1908,12 @@ public final class ExpressionCompiler {
       throw new PostgreSQLEvaluationException("42803", "aggregate functions are not allowed in this context");
     if (UNSUPPORTED_AGGREGATES.contains(name))
       throw PostgreSQLEvaluationException.unsupported("The aggregate function " + name + " is not supported");
+    if (!call.orderBy().isEmpty() || call.filter() != null) {
+      // the call without them first, so that a function that does not exist answers as it would anyway
+      function(new Expression.FunctionCall(call.position(), call.name(), call.args(), call.distinct(), call.star()));
+      throw new PostgreSQLEvaluationException("42809", (call.orderBy().isEmpty() ? "FILTER" : "ORDER BY") + " specified, but "
+          + name + " is not an aggregate function");
+    }
     if (call.distinct() || call.star())
       throw PostgreSQLEvaluationException.noFunction(name, argumentTypes(call));
     final Evaluable[] args = compileArguments(call.args());

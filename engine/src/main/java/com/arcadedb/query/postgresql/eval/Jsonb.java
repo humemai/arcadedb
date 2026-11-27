@@ -544,7 +544,7 @@ public final class Jsonb {
    *
    * @param typeName the name of the type, which for an array says the element type
    */
-  static Object of(final Object value, final PgType type, final String typeName) {
+  public static Object of(final Object value, final PgType type, final String typeName) {
     switch (type) {
     case JSONB:
       return member(view(value));

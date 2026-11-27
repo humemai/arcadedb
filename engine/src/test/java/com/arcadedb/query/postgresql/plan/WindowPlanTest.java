@@ -190,7 +190,8 @@ class WindowPlanTest extends TestHelper {
     assertState("SELECT sum(age) OVER (ORDER BY pid ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM person", "0A000");
     assertState("SELECT sum(age) OVER (ORDER BY pid ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM person", "0A000");
     assertState("SELECT sum(age) OVER w FROM person WINDOW w AS (ORDER BY pid)", "0A000");
-    assertState("SELECT count(*) FILTER (WHERE age > 1) OVER () FROM person", "0A000");
+    assertState("SELECT array_agg(name) OVER () FROM person", "0A000");
+    assertState("SELECT row_number() FILTER (WHERE age > 1) OVER () FROM person", "0A000");
     assertState("SELECT ntile(2) OVER (ORDER BY pid) FROM person", "0A000");
     assertState("SELECT city, count(*), rank() OVER (ORDER BY count(*)) FROM person GROUP BY city", "0A000");
     assertState("SELECT lag(age, 1, 'x') OVER (ORDER BY pid) FROM person", "0A000");

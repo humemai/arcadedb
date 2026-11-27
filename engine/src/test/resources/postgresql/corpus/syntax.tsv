@@ -1611,7 +1611,7 @@ g2-window-partition-order	ok	inside	-	SELECT row_number() OVER (PARTITION BY a O
 g2-window-empty	ok	inside	-	SELECT count(*) OVER () FROM t	g2 (fork issue #56)	42P01
 g2-out-window-frame	ok	outside	-	SELECT sum(a) OVER (ORDER BY a ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t	g2 (fork issue #56)	42P01
 g2-out-window-named	ok	outside	-	SELECT sum(a) OVER w FROM t WINDOW w AS (ORDER BY a)	g2 (fork issue #56)	42P01
-g2-out-window-filter	ok	outside	-	SELECT count(*) FILTER (WHERE a > 1) OVER () FROM t	g2 (fork issue #56)	42P01
+g2-out-window-filter	ok	inside	-	SELECT count(*) FILTER (WHERE a > 1) OVER () FROM t	g2 (fork issue #56)	42P01
 g2-cross-join-chain	ok	inside	-	SELECT * FROM a CROSS JOIN b CROSS JOIN c	g2 (fork issue #61)	42P01
 g2-cross-join-then-inner	ok	inside	-	SELECT * FROM a CROSS JOIN b JOIN c ON a.x = c.x	g2 (fork issue #61)	42P01
 g2-cross-join-in-parens	ok	inside	-	SELECT * FROM a JOIN (b CROSS JOIN c) ON a.x = b.x	g2 (fork issue #61)	42P01
@@ -1631,7 +1631,7 @@ ilike-escape	ok	inside	-	SELECT name FROM person WHERE name ILIKE 'a!%' ESCAPE '
 not-similar-to	ok	outside	-	SELECT name FROM person WHERE name NOT SIMILAR TO 'a%'	written for the parser	-
 string-agg	ok	inside	-	SELECT string_agg(name, ',') FROM person	written for the parser	-
 string-agg-distinct	ok	inside	-	SELECT string_agg(DISTINCT city, ',') FROM person	written for the parser	-
-string-agg-order-by-inside-stays-out	ok	outside	-	SELECT string_agg(name, ',' ORDER BY name) FROM person	written for the parser	-
+string-agg-order-by-inside	ok	inside	-	SELECT string_agg(name, ',' ORDER BY name) FROM person	written for the parser	-
 array-agg-parses	ok	inside	-	SELECT array_agg(name) FROM person	written for the parser	-
 values-from-alias-list	ok	inside	-	SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(a, b)	written for the parser	-
 values-in-list-subquery	ok	inside	-	SELECT name FROM person WHERE pid IN (VALUES (1), (2))	written for the parser	-

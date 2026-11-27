@@ -458,7 +458,7 @@ class StatementParserTest {
         new String[] { "SELECT ROW(1, 2)", "ROW is not supported" },
         new String[] { "SELECT (1, 2)", "A row constructor is not supported" },
         new String[] { "SELECT count(*) OVER w FROM t", "OVER W is not supported by the postgresql language (line 1, column 17)" },
-        new String[] { "SELECT count(*) FILTER (WHERE a) FROM t", "FILTER is not supported" },
+        new String[] { "SELECT mode() WITHIN GROUP (ORDER BY a) FROM t", "WITHIN GROUP is not supported" },
         new String[] { "SELECT DISTINCT ON (a) a FROM t", "DISTINCT ON is not supported by the postgresql language (line 1, column 17)" },
         new String[] { "SELECT 1 INTO t", "SELECT INTO is not supported" },
         new String[] { "SELECT 1 FROM t WINDOW w AS ()", "A WINDOW clause is not supported" },
@@ -511,7 +511,7 @@ class StatementParserTest {
    */
   @ParameterizedTest
   @ValueSource(strings = { "SELECT * FROM t TABLESAMPLE SYSTEM (10)", "SELECT B'101'", "SELECT x::bit(3)",
-      "SELECT ARRAY(SELECT 1)", "SELECT string_agg(a, ',' ORDER BY a) FROM t", "SELECT current_user",
+      "SELECT ARRAY(SELECT 1)", "SELECT mode() WITHIN GROUP (ORDER BY a) FROM t", "SELECT current_user",
       "CREATE TYPE mood AS ENUM ('a')", "CREATE FUNCTION f() RETURNS int AS 'select 1' LANGUAGE sql",
       "GRANT SELECT ON t TO u", "DROP VIEW v", "LISTEN c", "ALTER TABLE t ALTER COLUMN c TYPE bigint" })
   void theRefusalsThatNameNoWayOut(final String text) {
@@ -524,7 +524,7 @@ class StatementParserTest {
       "WITH x AS (INSERT INTO t VALUES (1) RETURNING a) SELECT * FROM x", "TABLE t", "EXPLAIN ANALYZE SELECT 1",
       "EXPLAIN CREATE TABLE t (a int)", "SELECT * FROM a NATURAL JOIN b", "SELECT * FROM a JOIN b USING (x) AS j",
       "SELECT * FROM generate_series(1, 3)", "SELECT (1, 2)", "SELECT count(*) OVER w FROM t",
-      "SELECT count(*) FILTER (WHERE a) FROM t", "SELECT DISTINCT ON (a) a FROM t", "SELECT 1 INTO t", "SELECT 1 FOR UPDATE",
+      "SELECT DISTINCT ON (a) a FROM t", "SELECT 1 INTO t", "SELECT 1 FOR UPDATE",
       "SELECT a FROM t FETCH FIRST 1 ROWS ONLY", "SELECT a SIMILAR TO b", "SELECT a IS TRUE", "SELECT 1 + ANY (ARRAY[1])",
       "SELECT a < ALL (SELECT b FROM t)",
       "SELECT a COLLATE \"C\"", "SELECT a[1] FROM t", "SELECT f(a => 1)", "TRUNCATE t", "CREATE EXTENSION vector",

@@ -53,6 +53,10 @@ import java.util.Set;
 final class WindowStage {
   /** Window functions that PostgreSQL has and the prototype does not: {@code 0A000}, not {@code 42883}. */
   private static final Set<String> OTHER_WINDOW_FUNCTIONS = Set.of("ntile", "percent_rank", "cume_dist", "nth_value");
+  private static final Set<String> NON_AGGREGATE_FUNCTIONS = Set.of("row_number", "rank", "dense_rank", "lag", "lead",
+      "first_value", "last_value");
+  /** The aggregates that collect their rows, which the language does not run over a window. */
+  private static final Set<String> LIST_AGGREGATES = Set.of("string_agg", "array_agg", "jsonb_agg");
 
   /** One window function call, typed. */
   record Call(String name, PgType resultType, String resultTypeName, Evaluable[] partition, Evaluable[] orderKeys,
@@ -96,6 +100,10 @@ final class WindowStage {
     final Expression.Window over = call.over();
     if (call.distinct())
       throw new PostgreSQLFeatureNotSupportedException("DISTINCT is not implemented for window functions");
+    if (call.filter() != null && (NON_AGGREGATE_FUNCTIONS.contains(name) || OTHER_WINDOW_FUNCTIONS.contains(name)))
+      throw new PostgreSQLFeatureNotSupportedException("FILTER is not implemented for non-aggregate window functions");
+    if (!call.orderBy().isEmpty())
+      throw new PostgreSQLFeatureNotSupportedException("aggregate ORDER BY is not implemented for window functions");
 
     final Evaluable[] partition = new Evaluable[over.partitionBy().size()];
     for (int i = 0; i < partition.length; i++)
@@ -169,7 +177,7 @@ final class WindowStage {
           spec);
     }
     default:
-      if (OTHER_WINDOW_FUNCTIONS.contains(name) || name.equals("string_agg"))
+      if (OTHER_WINDOW_FUNCTIONS.contains(name) || LIST_AGGREGATES.contains(name))
         throw new PostgreSQLFeatureNotSupportedException("The window function " + name + " is not supported");
       throw PostgreSQLEvaluationException.noFunction(name, input.argumentTypes(call));
     }
@@ -291,8 +299,7 @@ final class WindowStage {
         while (p < m) {
           final int end = last[p];
           for (int q = p; q <= end; q++)
-            accumulator.add(call.aggregate().argument() == null ? Boolean.TRUE
-                : call.aggregate().argument().eval(input.get(rows[q])));
+            accumulator.addRow(call.aggregate(), input.get(rows[q]), null);
           final Object result = accumulator.result();
           for (int q = p; q <= end; q++)
             out.get(rows[q])[slot] = result;

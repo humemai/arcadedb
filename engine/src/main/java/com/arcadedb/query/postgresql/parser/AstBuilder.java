@@ -871,9 +871,9 @@ final class AstBuilder {
     if (context instanceof CastExprContext e)
       return new Expression.Cast(position(e.getStart()), expression(e.aExpr()), typeName(e.typename()));
     if (context instanceof FunctionCallExprContext e)
-      return functionCall(e.funcApplication());
+      return functionCall(e.funcApplication(), e.filterClause());
     if (context instanceof WindowCallExprContext e) {
-      final Expression.FunctionCall call = (Expression.FunctionCall) functionCall(e.funcApplication());
+      final Expression.FunctionCall call = (Expression.FunctionCall) functionCall(e.funcApplication(), e.filterClause());
       final OverClauseContext over = e.overClause();
       final List<Expression> partition = new ArrayList<>();
       for (final AExprContext item : over.partition)
@@ -883,7 +883,8 @@ final class AstBuilder {
         for (final SortByContext item : over.sortClause().items)
           order.add(sortItem((SortKeyContext) item));
       return new Expression.FunctionCall(call.position(), call.name(), call.args(), call.distinct(), call.star(),
-          new Expression.Window(position(over.getStart()), partition, order, over.rowsFrame() != null));
+          new Expression.Window(position(over.getStart()), partition, order, over.rowsFrame() != null), call.orderBy(),
+          call.filter());
     }
     if (context instanceof VariadicSpecialExprContext e) {
       final SpecialFunctionKind kind = switch (e.fn.getType()) {
@@ -943,19 +944,30 @@ final class AstBuilder {
         context.otherwise == null ? null : expression(context.otherwise));
   }
 
-  private Expression functionCall(final FuncApplicationContext context) {
+  private Expression functionCall(final FuncApplicationContext context, final FilterClauseContext filterClause) {
     final SourcePosition position = position(context.getStart());
-    if (context instanceof FuncNoArgsContext noArguments)
-      return new Expression.FunctionCall(position, functionName(noArguments.name), List.of(), false, false);
-    if (context instanceof FuncStarContext star)
-      return new Expression.FunctionCall(position, functionName(star.name), List.of(), false, true);
-
-    final FuncWithArgsContext withArguments = (FuncWithArgsContext) context;
+    final List<Name> name;
     final List<Expression> arguments = new ArrayList<>();
-    for (final FuncArgExprContext argument : withArguments.args.items)
-      arguments.add(expression(argument.aExpr()));
-    final boolean distinct = withArguments.q != null && withArguments.q.getType() == PostgreSQLParser.DISTINCT;
-    return new Expression.FunctionCall(position, functionName(withArguments.name), arguments, distinct, false);
+    final List<SortItem> order = new ArrayList<>();
+    boolean distinct = false;
+    boolean allRows = false;
+    if (context instanceof FuncNoArgsContext noArguments)
+      name = functionName(noArguments.name);
+    else if (context instanceof FuncStarContext star) {
+      name = functionName(star.name);
+      allRows = true;
+    } else {
+      final FuncWithArgsContext withArguments = (FuncWithArgsContext) context;
+      name = functionName(withArguments.name);
+      for (final FuncArgExprContext argument : withArguments.args.items)
+        arguments.add(expression(argument.aExpr()));
+      distinct = withArguments.q != null && withArguments.q.getType() == PostgreSQLParser.DISTINCT;
+      if (withArguments.order != null)
+        for (final SortByContext item : withArguments.order.items)
+          order.add(sortItem((SortKeyContext) item));
+    }
+    return new Expression.FunctionCall(position, name, arguments, distinct, allRows, null, order,
+        filterClause == null ? null : expression(filterClause.aExpr()));
   }
 
   private List<Name> functionName(final FuncNameContext context) {
