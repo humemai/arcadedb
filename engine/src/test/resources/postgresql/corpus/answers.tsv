@@ -196,17 +196,17 @@ err-information-schema-unknown-view	multiset	-	ok	SELECT * FROM information_sche
 err-information-schema-unknown-column	multiset	-	ok	SELECT nosuch FROM information_schema.tables	{"error":"42703"}
 is-qualified-column	ordered	-	ok	SELECT information_schema.tables.table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE 'w%' ORDER BY information_schema.tables.table_name	{"columns":["table_name"],"types":["name"],"rows":[["works_at"]]}
 err-information-schema-alias-hides-name	multiset	-	ok	SELECT information_schema.tables.table_name FROM information_schema.tables t	{"error":"42P01"}
-name-cast-of-cast	multiset	-	ok	SELECT '1'::int4::int8	pending-server
-name-cast-of-cast-of-column	multiset	-	ok	SELECT age::text::int8 FROM person WHERE pid = 1	pending-server
-name-cast-of-cast-of-function	multiset	-	ok	SELECT count(*)::int4::text FROM person	pending-server
-name-cast-of-typed-literal	multiset	-	ok	SELECT date '2020-01-02'::text	pending-server
-name-cast-of-case	multiset	-	ok	SELECT (CASE WHEN true THEN 1 END)::int8	pending-server
-name-case-with-column-else	multiset	-	ok	SELECT CASE WHEN false THEN 1 ELSE age END FROM person WHERE pid = 1	pending-server
-name-case-with-cast-else	multiset	-	ok	SELECT CASE WHEN false THEN 1 ELSE '2'::int4 END	pending-server
-name-cast-of-case-with-column-else	multiset	-	ok	SELECT (CASE WHEN false THEN 1 ELSE age END)::text FROM person WHERE pid = 1	pending-server
-name-exists	multiset	-	ok	SELECT EXISTS (SELECT 1 FROM person)	pending-server
-name-cast-of-exists	multiset	-	ok	SELECT EXISTS (SELECT 1 FROM person)::int4	pending-server
-name-cast-of-unnamed-subquery	multiset	-	ok	SELECT (SELECT 1)::text	pending-server
+name-cast-of-cast	multiset	-	ok	SELECT '1'::int4::int8	{"columns":["int8"],"types":["int8"],"rows":[[1]]}
+name-cast-of-cast-of-column	multiset	-	ok	SELECT age::text::int8 FROM person WHERE pid = 1	{"columns":["age"],"types":["int8"],"rows":[[36]]}
+name-cast-of-cast-of-function	multiset	-	ok	SELECT count(*)::int4::text FROM person	{"columns":["count"],"types":["text"],"rows":[["5"]]}
+name-cast-of-typed-literal	multiset	-	ok	SELECT date '2020-01-02'::text	{"columns":["text"],"types":["text"],"rows":[["2020-01-02"]]}
+name-cast-of-case	multiset	-	ok	SELECT (CASE WHEN true THEN 1 END)::int8	{"columns":["int8"],"types":["int8"],"rows":[[1]]}
+name-case-with-column-else	multiset	-	ok	SELECT CASE WHEN false THEN 1 ELSE age END FROM person WHERE pid = 1	{"columns":["age"],"types":["int4"],"rows":[[36]]}
+name-case-with-cast-else	multiset	-	ok	SELECT CASE WHEN false THEN 1 ELSE '2'::int4 END	{"columns":["case"],"types":["int4"],"rows":[[2]]}
+name-cast-of-case-with-column-else	multiset	-	ok	SELECT (CASE WHEN false THEN 1 ELSE age END)::text FROM person WHERE pid = 1	{"columns":["age"],"types":["text"],"rows":[["36"]]}
+name-exists	multiset	-	ok	SELECT EXISTS (SELECT 1 FROM person)	{"columns":["exists"],"types":["bool"],"rows":[[true]]}
+name-cast-of-exists	multiset	-	ok	SELECT EXISTS (SELECT 1 FROM person)::int4	{"columns":["exists"],"types":["int4"],"rows":[[1]]}
+name-cast-of-unnamed-subquery	multiset	-	ok	SELECT (SELECT 1)::text	{"columns":["?column?"],"types":["text"],"rows":[["1"]]}
 c1-derived-basic	ordered	-	ok	SELECT t.name, t.age FROM (SELECT name, age FROM person WHERE age > 30) t ORDER BY t.name	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Ada",36],["Bo",41],["Ed",52]]}
 c1-derived-aggregate	ordered	-	ok	SELECT city, n FROM (SELECT city, count(*) AS n FROM person GROUP BY city) c WHERE n > 1 ORDER BY city	{"columns":["city","n"],"types":["varchar","int8"],"rows":[["Delft",2],["Leiden",2]]}
 c1-derived-join	ordered	-	ok	SELECT p.name, o.total FROM person p JOIN (SELECT pid, sum(total) AS total FROM orders GROUP BY pid) o ON o.pid = p.pid ORDER BY p.name	{"columns":["name","total"],"types":["varchar","numeric"],"rows":[["Ada",35.50],["Bo",99.99],["Di",12.25]]}
