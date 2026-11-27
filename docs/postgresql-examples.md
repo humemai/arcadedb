@@ -89,7 +89,7 @@ The page starts from the nine tasks of the timed study on fork issue #13, with s
 
 ## The data
 
-The same records serve all three ArcadeDB languages. A vertex type or document type is a table, and an edge type is a table with `source_id` and `target_id`, which hold record ids. A type with a property `id` shows its record id as `rid`. The PostgreSQL 18 tables declare `rid` as an identity column, and foreign keys with `ON DELETE CASCADE` so that a deleted person takes its edges along.
+The same records serve all three ArcadeDB languages. A vertex type or document type is a table, and an edge type is a table with `source_id` and `target_id`, which hold record ids. In `postgresql` the record id of every table is the column `rid`, and `id` is a column only where the type declares it. The PostgreSQL 18 tables declare `rid` as an identity column, and foreign keys with `ON DELETE CASCADE` so that a deleted person takes its edges along.
 
 ArcadeDB `sql` setup, schema:
 
@@ -135,7 +135,7 @@ PostgreSQL 18 setup, schema:
 ```sql
 CREATE EXTENSION vector;
 CREATE TABLE person (rid bigint GENERATED ALWAYS AS IDENTITY UNIQUE, id bigint PRIMARY KEY, name text, age int, city text, created bigint);
-CREATE TABLE knows (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, source_id bigint NOT NULL REFERENCES person (rid) ON DELETE CASCADE, target_id bigint NOT NULL REFERENCES person (rid) ON DELETE CASCADE, since int);
+CREATE TABLE knows (rid bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, source_id bigint NOT NULL REFERENCES person (rid) ON DELETE CASCADE, target_id bigint NOT NULL REFERENCES person (rid) ON DELETE CASCADE, since int);
 CREATE INDEX knows_source ON knows (source_id);
 CREATE INDEX knows_target ON knows (target_id);
 CREATE TABLE memory (rid bigint GENERATED ALWAYS AS IDENTITY UNIQUE, id bigint PRIMARY KEY, name text, age int, city text, created bigint, tags text[], meta jsonb, payload bytea, embedding vector(3));

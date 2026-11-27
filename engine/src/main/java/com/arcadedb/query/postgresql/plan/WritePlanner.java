@@ -80,8 +80,8 @@ import java.util.Set;
  * <ul>
  * <li><b>INSERT</b> creates one record per row of {@code VALUES} or of the {@code SELECT}. A column that is not given, or given as
  * {@code DEFAULT}, takes the default of its property, else it is absent, which reads as {@code NULL}; an explicit {@code NULL} is
- * not replaced by the default. {@code id} is never settable ({@code 428C9}: the record id column, {@code id} or {@code rid} by the rule of fork issue #38; a property of the user that is
- * named {@code id} is an ordinary column and is set like any other), a column that the table does not have is
+ * not replaced by the default. The record id column {@code rid} is never settable ({@code 428C9}; a property of the user is an
+ * ordinary column and is set like any other, one named {@code id} included), a column that the table does not have is
  * {@code 42703}, a property that is {@code NOTNULL} or {@code MANDATORY} and has no value is {@code 23502}, a unique index that
  * already holds the key is {@code 23505}, and a {@code LINK} that does not name an existing record of its type is {@code 23503}.</li>
  * <li><b>UPDATE</b> and <b>DELETE</b> find their rows with the access path of the read side ({@link SelectPlanner}: the record id
@@ -627,9 +627,9 @@ public final class WritePlanner {
   }
 
   /**
-   * The name the catalog gives the synthetic column of this kind in this table. The executors never spell {@code id},
+   * The name the catalog gives the synthetic column of this kind in this table. The executors never spell {@code rid},
    * {@code source_id} or {@code target_id}: they find the record id, the source and the target by their kind, so a rule of the
-   * catalog about which column carries which name (fork issue #38) changes no executor.
+   * catalog about which column carries which name (fork issue #240) changes no executor.
    */
   private static String nameOf(final Table table, final Column.Kind kind) {
     for (final Column column : table.columns())

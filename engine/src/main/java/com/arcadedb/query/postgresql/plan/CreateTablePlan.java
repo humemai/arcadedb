@@ -266,7 +266,7 @@ public final class CreateTablePlan {
         written.addAll(unique.stream().filter(Key::primary).findFirst().orElseThrow(() -> noPrimaryKey(table)).columns());
       for (final String column : written) {
         if (!columns.containsKey(column))
-          throw new PostgreSQLUndefinedColumnException(column, table, List.copyOf(columns.keySet()));
+          throw new PostgreSQLUndefinedColumnException(column, table, List.copyOf(columns.keySet()), false);
         properties.add(column);
         types.add(columns.get(column).mapped.type());
       }
@@ -533,7 +533,7 @@ public final class CreateTablePlan {
     final Column rid = referenced.findColumn(identifier(reference.columns().get(0)));
     if (rid == null)
       throw new PostgreSQLEvaluationException("42703", "column \"rid\" referenced in foreign key constraint does not exist. Hint:"
-          + " the record id of a table is rid when CREATE TABLE made the table or it has a column id of its own");
+          + " rid is the record id of a table whose rows are records");
     if (referenced.kind() != Table.Kind.VERTEX || rid.kind() != Column.Kind.IDENTITY)
       throw refusedReference(reference.position());
     return referenced.name();

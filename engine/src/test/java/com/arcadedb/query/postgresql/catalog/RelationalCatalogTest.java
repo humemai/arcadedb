@@ -77,10 +77,10 @@ class RelationalCatalogTest extends TestHelper {
   void theColumnsAreTheSyntheticOnesThenTheDeclaredPropertiesByName() {
     final RelationalCatalog catalog = small();
 
-    assertThat(names(catalog.table("person"))).containsExactly("id", "age", "city", "name", "pid");
-    assertThat(names(catalog.table("company"))).containsExactly("id", "cid", "name");
-    assertThat(names(catalog.table("orders"))).containsExactly("id", "address", "buyer", "oid", "pid", "placed", "tags", "total");
-    assertThat(names(catalog.table("works_at"))).containsExactly("id", "source_id", "target_id", "since");
+    assertThat(names(catalog.table("person"))).containsExactly("rid", "age", "city", "name", "pid");
+    assertThat(names(catalog.table("company"))).containsExactly("rid", "cid", "name");
+    assertThat(names(catalog.table("orders"))).containsExactly("rid", "address", "buyer", "oid", "pid", "placed", "tags", "total");
+    assertThat(names(catalog.table("works_at"))).containsExactly("rid", "source_id", "target_id", "since");
   }
 
   @Test
@@ -89,7 +89,7 @@ class RelationalCatalogTest extends TestHelper {
 
     assertThat(names(worksAt)).doesNotContain("@out", "@in", "out", "in");
     assertThat(worksAt.edgeStorage()).isEqualTo(Table.EdgeStorage.REGULAR);
-    assertThat(worksAt.column("id").kind()).isEqualTo(Column.Kind.IDENTITY);
+    assertThat(worksAt.column("rid").kind()).isEqualTo(Column.Kind.IDENTITY);
     assertThat(worksAt.column("source_id").kind()).isEqualTo(Column.Kind.SOURCE);
     assertThat(worksAt.column("target_id").kind()).isEqualTo(Column.Kind.TARGET);
     assertThat(worksAt.column("since").kind()).isEqualTo(Column.Kind.PROPERTY);
@@ -100,7 +100,7 @@ class RelationalCatalogTest extends TestHelper {
     final RelationalCatalog catalog = small();
 
     final Map<String, String> orders = typesOf(catalog.table("orders"));
-    assertThat(orders).containsEntry("id", "text").containsEntry("oid", "int4").containsEntry("pid", "int4")
+    assertThat(orders).containsEntry("rid", "text").containsEntry("oid", "int4").containsEntry("pid", "int4")
         .containsEntry("total", "numeric").containsEntry("placed", "date").containsEntry("address", "jsonb")
         .containsEntry("tags", "text[]").containsEntry("buyer", "text");
 
@@ -117,7 +117,7 @@ class RelationalCatalogTest extends TestHelper {
     final RelationalCatalog catalog = small();
 
     for (final Table table : catalog.tables()) {
-      assertThat(table.primaryKey().columns()).as(table.name()).containsExactly("id");
+      assertThat(table.primaryKey().columns()).as(table.name()).containsExactly("rid");
       assertThat(table.primaryKey().name()).isEqualTo(table.name() + "_pkey");
     }
 
@@ -137,8 +137,8 @@ class RelationalCatalogTest extends TestHelper {
       for (final Table.ForeignKey foreignKey : table.foreignKeys())
         foreignKeys.add(table.name() + "." + String.join(",", foreignKey.columns()) + " -> " + foreignKey.referencedTable() + "."
             + String.join(",", foreignKey.referencedColumns()));
-    assertThat(foreignKeys).containsExactlyInAnyOrder("works_at.source_id -> person.id", "works_at.target_id -> company.id",
-        "orders.buyer -> person.id");
+    assertThat(foreignKeys).containsExactlyInAnyOrder("works_at.source_id -> person.rid", "works_at.target_id -> company.rid",
+        "orders.buyer -> person.rid");
 
     final List<Table.ForeignKey> worksAt = catalog.table("works_at").foreignKeys();
     assertThat(worksAt).extracting(Table.ForeignKey::name).containsExactly("works_at_source_id_fkey", "works_at_target_id_fkey");
@@ -155,7 +155,7 @@ class RelationalCatalogTest extends TestHelper {
     final RelationalCatalog catalog = small();
 
     for (final Table table : catalog.tables()) {
-      final Column id = table.column("id");
+      final Column id = table.column("rid");
       final Set<String> seen = new HashSet<>();
       final Iterator<Document> rows = database.iterateType(table.name(), false);
       while (rows.hasNext()) {
@@ -223,13 +223,13 @@ class RelationalCatalogTest extends TestHelper {
     final RelationalCatalog after = RelationalCatalog.of(database);
 
     assertThat(after.table("city").kind()).isEqualTo(Table.Kind.VERTEX);
-    assertThat(names(after.table("city"))).containsExactly("id");
+    assertThat(names(after.table("city"))).containsExactly("rid");
     assertThat(after.tables()).hasSize(before.tables().size() + 1);
     assertThat(before.findTable(Identifier.unquoted("city"))).as("a snapshot does not change").isNull();
 
     database.command("sql", "CREATE PROPERTY city.name STRING");
-    assertThat(names(RelationalCatalog.of(database).table("city"))).containsExactly("id", "name");
-    assertThat(names(after.table("city"))).containsExactly("id");
+    assertThat(names(RelationalCatalog.of(database).table("city"))).containsExactly("rid", "name");
+    assertThat(names(after.table("city"))).containsExactly("rid");
   }
 
   @Test
@@ -264,7 +264,7 @@ class RelationalCatalogTest extends TestHelper {
   }
 
   private Map<Integer, String> idsBy(final Table table, final String key) {
-    final Column id = table.column("id");
+    final Column id = table.column("rid");
     final Map<Integer, String> ids = new HashMap<>();
     final Iterator<Document> rows = database.iterateType(table.name(), false);
     while (rows.hasNext()) {

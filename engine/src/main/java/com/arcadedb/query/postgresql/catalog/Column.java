@@ -31,16 +31,16 @@ import java.util.Objects;
  * <p>
  * A column is either synthetic ({@link Kind#IDENTITY}, {@link Kind#SOURCE}, {@link Kind#TARGET}: the record id and the two
  * endpoints of an edge, which are not properties) or a declared property ({@link Kind#PROPERTY}). A property that records carry
- * and the schema does not declare is not a column. A declared property is shown under its own name, except when that name is one
- * of the synthetic columns of its table ({@code id}, and {@code source_id} and {@code target_id} on an edge table): then an
- * underscore is appended until the name is free, so a property {@code id} is the column {@code id_}.
+ * and the schema does not declare is not a column. A declared property is shown under its own name, except when that name is an
+ * end of an edge table ({@code source_id} or {@code target_id}): then an underscore is appended until the name is free, so such a
+ * property {@code source_id} is the column {@code source_id_}.
  */
 public final class Column {
   public enum Kind {
     /**
-     * The record id as text, {@code #12:3}: the column {@code id}, or {@code rid} in a type that has a property of its own named
-     * {@code id}. It is never written: INSERT and UPDATE refuse it with SQLSTATE {@code 428C9} (fork issue #29). A property named
-     * {@code id} is the user's data and an ordinary {@link #PROPERTY} column, which a write sets like any other.
+     * The record id as text, {@code #12:3}: the column {@code rid} (fork issue #240). It is never written: INSERT and UPDATE
+     * refuse it with SQLSTATE {@code 428C9} (fork issue #29). A property named {@code id} is the user's data and an ordinary
+     * {@link #PROPERTY} column, which a write sets like any other.
      */
     IDENTITY,
     /** {@code source_id}: the record id of the out vertex of an edge, read from the edge record. */
@@ -142,7 +142,7 @@ public final class Column {
 
   /**
    * Whether the catalog views show the column: every column but the record id of a table made by {@code CREATE TABLE} that no
-   * foreign key refers to, and the second name {@code id} that such a record id has beside {@code rid} (fork issue #151).
+   * foreign key refers to.
    */
   public boolean isListed() {
     return listed;
@@ -204,9 +204,8 @@ public final class Column {
   /**
    * The value of this column in a row.
    * <ul>
-   * <li>The identity column ({@code id}, or {@code rid} when the type has its own property {@code id}): the record id as text,
-   * {@code #12:3}. It is {@code null} for an edge that has no record (a lightweight edge in an edge table that also holds records,
-   * see {@link Table.EdgeStorage#MIXED}).</li>
+   * <li>The identity column {@code rid}: the record id as text, {@code #12:3}. It is {@code null} for an edge that has no record
+   * (a lightweight edge in an edge table that also holds records, see {@link Table.EdgeStorage#MIXED}).</li>
    * <li>{@code source_id} and {@code target_id}: the record id of the out and the in vertex as text, read from the edge, with no
    * vertex loaded. They hold record ids whatever the endpoint types call their own key.</li>
    * <li>A {@code LINK} property: the record id of the target as text.</li>

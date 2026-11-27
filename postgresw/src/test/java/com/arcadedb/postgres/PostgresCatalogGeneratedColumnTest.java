@@ -75,12 +75,12 @@ class PostgresCatalogGeneratedColumnTest {
   void theRecordIdAndTheIdOfAnEdgeAreIdentityColumnsInPgAttribute() {
     final String person = "select a.attname, a.attidentity, a.atthasdef, a.attnotnull from pg_attribute a"
         + " join pg_class c on a.attrelid = c.oid where c.relname = 'person' and a.attnum > 0 order by a.attnum";
-    assertThat(rows(person, true, "attname", "attidentity", "atthasdef", "attnotnull")).containsExactly("id|a|true|true",
+    assertThat(rows(person, true, "attname", "attidentity", "atthasdef", "attnotnull")).containsExactly("rid|a|true|true",
         "age||false|false", "city||false|false", "name||false|false", "pid||false|false");
 
     final String edge = "select a.attname, a.attidentity from pg_attribute a join pg_class c on a.attrelid = c.oid"
         + " where c.relname = 'works_at' and a.attnum > 0 order by a.attnum";
-    assertThat(rows(edge, true, "attname", "attidentity")).containsExactly("id|a", "source_id|", "target_id|", "since|");
+    assertThat(rows(edge, true, "attname", "attidentity")).containsExactly("rid|a", "source_id|", "target_id|", "since|");
   }
 
   /**
@@ -92,8 +92,8 @@ class PostgresCatalogGeneratedColumnTest {
     final String defaults = "select c.relname, a.attname, pg_catalog.pg_get_expr(d.adbin, d.adrelid) as adsrc"
         + " from pg_catalog.pg_class c join pg_catalog.pg_attribute a on (a.attrelid = c.oid)"
         + " join pg_catalog.pg_attrdef d on (a.attrelid = d.adrelid and a.attnum = d.adnum) order by 1, 2";
-    assertThat(rows(defaults, true, "relname", "attname", "adsrc")).containsExactly("company|id|arcadedb_record_id()",
-        "orders|id|arcadedb_record_id()", "person|id|arcadedb_record_id()", "works_at|id|arcadedb_record_id()");
+    assertThat(rows(defaults, true, "relname", "attname", "adsrc")).containsExactly("company|rid|arcadedb_record_id()",
+        "orders|rid|arcadedb_record_id()", "person|rid|arcadedb_record_id()", "works_at|rid|arcadedb_record_id()");
     assertThat(rows(defaults, false, "relname", "attname", "adsrc")).isEmpty();
   }
 

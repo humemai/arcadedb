@@ -272,7 +272,7 @@ class PostgreSQLAsyncpgTest extends PostgresWireProtocolTestBase {
           "constraints|[[\"company_cid_key\", \"u\"], [\"company_pkey\", \"p\"], [\"orders_buyer_fkey\", \"f\"], "
               + "[\"orders_oid_key\", \"u\"], [\"orders_pkey\", \"p\"], [\"person_pid_key\", \"u\"], [\"person_pkey\", \"p\"], "
               + "[\"works_at_pkey\", \"p\"], [\"works_at_source_id_fkey\", \"f\"], [\"works_at_target_id_fkey\", \"f\"]]",
-          "columns|[[\"id\", \"text\"], [\"source_id\", \"text\"], [\"target_id\", \"text\"], [\"since\", \"int4\"]]",
+          "columns|[[\"rid\", \"text\"], [\"source_id\", \"text\"], [\"target_id\", \"text\"], [\"since\", \"int4\"]]",
           "tables|[[\"company\"], [\"orders\"], [\"person\"], [\"works_at\"]]",
           "crud|[\"INSERT 0 1\", \"UPDATE 1\", [[\"As\", 2]], \"DELETE 1\"]", "error|[\"42703\"]", "still usable|5",
           // asyncpg binds a prepared parameter by the type the server announces: the one the language inferred (fork issue #67)

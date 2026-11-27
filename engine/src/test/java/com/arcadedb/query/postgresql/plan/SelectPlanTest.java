@@ -145,7 +145,7 @@ class SelectPlanTest extends TestHelper {
   @Test
   void aStarExpandsToTheColumnsOfTheTable() {
     try (final PostgreSQLResultSet resultSet = run("SELECT * FROM company ORDER BY cid")) {
-      assertThat(resultSet.columns()).extracting(PostgreSQLResultSet.Column::name).containsExactly("id", "cid", "name");
+      assertThat(resultSet.columns()).extracting(PostgreSQLResultSet.Column::name).containsExactly("rid", "cid", "name");
       assertThat(resultSet.columns()).extracting(PostgreSQLResultSet.Column::typeName).containsExactly("text", "int4", "varchar");
     }
     final List<List<Object>> companies = rows("SELECT * FROM company ORDER BY cid");
@@ -162,7 +162,7 @@ class SelectPlanTest extends TestHelper {
   void theColumnsOfTheResultCarryPostgreSQLTypeNames() {
     try (final PostgreSQLResultSet resultSet = run("SELECT * FROM orders ORDER BY oid")) {
       assertThat(resultSet.columns()).extracting(PostgreSQLResultSet.Column::name)
-          .containsExactly("id", "address", "buyer", "oid", "pid", "placed", "tags", "total");
+          .containsExactly("rid", "address", "buyer", "oid", "pid", "placed", "tags", "total");
       assertThat(resultSet.columns()).extracting(PostgreSQLResultSet.Column::typeName)
           .containsExactly("text", "jsonb", "text", "int4", "int4", "date", "_text", "numeric");
       final Result first = resultSet.next();
@@ -269,11 +269,21 @@ class SelectPlanTest extends TestHelper {
     assertThatThrownBy(() -> rows("SELECT nam FROM person")).isInstanceOf(PostgreSQLCatalogException.class)
         .hasMessageContaining("column \"nam\" does not exist")
         .hasMessageContaining("Hint: Perhaps you meant to reference the column \"person.name\"; "
-            + "the columns of person are id, age, city, name, pid")
+            + "the columns of person are rid, age, city, name, pid")
         .hasMessageNotContaining("CREATE PROPERTY");
     assertThatThrownBy(() -> rows("SELECT p.nam FROM person p")).hasMessageContaining("column \"p.nam\" does not exist")
         .hasMessageContaining("Perhaps you meant to reference the column \"p.name\"; "
-            + "the columns of p are id, age, city, name, pid");
+            + "the columns of p are rid, age, city, name, pid");
+    // id on a table that declares none: the hint names the record id column (fork issue #240)
+    for (final String sql : new String[] { "SELECT id FROM person", "SELECT max(id) FROM person", "SELECT p.ID FROM person p",
+        "SELECT name FROM person WHERE id = 'abc'", "SELECT name FROM person ORDER BY id DESC",
+        "SELECT (SELECT count(*) FROM orders o WHERE o.pid = id) FROM person" })
+      assertThatThrownBy(() -> rows(sql)).as(sql).isInstanceOf(PostgreSQLCatalogException.class)
+          .hasMessageContaining("does not exist. Hint: " + PostgreSQLCatalogException.NO_ID_HINT);
+    // a quoted name that only differs in case is another name, and a query with no record id has nothing to read
+    assertThatThrownBy(() -> rows("SELECT \"ID\" FROM person")).hasMessageNotContaining(PostgreSQLCatalogException.NO_ID_HINT);
+    assertThatThrownBy(() -> rows("SELECT id FROM (SELECT name FROM person) t"))
+        .hasMessageNotContaining(PostgreSQLCatalogException.NO_ID_HINT);
     assertThatThrownBy(() -> rows("SELECT (SELECT count(*) FROM orders o WHERE nope = 1) FROM person p"))
         .hasMessageContaining("the columns of o are ").hasMessageNotContaining("the columns of p are ");
     assertThatThrownBy(() -> rows("SELECT pid FROM person UNION SELECT oid FROM orders ORDER BY nosuch"))
@@ -390,17 +400,17 @@ class SelectPlanTest extends TestHelper {
 
   @Test
   void theRecordIdIsAReadOfOneRecord() {
-    final List<Object> ids = column("SELECT id FROM person ORDER BY pid");
+    final List<Object> ids = column("SELECT rid FROM person ORDER BY pid");
     final String bo = (String) ids.get(1);
-    assertThat(plan("SELECT pid FROM person WHERE id = $1", bo)).contains("READ RECORD BY ID person");
-    assertThat(column("SELECT pid FROM person WHERE id = $1", bo)).containsExactly(2);
-    assertThat(column("SELECT pid FROM person WHERE id = '" + bo + "'")).containsExactly(2);
-    assertThat(column("SELECT pid FROM person WHERE id = '#999:0'")).isEmpty();
-    assertThat(column("SELECT pid FROM person WHERE id = 'junk'")).isEmpty();
-    assertThat(column("SELECT pid FROM person WHERE id = 'junk' OR pid = 1")).containsExactly(1);
-    final String company = (String) column("SELECT id FROM company ORDER BY cid").get(0);
-    assertThat(column("SELECT pid FROM person WHERE id = $1", company)).as("a record of another table is not a row").isEmpty();
-    assertThat(column("SELECT cid FROM company WHERE id = $1", company)).containsExactly(10);
+    assertThat(plan("SELECT pid FROM person WHERE rid = $1", bo)).contains("READ RECORD BY ID person");
+    assertThat(column("SELECT pid FROM person WHERE rid = $1", bo)).containsExactly(2);
+    assertThat(column("SELECT pid FROM person WHERE rid = '" + bo + "'")).containsExactly(2);
+    assertThat(column("SELECT pid FROM person WHERE rid = '#999:0'")).isEmpty();
+    assertThat(column("SELECT pid FROM person WHERE rid = 'junk'")).isEmpty();
+    assertThat(column("SELECT pid FROM person WHERE rid = 'junk' OR pid = 1")).containsExactly(1);
+    final String company = (String) column("SELECT rid FROM company ORDER BY cid").get(0);
+    assertThat(column("SELECT pid FROM person WHERE rid = $1", company)).as("a record of another table is not a row").isEmpty();
+    assertThat(column("SELECT cid FROM company WHERE rid = $1", company)).containsExactly(10);
   }
 
   // ---- ONLY and inheritance ----
@@ -428,14 +438,14 @@ class SelectPlanTest extends TestHelper {
 
   @Test
   void anEdgeTableIsReadFromItsBuckets() {
-    final List<Object> people = column("SELECT id FROM person ORDER BY pid");
-    final List<Object> companies = column("SELECT id FROM company ORDER BY cid");
+    final List<Object> people = column("SELECT rid FROM person ORDER BY pid");
+    final List<Object> companies = column("SELECT rid FROM company ORDER BY cid");
     assertThat(rows("SELECT source_id, target_id, since FROM works_at ORDER BY since")).containsExactly(
         row(people.get(0), companies.get(0), 2019), row(people.get(1), companies.get(0), 2020),
         row(people.get(2), companies.get(1), 2021), row(people.get(0), companies.get(0), 2022),
         row(people.get(3), companies.get(1), 2023));
     assertThat(plan("SELECT since FROM works_at")).contains("SCAN TYPE works_at");
-    assertThat(column("SELECT id FROM works_at")).hasSize(5);
+    assertThat(column("SELECT rid FROM works_at")).hasSize(5);
   }
 
   @Test
@@ -456,7 +466,7 @@ class SelectPlanTest extends TestHelper {
     });
     assertThat(rows("SELECT source_id, target_id FROM lknows")).containsExactly(row(ends[0], ends[1]));
     assertThat(plan("SELECT source_id FROM lknows")).contains("WALK EDGES lknows FROM lp");
-    assertThat(state("SELECT id FROM lknows")).as("a lightweight edge has no id").isEqualTo("42703");
+    assertThat(state("SELECT rid FROM lknows")).as("a lightweight edge has no record id").isEqualTo("42703");
   }
 
   // ---- grouping ----

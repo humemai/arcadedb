@@ -24,15 +24,15 @@ The 25 questions of [#1](https://github.com/humemai/arcadedb/issues/1) about the
 
 | # | question | answer |
 | ---: | --- | --- |
-| 9 | What `id` is | Changed by #38 (merged in #44). A type's own `id` property is the column `id` (the primary key when a unique index covers it), and the record id is `rid`. Without one, `id` is the record id. A record id is `text`, such as `#12:3`. |
+| 9 | What `id` and `rid` are | Changed by #240, which replaces the choice of #38. The record id is the column `rid` of every table, however its type was made. `id` is only a column that the type declares (the primary key when a unique index covers it), and a table without one answers `42703` for it. A record id is `text`, such as `#12:3`. |
 | 10 | `source_id` and `target_id` | The record ids of the out and in vertices as text, read from the edge record without loading a vertex. |
 | 11 | Which table the edge foreign keys point to | Only what the edge type declares in its custom metadata (`source_table`, `target_table`). Never inferred from the data; no foreign key without a declaration. A type that connects several vertex types names a common supertype. |
 | 12 | Inheritance | A supertype table includes the rows of its subtypes. `FROM ONLY t` leaves them out. |
 | 13 | Undeclared properties | Hidden: the table is the declared schema, and an unknown column is `42703` with a hint. |
-| 14 | A `LINK` column | Named as the property (`buyer`), holding the record id of the target as text, like `id`. |
+| 14 | A `LINK` column | Named as the property (`buyer`), holding the record id of the target as text, like `rid`. |
 | 15 | Column types | One mapping shared with the wire module: scalar lists are arrays, maps and embedded values are `jsonb`, a `LINK` is `text`. |
 | 16 | Schema name | `public`; the database name is accepted as an alias. |
-| 17 | Lightweight edges | No `id` column. The primary key is `(source_id, target_id)` when the type is unique, none otherwise. |
+| 17 | Lightweight edges | No `rid` column. The primary key is `(source_id, target_id)` when the type is unique, none otherwise. |
 | 18 | A bidirectional edge | One row for each edge record, `source_id` the out vertex and `target_id` the in vertex. |
 
 ## Semantics
@@ -71,10 +71,18 @@ The statements run on the `small` fixture (`engine/src/test/resources/postgresql
 Case `st-person-id`.
 
 ```sql
-SELECT id, pid FROM person ORDER BY pid
+SELECT rid, pid FROM person ORDER BY pid
 ```
 
-Columns `id, pid`: ("#2:0", 1)<br>("#2:1", 2)<br>("#2:2", 3)<br>("#2:3", 4)<br>("#2:4", 5)
+Columns `rid, pid`: ("#2:0", 1)<br>("#2:1", 2)<br>("#2:2", 3)<br>("#2:3", 4)<br>("#2:4", 5)
+
+Case `err-240-select-undeclared-id`.
+
+```sql
+SELECT id FROM person
+```
+
+Refused, `42703`.
 
 ### Question 10
 
@@ -94,7 +102,7 @@ Case `is-fk-referential-join`. `works_at` declares `person` and `company`.
 SELECT rc.constraint_name, kcu.table_name, kcu.column_name, rc.unique_constraint_name, pk.table_name AS referred_table, pk.column_name AS referred_column FROM information_schema.referential_constraints rc JOIN information_schema.key_column_usage kcu ON kcu.constraint_schema = rc.constraint_schema AND kcu.constraint_name = rc.constraint_name JOIN information_schema.key_column_usage pk ON pk.constraint_schema = rc.unique_constraint_schema AND pk.constraint_name = rc.unique_constraint_name AND pk.ordinal_position = kcu.position_in_unique_constraint ORDER BY rc.constraint_name
 ```
 
-Columns `constraint_name, table_name, column_name, unique_constraint_name, referred_table, referred_column`: ("orders_buyer_fkey", "orders", "buyer", "person_pkey", "person", "id")<br>("works_at_source_id_fkey", "works_at", "source_id", "person_pkey", "person", "id")<br>("works_at_target_id_fkey", "works_at", "target_id", "company_pkey", "company", "id")
+Columns `constraint_name, table_name, column_name, unique_constraint_name, referred_table, referred_column`: ("orders_buyer_fkey", "orders", "buyer", "person_pkey", "person", "rid")<br>("works_at_source_id_fkey", "works_at", "source_id", "person_pkey", "person", "rid")<br>("works_at_target_id_fkey", "works_at", "target_id", "company_pkey", "company", "rid")
 
 ### Question 12
 
@@ -151,7 +159,7 @@ Columns `schema_name`: ("information_schema")<br>("public")
 Unit test `SelectPlanTest.aLightweightEdgeTableIsReadByWalkingTheVertices`.
 
 ```sql
-SELECT id FROM lknows
+SELECT rid FROM lknows
 ```
 
 Refused, `42703`.
@@ -161,7 +169,7 @@ Refused, `42703`.
 Case `corr-edge-degree`. Five edge records, five rows: Ada has two, Ed none.
 
 ```sql
-SELECT p.name, (SELECT count(*) FROM works_at w WHERE w.source_id = p.id) AS jobs FROM person p ORDER BY p.pid
+SELECT p.name, (SELECT count(*) FROM works_at w WHERE w.source_id = p.rid) AS jobs FROM person p ORDER BY p.pid
 ```
 
 Columns `name, jobs`: ("Ada", 2)<br>("Bo", 1)<br>("Cy", 1)<br>("Di", 1)<br>("Ed", 0)
@@ -181,7 +189,7 @@ Columns `pid, q, r`: (1, 7, 1)<br>(2, 8, 1)<br>(3, NULL, NULL)<br>(4, 5, 4)<br>(
 Case `join-edge`.
 
 ```sql
-SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON w.target_id = c.id ORDER BY p.name, w.since
+SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.rid JOIN company c ON w.target_id = c.rid ORDER BY p.name, w.since
 ```
 
 Columns `name, name, since`: ("Ada", "Acme", 2019)<br>("Ada", "Acme", 2022)<br>("Bo", "Acme", 2020)<br>("Cy", "Birch", 2021)<br>("Di", "Birch", 2023)

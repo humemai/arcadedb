@@ -76,7 +76,7 @@ class CorrelatedScalarSubqueryTest extends TestHelper {
     assertThat(rows("SELECT p.name, (SELECT count(*) FROM orders o WHERE o.pid = p.pid) AS n FROM person p ORDER BY p.pid"))
         .containsExactly(row("Ada", "2"), row("Bo", "1"), row("Cy", "0"), row("Di", "2"), row("Ed", "0"));
     // the edge table of the fixture, by the record id of the vertex: the shape agents write for a degree
-    assertThat(rows("SELECT p.name, (SELECT count(*) FROM works_at w WHERE w.source_id = p.id) AS jobs FROM person p ORDER BY p.pid"))
+    assertThat(rows("SELECT p.name, (SELECT count(*) FROM works_at w WHERE w.source_id = p.rid) AS jobs FROM person p ORDER BY p.pid"))
         .containsExactly(row("Ada", "2"), row("Bo", "1"), row("Cy", "1"), row("Di", "1"), row("Ed", "0"));
   }
 

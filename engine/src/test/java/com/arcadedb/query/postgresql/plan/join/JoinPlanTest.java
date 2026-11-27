@@ -175,9 +175,9 @@ class JoinPlanTest extends TestHelper {
   @Test
   void joinsAreLeftDeepInTheWrittenOrder() {
     assertThat(rows(
-        "SELECT p.name, c.name FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON w.target_id = c.id ORDER BY p.name, w.since"))
+        "SELECT p.name, c.name FROM person p JOIN works_at w ON w.source_id = p.rid JOIN company c ON w.target_id = c.rid ORDER BY p.name, w.since"))
         .containsExactly(row("Ada", "Acme"), row("Ada", "Acme"), row("Bo", "Acme"), row("Cy", "Birch"), row("Di", "Birch"));
-    assertThat(count("SELECT count(*) FROM company c LEFT JOIN works_at w ON w.target_id = c.id LEFT JOIN person p ON w.source_id = p.id"))
+    assertThat(count("SELECT count(*) FROM company c LEFT JOIN works_at w ON w.target_id = c.rid LEFT JOIN person p ON w.source_id = p.rid"))
         .as("five edges, and Cedar without one").isEqualTo(6);
   }
 
@@ -188,7 +188,7 @@ class JoinPlanTest extends TestHelper {
     assertThat(plan(sql)).contains("HASH JOIN INNER").doesNotContain("FILTER WHERE");
     assertThat(count("SELECT count(*) FROM person, company")).as("no condition: every pair").isEqualTo(15);
     assertThat(plan("SELECT count(*) FROM person, company")).contains("NESTED LOOP INNER");
-    assertThat(count("SELECT count(*) FROM person p, company c, works_at w WHERE w.source_id = p.id AND w.target_id = c.id"))
+    assertThat(count("SELECT count(*) FROM person p, company c, works_at w WHERE w.source_id = p.rid AND w.target_id = c.rid"))
         .isEqualTo(5);
     assertThat(rows("SELECT o.oid FROM orders o, person p WHERE (o.pid = p.pid AND p.city = 'Delft') OR (o.pid = p.pid AND o.total < 6) ORDER BY o.oid"))
         .containsExactly(row(100), row(101), row(102), row(103));
@@ -198,7 +198,7 @@ class JoinPlanTest extends TestHelper {
 
   @Test
   void aTermOnOneSideMovesBelowAnInnerJoinAtAnyDepth() {
-    final String sql = "SELECT p.name FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON w.target_id = c.id"
+    final String sql = "SELECT p.name FROM person p JOIN works_at w ON w.source_id = p.rid JOIN company c ON w.target_id = c.rid"
         + " WHERE p.city = 'Leiden' AND c.name = 'Birch' ORDER BY p.name";
     assertThat(rows(sql)).containsExactly(row("Cy"), row("Di"));
     final String plan = plan(sql);
@@ -260,10 +260,10 @@ class JoinPlanTest extends TestHelper {
 
   @Test
   void aLinkToAnIdIsReadByRecordId() {
-    final String sql = "SELECT p.name FROM orders o JOIN person p ON o.buyer = p.id WHERE o.oid = 102";
+    final String sql = "SELECT p.name FROM orders o JOIN person p ON o.buyer = p.rid WHERE o.oid = 102";
     assertThat(plan(sql)).contains("INDEX NESTED LOOP").contains("READ RECORD BY ID person");
     assertThat(rows(sql)).containsExactly(row("Bo"));
-    assertThat(rows("SELECT o.oid, p.name FROM orders o LEFT JOIN person p ON o.buyer = p.id ORDER BY o.oid"))
+    assertThat(rows("SELECT o.oid, p.name FROM orders o LEFT JOIN person p ON o.buyer = p.rid ORDER BY o.oid"))
         .as("the hash join gives the same rows: the order without a buyer is padded")
         .containsExactly(row(100, "Ada"), row(101, "Ada"), row(102, "Bo"), row(103, "Di"), row(104, "Di"), row(105, null));
   }
@@ -297,16 +297,16 @@ class JoinPlanTest extends TestHelper {
 
   @Test
   void anEdgeEndJoinedToAnIdIsReadByRecordIdFromABoundStartAndOtherwiseIsAPlainEquality() {
-    final String all = "SELECT count(*) FROM works_at w JOIN person p ON w.source_id = p.id";
+    final String all = "SELECT count(*) FROM works_at w JOIN person p ON w.source_id = p.rid";
     assertThat(count(all)).isEqualTo(5);
     // all the edges (fork issue #52): no bound start, so the plan is the one of the plain equality, with the reason
     assertThat(plan(all)).contains("supported by edge:").contains("no bound start").doesNotContain("TRAVERSE");
 
     // the far end of one edge, named by the key of the edge table (its record id): read by record id for each edge row
-    final String rid = (String) rows("SELECT id FROM works_at WHERE since = 2020").get(0).get(0);
-    final String sql = "SELECT count(*) FROM works_at w JOIN person p ON w.source_id = p.id WHERE w.id = '" + rid + "'";
+    final String rid = (String) rows("SELECT rid FROM works_at WHERE since = 2020").get(0).get(0);
+    final String sql = "SELECT count(*) FROM works_at w JOIN person p ON w.source_id = p.rid WHERE w.rid = '" + rid + "'";
     assertThat(count(sql)).isEqualTo(1);
-    assertThat(plan(sql)).contains("supported by edge:").contains("TRAVERSE TO p").contains("[traversal: start bound by w.id = '" + rid + "']");
+    assertThat(plan(sql)).contains("supported by edge:").contains("TRAVERSE TO p").contains("[traversal: start bound by w.rid = '" + rid + "']");
     // with the traversal rule off (fork issue #8) the join is the plain equality of two columns, and the rows are the same
     database.getConfiguration().setValue(GlobalConfiguration.POSTGRESQL_TRAVERSAL_RULE, false);
     assertThat(plan(sql)).contains("supported by edge:").doesNotContain("TRAVERSE").doesNotContain("start bound").doesNotContain("no bound start");
@@ -321,7 +321,7 @@ class JoinPlanTest extends TestHelper {
   @Test
   void theSupportOfAJoinIsADecisionWithAReason() {
     assertThat(supportOf("SELECT 1 FROM orders o JOIN person p ON o.pid = p.pid").kind()).isEqualTo(JoinSupport.Kind.INDEX);
-    assertThat(supportOf("SELECT 1 FROM orders o JOIN person p ON o.buyer = p.id").kind()).isEqualTo(JoinSupport.Kind.LINK);
+    assertThat(supportOf("SELECT 1 FROM orders o JOIN person p ON o.buyer = p.rid").kind()).isEqualTo(JoinSupport.Kind.LINK);
     final JoinSupport none = supportOf("SELECT 1 FROM person a JOIN person b ON a.city = b.city");
     assertThat(none.kind()).isEqualTo(JoinSupport.Kind.NOTHING);
     assertThat(none.supported()).isFalse();
@@ -360,8 +360,8 @@ class JoinPlanTest extends TestHelper {
 
   @Test
   void bothJoinsOfTheThreeTableEdgeStatementAreSupportedByTheEdge() {
-    final String sql = "SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id "
-        + "JOIN company c ON w.target_id = c.id ORDER BY p.name, w.since";
+    final String sql = "SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.rid "
+        + "JOIN company c ON w.target_id = c.rid ORDER BY p.name, w.since";
     assertThat(rows(sql)).containsExactly(row("Ada", "Acme", 2019), row("Ada", "Acme", 2022), row("Bo", "Acme", 2020),
         row("Cy", "Birch", 2021), row("Di", "Birch", 2023));
     assertThat(plan(sql).split("supported by edge:", -1)).as("one class per join").hasSize(3);
@@ -426,11 +426,11 @@ class JoinPlanTest extends TestHelper {
   void selectStarExpandsInTableOrderAndKeepsDuplicateLabels() {
     try (final PostgreSQLResultSet resultSet = (PostgreSQLResultSet) database.query("postgresql",
         "SELECT * FROM person p JOIN orders o ON o.pid = p.pid ORDER BY o.oid LIMIT 1")) {
-      assertThat(resultSet.columns()).extracting(PostgreSQLResultSet.Column::name).containsExactly("id", "age", "city", "name", "pid",
-          "id", "address", "buyer", "oid", "pid", "placed", "tags", "total");
+      assertThat(resultSet.columns()).extracting(PostgreSQLResultSet.Column::name).containsExactly("rid", "age", "city", "name", "pid",
+          "rid", "address", "buyer", "oid", "pid", "placed", "tags", "total");
       final Result first = resultSet.next();
-      assertThat(first.getPropertyNames()).as("the row is a map: the second and later duplicate gets a suffix").contains("id", "id_1",
-          "pid", "pid_1").hasSize(13);
+      assertThat(first.getPropertyNames()).as("the row is a map: the second and later duplicate gets a suffix").contains("rid",
+          "rid_1", "pid", "pid_1").hasSize(13);
       assertThat(first.<String>getProperty("name")).isEqualTo("Ada");
       assertThat(first.<Integer>getProperty("oid")).isEqualTo(100);
     }
@@ -495,7 +495,7 @@ class JoinPlanTest extends TestHelper {
       final String nested = "SELECT count(*) FROM person p " + kind + " JOIN orders o ON " + (kind.equals("FULL") ? "true" : "o.pid < p.pid");
       assertThatThrownBy(() -> planned(nested, 100L).execute(database).hasNext()).isInstanceOfSatisfying(PostgreSQLEvaluationException.class,
           e -> assertThat(e.getSqlState()).isEqualTo("53200"));
-      assertThat(plan("SELECT count(*) FROM works_at w " + kind + " JOIN person p ON w.source_id = p.id")).doesNotContain("INDEX NESTED LOOP")
+      assertThat(plan("SELECT count(*) FROM works_at w " + kind + " JOIN person p ON w.source_id = p.rid")).doesNotContain("INDEX NESTED LOOP")
           .doesNotContain("TRAVERSE");
     }
     assertThatThrownBy(() -> rows("SELECT 1 FROM person p FULL JOIN company c")).as("a FULL join needs ON or USING")

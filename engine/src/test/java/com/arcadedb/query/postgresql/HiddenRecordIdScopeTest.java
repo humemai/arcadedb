@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class HiddenRecordIdScopeTest extends TestHelper {
   @Override
   protected void beginTest() {
-    // person shows id and hides rid, tag hides id, badge shows id and hides rid, ticket shows rid
+    // person shows id and hides rid, tag hides rid and has no id, badge shows id and hides rid, ticket shows rid
     for (final String statement : List.of("CREATE TABLE person (id bigint PRIMARY KEY, name text)",
         "CREATE TABLE tag (label text)", "CREATE TABLE badge (id int)", "CREATE TABLE ticket (rid int)",
         "CREATE TABLE other (x int)", "INSERT INTO person VALUES (1, 'Ada'), (2, 'Bob')", "INSERT INTO tag VALUES ('1')",
@@ -70,14 +70,17 @@ class HiddenRecordIdScopeTest extends TestHelper {
 
   @Test
   void theRecordIdStaysReadableWhereNoQueryAroundShowsTheName() {
-    final String id = lines("SELECT id FROM tag").get(0);
+    final String id = lines("SELECT rid FROM tag").get(0);
     assertThat(id).startsWith("#");
 
-    assertThat(lines("SELECT (SELECT id FROM tag) AS r FROM other")).containsExactly(id);
-    assertThat(lines("SELECT (SELECT tag.id FROM tag) AS r FROM person WHERE id = 1")).containsExactly(id);
-    assertThat(lines("SELECT x FROM other WHERE EXISTS (SELECT 1 FROM tag WHERE id = '" + id + "')")).containsExactly("0");
-    assertThat(lines("SELECT name FROM person WHERE EXISTS (SELECT 1 FROM tag WHERE tag.id = '" + id + "') ORDER BY name"))
+    assertThat(lines("SELECT (SELECT rid FROM tag) AS r FROM other")).containsExactly(id);
+    assertThat(lines("SELECT (SELECT tag.rid FROM tag) AS r FROM person WHERE id = 1")).containsExactly(id);
+    assertThat(lines("SELECT x FROM other WHERE EXISTS (SELECT 1 FROM tag WHERE rid = '" + id + "')")).containsExactly("0");
+    assertThat(lines("SELECT name FROM person WHERE EXISTS (SELECT 1 FROM tag WHERE tag.rid = '" + id + "') ORDER BY name"))
         .containsExactly("Ada", "Bob");
+    // the record id has no other name (fork issue #240)
+    assertState("SELECT id FROM tag", "42703");
+    assertState("SELECT tag.id FROM tag", "42703");
   }
 
   /** A record id that the catalog lists is a column of its table, as the table has it in PostgreSQL: it takes part as one. */
@@ -112,7 +115,7 @@ class HiddenRecordIdScopeTest extends TestHelper {
     assertThat(lines("SELECT name FROM person, badge WHERE rid = person.rid ORDER BY name")).containsExactly("Ada", "Bob");
     assertThat(lines("SELECT name FROM badge JOIN person ON rid = person.rid ORDER BY name")).containsExactly("Ada", "Bob");
     // two record ids that the catalog does not list stay ambiguous
-    assertState("SELECT id FROM tag a, tag b", "42702");
+    assertState("SELECT rid FROM tag a, tag b", "42702");
   }
 
   /** Places of an {@code EXISTS} subquery that cannot read the query around it: refused, and not answered with a record id. */

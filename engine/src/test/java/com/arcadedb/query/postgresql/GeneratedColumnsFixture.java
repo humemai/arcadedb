@@ -27,9 +27,9 @@ import com.arcadedb.schema.VertexType;
 
 /**
  * The {@code generated} fixture of fork issue #78: the three kinds of table that have a column the engine generates, with the
- * column names of the {@code id} rule. {@code gen_note} (vertex) declares its own {@code id}, so its record id is {@code rid};
- * {@code gen_tag} (vertex) has none, so its record id is {@code id}; {@code gen_link} (edge, note to tag) has the record id
- * {@code id} and the endpoints {@code source_id} and {@code target_id}. The PostgreSQL side is {@code generated-columns.sql}: the same
+ * column names of the {@code id} rule: the record id of every type is {@code rid}. {@code gen_note} (vertex) declares its own
+ * {@code id}, its primary key; {@code gen_tag} (vertex) has none, so its record id is its primary key; {@code gen_link} (edge,
+ * note to tag) has {@code rid} and the endpoints {@code source_id} and {@code target_id}. The PostgreSQL side is {@code generated-columns.sql}: the same
  * names with real {@code GENERATED ALWAYS AS IDENTITY} columns, which PostgreSQL has for integers only, so the corpus
  * {@code generated.tsv} reads the flags of the columns and never their type or a value. No rows.
  */

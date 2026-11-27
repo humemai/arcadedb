@@ -117,7 +117,7 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
   void getColumnsOfAnEdgeTableAreTheLinkTableColumns() throws Exception {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
       assertThat(rows(connection.getMetaData().getColumns(null, null, "works_at", "%"), "COLUMN_NAME", "TYPE_NAME", "IS_NULLABLE",
-          "ORDINAL_POSITION")).containsExactly("id|text|NO|1", "source_id|text|NO|2", "target_id|text|NO|3", "since|int4|YES|4");
+          "ORDINAL_POSITION")).containsExactly("rid|text|NO|1", "source_id|text|NO|2", "target_id|text|NO|3", "since|int4|YES|4");
     }
   }
 
@@ -125,7 +125,7 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
   void getColumnsOfAVertexTableHaveTheRecordIdFirst() throws Exception {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
       assertThat(rows(connection.getMetaData().getColumns(null, null, "person", "%"), "COLUMN_NAME", "TYPE_NAME", "IS_NULLABLE"))
-          .containsExactly("id|text|NO", "age|int4|YES", "city|varchar|YES", "name|varchar|YES", "pid|int4|YES");
+          .containsExactly("rid|text|NO", "age|int4|YES", "city|varchar|YES", "name|varchar|YES", "pid|int4|YES");
     }
   }
 
@@ -134,7 +134,7 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
   void getColumnsGivesTheRecordIdADefault() throws Exception {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
       assertThat(rows(connection.getMetaData().getColumns(null, null, "person", "%"), "COLUMN_NAME", "COLUMN_DEF"))
-          .containsExactly("id|arcadedb_record_id()", "age|null", "city|null", "name|null", "pid|null");
+          .containsExactly("rid|arcadedb_record_id()", "age|null", "city|null", "name|null", "pid|null");
     }
   }
 
@@ -171,7 +171,7 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
       for (final String table : TABLES)
         assertThat(rows(connection.getMetaData().getPrimaryKeys(null, null, table), "TABLE_NAME", "COLUMN_NAME", "KEY_SEQ", "PK_NAME"))
-            .as("primary key of " + table).containsExactly(table + "|id|1|" + table + "_pkey");
+            .as("primary key of " + table).containsExactly(table + "|rid|1|" + table + "_pkey");
     }
   }
 
@@ -181,8 +181,8 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
       assertThat(rows(connection.getMetaData().getImportedKeys(null, null, "works_at"), "PKTABLE_NAME", "PKCOLUMN_NAME",
           "FKTABLE_NAME", "FKCOLUMN_NAME", "KEY_SEQ", "FK_NAME", "PK_NAME", "DELETE_RULE")).containsExactlyInAnyOrder(
           // 0 is importedKeyCascade: deleting a vertex deletes its edges
-          "person|id|works_at|source_id|1|works_at_source_id_fkey|person_pkey|0",
-          "company|id|works_at|target_id|1|works_at_target_id_fkey|company_pkey|0");
+          "person|rid|works_at|source_id|1|works_at_source_id_fkey|person_pkey|0",
+          "company|rid|works_at|target_id|1|works_at_target_id_fkey|company_pkey|0");
     }
   }
 
@@ -191,7 +191,7 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
       // 3 is importedKeyNoAction
       assertThat(rows(connection.getMetaData().getImportedKeys(null, null, "orders"), "PKTABLE_NAME", "PKCOLUMN_NAME", "FKTABLE_NAME",
-          "FKCOLUMN_NAME", "FK_NAME", "DELETE_RULE")).containsExactly("person|id|orders|buyer|orders_buyer_fkey|3");
+          "FKCOLUMN_NAME", "FK_NAME", "DELETE_RULE")).containsExactly("person|rid|orders|buyer|orders_buyer_fkey|3");
     }
   }
 
@@ -199,8 +199,8 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
   void getExportedKeysOfAVertexTableAreTheTablesThatPointAtIt() throws Exception {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
       assertThat(rows(connection.getMetaData().getExportedKeys(null, null, "person"), "PKTABLE_NAME", "PKCOLUMN_NAME", "FKTABLE_NAME",
-          "FKCOLUMN_NAME", "FK_NAME")).containsExactlyInAnyOrder("person|id|orders|buyer|orders_buyer_fkey",
-          "person|id|works_at|source_id|works_at_source_id_fkey");
+          "FKCOLUMN_NAME", "FK_NAME")).containsExactlyInAnyOrder("person|rid|orders|buyer|orders_buyer_fkey",
+          "person|rid|works_at|source_id|works_at_source_id_fkey");
     }
   }
 
@@ -208,7 +208,7 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
   void getIndexInfoListsThePrimaryKeyAndTheUniqueIndex() throws Exception {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
       assertThat(rows(connection.getMetaData().getIndexInfo(null, null, "person", false, false), "INDEX_NAME", "COLUMN_NAME",
-          "NON_UNIQUE")).containsExactlyInAnyOrder("person_pid_key|pid|f", "person_pkey|id|f");
+          "NON_UNIQUE")).containsExactlyInAnyOrder("person_pid_key|pid|f", "person_pkey|rid|f");
     }
   }
 
@@ -227,12 +227,12 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
   void pgConstraintDefinitionsArePostgreSQLs() throws Exception {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
       assertThat(query(connection, "SELECT conname, pg_catalog.pg_get_constraintdef(oid, true) FROM pg_catalog.pg_constraint "
-          + "WHERE conrelid = 'works_at'::regclass ORDER BY conname")).containsExactly("works_at_pkey|PRIMARY KEY (id)",
-          "works_at_source_id_fkey|FOREIGN KEY (source_id) REFERENCES person(id) ON DELETE CASCADE",
-          "works_at_target_id_fkey|FOREIGN KEY (target_id) REFERENCES company(id) ON DELETE CASCADE");
+          + "WHERE conrelid = 'works_at'::regclass ORDER BY conname")).containsExactly("works_at_pkey|PRIMARY KEY (rid)",
+          "works_at_source_id_fkey|FOREIGN KEY (source_id) REFERENCES person(rid) ON DELETE CASCADE",
+          "works_at_target_id_fkey|FOREIGN KEY (target_id) REFERENCES company(rid) ON DELETE CASCADE");
       assertThat(query(connection, "SELECT conname, pg_catalog.pg_get_constraintdef(oid, true) FROM pg_catalog.pg_constraint "
           + "WHERE conname = 'orders_buyer_fkey'")).containsExactly(
-          "orders_buyer_fkey|FOREIGN KEY (buyer) REFERENCES person(id) NOT ENFORCED");
+          "orders_buyer_fkey|FOREIGN KEY (buyer) REFERENCES person(rid) NOT ENFORCED");
     }
   }
 
@@ -269,7 +269,7 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
     try (final Connection connection = connect(LANGUAGE_OPTION)) {
       assertThat(query(connection, "SELECT a.attname, a.attnum, t.typname, a.attnotnull FROM pg_catalog.pg_attribute a "
           + "JOIN pg_catalog.pg_class c ON c.oid = a.attrelid JOIN pg_catalog.pg_type t ON t.oid = a.atttypid "
-          + "WHERE c.relname = 'works_at' AND a.attnum > 0 ORDER BY a.attnum")).containsExactly("id|1|text|t", "source_id|2|text|t",
+          + "WHERE c.relname = 'works_at' AND a.attnum > 0 ORDER BY a.attnum")).containsExactly("rid|1|text|t", "source_id|2|text|t",
           "target_id|3|text|t", "since|4|int4|f");
     }
   }
@@ -306,7 +306,7 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
   void theMarkerGivesAStatementTheRelationalCatalogInASessionOfAnotherLanguage() throws Exception {
     try (final Connection connection = connect(null)) {
       assertThat(query(connection, "{postgresql} SELECT attname FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_class c "
-          + "ON c.oid = a.attrelid WHERE c.relname = 'works_at' AND a.attnum > 0 ORDER BY a.attnum")).containsExactly("id",
+          + "ON c.oid = a.attrelid WHERE c.relname = 'works_at' AND a.attnum > 0 ORDER BY a.attnum")).containsExactly("rid",
           "source_id", "target_id", "since");
     }
   }
@@ -342,7 +342,7 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
           .containsExactly("5|0");
       assertThat(query(connection, "SELECT a.relname, array_agg(CAST(a.attname AS TEXT) ORDER BY a.attnum DESC) AS cols FROM "
           + "(SELECT c.relname, t.attname, t.attnum FROM pg_catalog.pg_class c JOIN pg_catalog.pg_attribute t ON t.attrelid = c.oid "
-          + "WHERE c.relname = 'company') AS a GROUP BY a.relname")).containsExactly("company|{\"name\",\"cid\",\"id\"}");
+          + "WHERE c.relname = 'company') AS a GROUP BY a.relname")).containsExactly("company|{\"name\",\"cid\",\"rid\"}");
     }
   }
 

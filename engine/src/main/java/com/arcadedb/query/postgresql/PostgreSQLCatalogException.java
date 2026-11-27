@@ -43,6 +43,8 @@ public class PostgreSQLCatalogException extends CommandParsingException implemen
   private static final int MAX_LISTED_COLUMNS = 40;
   /** The edits between a name and the column that PostgreSQL still suggests for it ({@code MAX_FUZZY_DISTANCE}). */
   private static final int MAX_SUGGESTION_DISTANCE = 3;
+  /** The hint of a column {@code id} that a table with a record id does not declare (fork issue #240). */
+  public static final String NO_ID_HINT = "no column id: read rid, or declare id bigserial PRIMARY KEY";
 
   private final String sqlState;
   private final String hint;
@@ -107,6 +109,11 @@ public class PostgreSQLCatalogException extends CommandParsingException implemen
       return list;
     final String suggestion = "Perhaps you meant to reference the column " + String.join(" or the column ", suggestions);
     return list == null ? suggestion : suggestion + "; " + list;
+  }
+
+  /** Whether a name as a statement wrote it is the column {@code id}: exactly when quoted, in any case otherwise. */
+  public static boolean isId(final String name, final boolean quoted) {
+    return quoted ? "id".equals(name) : "id".equalsIgnoreCase(name);
   }
 
   static String quote(final String name) {

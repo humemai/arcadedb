@@ -178,16 +178,16 @@ class JoinWarningTest extends TestHelper {
   void aJoinThatAnIndexAnEdgeOrALinkSupportsLogsNothing() {
     addTheIndexOfSmall();
     assertThat(rows(UNSUPPORTED)).hasSize(5);
-    rows("SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON w.target_id = c.id");
-    rows("SELECT p.name FROM orders o JOIN person p ON o.buyer = p.id WHERE o.oid = 102");
+    rows("SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.rid JOIN company c ON w.target_id = c.rid");
+    rows("SELECT p.name FROM orders o JOIN person p ON o.buyer = p.rid WHERE o.oid = 102");
     rows("SELECT p.name FROM orders o JOIN person p ON o.pid = p.pid");
     assertThat(logger.warnings).isEmpty();
   }
 
   @Test
   void theEdgeJoinLogsNothingEvenWithoutAnyIndex() {
-    rows("SELECT p.name, c.name FROM person p LEFT JOIN works_at w ON w.source_id = p.id LEFT JOIN company c ON w.target_id = c.id");
-    rows("SELECT c.name FROM company c, works_at w WHERE w.target_id = c.id");
+    rows("SELECT p.name, c.name FROM person p LEFT JOIN works_at w ON w.source_id = p.rid LEFT JOIN company c ON w.target_id = c.rid");
+    rows("SELECT c.name FROM company c, works_at w WHERE w.target_id = c.rid");
     assertThat(logger.warnings).isEmpty();
   }
 

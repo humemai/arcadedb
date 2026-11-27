@@ -250,8 +250,7 @@ public final class RelationScope implements ExpressionCompiler.Scope {
           return holds + ", not the values of " + qualified(other) + ": join on " + qualified(candidate)
               + ". A cast will not match them";
     if (field.recordIds() == RelationSource.RecordIds.REFERRED)
-      return holds + ": join the table it refers to on that table's rid (id when it declares no id column) and filter by its key."
-          + " A cast will not match them";
+      return holds + ": join the table it refers to on that table's rid and filter by its key. A cast will not match them";
     for (final RelationSource.Field candidate : fields)
       if (candidate.relation().equals(field.relation()) && candidate.recordIds() == RelationSource.RecordIds.NONE
           && Column.ID.equals(candidate.name()))
@@ -358,6 +357,11 @@ public final class RelationScope implements ExpressionCompiler.Scope {
    * a name.
    */
   private String unknownColumnHint(final Name relation, final Name column) {
+    // id where a table in reach has a record id and no column id: say where the record id is (fork issue #240)
+    if (PostgreSQLCatalogException.isId(column.value(), column.quoted()))
+      for (final RelationSource.Field field : fields)
+        if (field.recordIds() == RelationSource.RecordIds.OWN && (relation == null || sameRelation(relation, field.relation())))
+          return PostgreSQLCatalogException.NO_ID_HINT;
     final Map<String, List<String>> columns = new LinkedHashMap<>();
     for (final RelationSource.Field field : fields)
       if (!field.hidden() && !field.relation().isEmpty() && (relation == null || sameRelation(relation, field.relation())))

@@ -59,37 +59,32 @@ import java.util.Set;
  * Every type of the schema is a table except time series types (a different shape, no relational view yet). The rules, as decided
  * for the prototype:
  * <ul>
- * <li><b>The {@code id} rule</b> (fork issue #38, option B). A type that declares a property {@code id} has that property as its
- * column {@code id}, and the primary key of its table when a unique index covers that property alone; the record id as text
- * ({@code #12:3}) is then the column {@code rid}, a unique key of the table, and the primary key when the property {@code id} has
- * no unique index. A type with no property {@code id} has the record id as the column {@code id}, the primary key. So a table
- * loaded from a relational schema reads as that schema wrote it, and the record id is one name away.</li>
- * <li><b>The collision rule.</b> A property that has the name of a column the view adds wins its name, as the property {@code id}
- * does: a type that declares a property {@code rid} keeps it as the column {@code rid}, and its record id is {@code id} (when it
- * has no property {@code id}, as it was before). A type that declares both {@code id} and {@code rid} has no record id column
- * (both names are the user's); the edges that end in it still hold its record ids in {@code source_id} and {@code target_id}, and
- * there is no foreign key to it, because no column holds the value to refer to. The one exception is the endpoint columns of an
- * edge table: a property named {@code source_id} or {@code target_id} is shown as {@code source_id_} or {@code target_id_}, as
- * before.</li>
+ * <li><b>The record id is {@code rid}</b> (fork issue #240, which replaces the choice of #38). The record id as text
+ * ({@code #12:3}) is the column {@code rid} of every table, however its type was made, and {@code id} is only ever a property
+ * that the type declares: a type without one has no column {@code id}. When the type declares a property {@code id}, that property
+ * is the column {@code id}, and the primary key of its table when a unique index covers it alone; the record id is then a unique
+ * key of the table. Otherwise the record id is the primary key.</li>
+ * <li><b>The collision rule.</b> A property that has the name of a column the view adds wins its name: a type that declares a
+ * property {@code rid} keeps it as the column {@code rid}, and its record id has no column. The edges that end in it still hold
+ * its record ids in {@code source_id} and {@code target_id}, and there is no foreign key to it, because no column holds the value
+ * to refer to. The one exception is the endpoint columns of an edge table: a property named {@code source_id} or
+ * {@code target_id} is shown as {@code source_id_} or {@code target_id_}.</li>
  * <li>An edge table also has {@code source_id} and {@code target_id}, the record ids of the out and the in vertex read from the edge
  * record, whatever the endpoint types call their own key. A bidirectional edge is one row per edge record. A lightweight edge has
  * no record id column: see {@link Table.EdgeStorage}.</li>
  * <li>The foreign keys of an edge table come only from the endpoint tables declared on the edge type ({@link EdgeEndpoints}), never
  * from the data. A {@code LINK} property is a many-to-one foreign key to the table of its target type, under the name of the
- * property. Both refer to the record id column of the other table ({@code id}, or {@code rid} when that type has its own
- * {@code id} or was made by {@code CREATE TABLE}), since they hold record ids.</li>
+ * property. Both refer to the record id column {@code rid} of the other table, since they hold record ids.</li>
  * <li>Only declared properties are columns. An unknown column is SQLSTATE {@code 42703} with a hint, and an absent property is
  * {@code NULL}.</li>
  * <li>The table of a supertype has the rows of its subtypes, {@code FROM ONLY} has its own.</li>
  * <li>Names are looked up by the rules of {@link Identifier}.</li>
  * <li><b>A table made by {@code CREATE TABLE}</b> (fork issue #118) has a {@link TableDefinition}, and is shown as it declared
  * itself: the columns in the declared order, {@code text} where it said so, its defaults, and the declared primary key and unique
- * constraints under their names, with no primary key when it declared none. Its record id comes last and is hidden from {@code *}
- * and from an {@code INSERT} without a column list ({@link Column#isHidden()}). The catalog lists it, as a unique key, only when a
- * foreign key refers to it ({@link Column#isListed()}). It keeps the name that the rules above give it, with one addition (fork
- * issue #151): in a table that has neither a property {@code id} nor a property {@code rid}, both names read it. {@code rid} is the
- * one that foreign keys refer to and the catalog lists, so {@code REFERENCES t (rid)} names the record id of every table that
- * {@code CREATE TABLE} made, and {@code id} reads it too, unlisted. A type without a definition is shown as before.</li>
+ * constraints under their names, with no primary key when it declared none. Its record id {@code rid} comes last and is hidden
+ * from {@code *} and from an {@code INSERT} without a column list ({@link Column#isHidden()}). The catalog lists it, as a unique
+ * key, only when a foreign key refers to it ({@link Column#isListed()}). A type without a definition has its record id first, in
+ * {@code *} and in the catalog.</li>
  * </ul>
  */
 public final class RelationalCatalog {
@@ -282,23 +277,13 @@ public final class RelationalCatalog {
 
     final Map<String, Property> properties = declaredProperties(type);
     final TableDefinition definition = TableDefinition.of(type);
-    // a table that CREATE TABLE made, with neither name taken by a property, reads its record id as rid and as id, see the class
-    // comment. An edge type that statements of another language made lightweight keeps the rules of any other type
-    final boolean bothNames = definition != null && (storage == null || storage == Table.EdgeStorage.REGULAR)
-        && !properties.containsKey(Column.ID) && !properties.containsKey(Column.RID);
-    // the id rule and its collision rule, see the class comment: a declared property wins the name it has
-    final String identity = bothNames ? Column.RID
-        : properties.containsKey(Column.ID) ? (properties.containsKey(Column.RID) ? null : Column.RID) : Column.ID;
+    // the record id is rid, see the class comment; a declared property wins the name it has
+    final String identity = properties.containsKey(Column.RID) ? null : Column.RID;
     final List<Column> columns = new ArrayList<>();
     final Set<String> reserved = new HashSet<>();
     if (identity != null && storage != Table.EdgeStorage.LIGHTWEIGHT) {
       columns.add(new Column(identity, ColumnType.TEXT, storage == Table.EdgeStorage.MIXED, Column.Kind.IDENTITY, null, false));
       reserved.add(identity);
-    }
-    if (bothNames) {
-      // the second name: after the first, which is the identity column of the table, and never listed
-      columns.add(new Column(Column.ID, ColumnType.TEXT, false, Column.Kind.IDENTITY, null, false).hide(false));
-      reserved.add(Column.ID);
     }
     if (kind == Table.Kind.EDGE) {
       columns.add(new Column(Column.SOURCE_ID, ColumnType.TEXT, false, Column.Kind.SOURCE, null, false));
@@ -388,7 +373,7 @@ public final class RelationalCatalog {
         if (columns.get(i).kind() == Column.Kind.PROPERTY && Column.ID.equals(columns.get(i).name()))
           columns.set(i, columns.get(i).notNull());
     } else if (hasRecordIds) {
-      // the record id is the primary key: id, or rid beside a property id that no unique index covers alone
+      // the record id is the primary key: there is no property id, or no unique index covers it alone
       primaryKey = new Table.Key(name + "_pkey", List.of(identity));
     } else if (storage == Table.EdgeStorage.LIGHTWEIGHT && edgeType.isUnique() && subTables.isEmpty())
       // the identity of a lightweight edge is (type, out, in), and UNIQUE says there is one per pair. With subtypes, the same
@@ -502,8 +487,7 @@ public final class RelationalCatalog {
     List<Table.Key> uniqueKeys = draft.uniqueKeys;
     if (draft.definition != null && draft.referable != null) {
       columns = columns.stream()
-          .map(column -> column.kind() == Column.Kind.IDENTITY
-              ? column.hide(referenced && column.name().equals(draft.referable)) : column).toList();
+          .map(column -> column.kind() == Column.Kind.IDENTITY ? column.hide(referenced) : column).toList();
       if (referenced) {
         uniqueKeys = new ArrayList<>(uniqueKeys);
         uniqueKeys.add(new Table.Key(draft.name + "_" + draft.referable + "_key", List.of(draft.referable)));

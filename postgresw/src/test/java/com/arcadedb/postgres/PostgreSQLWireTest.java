@@ -288,8 +288,8 @@ class PostgreSQLWireTest extends PostgresWireProtocolTestBase {
   @Test
   void twoColumnsOfOneLabelAreBothAnnounced() throws Exception {
     try (final Connection connection = connect(LANGUAGE_OPTION, false); final Statement st = connection.createStatement();
-        final ResultSet rs = st.executeQuery("SELECT p.name, c.name FROM person p JOIN works_at w ON w.source_id = p.id "
-            + "JOIN company c ON c.id = w.target_id ORDER BY p.name, c.name")) {
+        final ResultSet rs = st.executeQuery("SELECT p.name, c.name FROM person p JOIN works_at w ON w.source_id = p.rid "
+            + "JOIN company c ON c.rid = w.target_id ORDER BY p.name, c.name")) {
       final ResultSetMetaData meta = rs.getMetaData();
       assertThat(meta.getColumnCount()).isEqualTo(2);
       assertThat(meta.getColumnLabel(1)).isEqualTo("name");

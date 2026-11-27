@@ -149,31 +149,34 @@ class CreateTableTest extends TestHelper {
     run("CREATE TABLE topic (tid bigint PRIMARY KEY)");
     run("INSERT INTO tag (name) VALUES ('red')");
     run("INSERT INTO topic (tid) VALUES (7)");
-    // the record id reads under both names, and the catalog lists neither before a foreign key refers to the table
-    assertThat(lines("SELECT rid = id, name FROM tag")).containsExactly("true|red");
+    // the record id reads as rid and not as id (fork issue #240), and the catalog lists it only once a foreign key refers to
+    // the table
+    assertThat(lines("SELECT rid IS NOT NULL, name FROM tag")).containsExactly("true|red");
+    assertState("SELECT id FROM tag", "42703");
     assertThat(lines("SELECT column_name FROM information_schema.columns WHERE table_name = 'tag' ORDER BY ordinal_position"))
         .containsExactly("name");
 
     run("CREATE TABLE tagged (source_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE,"
         + " target_id text NOT NULL REFERENCES topic (rid) ON DELETE CASCADE)");
-    run("INSERT INTO tagged SELECT t.rid, p.id FROM tag t, topic p");
+    run("INSERT INTO tagged SELECT t.rid, p.rid FROM tag t, topic p");
 
     assertThat(columns("SELECT * FROM tag")).containsExactly("name");
-    assertThat(lines("SELECT t.name, p.tid FROM tag t JOIN tagged x ON x.source_id = t.rid JOIN topic p ON x.target_id = p.id"))
+    assertThat(lines("SELECT t.name, p.tid FROM tag t JOIN tagged x ON x.source_id = t.rid JOIN topic p ON x.target_id = p.rid"))
         .containsExactly("red|7");
-    // the catalog lists the name that the foreign keys refer to, and not the other one
+    // the catalog lists the column that the foreign keys refer to
     assertThat(lines("SELECT table_name, column_name FROM information_schema.columns WHERE table_name IN ('tag', 'topic')"
         + " ORDER BY table_name, ordinal_position")).containsExactly("tag|name", "tag|rid", "topic|tid", "topic|rid");
     assertThat(lines("SELECT constraint_name, unique_constraint_name FROM information_schema.referential_constraints"
         + " ORDER BY constraint_name")).containsExactly("tagged_source_id_fkey|tag_rid_key", "tagged_target_id_fkey|topic_rid_key");
-    // the engine gives the record id, under either name
+    // the engine gives the record id, and there is no column id to write
     assertState("INSERT INTO tag (rid, name) VALUES ('#1:0', 'x')", "428C9");
-    assertState("INSERT INTO tag (id, name) VALUES ('#1:0', 'x')", "428C9");
-    assertState("UPDATE tag SET id = '#1:0'", "428C9");
-    // a record id needs no index under either name: CREATE INDEX keeps the name only (fork issue #125)
+    assertState("UPDATE tag SET rid = '#1:0'", "428C9");
+    assertState("INSERT INTO tag (id, name) VALUES ('#1:0', 'x')", "42703");
+    assertState("UPDATE tag SET id = '#1:0'", "42703");
+    // a record id needs no index: CREATE INDEX keeps the name only (fork issue #125)
     run("CREATE UNIQUE INDEX tag_by_rid ON tag (rid)");
-    run("CREATE INDEX tag_by_id ON tag (id)");
-    assertState("CREATE INDEX tag_by_id ON tag (rid)", "42P07");
+    assertState("CREATE INDEX tag_by_rid ON tag (rid)", "42P07");
+    assertState("CREATE INDEX tag_by_id ON tag (id)", "42703");
     assertThat(database.getSchema().getType("tag").getAllIndexes(true)).isEmpty();
 
     run("DELETE FROM tag WHERE name = 'red'");
@@ -189,11 +192,22 @@ class CreateTableTest extends TestHelper {
   }
 
   @Test
-  void aTypeThatSqlMadeWithoutAPropertyIdHasNoColumnRid() {
-    database.getSchema().createVertexType("tag");
+  void aTypeThatSqlMadeWithoutAPropertyIdHasTheRecordIdAsRid() {
+    database.command("sql", "CREATE VERTEX TYPE tag");
+    database.command("sql", "CREATE PROPERTY tag.name STRING");
 
-    assertState("CREATE TABLE tagged (source_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE,"
-        + " target_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE)", "42703");
+    run("CREATE TABLE tagged (source_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE,"
+        + " target_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE)");
+    try (final var inserted = database.command("postgresql", "INSERT INTO tag (name) VALUES ('red') RETURNING rid")) {
+      assertThat(inserted.next().<String>getProperty("rid")).startsWith("#");
+    }
+    run("INSERT INTO tagged SELECT rid, rid FROM tag");
+
+    assertThat(columns("SELECT * FROM tag")).containsExactly("rid", "name");
+    assertThat(lines("SELECT t.name FROM tagged x JOIN tag t ON x.source_id = t.rid")).containsExactly("red");
+    assertThat(lines("SELECT column_name FROM information_schema.key_column_usage WHERE constraint_name = 'tag_pkey'"))
+        .containsExactly("rid");
+    assertState("SELECT id FROM tag", "42703");
   }
 
   @Test

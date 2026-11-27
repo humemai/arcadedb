@@ -99,13 +99,13 @@ class PostgreSQLCypherTest extends TestHelper {
     assertThat(tableCount("works_at")).isEqualTo(6L);
 
     // the row has the record ids of the two vertices, the ids that the vertex tables show
-    final Result edge = rows("postgresql", "SELECT id, source_id, target_id, since FROM works_at WHERE since = 2031").get(0);
-    final String ed = rows("postgresql", "SELECT id FROM person WHERE pid = 5").get(0).getProperty("id");
-    final String cedar = rows("postgresql", "SELECT id FROM company WHERE cid = 30").get(0).getProperty("id");
+    final Result edge = rows("postgresql", "SELECT rid, source_id, target_id, since FROM works_at WHERE since = 2031").get(0);
+    final String ed = rows("postgresql", "SELECT rid FROM person WHERE pid = 5").get(0).getProperty("rid");
+    final String cedar = rows("postgresql", "SELECT rid FROM company WHERE cid = 30").get(0).getProperty("rid");
     assertThat(edge.<String>getProperty("source_id")).isEqualTo(ed);
     assertThat(edge.<String>getProperty("target_id")).isEqualTo(cedar);
-    assertThat(rows("postgresql", "SELECT p.name, c.name AS company FROM works_at w JOIN person p ON w.source_id = p.id "
-        + "JOIN company c ON w.target_id = c.id WHERE w.since = 2031").get(0).<String>getProperty("name")).isEqualTo("Ed");
+    assertThat(rows("postgresql", "SELECT p.name, c.name AS company FROM works_at w JOIN person p ON w.source_id = p.rid "
+        + "JOIN company c ON w.target_id = c.rid WHERE w.since = 2031").get(0).<String>getProperty("name")).isEqualTo("Ed");
 
     assertThat(rows("postgresql", "DELETE FROM works_at WHERE since = 2031 RETURNING since")).hasSize(1);
     assertThat(cypherCount("MATCH (:person)-[w:works_at]->(:company)")).isEqualTo(5L);
@@ -115,7 +115,7 @@ class PostgreSQLCypherTest extends TestHelper {
 
   @Test
   void anEdgeInsertedThroughTheTableIsWalkedByCypher() {
-    rows("postgresql", "INSERT INTO works_at (source_id, target_id, since) SELECT p.id, c.id, 2032 FROM person p, company c "
+    rows("postgresql", "INSERT INTO works_at (source_id, target_id, since) SELECT p.rid, c.rid, 2032 FROM person p, company c "
         + "WHERE p.pid = 5 AND c.cid = 30");
 
     final List<Result> walked = rows("opencypher",

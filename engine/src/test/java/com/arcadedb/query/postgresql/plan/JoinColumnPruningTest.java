@@ -117,7 +117,7 @@ class JoinColumnPruningTest extends TestHelper {
   @Test
   void anOuterJoinPadsThePersonsWithoutEdges() {
     final long rows = persons.stream().mapToLong(p -> Math.max(1, knows.stream().filter(k -> k.from() == p.id()).count())).sum();
-    assertThat(run("SELECT count(*) AS rows_n, count(k.id) AS edges_n, sum(q.age) AS s FROM jp p LEFT JOIN jknows k ON k.source_id = p.rid"
+    assertThat(run("SELECT count(*) AS rows_n, count(k.rid) AS edges_n, sum(q.age) AS s FROM jp p LEFT JOIN jknows k ON k.source_id = p.rid"
         + " LEFT JOIN jp q ON k.target_id = q.rid"))
         .containsExactly("rows_n=" + rows + ",edges_n=" + (long) knows.size() + ",s="
             + knows.stream().mapToLong(k -> persons.get(k.to()).age()).sum());

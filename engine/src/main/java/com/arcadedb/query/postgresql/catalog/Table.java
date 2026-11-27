@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql.catalog;
 
 import com.arcadedb.query.postgresql.PostgreSQLAmbiguousIdentifierException;
+import com.arcadedb.query.postgresql.PostgreSQLCatalogException;
 import com.arcadedb.query.postgresql.PostgreSQLUndefinedColumnException;
 import com.arcadedb.schema.DocumentType;
 
@@ -31,17 +32,16 @@ import java.util.Objects;
  * A type of the schema as a table of the relational view. A {@code Table} is an immutable snapshot, built by
  * {@link RelationalCatalog}.
  * <ul>
- * <li>A document or vertex type is a table of {@code id} and one column per declared property.</li>
- * <li>An edge type is a table of {@code id}, {@code source_id}, {@code target_id} and one column per declared property, one row per
- * edge record whether or not the type is bidirectional. A lightweight edge has no record, so a table of lightweight edges has no
- * {@code id}: see {@link EdgeStorage}.</li>
+ * <li>A document or vertex type is a table of the record id {@code rid} and one column per declared property.</li>
+ * <li>An edge type is a table of {@code rid}, {@code source_id}, {@code target_id} and one column per declared property, one row
+ * per edge record whether or not the type is bidirectional. A lightweight edge has no record, so a table of lightweight edges has
+ * no {@code rid}: see {@link EdgeStorage}.</li>
  * <li>The columns are the synthetic ones first, then the properties of the supertypes in the order of the supertypes, then the
  * properties of the type itself, each group sorted by name. The engine keeps declared properties in a hash map and records no
  * declaration order, so this is the only order that is the same for every database and every run.</li>
  * <li>A table made by {@code CREATE TABLE} has its columns in the declared order, which its {@link TableDefinition} keeps, then
  * the record id, which is hidden: {@link #insertColumns()} leaves it out, and {@link #listedColumns()} has it only when a foreign
- * key refers to it. When no property is named {@code id} or {@code rid}, the record id is there under both names, and only
- * {@code rid} can be listed.</li>
+ * key refers to it.</li>
  * <li>The table of a supertype has the rows of its subtypes, and only the columns declared on it. {@code FROM ONLY t} has the rows of
  * {@code t} itself: {@link #superTables()} and {@link #subTables()} say how the tables are related, and {@link #documentType()} is
  * what a scan asks for the buckets of the type with and without its subtypes.</li>
@@ -54,17 +54,17 @@ public final class Table {
   }
 
   /**
-   * How the edges of an edge table are stored, which decides whether the table has an {@code id} and how a scan has to read it.
+   * How the edges of an edge table are stored, which decides whether the table has a {@code rid} and how a scan has to read it.
    * The rule is the engine's own ({@code EdgeType.holdsLightweightEdges}): a scan of the buckets of a type can miss edges that the
    * graph holds when the type or one of its subtypes stores them without a record.
    */
   public enum EdgeStorage {
-    /** Every edge has a record: the table has {@code id}, its primary key, and a bucket scan reads all of it. */
+    /** Every edge has a record: the table has {@code rid}, and a bucket scan reads all of it. */
     REGULAR,
-    /** Every edge is lightweight: no {@code id}, only {@code source_id} and {@code target_id}, and only a walk reads all of it. */
+    /** Every edge is lightweight: no {@code rid}, only {@code source_id} and {@code target_id}, and only a walk reads all of it. */
     LIGHTWEIGHT,
     /** Some edges have a record and some do not (a type with a lightweight subtype, or a regular type with lightweight subtypes):
-     * {@code id} is nullable and has no primary key, and only a walk reads all of it. */
+     * {@code rid} is nullable and has no primary key, and only a walk reads all of it. */
     MIXED
   }
 
@@ -82,9 +82,9 @@ public final class Table {
 
   /**
    * A foreign key: the {@code columns} of this table refer to the {@code referencedColumns} of the {@code referencedTable}, which
-   * are a key of that table: the identity column ({@link Table#identityColumn()}), which is the primary key of a table that has no
-   * property {@code id} of its own and a unique key of one that has. The columns of a foreign key hold record ids, so it refers to
-   * the record id column under whatever name the table gives it ({@code id} or {@code rid}).
+   * are a key of that table: the identity column ({@link Table#identityColumn()}, {@code rid}), which is the primary key of a
+   * table that has no property {@code id} of its own and a unique key of one that has. The columns of a foreign key hold record
+   * ids, so it refers to the record id column.
    */
   public record ForeignKey(String name, List<String> columns, String referencedTable, List<String> referencedColumns, Origin origin,
       com.arcadedb.schema.ForeignKey declared) {
@@ -203,12 +203,9 @@ public final class Table {
   }
 
   /**
-   * The column that holds the record id as text: {@code id}, or {@code rid} when the type has a property of its own named
-   * {@code id} (that property is then the column {@code id}, the decision of fork issue #38). A table made by
-   * {@code CREATE TABLE} with neither property has two such columns (fork issue #151): this one is {@code rid}, and a hidden
-   * {@code id} reads the same record id. {@code null} when the table has none: a lightweight edge table (no record), and a table
-   * whose type has both a property {@code id} and a property {@code rid}, where the two names are the user's and the record id has
-   * no name in the view.
+   * The column {@code rid}, which holds the record id as text (fork issue #240). {@code null} when the table has none: a
+   * lightweight edge table (no record), and a table whose type has a property {@code rid}, where the name is the user's and the
+   * record id has no name in the view.
    */
   public Column identityColumn() {
     return identityColumn;
@@ -262,7 +259,8 @@ public final class Table {
   public Column column(final Identifier identifier) {
     final Column column = findColumn(identifier);
     if (column == null)
-      throw new PostgreSQLUndefinedColumnException(identifier.text(), name, columns.stream().map(Column::name).toList());
+      throw new PostgreSQLUndefinedColumnException(identifier.text(), name, columns.stream().map(Column::name).toList(),
+          identityColumn != null && PostgreSQLCatalogException.isId(identifier.text(), identifier.quoted()));
     return column;
   }
 
@@ -272,11 +270,11 @@ public final class Table {
   }
 
   /**
-   * The primary key, {@code null} when the table has none. For a document, a vertex and an edge with records: the property
-   * {@code id} when the type has one with a unique index on it alone, else the identity column ({@code id} or {@code rid}, see
-   * {@link #identityColumn()}); {@code (source_id, target_id)} for a lightweight edge table of a type declared {@code UNIQUE} that
-   * has no subtypes; none for any other lightweight edge table, for a {@link EdgeStorage#MIXED} one and for a table that has no
-   * identity column.
+   * The primary key, {@code null} when the table has none. For a document, a vertex and an edge with records that
+   * {@code CREATE TABLE} did not make: the property {@code id} when the type has one with a unique index on it alone, else the
+   * identity column ({@code rid}, see {@link #identityColumn()}); {@code (source_id, target_id)} for a lightweight edge table of a
+   * type declared {@code UNIQUE} that has no subtypes; none for any other lightweight edge table, for a {@link EdgeStorage#MIXED}
+   * one and for a table that has no identity column. A table made by {@code CREATE TABLE} has the primary key it declared.
    */
   public Key primaryKey() {
     return primaryKey;
@@ -297,7 +295,7 @@ public final class Table {
    * The two keys of an edge table come only from the endpoint tables declared on the edge type ({@link EdgeEndpoints}), never from
    * the data: there is none for an endpoint that is not declared, or that names a type that is not a vertex type. A {@code LINK}
    * property gives one when the type it links to is declared and is a table with an identity column that is a key. Both refer to
-   * the identity column of the other table ({@code rid} when that type has its own property {@code id}).
+   * the identity column {@code rid} of the other table.
    */
   public List<ForeignKey> foreignKeys() {
     return foreignKeys;

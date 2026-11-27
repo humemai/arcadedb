@@ -145,7 +145,7 @@ class ColumnTypeTest extends TestHelper {
 
     final Table table = RelationalCatalog.of(database).table("everything");
     final Map<String, String> types = RelationalCatalogTest.typesOf(table);
-    assertThat(types).containsEntry("id", "text").containsEntry("c_bool", "bool").containsEntry("c_short", "int2")
+    assertThat(types).containsEntry("rid", "text").containsEntry("c_bool", "bool").containsEntry("c_short", "int2")
         .containsEntry("c_int", "int4").containsEntry("c_long", "int8").containsEntry("c_float", "float4")
         .containsEntry("c_double", "float8").containsEntry("c_decimal", "numeric").containsEntry("c_string", "varchar")
         .containsEntry("c_date", "date").containsEntry("c_datetime", "timestamp").containsEntry("c_binary", "bytea")
