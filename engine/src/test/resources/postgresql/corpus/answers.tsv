@@ -210,6 +210,16 @@ err-c1-derived-column-list-too-long	multiset	-	ok	SELECT * FROM (SELECT 1) AS t 
 err-c1-derived-ambiguous-column	multiset	-	ok	SELECT pid FROM (SELECT pid FROM person) a JOIN (SELECT pid FROM orders) b ON a.pid = b.pid	{"error":"42702"}
 err-c1-derived-column-not-in-subquery	multiset	-	ok	SELECT t.name FROM (SELECT pid FROM person) t	{"error":"42703"}
 err-c1-derived-duplicate-alias	multiset	-	ok	SELECT 1 FROM (SELECT 1) t, (SELECT 2) t	{"error":"42712"}
+range-float-smallest	multiset	-	ok	SELECT '1e-45'::real AS a, '5e-324'::float8 AS b, '0e-500'::float8 AS c, 0.0::real AS d	pending-server
+err-range-float4-text-underflow	multiset	-	ok	SELECT '10e-70'::real	pending-server
+err-range-float8-text-underflow	multiset	-	ok	SELECT '-10e-400'::float8	pending-server
+err-range-float4-from-float8-underflow	multiset	-	ok	SELECT '10e-70'::float8::real	pending-server
+err-range-float4-from-numeric-underflow	multiset	-	ok	SELECT 1e-70::real	pending-server
+err-range-float4-from-numeric-overflow	multiset	-	ok	SELECT 1e70::real	pending-server
+err-range-float8-from-numeric-underflow	multiset	-	ok	SELECT 1e-400::float8	pending-server
+err-range-float8-from-numeric-overflow	multiset	-	ok	SELECT 1e400::float8	pending-server
+err-range-numeric-round	multiset	-	ok	SELECT round(5.5e131071, -131072)	pending-server
+err-range-timestamp-minus-interval	multiset	-	ok	SELECT timestamp '2000-01-01' - interval '2483590 days'	pending-server
 c1-union-all	ordered	-	ok	SELECT name FROM person WHERE city = 'Delft' UNION ALL SELECT name FROM company ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[["Acme"],["Ada"],["Birch"],["Bo"],["Cedar"]]}
 c1-union-distinct	ordered	-	ok	SELECT city FROM person UNION SELECT city FROM person WHERE age > 40 ORDER BY city	{"columns":["city"],"types":["varchar"],"rows":[["Delft"],["Leiden"],["Utrecht"]]}
 c1-union-explicit-distinct	ordered	-	ok	SELECT city FROM person UNION DISTINCT SELECT 'Delft' ORDER BY city	{"columns":["city"],"types":["varchar"],"rows":[["Delft"],["Leiden"],["Utrecht"]]}
