@@ -398,6 +398,9 @@ public final class CreateTablePlan {
       case "numeric" -> new Mapped(ColumnType.NUMERIC_ARRAY, Type.LIST, "DECIMAL", 0);
       case "bytea" -> new Mapped(ColumnType.BYTEA_ARRAY, Type.LIST, "BINARY", 0);
       case "text" -> new Mapped(ColumnType.TEXT_ARRAY, Type.LIST, "STRING", 0);
+      case "date" -> new Mapped(ColumnType.DATE_ARRAY, Type.LIST, "DATE", 0);
+      // the elements keep what a timestamp column keeps
+      case "timestamp" -> new Mapped(ColumnType.TIMESTAMP_ARRAY, Type.LIST, "DATETIME_MICROS", 0);
       default -> null;
     };
   }

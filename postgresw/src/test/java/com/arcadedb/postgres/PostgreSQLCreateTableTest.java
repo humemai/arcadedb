@@ -33,6 +33,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -61,6 +62,7 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
           + " w varchar NOT NULL DEFAULT 'w', x vector(3))",
       "CREATE TABLE t3 (a int, b int, c text, PRIMARY KEY (b, a), CONSTRAINT t3_c UNIQUE (c), UNIQUE (a, c))",
       "CREATE TABLE t4 (a int UNIQUE PRIMARY KEY, b int UNIQUE UNIQUE, c int NULL, d int CONSTRAINT d_given NOT NULL)",
+      "CREATE TABLE t5 (cid int PRIMARY KEY, days date[], moments timestamp[] NOT NULL)",
       "CREATE TABLE IF NOT EXISTS t1 (other int)");
 
   private static final String KNOWS = "CREATE TABLE knows (source_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE,"
@@ -106,7 +108,9 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
       "CREATE TABLE e (a int, b int, CONSTRAINT x UNIQUE (a), CONSTRAINT x UNIQUE (b))",
       "INSERT INTO t1 VALUES (NULL, 'x')",
       "INSERT INTO t1 VALUES (1, 'again')",
-      "INSERT INTO t2 (x) VALUES ('[1,2]')");
+      "INSERT INTO t2 (x) VALUES ('[1,2]')",
+      "INSERT INTO t5 (cid) VALUES (3)",
+      "INSERT INTO t5 VALUES (4, '{abc}', '{}')");
 
   private final List<String> failures = new ArrayList<>();
 
@@ -149,7 +153,9 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
         for (final String write : List.of("INSERT INTO t1 VALUES (1, 'x'), (2, NULL)", "INSERT INTO t2 DEFAULT VALUES",
             "INSERT INTO t2 (id, v, x) VALUES (2, 3, '[1,2,3]')", "INSERT INTO t3 VALUES (1, 2, 'c')",
             "INSERT INTO t4 VALUES (1, NULL, NULL, 4), (2, NULL, 3, 4)", "INSERT INTO person VALUES (1, 'Ada'), (2, 'Bob')",
-            "INSERT INTO knows SELECT a.rid, b.rid, 2020 FROM person a, person b WHERE a.id = 1 AND b.id = 2")) {
+            "INSERT INTO knows SELECT a.rid, b.rid, 2020 FROM person a, person b WHERE a.id = 1 AND b.id = 2",
+            "INSERT INTO t5 VALUES (1, '{2026-01-05,2026-02-01}', ARRAY['2026-01-05 10:20:30.123456'::timestamp])",
+            "INSERT INTO t5 (cid, moments) VALUES (2, '{}')")) {
           run(postgres, write);
           run(arcade, write);
         }
@@ -165,8 +171,9 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
         // the columns of t2 whose values both print alike
         same(postgres, arcade, "SELECT id, a, b, c, d, e, f, g, h, i, j, k, q, r, s, t, u, v, w FROM t2 ORDER BY id");
         same(postgres, arcade, "SELECT since FROM knows");
+        sameArrays(postgres, arcade, "SELECT days, moments FROM t5 ORDER BY cid");
 
-        for (final String table : List.of("t1", "t2", "t3", "t4", "person", "knows")) {
+        for (final String table : List.of("t1", "t2", "t3", "t4", "t5", "person", "knows")) {
           // rid: PostgreSQL declares it, ArcadeDB lists the record id that it gives person
           same(postgres, arcade, "SELECT column_name, ordinal_position, data_type, udt_name, is_nullable, column_default"
               + " FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '" + table
@@ -253,6 +260,27 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
     final String actual = answer(arcade, query);
     if (!expected.equals(actual))
       failures.add(query + "\n  PostgreSQL:\n" + expected + "  ArcadeDB:\n" + actual);
+  }
+
+  /** An answer of array columns only: the two servers may print one array differently, so the elements are compared. */
+  private void sameArrays(final Connection postgres, final Connection arcade, final String query) throws SQLException {
+    final List<String> expected = arrays(postgres, query);
+    final List<String> actual = arrays(arcade, query);
+    if (!expected.equals(actual))
+      failures.add(query + "\n  PostgreSQL: " + expected + "\n  ArcadeDB:   " + actual);
+  }
+
+  private static List<String> arrays(final Connection connection, final String query) throws SQLException {
+    final List<String> out = new ArrayList<>();
+    try (final Statement run = connection.createStatement(); final ResultSet rows = run.executeQuery(query)) {
+      while (rows.next())
+        for (int i = 1; i <= rows.getMetaData().getColumnCount(); i++) {
+          final java.sql.Array array = rows.getArray(i);
+          out.add(rows.getMetaData().getColumnTypeName(i) + " "
+              + (array == null ? "null" : Arrays.toString((Object[]) array.getArray())));
+        }
+    }
+    return out;
   }
 
   /** The labels and the rows of an answer, a number by its value. */
