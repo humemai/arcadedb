@@ -1709,7 +1709,7 @@ After:
 
 openCypher has no transaction statements: the transaction belongs to the API of the client. Over the PostgreSQL protocol the connection handles `BEGIN`, `COMMIT` and `ROLLBACK` for `sql` and `postgresql`. A JDBC connection that chose openCypher refuses `BEGIN` (see the errors below), so this section has no openCypher query.
 
-In `postgresql`, `CREATE TABLE` and `CREATE INDEX` run outside a transaction block only, and psycopg and SQLAlchemy open one by default. Run them in autocommit: psycopg `autocommit=True`, SQLAlchemy `isolation_level="AUTOCOMMIT"`. There are no savepoints: run each unit of work in its own transaction.
+In `postgresql`, `CREATE TABLE` runs in a transaction block too, which psycopg and SQLAlchemy open by default; a rollback drops the new table if it is still empty. `CREATE INDEX` runs outside a transaction block only. Run it in autocommit: psycopg `autocommit=True`, SQLAlchemy `isolation_level="AUTOCOMMIT"`. There are no savepoints: run each unit of work in its own transaction.
 
 ### Rolling a transaction back
 

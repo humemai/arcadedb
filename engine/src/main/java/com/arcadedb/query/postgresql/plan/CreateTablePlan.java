@@ -136,11 +136,17 @@ public final class CreateTablePlan {
   private final Database             database;
   private final RelationalCatalog    catalog;
   private final CreateTableStatement statement;
+  private       DocumentType         created;
 
   public CreateTablePlan(final Database database, final RelationalCatalog catalog, final CreateTableStatement statement) {
     this.database = database;
     this.catalog = catalog;
     this.statement = statement;
+  }
+
+  /** The type that {@link #execute} made, {@code null} before it and when the table was there ({@code IF NOT EXISTS}). */
+  public DocumentType created() {
+    return created;
   }
 
   /** Makes the table; the answer has no column and no row. */
@@ -685,6 +691,7 @@ public final class CreateTablePlan {
       }
       type.setCustomValue(TableDefinition.CUSTOM_KEY, definition.toJson());
       made = true;
+      created = type;
     } finally {
       // the schema is not transactional: a table that could not be made whole is taken back
       if (!made) {

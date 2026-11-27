@@ -5763,6 +5763,8 @@ public class PostgresNetworkExecutor extends Thread {
         testHook.run();
       database.rollback();
     }
+    // also after a commit that failed and so rolled back: the tables that CREATE TABLE made in the transaction (fork issue #229)
+    PostgreSQLQueryEngine.afterRollback(database);
   }
 
   /**
@@ -5836,8 +5838,10 @@ public class PostgresNetworkExecutor extends Thread {
    */
   private void rollbackPendingTransaction() {
     try {
-      if (database != null && database.isTransactionActive())
+      if (database != null && database.isTransactionActive()) {
         database.rollback();
+        PostgreSQLQueryEngine.afterRollback(database);
+      }
     } catch (final Exception e) {
       LogManager.instance().log(this, Level.WARNING, "PSQL: error on discarding the transaction of a closing connection", e);
     }

@@ -172,8 +172,9 @@ class PostgreSQLErrorHintTest extends PostgreSQLSessionAgainstPostgresTestBase {
     compare((postgres, arcade) -> {
       for (final boolean simple : new boolean[] { true, false })
         try (final Connection own = arcade.connect(simple)) {
+          assertThat(answer(own, "CREATE TABLE t" + simple + " (a int)")).doesNotStartWith("error");
           own.setAutoCommit(false);
-          final ServerErrorMessage create = error(own, "CREATE TABLE t" + simple + " (a int)");
+          final ServerErrorMessage create = error(own, "CREATE INDEX ON t" + simple + " (a)");
           assertThat(create.getSQLState()).isEqualTo("0A000");
           assertThat(create.getHint()).contains("autocommit=True").contains("isolation_level=\"AUTOCOMMIT\"");
           // the block is aborted
@@ -187,7 +188,7 @@ class PostgreSQLErrorHintTest extends PostgreSQLSessionAgainstPostgresTestBase {
           assertThat(error(own, "ROLLBACK TO SAVEPOINT a").getHint()).contains("send ROLLBACK");
           own.rollback();
           own.setAutoCommit(true);
-          assertThat(answer(own, "CREATE TABLE t" + simple + " (a int)")).doesNotStartWith("error");
+          assertThat(answer(own, "CREATE INDEX ON t" + simple + " (a)")).doesNotStartWith("error");
         }
     });
   }
