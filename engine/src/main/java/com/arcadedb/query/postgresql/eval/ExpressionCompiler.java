@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
+import com.arcadedb.query.postgresql.PostgreSQLError;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.SessionTimeZone;
 import com.arcadedb.query.postgresql.ast.Expression;
@@ -99,6 +100,14 @@ public final class ExpressionCompiler {
 
     /** Plans a subquery of an expression; {@code null} where the clause has no subqueries. */
     default SubqueryPlanner subqueries() {
+      return null;
+    }
+
+    /**
+     * The hint of a comparison of {@code ids} with the number {@code number}: what to compare instead when {@code ids} is a
+     * column that holds record ids, {@code null} for any other expression.
+     */
+    default String recordIdHint(final Expression ids, final Expression number) {
       return null;
     }
   }
@@ -504,7 +513,7 @@ public final class ExpressionCompiler {
     case GREATER_OR_EQUAL:
     case IS_DISTINCT_FROM:
     case IS_NOT_DISTINCT_FROM:
-      return comparison(operator, compile(e.left()), compile(e.right()));
+      return comparison(operator, e.left(), compile(e.left()), e.right(), compile(e.right()));
     case CONCAT:
       return concat(compile(e.left()), compile(e.right()));
     case L2_DISTANCE:
@@ -550,6 +559,28 @@ public final class ExpressionCompiler {
 
   private static PgType textual(final PgType type) {
     return type == PgType.VARCHAR ? PgType.TEXT : type;
+  }
+
+  /**
+   * {@link #comparison(Expression.BinaryOperator, Evaluable, Evaluable)} of two expressions as written: when a column of record
+   * ids is compared with a number, which no operator does, the hint says what to compare instead (fork issue #241).
+   */
+  public Evaluable comparison(final Expression.BinaryOperator operator, final Expression leftExpression, final Evaluable left,
+      final Expression rightExpression, final Evaluable right) {
+    try {
+      return comparison(operator, left, right);
+    } catch (final PostgreSQLEvaluationException e) {
+      String hint = null;
+      if ("42883".equals(e.getSqlState())) {
+        if (right.type().isNumber())
+          hint = scope.recordIdHint(leftExpression, rightExpression);
+        else if (left.type().isNumber())
+          hint = scope.recordIdHint(rightExpression, leftExpression);
+      }
+      if (hint == null)
+        throw e;
+      throw PostgreSQLEvaluationException.withHint("42883", PostgreSQLError.Text.of(e.getMessage()).message(), hint);
+    }
   }
 
   /** The comparison of two expressions, {@code operator} one of the six comparison operators. */

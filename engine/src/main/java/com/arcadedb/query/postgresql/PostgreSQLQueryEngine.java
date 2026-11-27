@@ -35,11 +35,15 @@ import com.arcadedb.query.postgresql.ast.Statement;
 import com.arcadedb.query.postgresql.ast.TransactionStatement;
 import com.arcadedb.query.postgresql.ast.UpdateStatement;
 import com.arcadedb.query.postgresql.ast.WriteStatement;
+import com.arcadedb.query.postgresql.catalog.Column;
+import com.arcadedb.query.postgresql.catalog.Identifier;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
+import com.arcadedb.query.postgresql.catalog.Table;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.eval.TransactionClock;
+import com.arcadedb.query.postgresql.parser.StatementHints;
 import com.arcadedb.query.postgresql.parser.StatementParser;
 import com.arcadedb.query.postgresql.plan.CreateIndexPlan;
 import com.arcadedb.query.postgresql.plan.CreateTablePlan;
@@ -454,11 +458,50 @@ public class PostgreSQLQueryEngine implements QueryEngine {
     final Statement cached = statements.get(query);
     if (cached != null)
       return cached;
-    final Statement statement = StatementParser.parse(query);
+    final Statement statement;
+    try {
+      statement = StatementParser.parse(query);
+    } catch (final PostgreSQLFeatureNotSupportedException e) {
+      if (e.getStatement().isEmpty())
+        throw e;
+      // a statement of sql that the hint suggests names tables and columns as they are stored, where case counts
+      throw new PostgreSQLFeatureNotSupportedException(e.getMessage().substring(0,
+          e.getMessage().length() - PostgreSQLError.HINT.length() - e.getHint().length()),
+          StatementHints.of(e.getStatement(), storedNames()), e.getStatement());
+    }
     if (statement instanceof EmptyStatement)
       throw new PostgreSQLFeatureNotSupportedException(
           "An empty statement is not supported by the postgresql language (" + statement.position() + ")");
     statements.put(query, statement);
     return statement;
+  }
+
+  private StatementHints.Names storedNames() {
+    return new StatementHints.Names() {
+      @Override
+      public String table(final String name) {
+        final Table table = storedTable(name);
+        return table == null ? name : table.name();
+      }
+
+      @Override
+      public String column(final String tableName, final String name) {
+        final Table table = storedTable(tableName);
+        if (table != null)
+          for (final Column column : table.columns())
+            if (column.name().equalsIgnoreCase(name))
+              return column.name();
+        return name;
+      }
+    };
+  }
+
+  /** The table that the name stands for, {@code null} when none or several do. */
+  private Table storedTable(final String name) {
+    try {
+      return catalog().findTable(Identifier.unquoted(name));
+    } catch (final PostgreSQLCatalogException ambiguous) {
+      return null;
+    }
   }
 }

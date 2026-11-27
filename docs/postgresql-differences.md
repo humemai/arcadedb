@@ -108,6 +108,17 @@ Every refusal below is `0A000`.
 | Keys | any type with an operator class | tree indexes over `bool`, the number types, `text`, `varchar`, `date`, and `timestamp` |
 | Transactions | a rollback takes the index back | refused in a transaction block, as `CREATE TABLE` is |
 
+## Errors
+
+Read the hint. It is sent in the protocol's hint field, which `psql` and drivers show on its own line, and over other protocols it ends the message after `. Hint: `. Every `0A000` has one: what to write instead, or a text that starts with "There is no way to write this in the postgresql language yet". A hint that names a statement of another language ends with it, from `{sql}` or `{opencypher}` on, so that the statement can be sent as it is.
+
+| statement | SQLSTATE | hint |
+| --- | --- | --- |
+| `ALTER TABLE acc ADD COLUMN extra text` | `0A000` | Add the column in the sql language, outside a transaction block: ``{sql}CREATE PROPERTY `acc`.`extra` STRING`` |
+| `SELECT 1 FOR UPDATE` | `0A000` | Leave the clause out: no row is locked. Of two transactions that change one row the later commit fails with SQLSTATE 40001, run it again |
+| `JOIN knows k ON k.source_id = p.id` | `42883` | k.source_id holds record ids, which are text such as '#12:3', not the values of p.id: join on p.rid. A cast will not match them |
+| `SELECT v FROM acc LIMIT 1, 2` | `42601`, as PostgreSQL | Use separate LIMIT and OFFSET clauses: LIMIT 1, 2 is LIMIT 2 OFFSET 1 |
+
 ## Missing functions and operators
 
 A call of a function or operator that PostgreSQL 18 has and `postgresql` lacks is `0A000` (not supported). A call that PostgreSQL would not find either keeps PostgreSQL's code, `42883`. The language knows what PostgreSQL has from a [list of its catalog](../engine/src/main/resources/com/arcadedb/query/postgresql/eval/postgresql-18-catalog.tsv) (names and argument types), which [`pg_catalog_list.sh`](../.github/scripts/pg_catalog_list.sh) writes from a PostgreSQL 18.7 server and CI compares with a server again.

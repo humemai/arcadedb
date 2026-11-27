@@ -194,6 +194,10 @@ public class PostgresNetworkExecutor extends Thread {
   /** Shared between the simple and extended query protocol's identical ROLLBACK TO refusal (issue #7846). */
   private static final String                                         ROLLBACK_TO_NOT_SUPPORTED_MESSAGE =
       "ROLLBACK TO SAVEPOINT is not supported by this server: it cannot discard the writes made since the savepoint";
+  /** The way out of that refusal (fork issue #238). */
+  private static final String                                         ROLLBACK_TO_HINT                  =
+      "There are no savepoints: send ROLLBACK, which discards the whole transaction, then run each unit of work in its own"
+          + " transaction";
   /** Shared between every path that refuses a statement inside an aborted transaction block (SQLSTATE 25P02). */
   private static final String                                         ABORTED_TRANSACTION_MESSAGE       =
       "current transaction is aborted, commands ignored until end of transaction block";
@@ -247,6 +251,8 @@ public class PostgresNetworkExecutor extends Thread {
   private       String                      errorQueryText        = null;
   private       int                         errorQueryOffset      = -1;
   private       int                         pendingErrorPosition  = 0;
+  // The hint of the next error (the H field), null for none (fork issue #241)
+  private       String                      pendingErrorHint      = null;
   // What this connection's SET commands and startup packet established, and what SHOW answers (issue #8217). Per
   // connection, as a PostgreSQL SET is session-scoped: nothing a client sets here reaches the schema or another session.
   private final PostgresSessionSettings     sessionSettings       = new PostgresSessionSettings();
@@ -1532,6 +1538,11 @@ public class PostgresNetworkExecutor extends Thread {
           writeCommandComplete("ROLLBACK", 0);
         } else if (isEmptyStatement(queryText)) {
           emptyQueryResponse();
+        } else if (abortedUpperCaseText.startsWith("ROLLBACK TO ")) {
+          // PostgreSQL would run it: say why this server cannot, and what to do (fork issue #238). The block stays aborted
+          pendingErrorHint = ROLLBACK_TO_HINT;
+          writeError(ERROR_SEVERITY.ERROR, ROLLBACK_TO_NOT_SUPPORTED_MESSAGE, PostgresCopyStatement.SQLSTATE_FEATURE_NOT_SUPPORTED);
+          return false;
         } else {
           // Every other statement is refused, not silently swallowed (issue #6457): the client needs an
           // ErrorResponse to know its statement never ran, and errorInTransaction must stay set so the
@@ -1580,6 +1591,7 @@ public class PostgresNetworkExecutor extends Thread {
       // will be persisted by the next COMMIT. Refusing it - and aborting the transaction the same way any other
       // statement is refused once the session is aborted - is the only reply that cannot silently lose data.
       if (query.query.toUpperCase(Locale.ENGLISH).startsWith("ROLLBACK TO ")) {
+        pendingErrorHint = ROLLBACK_TO_HINT;
         failSimpleQuery(ROLLBACK_TO_NOT_SUPPORTED_MESSAGE, PostgresCopyStatement.SQLSTATE_FEATURE_NOT_SUPPORTED);
         return false;
       }
@@ -3915,6 +3927,13 @@ public class PostgresNetworkExecutor extends Thread {
         // client that sends "ROLLBACK;" must not fall through to the silent return below (issue #6548 review
         // follow-up).
         final String abortedUpperCaseText = portal.query.toUpperCase(Locale.ENGLISH);
+        if (abortedUpperCaseText.startsWith("ROLLBACK TO ")) {
+          // As in the simple protocol (fork issue #238)
+          setExtendedProtocolError();
+          pendingErrorHint = ROLLBACK_TO_HINT;
+          writeError(ERROR_SEVERITY.ERROR, ROLLBACK_TO_NOT_SUPPORTED_MESSAGE, PostgresCopyStatement.SQLSTATE_FEATURE_NOT_SUPPORTED);
+          return;
+        }
         if (isTransactionEndStatement(abortedUpperCaseText) || endsTransactionBlock(parsedTransactionControl(portal))) {
           if (refuseLiveNamedStatement(portalName))
             // Refused like any other redefinition of a live statement, before it recovers anything
@@ -4029,6 +4048,7 @@ public class PostgresNetworkExecutor extends Thread {
         // without resurrecting it (issue #6660), so the rest of this pipelined request is handled the same
         // way it is for any other rejected Parse.
         setExtendedProtocolError();
+        pendingErrorHint = ROLLBACK_TO_HINT;
         writeError(ERROR_SEVERITY.ERROR, ROLLBACK_TO_NOT_SUPPORTED_MESSAGE, PostgresCopyStatement.SQLSTATE_FEATURE_NOT_SUPPORTED);
         return;
       } else if (isSettingCommand(upperCaseText)) {
@@ -5009,12 +5029,15 @@ public class PostgresNetworkExecutor extends Thread {
   private String clientMessage(final String message, final Throwable cause) {
     if (PostgreSQLErrors.sqlState(cause) != null) {
       // An error of the postgresql language: worded as PostgreSQL words it, with no prefix of ours and without the (line, column)
-      // that the parser ends its messages with, which goes in the field PostgreSQL has for it, the position (fork issue #12). The text
-      // is about the statement the client wrote, so it is shown in production mode too, as the refusal of a marker is
+      // that the parser ends its messages with, which goes in the field PostgreSQL has for it, the position (fork issue #12), and
+      // without the hint, which goes in the field of the hint (fork issue #241). The text is about the statement the client wrote,
+      // so it is shown in production mode too, as the refusal of a marker is
       final int position = errorQueryText != null && errorQueryOffset >= 0 ? PostgreSQLErrors.position(cause, errorQueryText) : 0;
       pendingErrorPosition = position > 0 ? position + errorQueryOffset : 0;
+      pendingErrorHint = PostgreSQLErrors.hint(cause);
       return withLeaderRedirect(PostgreSQLErrors.message(cause), cause);
     }
+    pendingErrorHint = null;
     return withLeaderRedirect(concealableMessage(message, cause), cause);
   }
 
@@ -5055,12 +5078,15 @@ public class PostgresNetworkExecutor extends Thread {
       // language that the parser or the binder could place (fork issue #12): read once, so it belongs to this error alone
       final String position = pendingErrorPosition > 0 ? Integer.toString(pendingErrorPosition) : null;
       pendingErrorPosition = 0;
+      final String hint = pendingErrorHint;
+      pendingErrorHint = null;
 
       final int length = 4 + //
           1 + errorMessage.getBytes(StandardCharsets.UTF_8).length + 1 +//
           1 + sev.getBytes(StandardCharsets.UTF_8).length + 1 +//
           1 + errorCode.getBytes(StandardCharsets.UTF_8).length + 1 +//
           (position != null ? 1 + position.length() + 1 : 0) +//
+          (hint != null ? 1 + hint.getBytes(StandardCharsets.UTF_8).length + 1 : 0) +//
           1;
 
       channel.writeByte((byte) 'E');
@@ -5078,6 +5104,11 @@ public class PostgresNetworkExecutor extends Thread {
       if (position != null) {
         channel.writeByte((byte) 'P');
         writeString(position);
+      }
+
+      if (hint != null) {
+        channel.writeByte((byte) 'H');
+        writeString(hint);
       }
 
       channel.writeByte((byte) 0);

@@ -20,6 +20,7 @@ package com.arcadedb.query.postgresql.parser;
 
 import com.arcadedb.query.postgresql.PostgreSQLErrors;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
+import com.arcadedb.query.postgresql.PostgreSQLHints;
 import com.arcadedb.query.postgresql.PostgreSQLInvalidEscapeException;
 import com.arcadedb.query.postgresql.PostgreSQLSyntaxException;
 import com.arcadedb.query.postgresql.ast.AstPrinter;
@@ -463,7 +464,6 @@ class StatementParserTest {
         new String[] { "SELECT 1 FROM t WINDOW w AS ()", "A WINDOW clause is not supported" },
         new String[] { "SELECT 1 FOR UPDATE", "A locking clause (FOR UPDATE and the others) is not supported by the postgresql language (line 1, column 10)" },
         new String[] { "SELECT a FROM t GROUP BY ROLLUP (a)", "ROLLUP, CUBE, GROUPING SETS and the empty grouping set is not supported" },
-        new String[] { "SELECT a FROM t LIMIT 1, 2", "LIMIT with two values is not supported by the postgresql language (line 1, column 24)" },
         new String[] { "SELECT a FROM t FETCH FIRST 1 ROWS ONLY", "FETCH FIRST is not supported" },
         new String[] { "SELECT a FROM t ORDER BY a USING <", "ORDER BY with USING is not supported" },
         new String[] { "SELECT a SIMILAR TO b", "SIMILAR TO is not supported by the postgresql language (line 1, column 10)" },
@@ -493,9 +493,58 @@ class StatementParserTest {
   }
 
   @Test
-  void aStatementOutsideTheLanguageIsToldHowToRunIt() {
-    assertThatThrownBy(() -> StatementParser.parse("CREATE VIEW a AS SELECT 1")).hasMessageContaining("{sql}");
-    assertThatThrownBy(() -> StatementParser.parse("WITH RECURSIVE x AS (SELECT 1) SELECT 1")).hasMessageNotContaining("{sql}");
+  void aStatementOutsideTheLanguageIsToldWhatToWriteInstead() {
+    assertThatThrownBy(() -> StatementParser.parse("CREATE VIEW a AS SELECT 1")).hasMessageContaining("Hint: ")
+        .hasMessageContaining("WITH clause");
+    assertThatThrownBy(() -> StatementParser.parse("ALTER TABLE t ADD COLUMN c text"))
+        .hasMessageEndingWith("{sql}CREATE PROPERTY `t`.`c` STRING");
+    assertThatThrownBy(() -> StatementParser.parse("DROP TABLE IF EXISTS \"T\""))
+        .hasMessageEndingWith("{sql}DROP TYPE `T` IF EXISTS");
+    assertThatThrownBy(() -> StatementParser.parse("WITH RECURSIVE x AS (SELECT 1) SELECT 1")).hasMessageNotContaining("{sql}")
+        .hasMessageContaining("{opencypher}");
+  }
+
+  /**
+   * Refusals with no way out (fork issue #241). Take a statement out of the list when it gets one; a new refusal that names none
+   * is a defect, so nothing is added.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = { "SELECT * FROM t TABLESAMPLE SYSTEM (10)", "SELECT B'101'", "SELECT x::bit(3)",
+      "SELECT ARRAY(SELECT 1)", "SELECT string_agg(a, ',' ORDER BY a) FROM t", "SELECT current_user",
+      "CREATE TYPE mood AS ENUM ('a')", "CREATE FUNCTION f() RETURNS int AS 'select 1' LANGUAGE sql", "CREATE SEQUENCE s",
+      "GRANT SELECT ON t TO u", "DROP VIEW v", "LISTEN c", "ALTER TABLE t ALTER COLUMN c TYPE bigint" })
+  void theRefusalsThatNameNoWayOut(final String text) {
+    assertThat(hintOf(text)).as(text).startsWith(PostgreSQLHints.NO_WAY);
+  }
+
+  /** Every other refusal of {@link #refusals()} and each statement of the language's DDL says what to write instead. */
+  @ParameterizedTest
+  @ValueSource(strings = { "CREATE VIEW a AS SELECT 1", "CREATE TEMP TABLE t (a int)", "DROP TABLE t", "SET search_path = x",
+      "WITH x AS (INSERT INTO t VALUES (1) RETURNING a) SELECT * FROM x", "TABLE t", "EXPLAIN ANALYZE SELECT 1",
+      "EXPLAIN CREATE TABLE t (a int)", "SELECT * FROM a NATURAL JOIN b", "SELECT * FROM a JOIN b USING (x) AS j",
+      "SELECT * FROM generate_series(1, 3)", "SELECT (1, 2)", "SELECT count(*) OVER w FROM t",
+      "SELECT count(*) FILTER (WHERE a) FROM t", "SELECT DISTINCT ON (a) a FROM t", "SELECT 1 INTO t", "SELECT 1 FOR UPDATE",
+      "SELECT a FROM t FETCH FIRST 1 ROWS ONLY", "SELECT a SIMILAR TO b", "SELECT a IS TRUE", "SELECT 1 = ANY (ARRAY[1])",
+      "SELECT a COLLATE \"C\"", "SELECT a[1] FROM t", "SELECT f(a => 1)", "TRUNCATE t", "CREATE EXTENSION vector",
+      "SAVEPOINT a", "MERGE INTO t USING s ON t.a = s.a WHEN MATCHED THEN DELETE", "VACUUM" })
+  void everyOtherRefusalNamesAWayOut(final String text) {
+    assertThat(hintOf(text)).as(text).isNotBlank().doesNotStartWith(PostgreSQLHints.NO_WAY);
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = { "SELECT a FROM t LIMIT 1, 2", "SELECT `a` FROM t" })
+  void whatPostgreSQLRefusesTooIsASyntaxErrorWithAHint(final String text) {
+    assertThatThrownBy(() -> StatementParser.parse(text)).as(text).isInstanceOf(PostgreSQLSyntaxException.class)
+        .hasMessageContaining("Hint: ");
+  }
+
+  private static String hintOf(final String text) {
+    try {
+      StatementParser.parse(text);
+      return null;
+    } catch (final PostgreSQLFeatureNotSupportedException e) {
+      return e.getHint();
+    }
   }
 
   @Test

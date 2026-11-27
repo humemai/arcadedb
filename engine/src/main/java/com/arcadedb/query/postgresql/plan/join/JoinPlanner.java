@@ -827,7 +827,7 @@ public final class JoinPlanner {
       return null;
     final Evaluable x = leftCompiler.compile(leftExpression);
     final Evaluable y = rightCompiler.compile(rightExpression);
-    nodeCompiler.comparison(Expression.BinaryOperator.EQUAL, x, y);
+    nodeCompiler.comparison(Expression.BinaryOperator.EQUAL, leftExpression, x, rightExpression, y);
     final PgType common = commonType(x.type(), y.type());
     if (common == null)
       return null;

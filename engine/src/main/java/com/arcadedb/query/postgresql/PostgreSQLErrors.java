@@ -58,11 +58,34 @@ public final class PostgreSQLErrors {
     return null;
   }
 
-  /** @return the message of {@code error} without the {@code (line L, column C)} that ends the messages of the parser */
+  /**
+   * @return the hint of an error of the language, looking through the causes of {@code error}, or {@code null} when it has none
+   */
+  public static String hint(final Throwable error) {
+    for (Throwable current = error; current != null; current = current.getCause()) {
+      if (current instanceof PostgreSQLError e)
+        return e.getHint();
+      if (current.getCause() == current)
+        break;
+    }
+    return null;
+  }
+
+  /**
+   * @return the message of {@code error} without its hint ({@link #hint}) and without the {@code (line L, column C)} that ends
+   *     the messages of the parser
+   */
   public static String message(final Throwable error) {
-    final String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+    final String message = error.getMessage() == null ? error.getClass().getSimpleName() : withoutHint(error);
     final Matcher matcher = POSITION.matcher(message);
     return matcher.find() ? message.substring(0, matcher.start()) : message;
+  }
+
+  private static String withoutHint(final Throwable error) {
+    final String message = error.getMessage();
+    final String hint = hint(error);
+    final String end = hint == null ? null : PostgreSQLError.HINT + hint;
+    return end != null && message.endsWith(end) ? message.substring(0, message.length() - end.length()) : message;
   }
 
   /**
@@ -72,10 +95,9 @@ public final class PostgreSQLErrors {
    *     message names none
    */
   public static int position(final Throwable error, final String text) {
-    final String message = error.getMessage();
-    if (message == null || text == null)
+    if (error.getMessage() == null || text == null)
       return 0;
-    final Matcher matcher = POSITION.matcher(message);
+    final Matcher matcher = POSITION.matcher(withoutHint(error));
     if (!matcher.find())
       return 0;
     final int line = Integer.parseInt(matcher.group(1));
