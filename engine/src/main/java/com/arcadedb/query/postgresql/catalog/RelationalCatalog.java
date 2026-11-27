@@ -321,6 +321,8 @@ public final class RelationalCatalog {
       ColumnType columnType = ColumnType.of(property.getType(), property.getOfType());
       if (columnType == ColumnType.VARCHAR && definition != null && definition.textColumns().contains(property.getName()))
         columnType = ColumnType.TEXT;
+      if (columnType == ColumnType.TIMESTAMP && definition != null && definition.timestamptzColumns().contains(property.getName()))
+        columnType = ColumnType.TIMESTAMPTZ;
       Column column = new Column(shown, columnType, !property.isNotNull(), Column.Kind.PROPERTY, property.getName(), link);
       // a default that a later statement dropped is not shown
       if (definition != null && property.getDefaultValue() != null)

@@ -3025,7 +3025,7 @@ public class PostgresCatalog {
   private static Integer datetimePrecision(final PostgresType pgType) {
     return switch (pgType) {
       case DATE -> 0;
-      case TIMESTAMP -> 6;
+      case TIMESTAMP, TIMESTAMPTZ -> 6;
       default -> null;
     };
   }

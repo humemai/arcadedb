@@ -26,7 +26,7 @@ import java.util.regex.Pattern;
 
 /**
  * The error for a text of a date or a timestamp that is not in the one form the language reads, year-month-day with an optional
- * time (fork issue #200). PostgreSQL reads many more forms, so the code depends on what PostgreSQL 18 can do with the text:
+ * time, and for a timestamp an optional {@code Z} or offset (fork issues #200 and #223). PostgreSQL reads many more forms, so the code depends on what PostgreSQL 18 can do with the text:
  * <ul>
  * <li>{@code 22008}: year-month-day whose date is none of PostgreSQL's: no such day, before 4714-11-24 BC, or after the last
  * year of the type;</li>
@@ -74,7 +74,7 @@ final class DateTimeText {
   /** The error for {@code text}, which is not in the form the language reads, as a {@code date} or a {@code timestamp}. */
   static PostgreSQLEvaluationException unread(final String text, final PgType type) {
     final String s = text.strip().toLowerCase(Locale.ROOT);
-    final String name = type == PgType.DATE ? "date" : "timestamp";
+    final String name = type == PgType.DATE ? "date" : type == PgType.TIMESTAMPTZ ? "timestamp with time zone" : "timestamp";
     final Matcher date = YEAR_MONTH_DAY.matcher(s);
     if (date.matches()) {
       if (!exists(date.group(1), Integer.parseInt(date.group(2)), Integer.parseInt(date.group(3)), date.group(4) != null, type))
@@ -82,7 +82,8 @@ final class DateTimeText {
     } else if (!mayBeRead(s))
       return new PostgreSQLEvaluationException("22007", "invalid input syntax for type " + name + ": \"" + text + "\"");
     return PostgreSQLEvaluationException.unsupported("This form of a " + name + " is not supported: \"" + text
-        + "\". Write year-month-day, such as 2026-03-09, with a time as 10:11:12");
+        + "\". Write year-month-day, such as 2026-03-09, with a time as 10:11:12"
+        + (type == PgType.DATE ? "" : ", and a time zone as Z or an offset such as +02:00"));
   }
 
   /** The error for a date or a time that PostgreSQL does not have. */

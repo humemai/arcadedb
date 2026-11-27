@@ -23,14 +23,13 @@ import com.arcadedb.query.postgresql.eval.Numbers;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 
-import java.time.LocalDate;
 
 /**
  * The type of a result column of {@code UNION}, {@code INTERSECT} and {@code EXCEPT}, and the conversion of the values of an
  * operand to it: {@code select_common_type} of PostgreSQL for two inputs. Two inputs of one type keep it. A column that is only a
  * string literal or {@code NULL} (type {@code unknown}) takes the type of the other operand, and is {@code text} when both are.
  * Numbers go to the one that is farther along {@code smallint}, {@code integer}, {@code bigint}, {@code numeric}, {@code real},
- * {@code double precision}, a date and a timestamp to the timestamp. Two string types (varchar and text convert to each other
+ * {@code double precision}, a date and a timestamp to the timestamp, and either with a {@code timestamptz} to that. Two string types (varchar and text convert to each other
  * implicitly) keep the type of the first, the left operand. Any other pair is SQLSTATE {@code 42804}.
  */
 public final class SetTypes {
@@ -49,7 +48,7 @@ public final class SetTypes {
     if (left.isString() && right.isString())
       return left;
     if (left.isDateTime() && right.isDateTime())
-      return PgType.TIMESTAMP;
+      return PgType.commonDateTime(left, right);
     throw PostgreSQLEvaluationException.mismatch(
         operation + " types " + left.displayName() + " and " + right.displayName() + " cannot be matched");
   }
@@ -74,8 +73,8 @@ public final class SetTypes {
       return Casts.parse((String) value, to);
     if (from.isNumber() && to.isNumber())
       return Numbers.widen(value, to);
-    if (from == PgType.DATE && to == PgType.TIMESTAMP)
-      return ((LocalDate) value).atStartOfDay();
+    if (from.isDateTime() && to.isDateTime())
+      return Casts.cast(value, from, to, null);
     return value;
   }
 }

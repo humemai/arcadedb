@@ -53,6 +53,7 @@ record ColumnAttributes(String dataType, String udtName, Integer characterOctetL
       case NUMERIC -> new ColumnAttributes("numeric", "numeric", null, null, 10, null, null);
       case DATE -> new ColumnAttributes("date", "date", null, null, null, null, 0);
       case TIMESTAMP -> new ColumnAttributes("timestamp without time zone", "timestamp", null, null, null, null, 6);
+      case TIMESTAMPTZ -> new ColumnAttributes("timestamp with time zone", "timestamptz", null, null, null, null, 6);
       case VARCHAR -> new ColumnAttributes("character varying", "varchar", UNBOUNDED_OCTETS, null, null, null, null);
       case TEXT -> new ColumnAttributes("text", "text", UNBOUNDED_OCTETS, null, null, null, null);
       case BYTEA -> new ColumnAttributes("bytea", "bytea", null, null, null, null, null);

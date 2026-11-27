@@ -25,7 +25,10 @@ import com.arcadedb.serializer.json.JSONObject;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.LocalDate;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Locale;
 
@@ -42,6 +45,8 @@ import java.util.Locale;
  * <tr><td>{@code text}, {@code varchar}</td><td>{@link String}</td></tr>
  * <tr><td>{@code date}</td><td>{@link LocalDate}</td></tr>
  * <tr><td>{@code timestamp}</td><td>{@link LocalDateTime}</td></tr>
+ * <tr><td>{@code timestamptz}</td><td>{@link OffsetDateTime} at the offset zero: an instant in UTC (see
+ * {@code SessionTimeZone.requireUtc})</td></tr>
  * <tr><td>{@code interval}</td><td>{@link PgInterval}, only as the operand of date and timestamp arithmetic</td></tr>
  * </table>
  *
@@ -54,7 +59,7 @@ import java.util.Locale;
 public enum PgType {
   UNKNOWN("unknown"), BOOL("bool"), INT2("int2"), INT4("int4"), INT8("int8"), NUMERIC("numeric"), FLOAT4("float4"),
   FLOAT8("float8"), TEXT("text"), VARCHAR("varchar"), DATE("date"), TIMESTAMP("timestamp"), JSONB("jsonb"), BYTEA("bytea"),
-  ARRAY("array"), VECTOR("vector"), INTERVAL("interval");
+  ARRAY("array"), VECTOR("vector"), INTERVAL("interval"), TIMESTAMPTZ("timestamptz");
 
   private final String typeName;
 
@@ -77,6 +82,7 @@ public enum PgType {
       case FLOAT8 -> "double precision";
       case BOOL -> "boolean";
       case TIMESTAMP -> "timestamp without time zone";
+      case TIMESTAMPTZ -> "timestamp with time zone";
       case VARCHAR -> "character varying";
       case ARRAY -> "anyarray";
       default -> typeName;
@@ -101,7 +107,12 @@ public enum PgType {
   }
 
   public boolean isDateTime() {
-    return this == DATE || this == TIMESTAMP;
+    return this == DATE || this == TIMESTAMP || this == TIMESTAMPTZ;
+  }
+
+  /** The type that two different date and time types are compared and combined in, as PostgreSQL resolves them. */
+  public static PgType commonDateTime(final PgType left, final PgType right) {
+    return left == TIMESTAMPTZ || right == TIMESTAMPTZ ? TIMESTAMPTZ : TIMESTAMP;
   }
 
   /** A type that no operator takes: it is only read and handed on. */
@@ -121,6 +132,7 @@ public enum PgType {
       case NUMERIC -> NUMERIC;
       case DATE -> DATE;
       case TIMESTAMP -> TIMESTAMP;
+      case TIMESTAMPTZ -> TIMESTAMPTZ;
       case VARCHAR -> VARCHAR;
       case TEXT -> TEXT;
       case BYTEA -> BYTEA;
@@ -166,6 +178,8 @@ public enum PgType {
       return DATE;
     if (value instanceof LocalDateTime || value instanceof java.util.Date)
       return TIMESTAMP;
+    if (value instanceof ZonedDateTime || value instanceof OffsetDateTime || value instanceof Instant)
+      return TIMESTAMPTZ;
     return null;
   }
 
@@ -191,6 +205,7 @@ public enum PgType {
       case "varchar" -> VARCHAR;
       case "date" -> DATE;
       case "timestamp" -> TIMESTAMP;
+      case "timestamptz" -> TIMESTAMPTZ;
       case "vector" -> VECTOR;
       case "jsonb" -> JSONB;
       case "bytea" -> BYTEA;

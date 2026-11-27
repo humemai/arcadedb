@@ -18,17 +18,23 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
+import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
+import com.arcadedb.query.postgresql.SessionTimeZone;
 import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.TypeName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static com.arcadedb.query.postgresql.eval.EvalSupport.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The SQLSTATE of a date, a timestamp, or an interval text that the language does not take (fork issue #200): the code of
@@ -62,10 +68,47 @@ class DateTimeTextTest {
 
   @ParameterizedTest
   @ValueSource(strings = { "infinity", "-infinity", "epoch", "now", "tomorrow 12:00", "Feb 16 17:32:01 1997",
-      "Feb 16 17:32:01 5097 BC", "294276-12-31 23:59:59", "2020-01-08T04:05:06Z", "2020-01-08 04:05:06+02",
+      "Feb 16 17:32:01 5097 BC", "294276-12-31 23:59:59", "2020-01-08 04:05:06 PST", "2020-01-08 04:05:06 GMT+02",
       "2020-01-08 04:05:06 America/New_York", "20200108T040506", "1999.01.08 04:05 PM" })
   void aTimestampInAFormThatPostgreSQLMayReadIsRefused(final String text) {
     assertThat(timestamp(text)).as(text).isEqualTo("0A000");
+    assertThat(sqlState(cast(s(text), "timestamptz"))).as(text).isEqualTo("0A000");
+  }
+
+  /** A time zone after the time: a timestamp ignores it, and a timestamptz takes the offset from the time (fork issue #223). */
+  @ParameterizedTest
+  @CsvSource({ "2020-01-08T04:05:06Z, 2020-01-08T04:05:06", "2020-01-08 04:05:06z, 2020-01-08T04:05:06",
+      "2020-01-08 04:05:06 UTC, 2020-01-08T04:05:06", "2020-01-08 04:05:06+02, 2020-01-08T02:05:06",
+      "2020-01-08 04:05:06-0530, 2020-01-08T09:35:06", "2020-01-08 04:05:06 +05:30:15, 2020-01-07T22:34:51",
+      "2020-01-08 04:05+200, 2020-01-08T02:05", "2020-01-08 23:00:00-15:59, 2020-01-09T14:59",
+      "2020-01-08, 2020-01-08T00:00" })
+  void aTimeZoneAfterATimeIsRead(final String text, final String utc) {
+    assertThat(value(cast(s(text), "timestamptz"))).isEqualTo(LocalDateTime.parse(utc).atOffset(ZoneOffset.UTC));
+    // the same fields without the zone
+    final LocalDateTime written = (LocalDateTime) value(cast(s(text), "timestamp"));
+    assertThat(written.toLocalDate()).isEqualTo(LocalDate.parse(text.substring(0, 10)));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = { "2020-01-08 04:05:06+16", "2020-01-08 04:05:06-02:60", "2020-01-08 04:05:06+02:00:60",
+      "2020-01-08 04:05:06+9999" })
+  void anOffsetThatPostgreSQLDoesNotReadIsOutOfRange(final String text) {
+    assertThat(timestamp(text)).as(text).isEqualTo("22009");
+    assertThat(sqlState(cast(s(text), "timestamptz"))).as(text).isEqualTo("22009");
+  }
+
+  @Test
+  void aSessionInAnotherZoneIsRefusedWhereAnInstantIsMade() {
+    try {
+      SessionTimeZone.set("Asia/Seoul");
+      assertThatThrownBy(() -> value(cast(s("2020-01-08 04:05:06Z"), "timestamptz")))
+          .isInstanceOf(PostgreSQLFeatureNotSupportedException.class).hasMessageContaining("SET TIME ZONE 'UTC'");
+      assertThat(timestamp("2020-01-08 04:05:06Z")).isNull();
+      SessionTimeZone.set("Etc/UTC");
+      assertThat(sqlState(cast(s("2020-01-08 04:05:06Z"), "timestamptz"))).isNull();
+    } finally {
+      SessionTimeZone.clear();
+    }
   }
 
   @ParameterizedTest

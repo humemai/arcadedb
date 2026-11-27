@@ -57,6 +57,8 @@ import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.EdgeType;
 import com.arcadedb.schema.Property;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -870,6 +872,9 @@ public final class WritePlanner {
    * {@code jsonb}, arrays and {@code vector} as {@link StoredValues} has them.
    */
   private Object toEngine(final Database db, final Table table, final Column column, final Object value) {
+    // an instant of a timestamptz column is held as its time in UTC
+    if (value instanceof OffsetDateTime instant)
+      return instant.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime();
     if (StoredValues.applies(column))
       return StoredValues.of(db, table, column, value);
     if (!column.isLink())

@@ -23,6 +23,7 @@ import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * The memory cap of the rows a join keeps while it runs: the build side of a hash join and the right side of a nested loop. Each
@@ -162,6 +163,8 @@ public final class BuildMemory {
       return 72;
     if (value instanceof LocalDateTime)
       return 48;
+    if (value instanceof OffsetDateTime)
+      return 64;
     return 256;
   }
 }

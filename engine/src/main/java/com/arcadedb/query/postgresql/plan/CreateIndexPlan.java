@@ -62,7 +62,7 @@ public final class CreateIndexPlan {
   /** The types a column of a tree index can be of. */
   private static final List<ColumnType> TREE_TYPES = List.of(ColumnType.BOOL, ColumnType.INT2, ColumnType.INT4, ColumnType.INT8,
       ColumnType.NUMERIC, ColumnType.FLOAT4, ColumnType.FLOAT8, ColumnType.TEXT, ColumnType.VARCHAR, ColumnType.DATE,
-      ColumnType.TIMESTAMP);
+      ColumnType.TIMESTAMP, ColumnType.TIMESTAMPTZ);
 
   /** The similarity of the engine behind each operator class of pgvector. */
   private static final Map<String, String> SIMILARITIES = Map.of("vector_l2_ops", "EUCLIDEAN", "vector_cosine_ops", "COSINE",
