@@ -19,6 +19,7 @@
 package com.arcadedb.postgres;
 
 import com.arcadedb.GlobalConfiguration;
+import com.arcadedb.database.Binary;
 import org.junit.jupiter.api.Test;
 import org.postgresql.PGResultSetMetaData;
 import org.testcontainers.DockerClientFactory;
@@ -26,6 +27,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -38,6 +40,7 @@ import java.util.Map;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
@@ -63,8 +66,8 @@ class PostgreSQLLargeNumericTest extends PostgresWireProtocolTestBase {
       // more than 16000 digits after the decimal point, up to the most that numeric holds
       "SELECT 0." + "0".repeat(16_000) + "1",
       "SELECT -0." + "1".repeat(16_383),
-      // both
-      "SELECT " + "9".repeat(131_072) + "." + "9".repeat(16_383));
+      // both, which is the longest binary value
+      "SELECT 10.0 ^ 131071 + 0." + "1".repeat(16_383));
 
   @Override
   public void setTestConfiguration() {
@@ -109,6 +112,30 @@ class PostgreSQLLargeNumericTest extends PostgresWireProtocolTestBase {
         }
     }
     assertThat(failures).as(String.join("\n", failures)).isEmpty();
+  }
+
+  /** The bounds of the binary encoder: what numeric holds is written, one digit more on either side is refused. */
+  @Test
+  void theBinaryEncoderStopsWhereNumericDoes() {
+    final Binary buffer = new Binary();
+    PostgresType.NUMERIC.serializeAsBinary(PostgresType.NUMERIC, buffer,
+        new BigDecimal("-" + "9".repeat(131_072) + "." + "9".repeat(16_383)));
+    buffer.flip();
+    // 32768 groups before the decimal point and 4096 after it
+    assertThat(buffer.getInt()).isEqualTo(8 + 2 * 36_864);
+    assertThat(buffer.getShort() & 0xFFFF).as("ndigits").isEqualTo(36_864);
+    assertThat(buffer.getShort()).as("weight").isEqualTo(Short.MAX_VALUE);
+    assertThat(buffer.getShort()).as("sign").isEqualTo((short) 0x4000);
+    assertThat(buffer.getShort()).as("dscale").isEqualTo((short) 16_383);
+
+    assertRefused(BigDecimal.ONE.scaleByPowerOfTen(131_072), "weight exceeds");
+    assertRefused(new BigDecimal(BigInteger.ONE, -131_073), "scale exceeds");
+    assertRefused(new BigDecimal(BigInteger.ONE, 16_384), "scale exceeds");
+  }
+
+  private static void assertRefused(final BigDecimal value, final String message) {
+    assertThatThrownBy(() -> PostgresType.NUMERIC.serializeAsBinary(PostgresType.NUMERIC, new Binary(), value))
+        .isInstanceOf(PostgresProtocolException.class).hasMessageContaining(message);
   }
 
   /** The format, the type, the scale and the digits of the one value, or the SQLSTATE of the error. */
