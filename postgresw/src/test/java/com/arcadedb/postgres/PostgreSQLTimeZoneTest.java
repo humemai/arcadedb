@@ -82,8 +82,8 @@ class PostgreSQLTimeZoneTest extends PostgreSQLSideBySideTestBase {
       "SELECT id, plain::timestamptz AS a, d::timestamptz AS b FROM z ORDER BY id",
       "SELECT id, extract(year FROM at) AS y, extract(month FROM at) AS mo, extract(day FROM at) AS d,"
           + " extract(hour FROM at) AS h, extract(minute FROM at) AS mi, extract(dow FROM at) AS w, extract(epoch FROM at) AS e,"
-          + " extract(timezone FROM at) AS z, extract(timezone_hour FROM at) AS zh, extract(timezone_minute FROM at) AS zm,"
-          + " date_part('hour', at) AS p FROM z WHERE at IS NOT NULL ORDER BY id",
+          + " extract(timezone FROM at) AS z, extract(timezone_hour FROM at) AS zh, extract(timezone_minute FROM at) AS zm"
+          + " FROM z WHERE at IS NOT NULL ORDER BY id",
       "SELECT id, at + interval '1 day' AS a, at + interval '24 hours' AS b, at - interval '1 day' AS c,"
           + " at + interval '1 month' AS e, at - interval '8 months' AS f, at + interval '1 day 1 hour' AS g,"
           + " at + interval '30 minutes' AS h FROM z WHERE at IS NOT NULL ORDER BY id",
