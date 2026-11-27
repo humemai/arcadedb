@@ -94,7 +94,13 @@ final class Diagnostics {
           "This column option (CHECK, GENERATED, COLLATE, storage, a deferrable or unenforced constraint and the like)"),
       Map.entry("unsupportedReferenceOption", "MATCH in a foreign key"),
       Map.entry("unsupportedTableConstraint", "This table constraint (CHECK, EXCLUDE, NOT NULL, NULLS NOT DISTINCT or USING INDEX)"),
-      Map.entry("unsupportedConstraintOption", "An option of a table constraint (INCLUDE, WITH, DEFERRABLE and the like)"));
+      Map.entry("unsupportedConstraintOption", "An option of a table constraint (INCLUDE, WITH, DEFERRABLE and the like)"),
+      Map.entry("unsupportedConcurrently", "CREATE INDEX CONCURRENTLY"),
+      Map.entry("unsupportedIndexExpression", "An index on an expression"),
+      Map.entry("unsupportedIndexElementOption",
+          "This option of an index column (COLLATE, DESC, NULLS, a qualified operator class or its parameters)"),
+      Map.entry("unsupportedIndexParameter", "An index parameter that is not a whole number"),
+      Map.entry("unsupportedIndexOption", "This clause of CREATE INDEX (INCLUDE, NULLS NOT DISTINCT, TABLESPACE or WHERE)"));
 
   private static final Set<Integer> NOT_WRITES = Set.of(PostgreSQLParser.WITH, PostgreSQLParser.VALUES, PostgreSQLParser.TABLE,
       PostgreSQLParser.LPAREN);
@@ -131,8 +137,8 @@ final class Diagnostics {
     final String what = DESCRIPTIONS.containsKey(ruleName) ? DESCRIPTIONS.get(ruleName) : words(ruleName, marker);
     String message = what + " is not supported by the postgresql language (" + position(start) + ")";
     if ("unsupportedStatement".equals(ruleName) && !NOT_WRITES.contains(start.getType()))
-      message += ": the language runs SELECT, INSERT, UPDATE, DELETE, CREATE TABLE and the transaction statements, use the sql"
-          + " language for it (the {sql} marker on the wire)";
+      message += ": the language runs SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, CREATE INDEX and the transaction statements,"
+          + " use the sql language for it (the {sql} marker on the wire)";
     return new PostgreSQLFeatureNotSupportedException(message);
   }
 

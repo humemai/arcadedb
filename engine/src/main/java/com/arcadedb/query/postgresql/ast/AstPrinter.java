@@ -64,7 +64,24 @@ public final class AstPrinter {
       case DeleteStatement delete -> print(delete);
       case TransactionStatement transaction -> transaction.kind().name();
       case CreateTableStatement create -> print(create);
+      case CreateIndexStatement create -> print(create);
     };
+  }
+
+  private static String print(final CreateIndexStatement create) {
+    final StringBuilder text = new StringBuilder("CREATE ").append(create.unique() ? "UNIQUE " : "").append("INDEX ");
+    if (create.name() != null)
+      text.append(create.ifNotExists() ? "IF NOT EXISTS " : "").append(print(create.name())).append(' ');
+    text.append("ON ").append(dotted(create.table()));
+    if (create.method() != null)
+      text.append(" USING ").append(print(create.method()));
+    text.append(create.elements().stream()
+        .map(element -> print(element.column()) + (element.operatorClass() == null ? "" : " " + print(element.operatorClass())))
+        .collect(Collectors.joining(", ", " (", ")")));
+    if (!create.parameters().isEmpty())
+      text.append(create.parameters().stream().map(parameter -> print(parameter.name()) + " = " + parameter.value())
+          .collect(Collectors.joining(", ", " WITH (", ")")));
+    return text.toString();
   }
 
   private static String print(final CreateTableStatement create) {

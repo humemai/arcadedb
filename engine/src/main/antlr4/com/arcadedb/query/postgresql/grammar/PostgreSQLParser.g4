@@ -59,6 +59,7 @@ stmt
   | transactionStmt SEMI?  # transactionCommand
   | explainStmt SEMI?      # explainCommand
   | createTableStmt SEMI?  # createTableCommand
+  | createIndexStmt SEMI?  # createIndexCommand
   | unsupportedTransactionStmt skipRest SEMI?   # unsupportedTransactionCommand
   | unsupportedStatement skipRest SEMI?   # unsupportedCommand
   | SEMI?                  # emptyCommand
@@ -88,15 +89,15 @@ unsupportedExplainOption
 // the first words of every other statement of PostgreSQL (WITH, VALUES, TABLE and a parenthesised query start a selectStmt)
 unsupportedStatement
   : ALTER | ANALYSE | ANALYZE | CALL | CHECKPOINT | CLOSE | CLUSTER | COMMENT | COPY
-  // CREATE of anything but a table, which createTableStmt reads
-  | CREATE ~(TABLE | TEMP | TEMPORARY | UNLOGGED | LOCAL | GLOBAL)
+  // CREATE of anything but a table or an index, which createTableStmt and createIndexStmt read
+  | CREATE ~(TABLE | TEMP | TEMPORARY | UNLOGGED | LOCAL | GLOBAL | INDEX | UNIQUE)
   | DEALLOCATE | DECLARE | DISCARD | DO | DROP | EXECUTE | FETCH | GRANT | IMPORT | LISTEN | LOAD
   | LOCK | MERGE | MOVE | NOTIFY | PREPARE | REASSIGN | REFRESH | REINDEX | RELEASE | RESET | REVOKE | SAVEPOINT
   | SECURITY | SET | SHOW | TRUNCATE | UNLISTEN | VACUUM
   ;
 
 unsupportedExplainedCreate
-  : CREATE (TABLE | TEMP | TEMPORARY | UNLOGGED | LOCAL | GLOBAL)
+  : CREATE (TABLE | TEMP | TEMPORARY | UNLOGGED | LOCAL | GLOBAL | INDEX | UNIQUE)
   ;
 
 // ============================================================================
@@ -203,6 +204,54 @@ unsupportedTableConstraint
 
 unsupportedConstraintOption
   : INCLUDE | WITH | USING | DEFERRABLE | NOT | INITIALLY | NO | ENFORCED
+  ;
+
+// ============================================================================
+// CREATE INDEX (IndexStmt of gram.y), fork issue #125, over plain columns
+// ============================================================================
+
+createIndexStmt
+  : CREATE UNIQUE? INDEX unsupportedConcurrently skipRest
+  | CREATE UNIQUE? INDEX (IF NOT EXISTS name=colId | name=colId)? ON relationExpr (USING method=colId)?
+    LPAREN elements+=indexElement (COMMA elements+=indexElement)* RPAREN
+    (WITH LPAREN parameters+=indexParameter (COMMA parameters+=indexParameter)* RPAREN)?
+    (unsupportedIndexOption skipRest)?
+  ;
+
+unsupportedConcurrently
+  : CONCURRENTLY
+  ;
+
+indexElement
+  : unsupportedIndexExpression skipRest                                                    # expressionElement
+  | column=colId operatorClass=colId? ASC? (unsupportedIndexElementOption skipRest)?      # columnIndexElement
+  ;
+
+// an expression in parentheses, or a function call
+unsupportedIndexExpression
+  : LPAREN
+  | colId LPAREN
+  ;
+
+unsupportedIndexElementOption
+  : COLLATE | DESC | NULLS | DOT | LPAREN
+  ;
+
+indexParameter
+  : name=colId EQ indexParameterValue
+  ;
+
+indexParameterValue
+  : ICONST                                 # integerValue
+  | unsupportedIndexParameter skipRest     # otherValue
+  ;
+
+unsupportedIndexParameter
+  : ~ICONST
+  ;
+
+unsupportedIndexOption
+  : INCLUDE | NULLS | TABLESPACE | WHERE
   ;
 
 // ============================================================================

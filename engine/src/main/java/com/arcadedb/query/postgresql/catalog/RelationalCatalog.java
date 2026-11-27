@@ -336,13 +336,16 @@ public final class RelationalCatalog {
 
     Table.Key primaryKey;
     if (definition != null) {
-      // the declared keys that still have their unique index; the record id is added when a foreign key refers to the table
+      // the declared keys that still have their unique index; the record id is added when a foreign key refers to the table. A
+      // unique index that CREATE UNIQUE INDEX made is an index and no constraint, as in PostgreSQL
       primaryKey = null;
+      final List<List<String>> indexed = DeclaredIndexes.of(type).values().stream().filter(DeclaredIndexes.Index::unique)
+          .map(DeclaredIndexes.Index::columns).toList();
       final List<Table.Key> others = new ArrayList<>(uniqueKeys.size());
       for (final Table.Key key : uniqueKeys)
         if (definition.primaryKey() != null && key.columns().equals(definition.primaryKey().columns()))
           primaryKey = definition.primaryKey();
-        else
+        else if (definition.uniqueName(key.columns(), null) != null || !indexed.contains(key.columns()))
           others.add(new Table.Key(definition.uniqueName(key.columns(), key.name()), key.columns()));
       uniqueKeys.clear();
       uniqueKeys.addAll(others);

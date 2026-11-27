@@ -200,6 +200,8 @@ final class PostgresLanguageAnswer {
       return "EXPLAIN";
     if (words.startsWith("CREATE TABLE"))
       return "CREATE TABLE";
+    if (words.startsWith("CREATE INDEX") || words.startsWith("CREATE UNIQUE INDEX"))
+      return "CREATE INDEX";
     return "SELECT " + count;
   }
 }

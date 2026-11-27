@@ -80,6 +80,28 @@ SELECT home FROM person WHERE name = 'Fay';
 | Constraints | `CHECK` | those of the document type hold, so a missing `MANDATORY` property is `23502` |
 | Not written | | an `EMBEDDED` property with no declared type, and a collection of links (`0A000`) |
 
+## `CREATE INDEX`
+
+```sql
+CREATE UNIQUE INDEX ON person (id);
+CREATE INDEX ON memory USING hnsw (embedding vector_l2_ops);
+```
+
+Every refusal below is `0A000`.
+
+| area | PostgreSQL and pgvector | `postgresql` |
+| --- | --- | --- |
+| Methods | `btree`, `hash`, `gin`, `gist`, `brin`, `hnsw`, `ivfflat` and more | the default and `btree` make the tree index of the engine, `hnsw` an `LSM_VECTOR` index; every other method is refused |
+| Operator classes of `hnsw` | one per type and distance | `vector_l2_ops`, `vector_cosine_ops`, `vector_ip_ops`; others are refused |
+| Dimensions of an `hnsw` index | from the column | from a column declared `vector(n)`; a column without is refused |
+| `WITH (m = ..., ef_construction = ...)` | `m` neighbours per node on an upper layer, `2 * m` on the base layer | `ef_construction` is the beam width of the engine; its graph degree is one number for every layer, set to `2 * m`. Other parameters are refused |
+| An index on `source_id`, `target_id`, or a record id | an index | only the name is recorded, because the engine reaches the edges of a vertex without one; a unique one is refused unless the columns are unique already |
+| Several indexes over the same columns | each is an index | one index of the engine serves them; a unique one over columns with an index that is not unique, and a second vector index over a column, are refused |
+| The name of an index | in `pg_indexes` | recorded for `IF NOT EXISTS` and `42P07`; the wire catalog (`\d`) shows the name of the engine's index |
+| What it takes | expressions, `WHERE`, `INCLUDE`, `DESC`, `NULLS`, `COLLATE`, `CONCURRENTLY`, `TABLESPACE` | plain columns, ascending; the rest is refused |
+| Keys | any type with an operator class | tree indexes over `bool`, the number types, `text`, `varchar`, `date`, and `timestamp` |
+| Transactions | a rollback takes the index back | refused in a transaction block, as `CREATE TABLE` is |
+
 ## Choices, open to change
 
 | # | choice | the main alternative |
@@ -100,7 +122,7 @@ SELECT home FROM person WHERE name = 'Fay';
 
 | area | state |
 | --- | --- |
-| `ALTER`, `DROP`, and every `CREATE` but `CREATE TABLE` | refused; use ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
+| `ALTER`, `DROP`, and every `CREATE` but `CREATE TABLE` and `CREATE INDEX` | refused; use ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
 | Types | no `uuid`, `timestamptz`, `time`, or `char(n)` |
 | Queries | refused: `array_agg`, the JSON aggregates, most window frames, `ntile`, named windows, `WITH RECURSIVE`, `= ANY`, `->>`, `LATERAL`, `NATURAL` joins, `SIMILAR TO` |
 | Large operations | joins, `GROUP BY`, derived tables, `WITH`, and set operations fail with `53200` over a memory limit instead of spilling to disk |
