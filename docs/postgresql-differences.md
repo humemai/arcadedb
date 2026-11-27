@@ -88,6 +88,7 @@ INSERT INTO users (name) VALUES ('Ada'), ('Bo') RETURNING id;
 | Sequences | objects of their own, with `nextval`, `setval`, `ALTER SEQUENCE` | none: those are refused, and no sequence is listed anywhere. `column_default` of a `serial` column shows `nextval('users_id_seq'::regclass)`, a name that no statement can use |
 | Identity options | start, increment, bounds, cycle | only those that restate the defaults (`START WITH 1`, `INCREMENT BY 1`, `NO CYCLE`); `OVERRIDING` is refused |
 | Permissions | `USAGE` on the sequence of a `serial` column | an ArcadeDB user whose permissions are set for each type needs to read and update `_postgresql_sequences` to insert |
+| The type of a result column in a driver | pgjdbc says `serial` or `bigserial` for a generated key that it reads from a table | `int4` or `int8`, because an answer does not name its table; the values are the same |
 | A dropped table | drops its sequences | `DROP TYPE` in `sql` leaves the counter record; a table made again counts from 1 |
 
 ## Embedded documents
