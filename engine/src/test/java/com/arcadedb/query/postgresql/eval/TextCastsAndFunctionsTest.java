@@ -261,7 +261,8 @@ class TextCastsAndFunctionsTest {
   @Test
   void aCastTheLanguageDoesNotHaveIsRefused() {
     assertThat(sqlState(cast(i(1), "jsonb"))).isEqualTo("42846");
-    assertThat(sqlState(cast(i(1), "timestamptz"))).isEqualTo("0A000");
+    assertThat(sqlState(cast(i(1), "timestamptz"))).isEqualTo("42846");
+    assertThat(sqlState(cast(i(1), "timetz"))).isEqualTo("0A000");
     assertThat(sqlState(cast(s("{}"), "json"))).as("jsonb only").isEqualTo("0A000");
     assertThat(sqlState(cast(i(1), "date"))).isEqualTo("42846");
   }

@@ -72,7 +72,7 @@ public final class CreateTablePlan {
   /** The types a key can be over. */
   private static final Set<ColumnType> KEY_TYPES = Set.of(ColumnType.BOOL, ColumnType.INT2, ColumnType.INT4, ColumnType.INT8,
       ColumnType.NUMERIC, ColumnType.FLOAT4, ColumnType.FLOAT8, ColumnType.TEXT, ColumnType.VARCHAR, ColumnType.DATE,
-      ColumnType.TIMESTAMP);
+      ColumnType.TIMESTAMP, ColumnType.TIMESTAMPTZ);
 
   /** The types a column with a default can have. */
   private static final Set<ColumnType> DEFAULT_TYPES = Set.of(ColumnType.BOOL, ColumnType.INT2, ColumnType.INT4, ColumnType.INT8,
@@ -363,6 +363,9 @@ public final class CreateTablePlan {
         throw new PostgreSQLEvaluationException("22023", "the dimensions of a vector are between 1 and " + MAX_DIMENSIONS);
       return new Mapped(ColumnType.VECTOR, Type.ARRAY_OF_FLOATS, null, size.value().intValue());
     }
+    if (array && "timestamptz".equals(name))
+      throw new PostgreSQLFeatureNotSupportedException("A column of type timestamptz[] is not supported by the postgresql"
+          + " language: write timestamp[] and keep its times in UTC (" + type.position() + ")");
     final Mapped mapped = array ? arrayType(name) : scalarType(name);
     if (mapped == null)
       throw unsupportedType(type);
@@ -383,6 +386,8 @@ public final class CreateTablePlan {
       case "bytea" -> new Mapped(ColumnType.BYTEA, Type.BINARY, null, 0);
       case "date" -> new Mapped(ColumnType.DATE, Type.DATE, null, 0);
       case "timestamp" -> new Mapped(ColumnType.TIMESTAMP, Type.DATETIME_MICROS, null, 0);
+      // the instant is held as its time in UTC, and the definition of the table says that the column is one
+      case "timestamptz" -> new Mapped(ColumnType.TIMESTAMPTZ, Type.DATETIME_MICROS, null, 0);
       case "jsonb" -> new Mapped(ColumnType.JSONB, Type.MAP, null, 0);
       case "vector" -> new Mapped(ColumnType.VECTOR, Type.ARRAY_OF_FLOATS, null, 0);
       default -> null;
@@ -499,9 +504,12 @@ public final class CreateTablePlan {
       final Map<String, ForeignKey> ends) {
     final Set<String> names = new LinkedHashSet<>();
     final Set<String> text = new LinkedHashSet<>();
+    final Set<String> instants = new LinkedHashSet<>();
     for (final Spec spec : columns.values())
       if (spec.mapped.type() == ColumnType.TEXT)
         text.add(spec.name);
+      else if (spec.mapped.type() == ColumnType.TIMESTAMPTZ)
+        instants.add(spec.name);
     Table.Key primary = null;
     final List<Table.Key> unique = new ArrayList<>();
     for (final Key key : keys) {
@@ -528,7 +536,7 @@ public final class CreateTablePlan {
     for (final Spec spec : columns.values())
       if (spec.hasDefault)
         defaults.put(spec.name, spec.defaultText);
-    return new TableDefinition(List.copyOf(columns.keySet()), text, primary, unique, defaults, foreignKeys);
+    return new TableDefinition(List.copyOf(columns.keySet()), text, primary, unique, defaults, foreignKeys, instants);
   }
 
   private void create(final String table, final Map<String, Spec> columns, final List<Key> keys,

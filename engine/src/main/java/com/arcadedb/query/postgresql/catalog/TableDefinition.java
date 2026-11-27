@@ -48,11 +48,19 @@ import java.util.logging.Level;
  * @param uniqueKeys  the declared unique constraints, with their names
  * @param defaults    for a column with a default, the text that {@code information_schema.columns.column_default} shows
  * @param foreignKeys the name of the foreign key of an end of an edge, by column name
+ * @param timestamptzColumns the columns declared {@code timestamptz}: the engine's {@code DATETIME} is {@code timestamp}
+ *                           otherwise, and it holds an instant as its time in UTC (fork issue #223)
  */
 public record TableDefinition(List<String> columns, Set<String> textColumns, Table.Key primaryKey, List<Table.Key> uniqueKeys,
-    Map<String, String> defaults, Map<String, String> foreignKeys) {
+    Map<String, String> defaults, Map<String, String> foreignKeys, Set<String> timestamptzColumns) {
   /** The custom value of a type that holds its definition. */
   public static final String CUSTOM_KEY = "postgresql_table";
+
+  /** A table with no {@code timestamptz} column. */
+  public TableDefinition(final List<String> columns, final Set<String> textColumns, final Table.Key primaryKey,
+      final List<Table.Key> uniqueKeys, final Map<String, String> defaults, final Map<String, String> foreignKeys) {
+    this(columns, textColumns, primaryKey, uniqueKeys, defaults, foreignKeys, Set.of());
+  }
 
   /** The definition of the type, {@code null} when it has none or the value cannot be read. */
   public static TableDefinition of(final DocumentType type) {
@@ -67,7 +75,8 @@ public record TableDefinition(List<String> columns, Set<String> textColumns, Tab
         unique.add(key(keys.getJSONObject(i)));
       return new TableDefinition(strings(json.getJSONArray("columns")), new LinkedHashSet<>(strings(json.getJSONArray("text"))),
           json.has("primaryKey") ? key(json.getJSONObject("primaryKey")) : null, unique, map(json.getJSONObject("defaults")),
-          map(json.getJSONObject("foreignKeys")));
+          map(json.getJSONObject("foreignKeys")),
+          json.has("timestamptz") ? new LinkedHashSet<>(strings(json.getJSONArray("timestamptz"))) : Set.of());
     } catch (final RuntimeException e) {
       // someone changed the value by hand: the type is still a table, by the rules of a type without a definition
       LogManager.instance().log(TableDefinition.class, Level.WARNING,
@@ -89,6 +98,8 @@ public record TableDefinition(List<String> columns, Set<String> textColumns, Tab
     json.put("unique", unique);
     json.put("defaults", object(defaults));
     json.put("foreignKeys", object(foreignKeys));
+    if (!timestamptzColumns.isEmpty())
+      json.put("timestamptz", array(timestamptzColumns));
     return json.toString();
   }
 

@@ -18,8 +18,10 @@
  */
 package com.arcadedb.query.postgresql;
 
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.zone.ZoneRules;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -57,6 +59,28 @@ public final class SessionTimeZone {
   /** No session: the clock of this thread is that of the Java virtual machine again. */
   public static void clear() {
     NAME.remove();
+  }
+
+  /**
+   * Refuses what the language computes in UTC only, a {@code timestamp with time zone} (fork issue #223), in a session in
+   * another time zone, where PostgreSQL shows and reads local times. Without a session, as through the engine API, an instant
+   * is computed in UTC.
+   *
+   * @throws PostgreSQLFeatureNotSupportedException (SQLSTATE {@code 0A000}) when the session's time zone is not UTC
+   */
+  public static void requireUtc() {
+    final String name = NAME.get();
+    if (name == null || ZERO_OFFSET.matcher(name.trim()).matches())
+      return;
+    final String zone = ZONES.get(name.trim().toLowerCase(Locale.ENGLISH));
+    if (zone != null) {
+      // the names of UTC: UTC, Etc/UTC, GMT and the like, which never had another offset
+      final ZoneRules rules = ZoneId.of(zone).getRules();
+      if (rules.isFixedOffset() && ZoneOffset.UTC.equals(rules.getOffset(Instant.EPOCH)))
+        return;
+    }
+    throw new PostgreSQLFeatureNotSupportedException("A timestamp with time zone is computed in UTC only by the postgresql"
+        + " language, and the TimeZone of this session is \"" + name + "\": send SET TIME ZONE 'UTC'");
   }
 
   /**

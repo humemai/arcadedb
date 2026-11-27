@@ -52,6 +52,8 @@ public enum ColumnType {
   NUMERIC("numeric"),
   DATE("date"),
   TIMESTAMP("timestamp"),
+  /** A {@code DATETIME} property that the {@link TableDefinition} declares as {@code timestamptz}: an instant in UTC. */
+  TIMESTAMPTZ("timestamptz"),
   VARCHAR("varchar"),
   TEXT("text"),
   BYTEA("bytea"),

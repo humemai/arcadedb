@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
+import com.arcadedb.query.postgresql.SessionTimeZone;
 import com.arcadedb.query.postgresql.catalog.ColumnType;
 
 import java.math.BigDecimal;
@@ -27,6 +28,7 @@ import java.time.DateTimeException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
@@ -41,8 +43,8 @@ import java.util.regex.Pattern;
  * <ul>
  * <li>{@link #parse(String, PgType)} is the input function: what a string literal or a cast from text becomes. A text that is no
  * value of the type is SQLSTATE {@code 22P02}, a value out of range is {@code 22003}. A date and a timestamp are read as
- * year-month-day only; what another text answers ({@code 22007}, {@code 22008}, or {@code 0A000}) is in
- * {@link DateTimeText}.</li>
+ * year-month-day only, a timestamp with an optional {@code Z} or offset; what another text answers ({@code 22007},
+ * {@code 22008}, or {@code 0A000}) is in {@link DateTimeText}.</li>
  * <li>{@link #toText(Object, PgType)} is the output function, with the spelling PostgreSQL writes: {@code true}, {@code 1e+20},
  * {@code 2026-03-09 10:00:00}.</li>
  * <li>{@link #cast(Object, PgType, PgType, int[])} is an explicit cast {@code x::t}: integers narrow with a range check,
@@ -55,8 +57,12 @@ import java.util.regex.Pattern;
 public final class Casts {
   private static final Pattern NUMBER    = Pattern.compile("[+-]?(\\d+(\\.\\d*)?|\\.\\d+)([eE][+-]?\\d+)?");
   private static final Pattern DATE      = Pattern.compile("(\\d{1,4})-(\\d{1,2})-(\\d{1,2})");
+  /** Year-month-day, a time, and after a time an optional zone: a name of UTC (group 8), or a sign and digits (groups 9, 10). */
   private static final Pattern TIMESTAMP = Pattern.compile(
-      "(\\d{1,4})-(\\d{1,2})-(\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2})(?::(\\d{2})(?:\\.(\\d+))?)?)?");
+      "(\\d{1,4})-(\\d{1,2})-(\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2})(?::(\\d{2})(?:\\.(\\d+))?)?"
+          + "(?:\\s*(?:((?i:zulu|z|utc|uct|ut|gmt))|([+-])(\\d{1,2}:\\d{2}(?::\\d{2})?|\\d{1,4})))?)?");
+  /** The most hours of an offset that PostgreSQL reads. */
+  private static final int     MAX_OFFSET_HOURS = 15;
 
   /** The most digits of a second a timestamp keeps: microseconds. */
   static final int MAX_TIMESTAMP_PRECISION = 6;
@@ -107,6 +113,8 @@ public final class Casts {
       return value.toString();
     case TIMESTAMP:
       return formatTimestamp((LocalDateTime) value);
+    case TIMESTAMPTZ:
+      return formatTimestamp(((OffsetDateTime) value).toLocalDateTime()) + "+00";
     case VECTOR:
       return VectorDistance.toText((float[]) value);
     default:
@@ -182,6 +190,8 @@ public final class Casts {
       return parseDate(text);
     case TIMESTAMP:
       return parseTimestamp(text);
+    case TIMESTAMPTZ:
+      return parseInstant(text);
     case VECTOR:
       return VectorDistance.parse(text);
     case JSONB:
@@ -327,10 +337,58 @@ public final class Casts {
     }
   }
 
+  /** A {@code timestamp}: PostgreSQL reads a time zone after it, and ignores it. */
   private static LocalDateTime parseTimestamp(final String text) {
+    final Matcher matcher = timestampText(text, PgType.TIMESTAMP);
+    // an offset that PostgreSQL does not read is an error here too
+    offsetSeconds(matcher, text);
+    return localTime(matcher, text);
+  }
+
+  /** A {@code timestamptz}: the time less its offset, and a time without a zone is one of the session, which is in UTC. */
+  private static OffsetDateTime parseInstant(final String text) {
+    final Matcher matcher = timestampText(text, PgType.TIMESTAMPTZ);
+    final int offset = offsetSeconds(matcher, text);
+    final LocalDateTime utc = localTime(matcher, text).minusSeconds(offset);
+    if (utc.getYear() < 1 || utc.getYear() > 9999)
+      throw PostgreSQLEvaluationException.unsupported("A timestamp with time zone that is before the year 1 or after the year"
+          + " 9999 in UTC is not supported: \"" + text + "\". Write a later or an earlier time");
+    return instant(utc);
+  }
+
+  /** The instant of a time in UTC, the one class a {@code timestamptz} has. */
+  static OffsetDateTime instant(final LocalDateTime utc) {
+    SessionTimeZone.requireUtc();
+    return utc.atOffset(ZoneOffset.UTC);
+  }
+
+  private static Matcher timestampText(final String text, final PgType type) {
     final Matcher matcher = TIMESTAMP.matcher(text.strip());
     if (!matcher.matches())
-      throw DateTimeText.unread(text, PgType.TIMESTAMP);
+      throw DateTimeText.unread(text, type);
+    return matcher;
+  }
+
+  /** The seconds east of UTC of the zone of a timestamp text, 0 for none. */
+  private static int offsetSeconds(final Matcher matcher, final String text) {
+    if (matcher.group(9) == null)
+      return 0;
+    final String[] parts = matcher.group(10).split(":");
+    int hours = Integer.parseInt(parts[0]);
+    int minutes = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
+    final int seconds = parts.length > 2 ? Integer.parseInt(parts[2]) : 0;
+    // three or four digits with no colon are hours and minutes: +0530
+    if (parts.length == 1 && parts[0].length() > 2) {
+      minutes = hours % 100;
+      hours /= 100;
+    }
+    if (hours > MAX_OFFSET_HOURS || minutes > 59 || seconds > 59)
+      throw new PostgreSQLEvaluationException("22009", "time zone displacement out of range: \"" + text + "\"");
+    final int total = hours * 3600 + minutes * 60 + seconds;
+    return "-".equals(matcher.group(9)) ? -total : total;
+  }
+
+  private static LocalDateTime localTime(final Matcher matcher, final String text) {
     final int year = Integer.parseInt(matcher.group(1));
     if (year == 0)
       throw DateTimeText.outOfRange(text);
@@ -402,10 +460,20 @@ public final class Casts {
     case DATE:
       if (from == PgType.TIMESTAMP)
         return ((LocalDateTime) value).toLocalDate();
+      if (from == PgType.TIMESTAMPTZ)
+        return ((OffsetDateTime) value).toLocalDate();
       break;
     case TIMESTAMP:
       if (from == PgType.DATE)
         return ((LocalDate) value).atStartOfDay();
+      if (from == PgType.TIMESTAMPTZ)
+        return applyModifier(((OffsetDateTime) value).toLocalDateTime(), to, typmod);
+      break;
+    case TIMESTAMPTZ:
+      if (from == PgType.DATE)
+        return instant(((LocalDate) value).atStartOfDay());
+      if (from == PgType.TIMESTAMP)
+        return applyModifier(instant((LocalDateTime) value), to, typmod);
       break;
     case VECTOR:
       if (from == PgType.ARRAY)
@@ -449,6 +517,8 @@ public final class Casts {
     }
     if (type == PgType.TIMESTAMP && typmod.length >= 1)
       return roundTimestamp((LocalDateTime) value, typmod[0]);
+    if (type == PgType.TIMESTAMPTZ && typmod.length >= 1)
+      return instant(roundTimestamp(((OffsetDateTime) value).toLocalDateTime(), typmod[0]));
     if (type == PgType.VECTOR && typmod.length >= 1 && ((float[]) value).length != typmod[0])
       throw new PostgreSQLEvaluationException("22000", "expected " + typmod[0] + " dimensions, not " + ((float[]) value).length);
     if (type == PgType.VARCHAR && typmod.length >= 1) {
@@ -550,6 +620,9 @@ public final class Casts {
       return toDate(raw);
     case TIMESTAMP:
       return toTimestamp(raw);
+    case TIMESTAMPTZ:
+      // a time that a record holds without a zone is one in UTC
+      return raw instanceof String text ? parseInstant(text) : instant(toTimestamp(raw));
     case VECTOR:
       return VectorDistance.fromEngine(raw);
     case JSONB:

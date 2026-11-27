@@ -20,6 +20,7 @@ package com.arcadedb.query.postgresql.eval;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Comparator;
 
 /**
@@ -48,6 +49,8 @@ public final class Comparison {
       return ((LocalDate) a).compareTo((LocalDate) b);
     case TIMESTAMP:
       return ((LocalDateTime) a).compareTo((LocalDateTime) b);
+    case TIMESTAMPTZ:
+      return ((OffsetDateTime) a).compareTo((OffsetDateTime) b);
     default:
       throw PostgreSQLEvaluationException.unsupported("Comparing values of type " + type.displayName() + " is not supported");
     }

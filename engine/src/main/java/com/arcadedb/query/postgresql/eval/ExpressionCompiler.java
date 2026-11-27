@@ -36,6 +36,7 @@ import java.math.BigInteger;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -390,11 +391,8 @@ public final class ExpressionCompiler {
       return expression;
     if (from.isNumber() && target.isNumber() && rank(from) < rank(target))
       return new Evaluable.Node(target, row -> Numbers.widen(expression.eval(row), target), expression);
-    if (from == PgType.DATE && target == PgType.TIMESTAMP)
-      return new Evaluable.Node(target, row -> {
-        final Object value = expression.eval(row);
-        return value == null ? null : ((LocalDate) value).atStartOfDay();
-      }, expression);
+    if (from == PgType.DATE && target == PgType.TIMESTAMP || target == PgType.TIMESTAMPTZ && from.isDateTime())
+      return new Evaluable.Node(target, row -> Casts.cast(expression.eval(row), from, target, null), expression);
     return null;
   }
 
@@ -427,7 +425,7 @@ public final class ExpressionCompiler {
       else if (result.isString() && type.isString())
         result = PgType.TEXT;
       else if (result.isDateTime() && type.isDateTime())
-        result = PgType.TIMESTAMP;
+        result = PgType.commonDateTime(result, type);
       else
         throw PostgreSQLEvaluationException.mismatch(
             what + " types " + result.displayName() + " and " + type.displayName() + " cannot be matched");
@@ -541,7 +539,7 @@ public final class ExpressionCompiler {
     else if (a.isString() && b.isString())
       common = PgType.TEXT;
     else if (a.isDateTime() && b.isDateTime())
-      common = PgType.TIMESTAMP;
+      common = PgType.commonDateTime(a, b);
     else
       throw PostgreSQLEvaluationException.noOperator(operator, a, b);
     if (!Comparison.isComparable(common))
@@ -669,8 +667,8 @@ public final class ExpressionCompiler {
 
   /**
    * {@code date + interval}, {@code date - interval}, {@code timestamp + interval}, {@code timestamp - interval} and
-   * {@code interval + date or timestamp}: the result is a {@code timestamp}, as in PostgreSQL ({@code date '1998-12-01' -
-   * interval '90' day} is {@code 1998-09-02 00:00:00}). Any other operator on an interval is refused with {@code 0A000}. An
+   * {@code interval + date or timestamp}: the result is a {@code timestamp}, and a {@code timestamptz} for one, as in
+   * PostgreSQL ({@code date '1998-12-01' - interval '90' day} is {@code 1998-09-02 00:00:00}). Any other operator on an interval is refused with {@code 0A000}. An
    * expression over constants is computed once.
    */
   private Evaluable intervalArithmetic(final Expression.BinaryOperator operator, final Evaluable left, final Evaluable right) {
@@ -690,17 +688,21 @@ public final class ExpressionCompiler {
       throw PostgreSQLEvaluationException.unsupported("The operator " + operator.symbol() + " on " + a.displayName() + " and "
           + b.displayName() + " is not supported: an interval is added to or subtracted from a date or a timestamp only");
     final boolean subtract = minus;
-    final Evaluable result = new Evaluable.Node(PgType.TIMESTAMP, row -> {
+    final PgType type = moment.type() == PgType.TIMESTAMPTZ ? PgType.TIMESTAMPTZ : PgType.TIMESTAMP;
+    final Evaluable result = new Evaluable.Node(type, row -> {
       final Object when = moment.eval(row);
       if (when == null)
         return null;
       final Object by = span.eval(row);
       if (by == null)
         return null;
+      if (when instanceof OffsetDateTime instant)
+        // the session is in UTC, so a day is 24 hours and a month is counted on the UTC calendar
+        return Casts.instant(PgInterval.add(instant.toLocalDateTime(), (PgInterval) by, subtract));
       final LocalDateTime start = when instanceof LocalDate date ? date.atStartOfDay() : (LocalDateTime) when;
       return PgInterval.add(start, (PgInterval) by, subtract);
     }, moment, span);
-    return result.isConstant() ? new Evaluable.Constant(PgType.TIMESTAMP, result.eval(new Object[0])) : result;
+    return result.isConstant() ? new Evaluable.Constant(type, result.eval(new Object[0])) : result;
   }
 
   private static LocalDate shift(final LocalDate date, final long days) {
@@ -906,7 +908,7 @@ public final class ExpressionCompiler {
       return value -> ((Number) value).longValue();
     if (left.isString() && right.isString())
       return value -> value;
-    if (left == right && (left == PgType.DATE || left == PgType.TIMESTAMP || left == PgType.BOOL))
+    if (left == right && (left.isDateTime() || left == PgType.BOOL))
       return value -> value;
     return null;
   }
@@ -1067,14 +1069,15 @@ public final class ExpressionCompiler {
 
   /**
    * The type modifiers of a cast, checked as the {@code typmodin} function of the type checks them, {@code null} for none.
-   * {@code numeric(p,s)}, {@code varchar(n)}, {@code timestamp(p)} and {@code vector(n)} take one, and
+   * {@code numeric(p,s)}, {@code varchar(n)}, {@code timestamp(p)}, {@code timestamptz(p)} and {@code vector(n)} take one, and
    * {@link Casts#cast} applies it. Any other type with a modifier is {@code 42601}, so none is accepted and then ignored. A
    * timestamp precision above 6 is 6, as in PostgreSQL (which also warns).
    */
   private static int[] typeModifiers(final TypeName name, final PgType target) {
     if (name.modifiers().isEmpty())
       return null;
-    if (target != PgType.NUMERIC && target != PgType.VARCHAR && target != PgType.TIMESTAMP && target != PgType.VECTOR)
+    if (target != PgType.NUMERIC && target != PgType.VARCHAR && target != PgType.TIMESTAMP && target != PgType.TIMESTAMPTZ
+        && target != PgType.VECTOR)
       throw new PostgreSQLEvaluationException("42601",
           "type modifier is not allowed for type \"" + String.join(".", name.name()) + "\"");
     final int[] values = new int[name.modifiers().size()];
@@ -1096,9 +1099,10 @@ public final class ExpressionCompiler {
       if (first > MAX_VARCHAR_LENGTH)
         throw invalidModifier("length for type varchar cannot exceed " + MAX_VARCHAR_LENGTH);
     }
-    case TIMESTAMP -> {
+    case TIMESTAMP, TIMESTAMPTZ -> {
       if (first < 0)
-        throw invalidModifier("TIMESTAMP(" + first + ") precision must not be negative");
+        throw invalidModifier("TIMESTAMP(" + first + ")" + (target == PgType.TIMESTAMPTZ ? " WITH TIME ZONE" : "")
+            + " precision must not be negative");
       values[0] = Math.min(first, Casts.MAX_TIMESTAMP_PRECISION);
     }
     default -> {

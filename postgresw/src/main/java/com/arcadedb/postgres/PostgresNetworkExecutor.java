@@ -5454,6 +5454,8 @@ public class PostgresNetworkExecutor extends Thread {
     for (int i = 0; i < count; i++)
       types[i] = PostgresLanguageAnswer.parameterType(portal.parameterTypes.get(i));
     final PostgreSQLQueryEngine engine = (PostgreSQLQueryEngine) database.getQueryEngine(PostgresQueryLanguages.POSTGRESQL);
+    // a constant of the statement can be an instant, which is made as it is planned (fork issue #223)
+    SessionTimeZone.set(sessionSettings.show("timezone"));
     final PostgreSQLQueryEngine.Description description = engine.describeStatement(portal.query, types);
     portal.inferredParameterTypes = IntStream.range(0, description.parameterTypes().size())
         .mapToObj(i -> PostgresLanguageAnswer.parameterOid(description.parameterTypes().get(i), description.parameterTypeNames().get(i)))

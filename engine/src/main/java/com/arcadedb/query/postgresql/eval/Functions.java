@@ -23,6 +23,7 @@ import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.IsoFields;
 import java.util.Locale;
@@ -67,13 +68,18 @@ public final class Functions {
    * {@code isodow} is 7 for Sunday, {@code week} is the ISO week, {@code epoch} counts seconds from 1970-01-01 00:00:00 (UTC for
    * this language), {@code second} has microseconds as decimals. The time fields are not defined for a {@code date}.
    *
-   * @param value a {@link LocalDate} or a {@link LocalDateTime}
+   * @param value a {@link LocalDate}, a {@link LocalDateTime}, or an {@link OffsetDateTime} in UTC ({@code timestamptz})
    */
   public static BigDecimal extract(final String field, final Object value) {
     final boolean isDate = value instanceof LocalDate;
-    final LocalDateTime timestamp = isDate ? ((LocalDate) value).atStartOfDay() : (LocalDateTime) value;
+    final boolean zoned = value instanceof OffsetDateTime;
+    final LocalDateTime timestamp = isDate ? ((LocalDate) value).atStartOfDay()
+        : zoned ? ((OffsetDateTime) value).toLocalDateTime() : (LocalDateTime) value;
     final LocalDate date = timestamp.toLocalDate();
     final String unit = field.toLowerCase(Locale.ROOT);
+    // the offset of the session, which is in UTC
+    if (zoned && (unit.equals("timezone") || unit.equals("timezone_hour") || unit.equals("timezone_minute")))
+      return integer(0);
     switch (unit) {
     case "year":
       return integer(date.getYear());
@@ -122,7 +128,8 @@ public final class Functions {
       return BigDecimal.valueOf(micros);
     default:
       throw new PostgreSQLEvaluationException("22023",
-          "unit \"" + field + "\" not recognized for type " + (isDate ? "date" : "timestamp without time zone"));
+          "unit \"" + field + "\" not recognized for type " + (isDate ? "date" : zoned ? "timestamp with time zone"
+              : "timestamp without time zone"));
     }
   }
 

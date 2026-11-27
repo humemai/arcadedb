@@ -847,7 +847,7 @@ public final class JoinPlanner {
     if (a.isString() && b.isString())
       return PgType.TEXT;
     if (a.isDateTime() && b.isDateTime())
-      return a == b ? a : PgType.TIMESTAMP;
+      return a == b ? a : PgType.commonDateTime(a, b);
     if (a == PgType.BOOL && b == PgType.BOOL)
       return PgType.BOOL;
     return null;
