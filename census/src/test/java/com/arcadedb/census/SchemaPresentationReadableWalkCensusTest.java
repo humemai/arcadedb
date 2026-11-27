@@ -139,6 +139,14 @@ class SchemaPresentationReadableWalkCensusTest {
       Map.entry("query/postgresql/plan/CreateIndexPlan#taken",
           "whether an index or a constraint of any type holds a name, for CREATE INDEX: DDL, where a name is taken whoever may "
               + "read the type that holds it"),
+      Map.entry("query/postgresql/plan/DropPlan#dependencies",
+          "what depends on a table that DROP TABLE drops: DDL, where a type that the caller cannot read holds the table too, and "
+              + "the refusal asks for the permission to change the schema first"),
+      Map.entry("query/postgresql/plan/DropPlan#findIndex",
+          "the type that holds the index a DROP INDEX or a DROP TABLE names: DDL, which resolves a name the caller gave"),
+      Map.entry("query/postgresql/plan/DropPlan#referring",
+          "the foreign keys that need a unique index that DROP INDEX drops: DDL, where the key of a type that the caller cannot "
+              + "read needs it too"),
       // GREMLIN
       Map.entry("gremlin/ArcadeCountGlobalStep#processNextStart", "a traversal: the count reads every bucket through the per-bucket gate, which refuses a denied type"),
       Map.entry("gremlin/ArcadeGraph#edges", READ_THROUGH_GATE),

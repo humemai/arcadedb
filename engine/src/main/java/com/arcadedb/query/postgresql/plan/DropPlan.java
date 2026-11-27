@@ -89,6 +89,8 @@ public final class DropPlan {
 
   /** Drops what the statement names; the answer has no column and no row. */
   public PostgreSQLResultSet execute() {
+    // asked before anything is looked up: a refusal names types and constraints
+    ((DatabaseInternal) database).checkPermissionsOnDatabase(SecurityDatabaseUser.DATABASE_ACCESS.UPDATE_SCHEMA);
     return statement.kind() == DropStatement.Kind.TABLE ? dropTables() : dropIndexes();
   }
 
@@ -118,7 +120,6 @@ public final class DropPlan {
       return answer("DROP TABLE: no such table, nothing to do");
 
     final List<Dependency> keys = dependencies(dropped);
-    ((DatabaseInternal) database).checkPermissionsOnDatabase(SecurityDatabaseUser.DATABASE_ACCESS.UPDATE_SCHEMA);
 
     final Deque<Runnable> undo = new ArrayDeque<>();
     final List<String> counters = new ArrayList<>();
@@ -292,7 +293,6 @@ public final class DropPlan {
       engine.add(index.getName());
     }
 
-    ((DatabaseInternal) database).checkPermissionsOnDatabase(SecurityDatabaseUser.DATABASE_ACCESS.UPDATE_SCHEMA);
     final Deque<Runnable> undo = new ArrayDeque<>();
     boolean done = false;
     try {
