@@ -26,10 +26,17 @@ import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultInternal;
 import com.arcadedb.query.sql.executor.ResultSet;
 
+import java.lang.reflect.Array;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * What the wire needs to know about the answer of a statement of the {@code postgresql} language (fork issue #12), which the rows
@@ -164,6 +171,35 @@ final class PostgresLanguageAnswer {
     final PostgresType type = oid == 0 ? null : PostgresType.byCode((int) oid);
     final PgType pgType = type == null ? null : PgType.byName(List.of(type.typeName));
     return pgType != null ? pgType : PgType.UNKNOWN;
+  }
+
+  /**
+   * A bound array in which no element says the type ({@code {}} or {@code {NULL}} of {@code text[]}), as a Java array of the class
+   * of the declared type {@code oid}, so that the language keeps the type and answers {@code 42883} for a mismatch, as PostgreSQL
+   * does. Any other value, and an array of a type that has no such class, is returned as it is.
+   */
+  static Object typedArray(final long oid, final Object value) {
+    if (!(value instanceof Collection<?> items) || !items.stream().allMatch(Objects::isNull))
+      return value;
+    final PostgresType type = oid == 0 ? null : PostgresType.byCode((int) oid);
+    if (type == null)
+      return value;
+    final Class<?> element = switch (type) {
+      case ARRAY_TEXT, ARRAY_VARCHAR, ARRAY_BPCHAR -> String.class;
+      case ARRAY_BOOLEAN -> Boolean.class;
+      case ARRAY_SMALLINT -> Short.class;
+      case ARRAY_INT -> Integer.class;
+      case ARRAY_LONG -> Long.class;
+      case ARRAY_NUMERIC -> BigDecimal.class;
+      case ARRAY_REAL -> Float.class;
+      case ARRAY_DOUBLE -> Double.class;
+      case ARRAY_BYTEA -> byte[].class;
+      case ARRAY_DATE -> LocalDate.class;
+      case ARRAY_TIMESTAMP -> LocalDateTime.class;
+      case ARRAY_TIMESTAMPTZ -> OffsetDateTime.class;
+      default -> null;
+    };
+    return element == null ? value : Array.newInstance(element, items.size());
   }
 
   /**

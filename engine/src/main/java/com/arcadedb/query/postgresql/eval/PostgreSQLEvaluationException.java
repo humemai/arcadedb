@@ -111,6 +111,15 @@ public class PostgreSQLEvaluationException extends CommandExecutionException {
         + ". Hint: No operator matches the given name and argument types. You might need to add explicit type casts.");
   }
 
+  /**
+   * {@code 42883} for operands that PostgreSQL has no operator for either, by the names of their types: two arrays of two element
+   * types ({@code text[] @> int4[]}), which {@link #noOperator(String, PgType, PgType)} sees as two arrays.
+   */
+  public static PostgreSQLEvaluationException noOperator(final String operator, final String left, final String right) {
+    return new PostgreSQLEvaluationException("42883", "operator does not exist: " + left + " " + operator + " " + right
+        + ". Hint: No operator matches the given name and argument types. You might need to add explicit type casts.");
+  }
+
   /** {@link #noOperator(String, PgType, PgType)} of a prefix operator. */
   public static PostgreSQLEvaluationException noOperator(final String operator, final PgType operand) {
     final String call = operator + " " + operand.displayName();

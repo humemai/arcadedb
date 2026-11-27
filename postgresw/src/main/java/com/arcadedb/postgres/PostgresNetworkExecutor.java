@@ -1841,6 +1841,8 @@ public class PostgresNetworkExecutor extends Thread {
       for (int i = 0; i < parameters.length && portal.parameterTypes != null && i < portal.parameterTypes.size(); i++)
         if (portal.parameterTypes.get(i) == 0L && parameters[i] instanceof String text)
           parameters[i] = new UnknownText(text);
+        else
+          parameters[i] = PostgresLanguageAnswer.typedArray(portal.parameterTypes.get(i), parameters[i]);
       return parameters;
     }
 
@@ -1899,8 +1901,10 @@ public class PostgresNetworkExecutor extends Thread {
     // A value of a parameter the client declared no type for reaches the language as UnknownText; the catalog reads it as the text
     // it is, as for every other language (psycopg's lookup of a type, to_regtype($1), binds one)
     final Object[] catalogParameters = new Object[parameters.length];
+    // and an array that getParams typed by its class reaches the catalog as the list it is
     for (int i = 0; i < parameters.length; i++)
-      catalogParameters[i] = parameters[i] instanceof UnknownText unknown ? unknown.text() : parameters[i];
+      catalogParameters[i] = parameters[i] instanceof UnknownText unknown ? unknown.text()
+          : parameters[i] instanceof Object[] array ? Arrays.asList(array) : parameters[i];
 
     // The relational names are seen per statement, by the language it runs in (fork issue #10): a statement of the postgresql
     // language sees the tables, columns and keys of the relational view, and reads information_schema from the language

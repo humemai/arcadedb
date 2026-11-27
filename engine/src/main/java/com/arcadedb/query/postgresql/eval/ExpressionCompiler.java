@@ -616,11 +616,8 @@ public final class ExpressionCompiler {
       throw PostgreSQLEvaluationException.noOperator(operator, a, b);
     final PgType first = declaredElement(left);
     final PgType second = declaredElement(right);
-    if (first != null && second != null && textual(first) != textual(second)) {
-      // noOperator cannot say this: it sees two arrays, for which PostgreSQL has the operator, and not their element types
-      throw new PostgreSQLEvaluationException("42883", "operator does not exist: " + first.displayName() + "[] " + operator + " "
-          + second.displayName() + "[]. Hint: No operator matches the given name and argument types. You might need to add explicit type casts.");
-    }
+    if (first != null && second != null && textual(first) != textual(second))
+      throw PostgreSQLEvaluationException.noOperator(operator, first.displayName() + "[]", second.displayName() + "[]");
     PgType element = first != null ? textual(first) : second != null ? textual(second) : null;
     if (element == null) {
       if (a == PgType.UNKNOWN && b == PgType.UNKNOWN)
@@ -1181,7 +1178,37 @@ public final class ExpressionCompiler {
     return out;
   }
 
-  /** The type that the values of a bound array have in common, {@code null} for an array with no value that says one. */
+  /** The element type that the class of a Java array says, as {@code String[]} does, {@code null} for a class that says none. */
+  private static PgType elementTypeOfClass(final Class<?> element) {
+    if (element == byte[].class)
+      return PgType.BYTEA;
+    if (element == String.class)
+      return PgType.TEXT;
+    if (element == Boolean.class)
+      return PgType.BOOL;
+    if (element == Short.class)
+      return PgType.INT2;
+    if (element == Integer.class)
+      return PgType.INT4;
+    if (element == Long.class)
+      return PgType.INT8;
+    if (element == java.math.BigDecimal.class)
+      return PgType.NUMERIC;
+    if (element == Float.class)
+      return PgType.FLOAT4;
+    if (element == Double.class)
+      return PgType.FLOAT8;
+    if (element == LocalDate.class)
+      return PgType.DATE;
+    if (element == java.time.LocalDateTime.class)
+      return PgType.TIMESTAMP;
+    return element == java.time.OffsetDateTime.class ? PgType.TIMESTAMPTZ : null;
+  }
+
+  /**
+   * The type that the values of a bound array have in common; for a Java array with no value, the type that its class says;
+   * {@code null} for an array that says none.
+   */
   private static PgType elementTypeOfValues(final Object array) {
     final List<?> items = array == null ? null : ValueInput.asList(array);
     if (items == null)
@@ -1196,7 +1223,9 @@ public final class ExpressionCompiler {
             "An element of a bound array has the unsupported class " + item.getClass().getName());
       values.add(new Evaluable.Constant(type, null));
     }
-    return values.isEmpty() ? null : commonType(values, "ARRAY");
+    if (!values.isEmpty())
+      return commonType(values, "ARRAY");
+    return array.getClass().isArray() ? elementTypeOfClass(array.getClass().getComponentType()) : null;
   }
 
   /** {@code x BETWEEN a AND b} is {@code x >= a AND x <= b}. */
