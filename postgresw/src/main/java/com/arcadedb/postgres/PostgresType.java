@@ -621,14 +621,18 @@ public enum PostgresType {
   private static final int NUMERIC_POS_SIGN    = 0x0000;
   private static final int NUMERIC_NEG_SIGN    = 0x4000;
   private static final int NUMERIC_NAN_SIGN    = 0xC000;
-  // PostgreSQL's own cap (NUMERIC_MAX_RESULT_SCALE-derived) on digit groups in one value; a declared count
-  // above this cannot be a value this codec produced, only a malformed or adversarial payload.
+  // The cap on digit groups, and with it on the weight and the scale, of a value that a client sends: a payload
+  // beyond it is refused as malformed or adversarial.
   private static final int NUMERIC_MAX_DIGITS  = 4000;
-  // The largest bit length a BigInteger with NUMERIC_MAX_DIGITS * NUMERIC_DIGIT_WIDTH (16000) decimal digits
-  // can have: ceil(16000 * log2(10)) = ceil(16000 * 3.321928094887362) = 53151. Any BigInteger past this bound
-  // has more than 16000 decimal digits, guaranteed - checking bitLength() (already computed, effectively O(1))
-  // catches that before putNumericBinary calls toString() on it, which is not.
-  private static final int NUMERIC_MAX_UNSCALED_BITS = 53151;
+  // What the encoder writes is what PostgreSQL's numeric holds (fork issue #171): 131072 decimal digits before the
+  // decimal point, which is a weight of at most Short.MAX_VALUE, and 16383 after it (NUMERIC_DSCALE_MAX). The digit
+  // count is then at most 32768 + 4096, which its unsigned 16-bit field holds.
+  private static final int NUMERIC_MAX_INTEGER_DIGITS = NUMERIC_DIGIT_WIDTH * (Short.MAX_VALUE + 1);
+  private static final int NUMERIC_MAX_DSCALE         = 16383;
+  // The largest bit length a BigInteger with 131072 + 16383 decimal digits can have: ceil(147455 * log2(10)) =
+  // 489835. Any BigInteger past this bound has more digits than that, guaranteed - checking bitLength() (already
+  // computed, effectively O(1)) catches that before putNumericBinary calls toString() on it, which is not.
+  private static final int NUMERIC_MAX_UNSCALED_BITS  = 489835;
 
   /**
    * Encodes a BigDecimal in PostgreSQL's NUMERIC binary wire format. Unlike {@link #parseNumericBinary}, which
@@ -645,14 +649,14 @@ public enum PostgresType {
     // scale up to 0 has to actually materialize unscaledValue * 10^|scale| as a real BigInteger. Rejecting the
     // raw scale first means that materialization, and the multi-GB allocation it would otherwise trigger, never
     // starts. -(long) avoids the int overflow of negating Integer.MIN_VALUE.
-    if (decimalValue.scale() < 0 && -(long) decimalValue.scale() > NUMERIC_MAX_DIGITS * NUMERIC_DIGIT_WIDTH)
+    if (decimalValue.scale() < 0 && -(long) decimalValue.scale() > NUMERIC_MAX_INTEGER_DIGITS)
       throw new PostgresProtocolException("NUMERIC scale exceeds the supported maximum: " + decimalValue.scale());
 
     final BigDecimal normalized = decimalValue.scale() < 0 ? decimalValue.setScale(0) : decimalValue;
     final int dscale = normalized.scale();
     // Checked before any padding so a value with an absurd scale fails fast instead of first allocating a
     // proportionally huge digit string.
-    if (dscale < 0 || dscale > NUMERIC_MAX_DIGITS * NUMERIC_DIGIT_WIDTH)
+    if (dscale < 0 || dscale > NUMERIC_MAX_DSCALE)
       throw new PostgresProtocolException("NUMERIC scale exceeds the supported maximum: " + dscale);
 
     final boolean negative = normalized.signum() < 0;
@@ -661,8 +665,8 @@ public enum PostgresType {
     // like '1E2000000000' is already rejected by the scale check (it always implies a very negative scale),
     // but a value that is simply a great many literal digits at a small/zero scale - reachable from a compact
     // SQL expression rather than a giant literal - would otherwise sail past both scale checks and reach the
-    // O(n) toString()/padding work below before the digit-count check further down ever gets a chance to
-    // reject it.
+    // O(n) toString()/padding work below before the weight check further down ever gets a chance to reject
+    // it.
     if (unscaled.bitLength() > NUMERIC_MAX_UNSCALED_BITS)
       throw new PostgresProtocolException("NUMERIC precision exceeds the supported maximum: " + unscaled.bitLength() + " bits");
 
@@ -707,10 +711,9 @@ public enum PostgresType {
     final int ndigits = end - start + 1;
     final int weight = integerGroups - 1 - start;
 
-    // Both fields are about to go through a (short) cast: reject rather than let either wrap silently into a
-    // header that no longer matches the digits actually written.
-    if (ndigits > NUMERIC_MAX_DIGITS)
-      throw new PostgresProtocolException("NUMERIC digit count exceeds the supported maximum: " + ndigits);
+    // The weight is about to go through a (short) cast: reject rather than let it wrap silently into a header
+    // that no longer matches the digits actually written. With it and the scale in range, ndigits fits its
+    // unsigned 16-bit field.
     if (weight < Short.MIN_VALUE || weight > Short.MAX_VALUE)
       throw new PostgresProtocolException("NUMERIC weight exceeds the supported range: " + weight);
 
@@ -739,8 +742,8 @@ public enum PostgresType {
     if (ndigits * 2 > buffer.remaining())
       throw new PostgresProtocolException("NUMERIC digit count exceeds remaining buffer bytes");
     // dscale is an unsigned 16-bit field, so this cannot runaway unbounded, but a declared scale wildly beyond
-    // what ndigits could ever back is still a malformed payload rather than one this codec produced - and
-    // setScale below would otherwise pad a BigInteger out to it. Same bound the encode side rejects at.
+    // what ndigits could ever back is still a malformed payload - and setScale below would otherwise pad a
+    // BigInteger out to it.
     if (dscale > NUMERIC_MAX_DIGITS * NUMERIC_DIGIT_WIDTH)
       throw new PostgresProtocolException("NUMERIC scale exceeds the supported maximum: " + dscale);
     // weight is otherwise unbounded within its short range: a payload with an extreme weight combined with a

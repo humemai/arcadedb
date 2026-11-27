@@ -916,9 +916,9 @@ class PostgresTypeTest {
 
   @Test
   void deserializeBinaryNumericRejectsOversizedScale() {
-    // dscale is checked against the same bound the encode side rejects at (issue #6447 review), even though
-    // being an unsigned 16-bit field already caps it - a declared scale this codec could never have produced
-    // is still a malformed payload, not a value setScale should be asked to pad a BigInteger out to.
+    // dscale is bounded (issue #6447 review), even though being an unsigned 16-bit field already caps it - a
+    // declared scale this far out is a malformed payload, not a value setScale should be asked to pad a
+    // BigInteger out to.
     final ByteBuffer buf = ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN);
     buf.putShort((short) 0);              // ndigits
     buf.putShort((short) 0);              // weight
@@ -971,7 +971,8 @@ class PostgresTypeTest {
     // Unlike deserialize, which only has to reject bytes an attacker sent, serializeAsBinary also has to reject
     // a BigDecimal ArcadeDB itself produced: an unbounded DECIMAL property scale would otherwise wrap silently
     // through the header fields' (short) casts and write a self-inconsistent NUMERIC payload.
-    final BigDecimal absurdScale = new BigDecimal(BigInteger.ONE, 16001);
+    // one more decimal than PostgreSQL's numeric holds
+    final BigDecimal absurdScale = new BigDecimal(BigInteger.ONE, 16384);
     final Binary buffer = new Binary();
     assertThatThrownBy(() -> PostgresType.NUMERIC.serializeAsBinary(PostgresType.NUMERIC, buffer, absurdScale))
         .isInstanceOf(PostgresProtocolException.class)
