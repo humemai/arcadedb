@@ -56,6 +56,7 @@ import com.arcadedb.query.postgresql.PostgreSQLQueryEngine;
 import com.arcadedb.query.postgresql.SessionTimeZone;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.eval.PgType;
+import com.arcadedb.query.postgresql.eval.TransactionClock;
 import com.arcadedb.query.postgresql.eval.UnknownText;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.sql.SQLQueryEngine;
@@ -1490,6 +1491,8 @@ public class PostgresNetworkExecutor extends Thread {
     // The message ends this transaction itself, with its last statement or its first error: an HA replica runs the writes
     // in it instead of forwarding each one to the leader, where it would commit out of reach of the rollback (issue #10040)
     ((DatabaseInternal) database).getTransaction().setClientManaged(true);
+    // the clock of now() and CURRENT_TIMESTAMP is read as the transaction begins (fork issue #222)
+    TransactionClock.now((DatabaseInternal) database);
   }
 
   /**
@@ -5762,6 +5765,8 @@ public class PostgresNetworkExecutor extends Thread {
       }
       // The client ends this transaction with its own COMMIT/ROLLBACK: an HA replica runs its writes in it (issue #10040)
       ((DatabaseInternal) database).getTransaction().setClientManaged(true);
+      // the clock of now() and CURRENT_TIMESTAMP is read as the transaction begins (fork issue #222)
+      TransactionClock.now((DatabaseInternal) database);
     }
     case COMMIT -> {
       try {

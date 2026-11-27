@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -44,6 +45,8 @@ public final class Parameters {
   private final Map<Integer, String> arrayNames;
   /** Described statements only: the highest number the planned statement refers to. */
   private int                        highestReference;
+  /** The time of the transaction of the statement, {@code null} when nobody told it. */
+  private Instant                    time;
 
   /** A parameter of a described statement whose type nothing has decided yet. */
   public record Untyped(Parameters owner, int index) {
@@ -86,6 +89,18 @@ public final class Parameters {
    */
   public static Parameters describing(final PgType... types) {
     return new Parameters(new Object[0], new boolean[0], types == null ? new PgType[0] : types.clone());
+  }
+
+  /** These values for a statement of a transaction whose time is {@code instant} (see {@link TransactionClock}). */
+  public Parameters at(final Instant instant) {
+    final Parameters timed = new Parameters(values, present, described);
+    timed.time = instant;
+    return timed;
+  }
+
+  /** The time that {@code CURRENT_TIMESTAMP} and the like answer for the statement; the clock when nobody told one. */
+  public Instant time() {
+    return time != null ? time : TransactionClock.read();
   }
 
   /** True for the parameters of {@link #describing}: the statement is planned and never run. */
