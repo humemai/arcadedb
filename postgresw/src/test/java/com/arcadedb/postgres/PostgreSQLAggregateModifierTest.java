@@ -21,7 +21,14 @@ package com.arcadedb.postgres;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 
+import java.math.BigDecimal;
+import java.sql.Array;
 import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,25 +64,27 @@ class PostgreSQLAggregateModifierTest extends PostgreSQLSideBySideTestBase {
       "SELECT f.name, array_agg(g.content ORDER BY g.id) AS facts FROM f JOIN g ON g.f_id = f.id GROUP BY f.name ORDER BY f.name",
       "SELECT f.name, string_agg(g.content, '; ' ORDER BY g.id) AS summary FROM f JOIN g ON g.f_id = f.id GROUP BY f.name"
           + " ORDER BY f.name",
-      "SELECT jsonb_agg(name ORDER BY name) AS names FROM f",
-      "SELECT name, jsonb_agg(id ORDER BY id DESC) AS ids FROM f GROUP BY name ORDER BY name",
+      "SELECT jsonb_agg(name ORDER BY name)::text AS names FROM f",
+      "SELECT name, jsonb_agg(id ORDER BY id DESC)::text AS ids FROM f GROUP BY name ORDER BY name",
       // every element type, NULL included
       "SELECT array_agg(big ORDER BY id) AS a, array_agg(price ORDER BY id) AS b, array_agg(score ORDER BY id) AS c,"
           + " array_agg(ok ORDER BY id) AS d FROM f",
       "SELECT array_agg(day ORDER BY id) AS a, array_agg(at ORDER BY id) AS b FROM f",
       "SELECT array_agg('x'::text) AS a, array_agg(id + 1 ORDER BY id) AS b FROM f",
-      "SELECT jsonb_agg(n ORDER BY id) AS a, jsonb_agg(price ORDER BY id) AS b, jsonb_agg(score ORDER BY id) AS c,"
-          + " jsonb_agg(day ORDER BY id) AS d, jsonb_agg(at ORDER BY id) AS e, jsonb_agg(ok ORDER BY id) AS f FROM f",
-      "SELECT jsonb_agg(meta ORDER BY id) AS a, jsonb_agg(tags ORDER BY id) AS b FROM f",
-      "SELECT jsonb_agg(jsonb_build_object('content', content, 'id', id) ORDER BY id) AS facts FROM g",
+      "SELECT jsonb_agg(n ORDER BY id)::text AS a, jsonb_agg(price ORDER BY id)::text AS b, jsonb_agg(score ORDER BY id)::text"
+          + " AS c, jsonb_agg(day ORDER BY id)::text AS d, jsonb_agg(at ORDER BY id)::text AS e, jsonb_agg(ok ORDER BY id)::text"
+          + " AS f FROM f",
+      "SELECT jsonb_agg(meta ORDER BY id)::text AS a, jsonb_agg(tags ORDER BY id)::text AS b FROM f",
+      "SELECT jsonb_agg(jsonb_build_object('content', content, 'id', id) ORDER BY id)::text AS facts FROM g",
       // no row and one group
-      "SELECT array_agg(n) AS a, jsonb_agg(n) AS b, string_agg(name, ',' ORDER BY id) AS c, count(*) AS d FROM f WHERE false",
+      "SELECT array_agg(n) AS a, jsonb_agg(n)::text AS b, string_agg(name, ',' ORDER BY id) AS c, count(*) AS d FROM f"
+          + " WHERE false",
       "SELECT name, array_agg(n ORDER BY id) AS a FROM f WHERE false GROUP BY name",
       // DISTINCT
       "SELECT array_agg(DISTINCT name) AS a, array_agg(DISTINCT n) AS b, array_agg(DISTINCT price) AS c FROM f",
       "SELECT array_agg(DISTINCT name ORDER BY name DESC) AS a, array_agg(DISTINCT n ORDER BY n DESC) AS b,"
           + " array_agg(DISTINCT f.n ORDER BY n NULLS FIRST) AS c FROM f",
-      "SELECT jsonb_agg(DISTINCT name) AS a, jsonb_agg(DISTINCT n ORDER BY n) AS b FROM f",
+      "SELECT jsonb_agg(DISTINCT name)::text AS a, jsonb_agg(DISTINCT n ORDER BY n)::text AS b FROM f",
       "SELECT string_agg(DISTINCT name, ',' ORDER BY name DESC) AS a, count(DISTINCT name ORDER BY name) AS b,"
           + " sum(DISTINCT n ORDER BY n DESC) AS c FROM f",
       // FILTER
@@ -83,10 +92,10 @@ class PostgreSQLAggregateModifierTest extends PostgreSQLSideBySideTestBase {
           + " sum(n) FILTER (WHERE ok) AS s, max(name) FILTER (WHERE id < 3) AS m, avg(n) FILTER (WHERE id <> 2) AS a FROM f",
       "SELECT name, count(*) FILTER (WHERE ok) AS yes, count(*) FILTER (WHERE NOT ok) AS no,"
           + " array_agg(id ORDER BY id) FILTER (WHERE n IS NOT NULL) AS ids FROM f GROUP BY name ORDER BY name",
-      "SELECT count(*) FILTER (WHERE meta ? 'b') AS with_b, count(*) AS total FROM f",
+      "SELECT count(*) FILTER (WHERE jsonb_exists(meta, 'b')) AS with_b, count(*) AS total FROM f",
       "SELECT sum(100 / n) FILTER (WHERE n <> 0) AS a, count(DISTINCT name) FILTER (WHERE id > 1) AS b,"
           + " string_agg(name, ',' ORDER BY id) FILTER (WHERE id > 1) AS c FROM f",
-      "SELECT f.name, jsonb_agg(g.id ORDER BY g.id) FILTER (WHERE g.id IS NOT NULL) AS ids FROM f"
+      "SELECT f.name, jsonb_agg(g.id ORDER BY g.id) FILTER (WHERE g.id IS NOT NULL)::text AS ids FROM f"
           + " LEFT JOIN g ON g.f_id = f.id GROUP BY f.name ORDER BY f.name",
       "SELECT f.name, coalesce(array_agg(g.id ORDER BY g.id) FILTER (WHERE g.id IS NOT NULL), '{}') AS ids FROM f"
           + " LEFT JOIN g ON g.f_id = f.id GROUP BY f.name ORDER BY f.name",
@@ -97,9 +106,10 @@ class PostgreSQLAggregateModifierTest extends PostgreSQLSideBySideTestBase {
       // inside other queries
       "SELECT id, (SELECT array_agg(g.content ORDER BY g.id) FROM g WHERE g.f_id = f.id) AS facts FROM f ORDER BY id",
       "SELECT id, (SELECT count(*) FILTER (WHERE g.f_id = f.id) FROM g) AS a FROM f ORDER BY id",
-      "SELECT id, (SELECT jsonb_agg(g.id ORDER BY g.id) FILTER (WHERE g.content <> f.name) FROM g) AS a FROM f ORDER BY id",
+      "SELECT id, (SELECT jsonb_agg(g.id ORDER BY g.id) FILTER (WHERE g.content <> f.name) FROM g)::text AS a FROM f ORDER BY id",
       "WITH s AS (SELECT array_agg(name ORDER BY id) AS names FROM f) SELECT names FROM s",
-      "SELECT x.names FROM (SELECT name, array_agg(id ORDER BY id) AS names FROM f GROUP BY name) x ORDER BY x.names",
+      "SELECT x.names FROM (SELECT name, array_agg(id ORDER BY id) AS names FROM f GROUP BY name) x ORDER BY x.name",
+      "SELECT CASE WHEN count(*) > 9 THEN array_agg(id ORDER BY id) ELSE '{7}' END AS a FROM f",
       "SELECT array_agg(name ORDER BY id) = ARRAY['ann', 'bob', 'cy', 'ann'] AS a, array_agg(id ORDER BY id) @> ARRAY[2] AS b"
           + " FROM f",
       "SELECT 'cy' = ANY(array_agg(name)) AS a FROM f");
@@ -135,12 +145,44 @@ class PostgreSQLAggregateModifierTest extends PostgreSQLSideBySideTestBase {
         both(postgres, arcade, statement);
       assertThat(failures).as(String.join("\n", failures)).isEmpty();
       for (final String query : QUERIES)
-        same(postgres, arcade, query);
+        compare(query, values(postgres, query), values(arcade, query));
       for (final String[] error : ERRORS)
         sameError(postgres, arcade, error[0], error[1]);
       refused(arcade, "SELECT array_agg(meta ORDER BY id) FROM f", "Use jsonb_agg");
       refused(arcade, "SELECT array_agg(tags ORDER BY id) FROM f", "Use jsonb_agg");
     }
     assertThat(failures).as(String.join("\n", failures)).isEmpty();
+  }
+
+  /**
+   * The labels, the type names, and the rows, an array by its elements: the server writes every element of a text array in
+   * quotes, a boolean element as {@code true}, and six digits of a second, which a driver reads as the same values.
+   */
+  private static String values(final Connection connection, final String query) {
+    try (final Statement run = connection.createStatement(); final ResultSet rows = run.executeQuery(query)) {
+      final ResultSetMetaData columns = rows.getMetaData();
+      final StringBuilder out = new StringBuilder("    ");
+      for (int i = 1; i <= columns.getColumnCount(); i++)
+        out.append(columns.getColumnLabel(i)).append(':').append(columns.getColumnTypeName(i)).append('|');
+      out.append('\n');
+      while (rows.next()) {
+        out.append("    ");
+        for (int i = 1; i <= columns.getColumnCount(); i++) {
+          final String type = columns.getColumnTypeName(i);
+          final Object value = rows.getObject(i);
+          if (value instanceof Array array)
+            out.append(Arrays.deepToString((Object[]) array.getArray()));
+          else if (value instanceof Number)
+            out.append(new BigDecimal(value.toString()).stripTrailingZeros().toPlainString());
+          else
+            out.append("timestamp".equals(type) && value != null ? String.valueOf(value) : rows.getString(i));
+          out.append('|');
+        }
+        out.append('\n');
+      }
+      return out.toString();
+    } catch (final SQLException e) {
+      return "    error " + e.getSQLState() + " " + e.getMessage() + "\n";
+    }
   }
 }

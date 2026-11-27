@@ -417,12 +417,6 @@ Result:
 | --- |
 | [Ada] |
 
-Result, ArcadeDB `postgresql` (differs):
-
-| SQLSTATE |
-| --- |
-| 0A000 |
-
 ### A table of constants with VALUES
 
 ArcadeDB `postgresql`, PostgreSQL 18:

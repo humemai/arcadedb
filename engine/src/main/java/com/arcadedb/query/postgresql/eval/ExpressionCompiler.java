@@ -482,15 +482,40 @@ public final class ExpressionCompiler {
   }
 
   private List<Evaluable> coerceAll(final List<Evaluable> items, final PgType type, final String what) {
+    final PgType element = type == PgType.ARRAY ? elementOfArrays(items, what) : null;
     final List<Evaluable> out = new ArrayList<>(items.size());
     for (final Evaluable item : items) {
-      final Evaluable converted = implicit(item, type);
+      // a literal among arrays is an array of the same elements, as in coalesce(array_agg(id), '{}')
+      final Evaluable converted = element != null && item.type() == PgType.UNKNOWN ? arrayOfUntyped(item, element)
+          : implicit(item, type);
       if (converted == null)
         throw PostgreSQLEvaluationException.mismatch(
             what + " types " + type.displayName() + " and " + item.type().displayName() + " cannot be matched");
       out.add(converted);
     }
     return out;
+  }
+
+  /** The element type of the arrays among the branches, {@code null} when none says it; two that differ do not match. */
+  private static PgType elementOfArrays(final List<Evaluable> items, final String what) {
+    PgType element = null;
+    for (final Evaluable item : items) {
+      final PgType found = item.type() == PgType.ARRAY ? ValueInput.elementType(item.typeName()) : null;
+      if (found == null)
+        continue;
+      if (element != null && element != found && !(element.isString() && found.isString()))
+        throw PostgreSQLEvaluationException.mismatch(what + " types " + element.displayName() + "[] and " + found.displayName()
+            + "[] cannot be matched");
+      if (element == null)
+        element = found;
+    }
+    return element;
+  }
+
+  /** The name of the type of a {@code CASE} or {@code COALESCE}, which for an array says the element type. */
+  private static String branchTypeName(final PgType type, final List<Evaluable> branches) {
+    final PgType element = type == PgType.ARRAY ? elementOfArrays(branches, "CASE") : null;
+    return element == null ? type.typeName() : "_" + element.typeName();
   }
 
   // ---- operators ----
@@ -1677,7 +1702,7 @@ public final class ExpressionCompiler {
     final Evaluable[] thens = coerced.toArray(new Evaluable[0]);
     final List<Evaluable> inputs = new ArrayList<>(conditions);
     inputs.addAll(coerced);
-    return new Evaluable.Node(type, row -> {
+    return new Evaluable.Node(type, branchTypeName(type, coerced), row -> {
       for (int i = 0; i < whens.length; i++)
         if (Boolean.TRUE.equals(whens[i].eval(row)))
           return thens[i].eval(row);
@@ -2136,7 +2161,7 @@ public final class ExpressionCompiler {
       final List<Evaluable> all = List.of(args);
       final PgType type = commonType(all, "COALESCE");
       final Evaluable[] coerced = coerceAll(all, type, "COALESCE").toArray(new Evaluable[0]);
-      return new Evaluable.Node(type, row -> {
+      return new Evaluable.Node(type, branchTypeName(type, List.of(coerced)), row -> {
         for (final Evaluable item : coerced) {
           final Object value = item.eval(row);
           if (value != null)
