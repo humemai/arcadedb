@@ -94,7 +94,9 @@ import java.util.Set;
  * alias and the proposed one as {@code EXCLUDED}); see {@link Upsert}.</li>
  * <li>An edge table is written through its two endpoint columns. {@code INSERT} creates one edge between the vertices named by
  * {@code source_id} and {@code target_id}, both required (else {@code 23502}), both an existing vertex (else {@code 23503}), and
- * for a type with declared endpoint tables a vertex of that table; the edge properties are given as for any record. A
+ * for a type with declared endpoint tables a vertex of that table; an end that refers to a key (fork issue #213) names the vertex
+ * by the key, and the rules of the reference hold for the writes of the referenced table ({@link LinkKeys}); the edge properties are
+ * given as for any record. A
  * lightweight edge type is written the same way and keeps no record, so it has no property to give. {@code UPDATE} changes edge
  * properties only: {@code source_id} and {@code target_id} are {@code 0A000} with the hint to delete the edge and insert it
  * again, and the record id column is {@code 428C9}. {@code DELETE} deletes the edges.</li>
@@ -123,10 +125,16 @@ public final class WritePlanner {
   private record Match(Document record, Object[] values) {
   }
 
+  /** A row of an {@code INSERT} on an edge table: the values of its two ends and the properties of its edge. */
+  private record NewEdge(Object source, Object target, Map<String, Object> properties) {
+  }
+
   private final Database           database;
   private final Parameters         parameters;
   private final SelectPlanner      selectPlanner;
   private final RelationalCatalog  catalog;
+  /** The rules of the ends of link tables that refer to a key (fork issue #213). */
+  private final LinkKeys           linkKeys;
 
   public WritePlanner(final Database database, final Parameters parameters) {
     this(database, RelationalCatalog.of(database), parameters);
@@ -138,6 +146,7 @@ public final class WritePlanner {
     this.parameters = parameters;
     this.selectPlanner = new SelectPlanner(database, catalog, parameters);
     this.catalog = selectPlanner.catalog();
+    this.linkKeys = new LinkKeys(this.catalog);
   }
 
   public WritePlan plan(final WriteStatement statement) {
@@ -290,8 +299,16 @@ public final class WritePlanner {
       final List<Object[]> returned = new ArrayList<>();
       long written = 0;
       if (table.kind() == Table.Kind.EDGE) {
-        for (final Object[] values : rows) {
-          final Edge edge = insertEdge(db, table, targets, values);
+        // as PostgreSQL does it: the values of every row are checked, then the rows its ends name, before an edge is made
+        final List<NewEdge> edges = new ArrayList<>(rows.size());
+        for (final Object[] values : rows)
+          edges.add(readEdge(db, table, targets, values));
+        final List<Vertex[]> ends = new ArrayList<>(edges.size());
+        for (final NewEdge edge : edges)
+          ends.add(new Vertex[] { endpoint(db, table, Column.Kind.SOURCE, edge.source()),
+              endpoint(db, table, Column.Kind.TARGET, edge.target()) });
+        for (int i = 0; i < edges.size(); i++) {
+          final Edge edge = createEdge(db, table, ends.get(i)[0], ends.get(i)[1], edges.get(i));
           if (returning.present())
             returned.add(project(returning, shape.rowOf(edge)));
         }
@@ -469,6 +486,11 @@ public final class WritePlanner {
       for (int i = 0; i < values.length; i++)
         values[i] = set.values().get(i) == null ? DEFAULT
             : Assignments.convert(set.values().get(i).eval(both), set.types().get(i), set.columns().get(i));
+      if (!linkKeys.isEmpty()) {
+        final List<LinkKeys.Change> changes = new ArrayList<>();
+        addKeyChanges(changes, db, table, found, set.columns(), values);
+        linkKeys.beforeUpdate(db, changes);
+      }
       final MutableDocument changed = found.modify();
       final Set<String> properties = applySet(db, table, changed, set.columns(), values);
       requireValues(table, changed);
@@ -541,6 +563,23 @@ public final class WritePlanner {
     return changed;
   }
 
+  /**
+   * Adds the values that a {@code SET} list is about to give the properties that ends of link tables refer to. A {@code DEFAULT}
+   * of such a property is read here and put in its place among the values, once: a serial column takes its next number.
+   */
+  private void addKeyChanges(final List<LinkKeys.Change> changes, final Database db, final Table table, final Document record,
+      final List<Column> columns, final Object[] values) {
+    for (int i = 0; i < columns.size(); i++) {
+      final Column column = columns.get(i);
+      if (column.isSynthetic() || !linkKeys.isKey(column.property()))
+        continue;
+      if (values[i] == DEFAULT)
+        values[i] = defaultOf(table, column);
+      changes.add(new LinkKeys.Change(record, column.property(),
+          values[i] == null ? null : toEngine(db, table, column, values[i])));
+    }
+  }
+
   /** The type a slot counts as: a text parameter is {@code unknown} as it is in PostgreSQL, which gives it the type of its column. */
   private static PgType effectiveType(final Expression expression, final Evaluable value) {
     if (expression instanceof Expression.ParameterRef && takesColumnType(value.type()))
@@ -571,11 +610,12 @@ public final class WritePlanner {
 
   /**
    * One edge of an {@code INSERT} on an edge table: between the vertices {@code source_id} and {@code target_id} name, with the
-   * properties given. A lightweight edge type keeps no record, a regular one gets its record from the engine.
+   * properties given. A lightweight edge type keeps no record, a regular one gets its record from the engine. This reads and
+   * checks one row; {@link #createEdge} makes its edge.
    */
-  private Edge insertEdge(final Database db, final Table table, final List<Column> targets, final Object[] values) {
-    String source = null;
-    String target = null;
+  private NewEdge readEdge(final Database db, final Table table, final List<Column> targets, final Object[] values) {
+    Object source = null;
+    Object target = null;
     final Map<String, Object> properties = new LinkedHashMap<>();
     final Set<String> given = new HashSet<>();
     for (int i = 0; i < values.length; i++) {
@@ -583,8 +623,8 @@ public final class WritePlanner {
       if (values[i] == DEFAULT)
         continue;
       switch (column.kind()) {
-      case SOURCE -> source = (String) values[i];
-      case TARGET -> target = (String) values[i];
+      case SOURCE -> source = values[i];
+      case TARGET -> target = values[i];
       case PROPERTY -> {
         given.add(column.property());
         if (values[i] != null)
@@ -607,9 +647,12 @@ public final class WritePlanner {
         properties.put(column.property(), value);
     }
     requireValues(table, properties::get);
+    return new NewEdge(source, target, properties);
+  }
 
-    final Vertex from = endpoint(db, table, nameOf(table, Column.Kind.SOURCE), source, table.sourceTable());
-    final Vertex to = endpoint(db, table, nameOf(table, Column.Kind.TARGET), target, table.targetTable());
+  /** The edge of one new row: between the two vertices its ends name, with the properties of the row. */
+  private Edge createEdge(final Database db, final Table table, final Vertex from, final Vertex to, final NewEdge edge) {
+    final Map<String, Object> properties = edge.properties();
     final EdgeType type = (EdgeType) db.getSchema().getType(table.name());
     if (type.isLightweight()) {
       if (!properties.isEmpty())
@@ -641,6 +684,18 @@ public final class WritePlanner {
   private static PostgreSQLEvaluationException notNull(final Table table, final String column) {
     return new PostgreSQLEvaluationException("23502",
         "null value in column \"" + column + "\" of relation \"" + table.name() + "\" violates not-null constraint");
+  }
+
+  /**
+   * The vertex at one end of a new edge: for an end that refers to a key, the row of the referenced table that has the key (fork
+   * issue #213), else the vertex whose record id the value is.
+   */
+  private Vertex endpoint(final Database db, final Table table, final Column.Kind kind, final Object value) {
+    for (final Column column : table.columns())
+      if (column.kind() == kind && column.endKey() != null)
+        return linkKeys.row(db, table, column, value, toEngine(db, table, column, value));
+    return endpoint(db, table, nameOf(table, kind), (String) value,
+        kind == Column.Kind.SOURCE ? table.sourceTable() : table.targetTable());
   }
 
   /** The vertex that an endpoint column names: it has to exist, and to be of the declared endpoint table when there is one. */
@@ -751,6 +806,12 @@ public final class WritePlanner {
           chosen.put(rid, set);
         }
       }
+      if (!linkKeys.isEmpty()) {
+        final List<LinkKeys.Change> changes = new ArrayList<>();
+        for (final Map.Entry<RID, Object[]> match : chosen.entrySet())
+          addKeyChanges(changes, db, table, db.lookupByRID(match.getKey(), true).asDocument(), columns, match.getValue());
+        linkKeys.beforeUpdate(db, changes);
+      }
       for (final Map.Entry<RID, Object[]> match : chosen.entrySet()) {
         final MutableDocument record = db.lookupByRID(match.getKey(), true).asDocument().modify();
         final Set<String> changed = applySet(db, table, record, columns, match.getValue());
@@ -805,6 +866,13 @@ public final class WritePlanner {
           set[i] = values.get(i) == null ? DEFAULT : Assignments.convert(values.get(i).eval(row), types.get(i), columns.get(i));
         matches.add(new Match(record, set));
       }
+      if (!linkKeys.isEmpty()) {
+        // a key that links point at cannot change: checked for all the rows before the first is written
+        final List<LinkKeys.Change> changes = new ArrayList<>();
+        for (final Match match : matches)
+          addKeyChanges(changes, db, table, match.record(), columns, match.values());
+        linkKeys.beforeUpdate(db, changes);
+      }
 
       final List<Object[]> returned = new ArrayList<>();
       for (final Match match : matches) {
@@ -856,6 +924,15 @@ public final class WritePlanner {
         matched.add(record);
         if (returning.present())
           returned.add(project(returning, row));
+      }
+      if (!linkKeys.isEmpty()) {
+        // the rules of the ends that refer to a key, checked for all the rows before the first is deleted
+        final Map<RID, Vertex> vertices = new LinkedHashMap<>();
+        for (final Document record : matched)
+          if (record instanceof Vertex vertex)
+            vertices.put(vertex.getIdentity(), vertex);
+        for (final Edge link : linkKeys.beforeDelete(db, vertices))
+          link.delete();
       }
       for (final Document record : matched) {
         if (record instanceof Edge edge)

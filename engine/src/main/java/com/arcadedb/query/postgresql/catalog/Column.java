@@ -66,6 +66,8 @@ public final class Column {
   private final boolean    listed;
   private final String     defaultText;
   private final String     identity;
+  /** the key an end of a link table refers to, {@code null} for the record id and for every other column */
+  private final EndKey     endKey;
 
   /** The generation of an identity column that takes no value of a statement. */
   public static final String ALWAYS     = "ALWAYS";
@@ -74,11 +76,13 @@ public final class Column {
 
   Column(final String name, final ColumnType type, final boolean nullable, final Kind kind, final String property,
       final boolean link) {
-    this(name, type, nullable, kind, property, link, false, true, null, null);
+    this(name, type, nullable, kind, property, link, false, true, null, null, null);
   }
 
   private Column(final String name, final ColumnType type, final boolean nullable, final Kind kind, final String property,
-      final boolean link, final boolean hidden, final boolean listed, final String defaultText, final String identity) {
+      final boolean link, final boolean hidden, final boolean listed, final String defaultText, final String identity,
+      final EndKey endKey) {
+    this.endKey = endKey;
     this.name = Objects.requireNonNull(name);
     this.type = Objects.requireNonNull(type);
     this.nullable = nullable;
@@ -101,22 +105,22 @@ public final class Column {
 
   /** The same column, not nullable: a property that is the primary key of its table. */
   Column notNull() {
-    return new Column(name, type, false, kind, property, link, hidden, listed, defaultText, identity);
+    return new Column(name, type, false, kind, property, link, hidden, listed, defaultText, identity, endKey);
   }
 
   /** The same column, hidden: see {@link #isHidden()} and, for {@code listInCatalog}, {@link #isListed()}. */
   Column hide(final boolean listInCatalog) {
-    return new Column(name, type, nullable, kind, property, link, true, listInCatalog, defaultText, identity);
+    return new Column(name, type, nullable, kind, property, link, true, listInCatalog, defaultText, identity, endKey);
   }
 
   /** The same column with the text that {@code column_default} shows for it. */
   Column withDefaultText(final String text) {
-    return new Column(name, type, nullable, kind, property, link, hidden, listed, text, identity);
+    return new Column(name, type, nullable, kind, property, link, hidden, listed, text, identity, endKey);
   }
 
   /** The same column as an identity column, {@value #ALWAYS} or {@value #BY_DEFAULT} (fork issue #221). */
   Column withIdentity(final String generation) {
-    return new Column(name, type, nullable, kind, property, link, hidden, listed, defaultText, generation);
+    return new Column(name, type, nullable, kind, property, link, hidden, listed, defaultText, generation, endKey);
   }
 
   /**
@@ -130,6 +134,19 @@ public final class Column {
   /** Whether {@code CREATE TABLE} declared the column {@code serial}, {@code bigserial} or {@code smallserial}. */
   public boolean isSerial() {
     return defaultText != null && defaultText.startsWith("nextval(");
+  }
+
+  /** The same end of a link table, which refers to a key and has its type. */
+  Column referringTo(final EndKey key, final ColumnType keyType) {
+    return new Column(name, keyType, nullable, kind, property, link, hidden, listed, defaultText, identity, key);
+  }
+
+  /**
+   * The key that this end of a link table refers to (fork issue #213), {@code null} for an end that holds record ids and for every
+   * other column.
+   */
+  public EndKey endKey() {
+    return endKey;
   }
 
   /**
@@ -207,7 +224,8 @@ public final class Column {
    * <li>The identity column {@code rid}: the record id as text, {@code #12:3}. It is {@code null} for an edge that has no record
    * (a lightweight edge in an edge table that also holds records, see {@link Table.EdgeStorage#MIXED}).</li>
    * <li>{@code source_id} and {@code target_id}: the record id of the out and the in vertex as text, read from the edge, with no
-   * vertex loaded. They hold record ids whatever the endpoint types call their own key.</li>
+   * vertex loaded. An end that refers to a key ({@link #endKey()}) is the value of that key in the record at the end, which is
+   * loaded for it.</li>
    * <li>A {@code LINK} property: the record id of the target as text.</li>
    * <li>The embedded documents of a property declared {@code EMBEDDED OF T}, {@code LIST OF T} or {@code MAP OF T}: the objects
    * of their properties ({@link EmbeddedValues}).</li>
@@ -225,9 +243,12 @@ public final class Column {
       return rid == null || rid.getPosition() < 0 ? null : rid.toString();
     }
     case SOURCE:
-      return edge(record).getOut().toString();
-    case TARGET:
-      return edge(record).getIn().toString();
+    case TARGET: {
+      final Edge edge = edge(record);
+      if (endKey != null)
+        return endKey.read(edge, this, endKey.endOf(edge, this, null));
+      return (kind == Kind.SOURCE ? edge.getOut() : edge.getIn()).toString();
+    }
     default: {
       final Object value = record.get(property);
       if (link && value instanceof Identifiable identifiable)

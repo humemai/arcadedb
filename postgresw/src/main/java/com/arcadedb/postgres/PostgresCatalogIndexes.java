@@ -627,10 +627,10 @@ final class PostgresCatalogIndexes {
   }
 
   /**
-   * The {@code pg_constraint} columns of a foreign key, name and value in turn. The update action is NO ACTION ({@code a}) and the
-   * match type is SIMPLE ({@code s}). The delete action and {@code conenforced} say what the engine does, as the
-   * {@code referential_constraints} and {@code table_constraints} views of the language do: the key of an end of an edge is CASCADE
-   * ({@code c}), and the key of a {@code LINK} property is not enforced, which PostgreSQL also marks as not validated.
+   * The {@code pg_constraint} columns of a foreign key, name and value in turn. The match type is SIMPLE ({@code s}). The actions
+   * and {@code conenforced} say what the engine and the language do, as the {@code referential_constraints} and
+   * {@code table_constraints} views of the language do, and the key of a {@code LINK} property is not enforced, which PostgreSQL
+   * also marks as not validated.
    */
   static Object[] referenceValues(final Reference key, final int schemaOid) {
     return new Object[] { "oid", key.oid(), "conname", key.name(), "connamespace", schemaOid, "contype", "f", "condeferrable",
@@ -651,7 +651,8 @@ final class PostgresCatalogIndexes {
 
   /**
    * {@code pg_get_constraintdef} of a foreign key, as PostgreSQL prints it: {@code FOREIGN KEY (a) REFERENCES t(id)}, followed by
-   * {@code ON DELETE CASCADE} for the end of an edge and by {@code NOT ENFORCED} for a {@code LINK} property.
+   * {@code ON UPDATE} and {@code ON DELETE} with their actions other than NO ACTION, and by {@code NOT ENFORCED} for a
+   * {@code LINK} property.
    */
   static String referenceDefinition(final Reference key) {
     final StringBuilder definition = new StringBuilder("FOREIGN KEY (");

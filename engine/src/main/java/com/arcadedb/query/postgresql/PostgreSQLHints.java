@@ -97,8 +97,11 @@ public final class PostgreSQLHints {
     rule("A column name that starts with @", "Choose a name that does not start with @");
     rule("A foreign key other than the two ends",
         "Refer to a primary key or a unique column of the table, which is checked, or declare a link table with the columns"
-            + " source_id and target_id, each text NOT NULL REFERENCES table (rid) ON DELETE CASCADE");
+            + " source_id and target_id, each NOT NULL with the type of the key it refers to, such as bigint NOT NULL REFERENCES"
+            + " table (id), or text NOT NULL REFERENCES table (rid) ON DELETE CASCADE");
     rule("A foreign key between columns of the types", "Give the referring column the type of the column it refers to");
+    rule("A foreign key over several columns", "Declare one foreign key for source_id and one for target_id");
+    rule("A foreign key to a column of type", "Refer to a unique column of a type such as bigint, text or date");
     rule("The referential action SET DEFAULT", "Write ON DELETE SET NULL or CASCADE");
     rule("A column list after SET NULL", "Leave the column list out: SET NULL sets every referring column");
     rule("A type modifier on a column", "Leave the modifier out: declare text or numeric, whose length and precision are not checked");

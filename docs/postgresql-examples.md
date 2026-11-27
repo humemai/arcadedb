@@ -38,6 +38,7 @@ The page starts from the nine tasks of the timed study on fork issue #13, with s
 | A generated uuid | different | none | none |
 | A cast with a type modifier | no `sql` query | none | `sql`, openCypher |
 | Neighbour list from one vertex | different | none | none |
+| A join on the table's own key | different | none | none |
 | Inner join | different | none | none |
 | Parallel edges | different | none | none |
 | LEFT JOIN with an unmatched row | different | none | none |
@@ -61,6 +62,7 @@ The page starts from the nine tasks of the timed study on fork issue #13, with s
 | Batch insert in one statement | same | none | none |
 | Inserting the rows of a query | different | none | none |
 | Inserting an edge | different | none | none |
+| Inserting an edge by the keys | different | none | none |
 | Upsert that updates | different | none | none |
 | Upsert that leaves the existing row | different | none | none |
 | Update by key | same | none | none |
@@ -89,7 +91,7 @@ The page starts from the nine tasks of the timed study on fork issue #13, with s
 
 ## The data
 
-The same records serve all three ArcadeDB languages. A vertex type or document type is a table, and an edge type is a table with `source_id` and `target_id`, which hold record ids. In `postgresql` the record id of every table is the column `rid`, and `id` is a column only where the type declares it. The PostgreSQL 18 tables declare `rid` as an identity column, and foreign keys with `ON DELETE CASCADE` so that a deleted person takes its edges along.
+The same records serve all three ArcadeDB languages. A vertex type or document type is a table, and an edge type is a table with `source_id` and `target_id`. They hold record ids, as in `knows`, or the value of a unique column of the table at that end when the edge type declares it, as in `follows`. In `postgresql` the record id of every table is the column `rid`, and `id` is a column only where the type declares it. The PostgreSQL 18 tables declare `rid` as an identity column, and foreign keys with `ON DELETE CASCADE` so that a deleted person takes its edges along.
 
 ArcadeDB `sql` setup, schema:
 
@@ -103,6 +105,8 @@ CREATE PROPERTY person.created LONG;
 CREATE INDEX ON person (id) UNIQUE;
 CREATE EDGE TYPE knows CUSTOM source_table = 'person', target_table = 'person';
 CREATE PROPERTY knows.since INTEGER;
+CREATE EDGE TYPE follows CUSTOM source_table = 'person', source_column = 'id', target_table = 'person', target_column = 'id';
+CREATE PROPERTY follows.since INTEGER;
 CREATE VERTEX TYPE memory;
 CREATE PROPERTY memory.id LONG;
 CREATE PROPERTY memory.name STRING;
@@ -127,6 +131,8 @@ CREATE EDGE knows FROM (SELECT FROM person WHERE id = 1) TO (SELECT FROM person 
 CREATE EDGE knows FROM (SELECT FROM person WHERE id = 2) TO (SELECT FROM person WHERE id = 3) SET since = 2021;
 CREATE EDGE knows FROM (SELECT FROM person WHERE id = 3) TO (SELECT FROM person WHERE id = 4) SET since = 2023;
 CREATE EDGE knows FROM (SELECT FROM person WHERE id = 4) TO (SELECT FROM person WHERE id = 1) SET since = 2024;
+CREATE EDGE follows FROM (SELECT FROM person WHERE id = 1) TO (SELECT FROM person WHERE id = 2) SET since = 2019;
+CREATE EDGE follows FROM (SELECT FROM person WHERE id = 1) TO (SELECT FROM person WHERE id = 3) SET since = 2020;
 INSERT INTO memory (id, name, age, city, created, tags, meta, embedding) VALUES (1, 'Ada', 36, 'Delft', 100, ['graph', 'sql'], {"source": "chat", "score": 3}, [1.0, 0.0, 0.0]), (2, 'Bo', 29, 'Delft', 200, ['sql'], {"source": "mail", "score": 5}, [0.0, 1.0, 0.0]), (3, 'Cy', 52, 'Leiden', 300, [], {"source": "chat", "score": 1}, [0.9, 0.1, 0.0]);
 ```
 
@@ -138,6 +144,7 @@ CREATE TABLE person (rid bigint GENERATED ALWAYS AS IDENTITY UNIQUE, id bigint P
 CREATE TABLE knows (rid bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, source_id bigint NOT NULL REFERENCES person (rid) ON DELETE CASCADE, target_id bigint NOT NULL REFERENCES person (rid) ON DELETE CASCADE, since int);
 CREATE INDEX knows_source ON knows (source_id);
 CREATE INDEX knows_target ON knows (target_id);
+CREATE TABLE follows (source_id bigint NOT NULL REFERENCES person (id) ON DELETE CASCADE, target_id bigint NOT NULL REFERENCES person (id) ON DELETE CASCADE, since int);
 CREATE TABLE memory (rid bigint GENERATED ALWAYS AS IDENTITY UNIQUE, id bigint PRIMARY KEY, name text, age int, city text, created bigint, tags text[], meta jsonb, payload bytea, embedding vector(3));
 ```
 
@@ -146,6 +153,7 @@ PostgreSQL 18 setup, data:
 ```sql
 INSERT INTO person (id, name, age, city, created) VALUES (1, 'Ada', 36, 'Delft', 100), (2, 'Bo', 41, 'Delft', 200), (3, 'Cy', 29, 'Leiden', 300), (4, 'Di', 36, 'Leiden', 400), (5, 'Ed', NULL, 'Utrecht', 500);
 INSERT INTO knows (source_id, target_id, since) SELECT p.rid, q.rid, e.since FROM (VALUES (1, 2, 2019), (1, 2, 2022), (1, 3, 2020), (2, 3, 2021), (3, 4, 2023), (4, 1, 2024)) AS e(a, b, since) JOIN person p ON p.id = e.a JOIN person q ON q.id = e.b;
+INSERT INTO follows (source_id, target_id, since) VALUES (1, 2, 2019), (1, 3, 2020);
 INSERT INTO memory (id, name, age, city, created, tags, meta, embedding) VALUES (1, 'Ada', 36, 'Delft', 100, '{graph,sql}', '{"source": "chat", "score": 3}', '[1,0,0]'), (2, 'Bo', 29, 'Delft', 200, '{sql}', '{"source": "mail", "score": 5}', '[0,1,0]'), (3, 'Cy', 52, 'Leiden', 300, '{}', '{"source": "chat", "score": 1}', '[0.9,0.1,0]');
 ```
 
@@ -533,6 +541,35 @@ Result:
 | 2 | Bo | 2019 |
 | 3 | Cy | 2020 |
 | 2 | Bo | 2022 |
+
+### A join on the table's own key
+
+The edge type `follows` declares that its ends refer to `person.id`, so `postgresql` runs PostgreSQL's join text and walks the edges of the bound person.
+
+ArcadeDB `postgresql`, PostgreSQL 18:
+
+```sql
+SELECT q.name AS name, f.target_id AS friend, f.since AS since FROM person p JOIN follows f ON f.source_id = p.id JOIN person q ON q.id = f.target_id WHERE p.id = 1 ORDER BY since;
+```
+
+ArcadeDB `sql`:
+
+```sql
+SELECT in.name AS name, in.id AS friend, since FROM (SELECT expand(outE('follows')) FROM person WHERE id = 1) ORDER BY since;
+```
+
+ArcadeDB openCypher:
+
+```cypher
+MATCH (p:person)-[f:follows]->(q:person) WHERE p.id = 1 RETURN q.name AS name, q.id AS friend, f.since AS since ORDER BY since;
+```
+
+Result:
+
+| name | friend | since |
+| --- | --- | --- |
+| Bo | 2 | 2019 |
+| Cy | 3 | 2020 |
 
 ### Inner join
 
@@ -1274,6 +1311,42 @@ After:
 | --- | --- | --- |
 | Di | Ada | 2024 |
 | Ed | Ada | 2025 |
+
+### Inserting an edge by the keys
+
+The ends of `follows` take the keys of the two persons. A key that no person has is `23503`, as in PostgreSQL.
+
+ArcadeDB `postgresql`, PostgreSQL 18:
+
+```sql
+INSERT INTO follows (source_id, target_id, since) VALUES (2, 3, 2025);
+```
+
+ArcadeDB `sql`:
+
+```sql
+CREATE EDGE follows FROM (SELECT FROM person WHERE id = 2) TO (SELECT FROM person WHERE id = 3) SET since = 2025;
+```
+
+ArcadeDB openCypher:
+
+```cypher
+MATCH (p:person), (q:person) WHERE p.id = 2 AND q.id = 3 CREATE (p)-[:follows {since: 2025}]->(q);
+```
+
+Check:
+
+```sql
+SELECT p.name AS name, q.name AS friend, f.since AS since FROM person p JOIN follows f ON f.source_id = p.id JOIN person q ON q.id = f.target_id ORDER BY since;
+```
+
+After:
+
+| name | friend | since |
+| --- | --- | --- |
+| Ada | Bo | 2019 |
+| Ada | Cy | 2020 |
+| Bo | Cy | 2025 |
 
 ### Upsert that updates
 
