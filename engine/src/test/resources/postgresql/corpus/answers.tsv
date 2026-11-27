@@ -298,6 +298,10 @@ err-c1-with-column-list-too-long	multiset	-	ok	WITH t (a, b) AS (SELECT 1) SELEC
 err-c1-with-duplicate-name	multiset	-	ok	WITH t AS (SELECT 1), t AS (SELECT 2) SELECT * FROM t	{"error":"42712"}
 err-c1-with-reads-itself	multiset	-	ok	WITH t AS (SELECT * FROM t) SELECT * FROM t	{"error":"42P01"}
 err-c1-with-name-out-of-scope	multiset	-	ok	SELECT * FROM (WITH t AS (SELECT 1) SELECT 1) a, t	{"error":"42P01"}
+pow-one-and-zero-with-nan	multiset	-	ok	SELECT power(float8 '1', float8 'NaN') AS a, power(float8 'NaN', float8 '0') AS b	{"columns":["a","b"],"types":["float8","float8"],"rows":[[1.0,1.0]]}
+pow-nan-results	multiset	-	ok	SELECT power(float8 'NaN', float8 '2')::text AS a, power(float8 '2', float8 'NaN')::text AS b, power(float8 '-1', float8 'NaN')::text AS c	{"columns":["a","b","c"],"types":["text","text","text"],"rows":[["NaN","NaN","NaN"]]}
+pow-one-to-infinity	multiset	-	ok	SELECT power(float8 '-1', float8 'inf') AS a, power(float8 '-1', float8 '-inf') AS b, power(float8 '1', float8 'inf') AS c	{"columns":["a","b","c"],"types":["float8","float8","float8"],"rows":[[1.0,1.0,1.0]]}
+pow-infinite-operands	multiset	-	ok	SELECT power(float8 'inf', float8 '-1')::text AS a, power(float8 '-inf', float8 '-3')::text AS b, power(float8 '-inf', float8 '3')::text AS c, power(float8 '0.5', float8 'inf')::text AS d, power(float8 '-2', float8 '-inf')::text AS e	{"columns":["a","b","c","d","e"],"types":["text","text","text","text","text"],"rows":[["0","-0","-Infinity","0","0"]]}
 c2-in-subquery	ordered	-	ok	SELECT name FROM person WHERE pid IN (SELECT pid FROM orders) ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[["Ada"],["Bo"],["Di"]]}
 c2-not-in-subquery	ordered	-	ok	SELECT name FROM person WHERE pid NOT IN (SELECT pid FROM orders WHERE pid IS NOT NULL) ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[["Cy"],["Ed"]]}
 c2-not-in-subquery-with-a-null-row	ordered	-	ok	SELECT name FROM person WHERE pid NOT IN (SELECT pid FROM orders) ORDER BY name	{"columns":["name"],"types":["varchar"],"rows":[]}
