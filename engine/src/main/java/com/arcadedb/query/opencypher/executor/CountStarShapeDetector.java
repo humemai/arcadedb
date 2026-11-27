@@ -21,7 +21,6 @@ package com.arcadedb.query.opencypher.executor;
 import com.arcadedb.query.opencypher.executor.CypherExecutionPlan.SeedCorrelation;
 import com.arcadedb.database.Database;
 import com.arcadedb.database.DatabaseInternal;
-import com.arcadedb.database.Identifiable;
 import com.arcadedb.database.RID;
 import com.arcadedb.database.Record;
 import com.arcadedb.engine.Bucket;
@@ -401,7 +400,7 @@ final class CountStarShapeDetector {
           nodePredicates);
     }
 
-    return seededChainOp(db, correlation, pathPattern, nodeLabels, edgeTypes, directions, nodePredicates,
+    return seededChainOp(correlation, pathPattern, nodeLabels, edgeTypes, directions, nodePredicates,
         inequalityVar1 != null);
   }
 
@@ -567,7 +566,7 @@ final class CountStarShapeDetector {
    * nothing but {@code MATCH} and {@code RETURN}. A body's own {@code MATCH (q:Q)} written under an outer {@code q}
    * is not a rebinding but the correlation itself, which is exactly what this seeds from.
    */
-  private CountOp seededChainOp(final Database db, final SeedCorrelation correlation, final PathPattern pathPattern,
+  private CountOp seededChainOp(final SeedCorrelation correlation, final PathPattern pathPattern,
       final String[] nodeLabels, final String[] edgeTypes, final Vertex.DIRECTION[] directions,
       final VertexPredicate[] nodePredicates, final boolean hasInequality) {
     if (!correlation.isSeedable() || hasInequality || correlation.readNames().size() != 1)
@@ -588,7 +587,7 @@ final class CountStarShapeDetector {
       return null;
 
     final Object bound = boundElement(correlation.boundValue(seededName));
-    final RID anchorRid = boundVertexRid(db, bound);
+    final RID anchorRid = boundVertexRid(bound);
     if (anchorRid == null)
       return null;
     // The bound vertex itself when the row holds one that reads its own edge lists, so the seeded walk does not load
@@ -606,18 +605,14 @@ final class CountStarShapeDetector {
   /**
    * The RID of a bound value that is a vertex, or null for anything else.
    * <p>
-   * A node pattern matches only vertices, so a name bound to a scalar, to a document or to an edge matches nothing.
-   * Rather than teach the operator to answer 0 for those, they are left to the ordinary pipeline, which is the only
-   * thing here that knows what each of them means - and which is what answered them before this existed.
+   * A node pattern matches only a bound vertex, so a name bound to a scalar, to a document, to an edge or to a link (a record
+   * id read from a property, even one that points at a vertex) matches nothing, as in {@code BoundNodeCheckStep} (issues
+   * #11761, #13534). Following the link here counted the edges of a node a MATCH of the same pattern does not find. Rather
+   * than teach the operator to answer 0 for those, they are left to the ordinary pipeline, which is the only thing here that
+   * knows what each of them means.
    */
-  static RID boundVertexRid(final Database db, final Object bound) {
-    if (!(bound instanceof Identifiable identifiable))
-      return null;
-
-    final RID rid = identifiable.getIdentity();
-    if (rid == null)
-      return null;
-    return db.getSchema().getTypeByBucketId(rid.getBucketId()) instanceof VertexType ? rid : null;
+  static RID boundVertexRid(final Object bound) {
+    return bound instanceof Vertex vertex ? vertex.getIdentity() : null;
   }
 
   /** What a bound name holds: a row carries its element inside a {@link Result}. */

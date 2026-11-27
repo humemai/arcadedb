@@ -795,7 +795,7 @@ public class CypherExecutionPlan {
     if (!correlation.isSeedable() || !correlation.isCorrelated())
       return true;
     for (final String name : correlation.readNames())
-      if (CountStarShapeDetector.boundVertexRid(database, CountStarShapeDetector.boundElement(correlation.boundValue(name))) == null)
+      if (CountStarShapeDetector.boundVertexRid(CountStarShapeDetector.boundElement(correlation.boundValue(name))) == null)
         return false;
     return true;
   }
