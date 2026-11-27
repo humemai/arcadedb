@@ -129,7 +129,7 @@ unsupportedTableForm
   | WITHOUT
   | ON
   | TABLESPACE
-  | LPAREN colId (COMMA colId)* RPAREN AS
+  | LPAREN colId (COMMA colId)* RPAREN (AS | ON | USING | WITH | WITHOUT | TABLESPACE)
   ;
 
 unsupportedTableOption
@@ -192,14 +192,18 @@ tableConstraint
   ;
 
 tableConstraintElem
-  : UNIQUE (NULLS DISTINCT)? LPAREN columns+=colId (COMMA columns+=colId)* RPAREN                       # uniqueTableConstraint
-  | PRIMARY KEY LPAREN columns+=colId (COMMA columns+=colId)* RPAREN                                    # primaryKeyTableConstraint
+  : UNIQUE (NULLS DISTINCT)? LPAREN columns+=colId (COMMA columns+=colId)* unsupportedWithoutOverlaps? RPAREN   # uniqueTableConstraint
+  | PRIMARY KEY LPAREN columns+=colId (COMMA columns+=colId)* unsupportedWithoutOverlaps? RPAREN                # primaryKeyTableConstraint
   | FOREIGN KEY LPAREN columns+=colId (COMMA columns+=colId)* RPAREN REFERENCES references              # foreignKeyTableConstraint
   | unsupportedTableConstraint skipRest                                                                 # otherTableConstraint
   ;
 
 unsupportedTableConstraint
   : CHECK | EXCLUDE | NOT NULL | UNIQUE NULLS NOT | UNIQUE USING | PRIMARY KEY USING
+  ;
+
+unsupportedWithoutOverlaps
+  : WITHOUT OVERLAPS
   ;
 
 unsupportedConstraintOption
@@ -238,7 +242,11 @@ unsupportedIndexElementOption
   ;
 
 indexParameter
-  : name=colId EQ indexParameterValue
+  : name=colId unsupportedParameterNamespace? EQ indexParameterValue
+  ;
+
+unsupportedParameterNamespace
+  : DOT colLabel
   ;
 
 indexParameterValue
@@ -318,8 +326,9 @@ valuesRow
 
 // the right side of an assignment and a value of a VALUES row: an expression, or DEFAULT
 writeValue
-  : DEFAULT   # defaultValue
-  | aExpr     # expressionValue
+  : DEFAULT              # defaultValue
+  | aExpr                # expressionValue
+  | unsupportedStarArg   # wholeRowValue
   ;
 
 returningClause
@@ -567,6 +576,8 @@ unsupportedTableRef
   | XMLTABLE parenGroup
   | JSON_TABLE parenGroup
   | funcName parenGroup
+  // these keywords are functions in FROM too, and may carry column definitions: AS (a int, b int)
+  | (COALESCE | GREATEST | LEAST | NULLIF) parenGroup (AS parenGroup)?
   | subqueryGroup
   ;
 
@@ -760,6 +771,7 @@ cExpr
   | LPAREN selectStmt RPAREN                                                   # scalarSubqueryExpr
   | LPAREN aExpr RPAREN                                                        # parenExpr
   | LPAREN aExpr RPAREN unsupportedIndirection                                 # unsupportedParenIndirectionExpr
+  | LPAREN unsupportedStarArg RPAREN                                           # unsupportedParenStarExpr
   | LPAREN aExpr unsupportedRowComma RPAREN                                   # unsupportedRowExpr
   | caseExpr                                                                   # caseExprAlt
   | CAST LPAREN aExpr AS typename RPAREN                                       # castExpr
@@ -942,6 +954,12 @@ constTypename
   : numericType
   | characterType
   | datetimeType
+  | jsonType
+  ;
+
+// the type json of PostgreSQL, a keyword there: the parser reads it and the binding refuses it, as the language has jsonb only
+jsonType
+  : JSON
   ;
 
 // ============================================================================
@@ -969,6 +987,7 @@ simpleTypename
   | datetimeType         # datetimeTypeName
   | intervalType         # intervalTypeName
   | unsupportedBitType   # bitTypeName
+  | jsonType             # jsonTypeName
   ;
 
 genericType

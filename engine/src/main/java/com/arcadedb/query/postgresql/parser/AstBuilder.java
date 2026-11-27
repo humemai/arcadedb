@@ -959,7 +959,8 @@ final class AstBuilder {
     if (context instanceof TypedConstContext e) {
       final ConstTypenameContext typename = e.constTypename();
       final TypeName type = typename.numericType() != null ? numericType(typename.numericType())
-          : typename.characterType() != null ? characterType(typename.characterType()) : datetimeType(typename.datetimeType());
+          : typename.characterType() != null ? characterType(typename.characterType())
+          : typename.jsonType() != null ? jsonType(start) : datetimeType(typename.datetimeType());
       return new Expression.Cast(position(start), new Expression.StringLiteral(position(e.sconst().getStart()), string(e.sconst())),
           type);
     }
@@ -1163,6 +1164,8 @@ final class AstBuilder {
       return characterType(e.characterType());
     if (context instanceof DatetimeTypeNameContext e)
       return datetimeType(e.datetimeType());
+    if (context instanceof JsonTypeNameContext)
+      return jsonType(context.getStart());
     if (context instanceof IntervalTypeNameContext e) {
       final IntervalTypeContext interval = e.intervalType();
       final String fields = interval.intervalFields() == null ? null : intervalFields(interval.intervalFields());
@@ -1171,6 +1174,11 @@ final class AstBuilder {
           precision == null ? List.of() : List.of(integer(precision.getSymbol(), false)), fields, 0);
     }
     throw new IllegalStateException("A type the parser did not refuse has no tree: " + context.getText());
+  }
+
+  /** The type {@code json}, which the language does not have: the binding refuses it by this name. */
+  private TypeName jsonType(final Token start) {
+    return new TypeName(position(start), List.of("json"), List.of(), null, 0);
   }
 
   private List<Expression> modifiers(final TypeModifiersContext context) {
