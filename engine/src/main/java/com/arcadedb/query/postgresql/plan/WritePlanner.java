@@ -48,6 +48,8 @@ import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
+import com.arcadedb.query.postgresql.eval.TransactionClock;
+import com.arcadedb.query.postgresql.catalog.ClockDefault;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.plan.infoschema.InformationSchema;
 import com.arcadedb.query.sql.executor.Result;
@@ -522,8 +524,7 @@ public final class WritePlanner {
         continue;
       Object value = values[i];
       if (value == DEFAULT) {
-        final Property property = table.documentType().getPolymorphicPropertyIfExists(column.property());
-        value = property == null ? null : property.getDefaultValue();
+        value = defaultOf(table, column);
         changed.add(column.property());
         if (value == null)
           setNull(table, record, column);
@@ -599,8 +600,7 @@ public final class WritePlanner {
     for (final Column column : table.columns()) {
       if (column.kind() != Column.Kind.PROPERTY || given.contains(column.property()))
         continue;
-      final Property property = table.documentType().getPolymorphicPropertyIfExists(column.property());
-      final Object value = property == null ? null : property.getDefaultValue();
+      final Object value = defaultOf(table, column);
       if (value != null)
         properties.put(column.property(), value);
     }
@@ -912,17 +912,28 @@ public final class WritePlanner {
   }
 
   /** A column that is not given, or given as {@code DEFAULT}, takes the default of its property. */
-  private static void applyDefaults(final Table table, final MutableDocument record, final Set<String> given) {
+  private void applyDefaults(final Table table, final MutableDocument record, final Set<String> given) {
     for (final Column column : table.columns()) {
       if (column.kind() != Column.Kind.PROPERTY || given.contains(column.property()))
         continue;
-      final Property property = table.documentType().getPolymorphicPropertyIfExists(column.property());
-      if (property == null)
-        continue;
-      final Object value = property.getDefaultValue();
+      final Object value = defaultOf(table, column);
       if (value != null)
         record.set(column.property(), value);
     }
+  }
+
+  /**
+   * The value of the default of a column: that of its property, and for a default that reads the clock the time of the
+   * transaction of this write (fork issue #222). A default that a later statement of {@code sql} changed is that one.
+   */
+  private Object defaultOf(final Table table, final Column column) {
+    final Property property = table.documentType().getPolymorphicPropertyIfExists(column.property());
+    if (property == null)
+      return null;
+    final ClockDefault clock = ClockDefault.of(column.defaultText());
+    if (clock != null && ClockDefault.SCHEMA_DEFAULT.equals(property.getDefaultValueDefinition()))
+      return TransactionClock.defaultValue(parameters.time(), clock, column.type());
+    return property.getDefaultValue();
   }
 
   /** A {@code NOTNULL} or {@code MANDATORY} property with no value: {@code 23502}, as a {@code NOT NULL} column has it. */

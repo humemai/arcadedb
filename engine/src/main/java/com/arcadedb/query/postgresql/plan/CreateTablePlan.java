@@ -27,6 +27,7 @@ import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.SourcePosition;
 import com.arcadedb.query.postgresql.ast.TypeName;
+import com.arcadedb.query.postgresql.catalog.ClockDefault;
 import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.ColumnType;
 import com.arcadedb.query.postgresql.catalog.EdgeEndpoints;
@@ -37,6 +38,7 @@ import com.arcadedb.query.postgresql.catalog.TableDefinition;
 import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.Parameters;
+import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.Property;
@@ -97,6 +99,8 @@ public final class CreateTablePlan {
     /** the literal after {@code DEFAULT}, {@code null} when there is no default */
     Expression             literal;
     boolean                hasDefault;
+    /** the default reads the clock */
+    boolean                clock;
     Object                 defaultValue;
     String                 defaultText;
 
@@ -422,6 +426,11 @@ public final class CreateTablePlan {
     Expression literal = spec.literal;
     if (literal instanceof Expression.NullLiteral)
       return;
+    final ClockDefault clock = clockDefault(literal);
+    if (clock != null) {
+      readClockDefault(spec, clock);
+      return;
+    }
     // 'text'::the_type_of_the_column says what the bare string says
     if (literal instanceof Expression.Cast cast && cast.operand() instanceof Expression.StringLiteral operand
         && cast.type().modifiers().isEmpty() && type(cast.type()).type() == spec.mapped.type())
@@ -454,6 +463,49 @@ public final class CreateTablePlan {
     spec.hasDefault = true;
     spec.defaultValue = value;
     spec.defaultText = defaultText(literal, type, value);
+  }
+
+  /** The default of the clock that {@code expression} is, {@code null} for any other expression (fork issue #222). */
+  private static ClockDefault clockDefault(final Expression expression) {
+    if (expression instanceof Expression.SpecialFunction special) {
+      final ClockDefault clock = switch (special.kind()) {
+        case CURRENT_DATE -> ClockDefault.CURRENT_DATE;
+        case CURRENT_TIMESTAMP -> ClockDefault.CURRENT_TIMESTAMP;
+        case LOCALTIMESTAMP -> ClockDefault.LOCALTIMESTAMP;
+        default -> null;
+      };
+      if (clock != null && !special.args().isEmpty())
+        throw new PostgreSQLFeatureNotSupportedException("A DEFAULT with a precision is not supported by the postgresql language:"
+            + " write DEFAULT " + clock.text() + " (" + expression.position() + ")");
+      return clock;
+    }
+    if (expression instanceof Expression.FunctionCall call && call.args().isEmpty() && !call.distinct() && !call.star()
+        && call.over() == null
+        && (call.name().size() == 1 || call.name().size() == 2 && "pg_catalog".equals(call.name().get(0).value()))) {
+      final String name = call.name().get(call.name().size() - 1).value().toLowerCase(Locale.ROOT);
+      if ("now".equals(name))
+        return ClockDefault.NOW;
+      if ("transaction_timestamp".equals(name))
+        return ClockDefault.TRANSACTION_TIMESTAMP;
+    }
+    return null;
+  }
+
+  private static void readClockDefault(final Spec spec, final ClockDefault clock) {
+    final ColumnType type = spec.mapped.type();
+    if (type != ColumnType.DATE && type != ColumnType.TIMESTAMP && type != ColumnType.TIMESTAMPTZ) {
+      if (type == ColumnType.TEXT || type == ColumnType.VARCHAR)
+        throw new PostgreSQLFeatureNotSupportedException("A DEFAULT of " + clock.text() + " on a column of type " + type
+            + " is not supported by the postgresql language: give the column the type timestamptz (" + spec.literal.position() + ")");
+      final PgType from = clock == ClockDefault.CURRENT_DATE ? PgType.DATE
+          : clock == ClockDefault.LOCALTIMESTAMP ? PgType.TIMESTAMP : PgType.TIMESTAMPTZ;
+      throw PostgreSQLEvaluationException.mismatch("column \"" + spec.name + "\" is of type " + PgType.of(type).displayName()
+          + " but default expression is of type " + from.displayName());
+    }
+    spec.hasDefault = true;
+    spec.clock = true;
+    spec.defaultValue = ClockDefault.SCHEMA_DEFAULT;
+    spec.defaultText = clock.text();
   }
 
   /**
@@ -578,7 +630,10 @@ public final class CreateTablePlan {
       property.setMin(Integer.toString(mapped.dimensions()));
       property.setMax(Integer.toString(mapped.dimensions()));
     }
-    if (spec.hasDefault) {
+    if (spec.clock)
+      // an expression of the sql language, which reads the clock for each record that another language creates
+      property.setDefaultValue(ClockDefault.SCHEMA_DEFAULT);
+    else if (spec.hasDefault) {
       // a default that is a string is an expression of the sql language: it is written as a literal of that language
       final Object value = spec.defaultValue instanceof String text ? sqlLiteral(text) : spec.defaultValue;
       property.setDefaultValue(value);

@@ -39,6 +39,7 @@ import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.query.postgresql.eval.TransactionClock;
 import com.arcadedb.query.postgresql.parser.StatementParser;
 import com.arcadedb.query.postgresql.plan.CreateIndexPlan;
 import com.arcadedb.query.postgresql.plan.CreateTablePlan;
@@ -275,11 +276,13 @@ public class PostgreSQLQueryEngine implements QueryEngine {
         requireNoBlock(state, create);
         return new CreateIndexPlan(database, catalog(), create).execute();
       }
+      // the time of the transaction, which every clock function and default of the statement answers (fork issue #222)
+      final Parameters timed = parameters.at(TransactionClock.now(database));
       if (statement instanceof ExplainWriteStatement explain)
-        return explain(new WritePlanner(database, catalog(), parameters).plan(explain.statement()).steps());
+        return explain(new WritePlanner(database, catalog(), timed).plan(explain.statement()).steps());
       if (statement instanceof WriteStatement write)
-        return new WritePlanner(database, catalog(), parameters).plan(write).execute(database);
-      final SelectPlanner planner = new SelectPlanner(database, catalog(), parameters);
+        return new WritePlanner(database, catalog(), timed).plan(write).execute(database);
+      final SelectPlanner planner = new SelectPlanner(database, catalog(), timed);
       if (statement instanceof ExplainStatement explain) {
         final QueryPlan explained = planner.planQuery(explain.select());
         return explain(explained.steps(), explained.warnings());
@@ -320,6 +323,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       if (!database.isTransactionActive()) {
         database.begin();
         state.open = true;
+        // the clock of the transaction is read now
+        TransactionClock.now(database);
       }
       state.failed = false;
     }

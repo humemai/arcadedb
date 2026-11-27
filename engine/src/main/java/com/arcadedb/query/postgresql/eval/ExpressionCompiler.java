@@ -37,7 +37,7 @@ import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -1362,6 +1362,11 @@ public final class ExpressionCompiler {
         return Math.sqrt((Double) v[0]);
       });
     }
+    case "now":
+    case "transaction_timestamp":
+      if (args.length != 0)
+        throw PostgreSQLEvaluationException.noFunction(name, types(args));
+      return currentTimestamp(Casts.MAX_TIMESTAMP_PRECISION);
     case "mod":
       if (args.length != 2 || !args[0].type().isNumber() || !args[1].type().isNumber())
         throw PostgreSQLEvaluationException.noFunction(name, types(args));
@@ -1487,19 +1492,40 @@ public final class ExpressionCompiler {
         return best;
       }, coerced);
     }
+    // the clock is read once for a transaction, so every row of the statement has the same value (fork issues #222 and #190)
     case CURRENT_DATE: {
-      final ZoneId zone = SessionTimeZone.zoneOf("CURRENT_DATE");
-      return new Evaluable.Node(PgType.DATE, row -> LocalDate.now(zone));
+      final LocalDate today = localTime("CURRENT_DATE").toLocalDate();
+      return new Evaluable.Node(PgType.DATE, row -> today);
     }
+    case CURRENT_TIMESTAMP:
+      return currentTimestamp(precision(call));
     case LOCALTIMESTAMP: {
-      final int precision = call.args().isEmpty() ? Casts.MAX_TIMESTAMP_PRECISION
-          : Math.min(integerModifier(call.args().get(0)), Casts.MAX_TIMESTAMP_PRECISION);
-      final ZoneId zone = SessionTimeZone.zoneOf("LOCALTIMESTAMP");
-      return new Evaluable.Node(PgType.TIMESTAMP,
-          row -> Casts.roundTimestamp(LocalDateTime.now(zone).truncatedTo(ChronoUnit.MICROS), precision));
+      final LocalDateTime now = Casts.roundTimestamp(localTime("LOCALTIMESTAMP"), precision(call));
+      return new Evaluable.Node(PgType.TIMESTAMP, row -> now);
     }
     default:
       throw PostgreSQLEvaluationException.unsupported(call.kind().name() + " is not supported by the postgresql language yet");
     }
+  }
+
+  /** The digits of a second that {@code CURRENT_TIMESTAMP(p)} and {@code LOCALTIMESTAMP(p)} keep. */
+  private int precision(final Expression.SpecialFunction call) {
+    return call.args().isEmpty() ? Casts.MAX_TIMESTAMP_PRECISION
+        : Math.min(integerModifier(call.args().get(0)), Casts.MAX_TIMESTAMP_PRECISION);
+  }
+
+  /** The time of the transaction as a time of the session (fork issue #237), which {@code reader} reads. */
+  private LocalDateTime localTime(final String reader) {
+    return LocalDateTime.ofInstant(parameters.time(), SessionTimeZone.zoneOf(reader));
+  }
+
+  /**
+   * {@code now()} and its other names: the time of the transaction as a {@code timestamptz}, refused in a session in another
+   * time zone than UTC, as every instant is.
+   */
+  private Evaluable currentTimestamp(final int precision) {
+    final OffsetDateTime now = Casts.instant(
+        Casts.roundTimestamp(LocalDateTime.ofInstant(parameters.time(), ZoneOffset.UTC), precision));
+    return new Evaluable.Node(PgType.TIMESTAMPTZ, row -> now);
   }
 }

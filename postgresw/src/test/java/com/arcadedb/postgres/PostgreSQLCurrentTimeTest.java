@@ -89,12 +89,32 @@ class PostgreSQLCurrentTimeTest extends PostgreSQLSideBySideTestBase {
       assertThat(answer(arcade, "SELECT count(*) AS n FROM d WHERE id = 30 AND a > now() - interval '1 minute' AND a <= now()"
           + " AND e > now() - interval '1 minute' AND c = current_date AND i = current_date", false)).isEqualTo("    n|\n    1|\n");
 
+      // a date and a timestamp default take the time of the session (fork issue #237)
+      both(postgres, arcade, "CREATE TABLE z (id int PRIMARY KEY, l timestamp DEFAULT CURRENT_TIMESTAMP,"
+          + " m timestamp DEFAULT LOCALTIMESTAMP, d date DEFAULT CURRENT_DATE)");
+      compare("defaults in the time zone of the session", inZone(postgres), inZone(arcade));
       run(arcade, "SET TIME ZONE 'Asia/Seoul'");
       refused(arcade, "SELECT now()", "SET TIME ZONE 'UTC'");
       refused(arcade, "INSERT INTO d (id) VALUES (40)", "SET TIME ZONE 'UTC'");
       run(arcade, "SET TIME ZONE 'UTC'");
     }
     assertThat(failures).as(String.join("\n", failures)).isEmpty();
+  }
+
+  private static String inZone(final Connection connection) {
+    try {
+      run(connection, "SET TIME ZONE 'Pacific/Kiritimati'");
+      run(connection, "BEGIN");
+      run(connection, "INSERT INTO z (id) VALUES (1)");
+      final String answer = answer(connection,
+          "SELECT l = localtimestamp AS l, m = l AS m, d = current_date AS d, d = l::date AS e FROM z", false);
+      run(connection, "COMMIT");
+      // fourteen hours ahead of UTC
+      run(connection, "SET TIME ZONE 'UTC'");
+      return answer + answer(connection, "SELECT l > localtimestamp + interval '13 hours' AS ahead FROM z", false);
+    } catch (final SQLException e) {
+      return "    error " + e.getSQLState() + " " + e.getMessage() + "\n";
+    }
   }
 
   /** The labels and the types of the columns of a query. */
