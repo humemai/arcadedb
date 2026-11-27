@@ -34,7 +34,7 @@ public final class Comparison {
 
   /** Whether the type has the comparison operators and an order; the opaque types and the unknown type do not. */
   public static boolean isComparable(final PgType type) {
-    return type.isNumber() || type.isString() || type.isDateTime() || type == PgType.BOOL;
+    return type.isNumber() || type.isString() || type.isDateTime() || type == PgType.BOOL || type == PgType.UUID;
   }
 
   public static int compare(final PgType type, final Object a, final Object b) {
@@ -45,6 +45,9 @@ public final class Comparison {
     switch (type) {
     case BOOL:
       return Boolean.compare((Boolean) a, (Boolean) b);
+    case UUID:
+      // hexadecimal digits in lower case, at fixed places: the order of the text is the order of the bytes
+      return ((String) a).compareTo((String) b);
     case DATE:
       return ((LocalDate) a).compareTo((LocalDate) b);
     case TIMESTAMP:

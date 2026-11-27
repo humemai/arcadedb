@@ -508,7 +508,9 @@ class PostgresTypeCatalogTest {
       "1270|_timetz|-1|f|A|f|d|x|array_in|array_out|array_recv|array_send",
       "1700|numeric|-1|f|N|f|i|m|numeric_in|numeric_out|numeric_recv|numeric_send",
       "3802|jsonb|-1|f|U|f|i|x|jsonb_in|jsonb_out|jsonb_recv|jsonb_send",
-      "3807|_jsonb|-1|f|A|f|i|x|array_in|array_out|array_recv|array_send");
+      "3807|_jsonb|-1|f|A|f|i|x|array_in|array_out|array_recv|array_send",
+      "2950|uuid|16|f|U|f|c|p|uuid_in|uuid_out|uuid_recv|uuid_send",
+      "2951|_uuid|-1|f|A|f|i|x|array_in|array_out|array_recv|array_send");
 
   // Regression: #12313
   @Test

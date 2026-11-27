@@ -52,16 +52,18 @@ import java.util.logging.Level;
  *                           otherwise, and it holds an instant as its time in UTC (fork issue #223)
  * @param identity           the identity columns, each with its generation, {@code ALWAYS} or {@code BY DEFAULT} (fork issue
  *                           #221)
+ * @param uuidColumns        the columns declared {@code uuid}: the engine holds them as {@code STRING} (fork issue #225)
  */
 public record TableDefinition(List<String> columns, Set<String> textColumns, Table.Key primaryKey, List<Table.Key> uniqueKeys,
-    Map<String, String> defaults, Map<String, String> foreignKeys, Set<String> timestamptzColumns, Map<String, String> identity) {
+    Map<String, String> defaults, Map<String, String> foreignKeys, Set<String> timestamptzColumns, Map<String, String> identity,
+    Set<String> uuidColumns) {
   /** The custom value of a type that holds its definition. */
   public static final String CUSTOM_KEY = "postgresql_table";
 
-  /** A table with no {@code timestamptz} column and no identity column. */
+  /** A table with no {@code timestamptz} column, no identity column and no {@code uuid} column. */
   public TableDefinition(final List<String> columns, final Set<String> textColumns, final Table.Key primaryKey,
       final List<Table.Key> uniqueKeys, final Map<String, String> defaults, final Map<String, String> foreignKeys) {
-    this(columns, textColumns, primaryKey, uniqueKeys, defaults, foreignKeys, Set.of(), Map.of());
+    this(columns, textColumns, primaryKey, uniqueKeys, defaults, foreignKeys, Set.of(), Map.of(), Set.of());
   }
 
   /** The definition of the type, {@code null} when it has none or the value cannot be read. */
@@ -79,7 +81,8 @@ public record TableDefinition(List<String> columns, Set<String> textColumns, Tab
           json.has("primaryKey") ? key(json.getJSONObject("primaryKey")) : null, unique, map(json.getJSONObject("defaults")),
           map(json.getJSONObject("foreignKeys")),
           json.has("timestamptz") ? new LinkedHashSet<>(strings(json.getJSONArray("timestamptz"))) : Set.of(),
-          json.has("identity") ? map(json.getJSONObject("identity")) : Map.of());
+          json.has("identity") ? map(json.getJSONObject("identity")) : Map.of(),
+          json.has("uuid") ? new LinkedHashSet<>(strings(json.getJSONArray("uuid"))) : Set.of());
     } catch (final RuntimeException e) {
       // someone changed the value by hand: the type is still a table, by the rules of a type without a definition
       LogManager.instance().log(TableDefinition.class, Level.WARNING,
@@ -105,6 +108,8 @@ public record TableDefinition(List<String> columns, Set<String> textColumns, Tab
       json.put("timestamptz", array(timestamptzColumns));
     if (!identity.isEmpty())
       json.put("identity", object(identity));
+    if (!uuidColumns.isEmpty())
+      json.put("uuid", array(uuidColumns));
     return json.toString();
   }
 

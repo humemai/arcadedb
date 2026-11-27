@@ -316,6 +316,8 @@ class PostgresParameterBindingTest {
     values.put(PostgresType.ARRAY_NAME, Arrays.asList("pg_class", null, "a b"));
     values.put(PostgresType.ARRAY_OID, Arrays.asList(1L, null, 4294967295L));
     values.put(PostgresType.ARRAY_INT2VECTOR, Arrays.asList("1 3", null, "2"));
+    values.put(PostgresType.ARRAY_UUID,
+        Arrays.asList(java.util.UUID.fromString("a3bb189e-8bf9-3888-9912-ace4e6543002"), null, new java.util.UUID(0, 0)));
 
     for (final PostgresType type : PostgresType.values()) {
       if (!type.isArrayType())

@@ -83,11 +83,18 @@ public final class CreateTablePlan {
   /** The types a key can be over. */
   private static final Set<ColumnType> KEY_TYPES = Set.of(ColumnType.BOOL, ColumnType.INT2, ColumnType.INT4, ColumnType.INT8,
       ColumnType.NUMERIC, ColumnType.FLOAT4, ColumnType.FLOAT8, ColumnType.TEXT, ColumnType.VARCHAR, ColumnType.DATE,
-      ColumnType.TIMESTAMP, ColumnType.TIMESTAMPTZ);
+      ColumnType.TIMESTAMP, ColumnType.TIMESTAMPTZ, ColumnType.UUID);
 
   /** The types a column with a default can have, and every array type. */
   private static final Set<ColumnType> DEFAULT_TYPES = Set.of(ColumnType.BOOL, ColumnType.INT2, ColumnType.INT4, ColumnType.INT8,
-      ColumnType.NUMERIC, ColumnType.FLOAT4, ColumnType.FLOAT8, ColumnType.TEXT, ColumnType.VARCHAR, ColumnType.JSONB);
+      ColumnType.NUMERIC, ColumnType.FLOAT4, ColumnType.FLOAT8, ColumnType.TEXT, ColumnType.VARCHAR, ColumnType.JSONB,
+      ColumnType.UUID);
+
+  /** What a {@code STRING} property of a {@code uuid} column holds, which the engine checks for every language. */
+  private static final String UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+
+  /** The default of a property that takes a new uuid for each record: a function of the {@code sql} language. */
+  private static final String UUID_DEFAULT = "uuid()";
 
   /** The most dimensions pgvector allows a {@code vector}. */
   private static final int MAX_DIMENSIONS = 16000;
@@ -126,6 +133,8 @@ public final class CreateTablePlan {
     boolean                hasDefault;
     /** the default reads the clock */
     boolean                clock;
+    /** the default is a new uuid */
+    boolean                randomUuid;
     Object                 defaultValue;
     String                 defaultText;
     /** {@code serial} or identity, {@code null} for any other column */
@@ -709,6 +718,7 @@ public final class CreateTablePlan {
       case "numeric" -> new Mapped(ColumnType.NUMERIC, Type.DECIMAL, null, 0);
       case "text" -> new Mapped(ColumnType.TEXT, Type.STRING, null, 0);
       case "varchar" -> new Mapped(ColumnType.VARCHAR, Type.STRING, null, 0);
+      case "uuid" -> new Mapped(ColumnType.UUID, Type.STRING, null, 0);
       case "bytea" -> new Mapped(ColumnType.BYTEA, Type.BINARY, null, 0);
       case "date" -> new Mapped(ColumnType.DATE, Type.DATE, null, 0);
       case "timestamp" -> new Mapped(ColumnType.TIMESTAMP, Type.DATETIME_MICROS, null, 0);
@@ -754,6 +764,18 @@ public final class CreateTablePlan {
       return;
     }
     final ColumnType type = spec.mapped.type();
+    if (isRandomUuid(literal)) {
+      readUuidDefault(spec, "gen_random_uuid()", type == ColumnType.UUID || type == ColumnType.TEXT || type == ColumnType.VARCHAR,
+          PgType.UUID);
+      return;
+    }
+    // gen_random_uuid()::text, which a text column takes as its default
+    if (literal instanceof Expression.Cast cast && isRandomUuid(cast.operand()) && cast.type().modifiers().isEmpty()
+        && cast.type().arrayDimensions() == 0 && TEXTS.contains(type(cast.type()).type())) {
+      final ColumnType written = type(cast.type()).type();
+      readUuidDefault(spec, "(gen_random_uuid())::" + ContainerDefaults.typeName(written), TEXTS.contains(type), PgType.of(written));
+      return;
+    }
     // 'text'::the_type_of_the_column says what the bare string says
     if (literal instanceof Expression.Cast cast && cast.operand() instanceof Expression.StringLiteral operand
         && cast.type().modifiers().isEmpty() && type(cast.type()).type() == type)
@@ -806,6 +828,24 @@ public final class CreateTablePlan {
   /** A compiler of expressions that read no column. */
   private ExpressionCompiler constants() {
     return new ExpressionCompiler(new RelationScope(List.of(), catalog), Parameters.of(new Object[0]));
+  }
+
+  /** Whether the expression is {@code gen_random_uuid()}. */
+  private static boolean isRandomUuid(final Expression expression) {
+    return expression instanceof Expression.FunctionCall call && call.args().isEmpty() && !call.distinct() && !call.star()
+        && call.over() == null
+        && (call.name().size() == 1 || call.name().size() == 2 && "pg_catalog".equals(call.name().get(0).value()))
+        && "gen_random_uuid".equals(call.name().get(call.name().size() - 1).value().toLowerCase(Locale.ROOT));
+  }
+
+  private static void readUuidDefault(final Spec spec, final String text, final boolean fits, final PgType from) {
+    if (!fits)
+      throw PostgreSQLEvaluationException.mismatch("column \"" + spec.name + "\" is of type "
+          + PgType.of(spec.mapped.type()).displayName() + " but default expression is of type " + from.displayName());
+    spec.hasDefault = true;
+    spec.randomUuid = true;
+    spec.defaultValue = UUID_DEFAULT;
+    spec.defaultText = text;
   }
 
   /** {@code DEFAULT ARRAY[]::text[]}, whose type has to be the one of the column. */
@@ -906,9 +946,12 @@ public final class CreateTablePlan {
     final Set<String> names = new LinkedHashSet<>(keyNames);
     final Set<String> text = new LinkedHashSet<>();
     final Set<String> instants = new LinkedHashSet<>();
+    final Set<String> uuids = new LinkedHashSet<>();
     for (final Spec spec : columns.values())
       if (spec.mapped.type() == ColumnType.TEXT)
         text.add(spec.name);
+      else if (spec.mapped.type() == ColumnType.UUID)
+        uuids.add(spec.name);
       else if (spec.mapped.type() == ColumnType.TIMESTAMPTZ)
         instants.add(spec.name);
     Table.Key primary = null;
@@ -942,7 +985,8 @@ public final class CreateTablePlan {
         defaults.put(spec.name, serialDefault(table, spec.name));
       else if (spec.counted != null)
         identity.put(spec.name, spec.counted == Counted.ALWAYS ? Column.ALWAYS : Column.BY_DEFAULT);
-    return new TableDefinition(List.copyOf(columns.keySet()), text, primary, unique, defaults, foreignKeys, instants, identity);
+    return new TableDefinition(List.copyOf(columns.keySet()), text, primary, unique, defaults, foreignKeys, instants, identity,
+        uuids);
   }
 
   private void create(final String table, final Map<String, Spec> columns, final List<Key> keys,
@@ -1014,9 +1058,13 @@ public final class CreateTablePlan {
       property.setMin(Integer.toString(mapped.dimensions()));
       property.setMax(Integer.toString(mapped.dimensions()));
     }
+    if (mapped.type() == ColumnType.UUID)
+      property.setRegexp(UUID_PATTERN);
     if (spec.clock)
       // an expression of the sql language, which reads the clock for each record that another language creates
       property.setDefaultValue(ClockDefault.SCHEMA_DEFAULT);
+    else if (spec.randomUuid)
+      property.setDefaultValue(UUID_DEFAULT);
     else if (spec.hasDefault && (mapped.type() == ColumnType.JSONB || mapped.type().isArray()))
       ContainerDefaults.set(property, mapped.type(), spec.defaultValue, spec.literal.position());
     else if (spec.hasDefault) {

@@ -1429,7 +1429,8 @@ public class SelectPlanner {
           throw PostgreSQLEvaluationException.noFunction(name, argumentType);
         break;
       default:
-        if (!Comparison.isComparable(argumentType))
+        // PostgreSQL 18 has no max or min of a uuid
+        if (!Comparison.isComparable(argumentType) || argumentType == PgType.UUID)
           throw PostgreSQLEvaluationException.noFunction(name, argumentType);
         // the largest record id is not the newest row, which is what max of a key means (fork issue #240)
         final String ids = inputCompiler.recordIdColumn(call.args().get(0));

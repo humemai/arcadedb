@@ -101,7 +101,7 @@ public final class RelationalCatalog {
   /** The types a column that an end of a link table refers to can have, those of the keys of {@code CREATE TABLE}. */
   public static final Set<ColumnType> KEY_TYPES = Set.of(ColumnType.BOOL, ColumnType.INT2, ColumnType.INT4, ColumnType.INT8,
       ColumnType.NUMERIC, ColumnType.FLOAT4, ColumnType.FLOAT8, ColumnType.TEXT, ColumnType.VARCHAR, ColumnType.DATE,
-      ColumnType.TIMESTAMP, ColumnType.TIMESTAMPTZ);
+      ColumnType.TIMESTAMP, ColumnType.TIMESTAMPTZ, ColumnType.UUID);
 
   private final String             databaseName;
   private final List<Table>        tables;
@@ -455,6 +455,8 @@ public final class RelationalCatalog {
       ColumnType columnType = ColumnType.of(property.getType(), property.getOfType());
       if (columnType == ColumnType.VARCHAR && definition != null && definition.textColumns().contains(property.getName()))
         columnType = ColumnType.TEXT;
+      if (columnType == ColumnType.VARCHAR && definition != null && definition.uuidColumns().contains(property.getName()))
+        columnType = ColumnType.UUID;
       if (columnType == ColumnType.TIMESTAMP && definition != null && definition.timestamptzColumns().contains(property.getName()))
         columnType = ColumnType.TIMESTAMPTZ;
       Column column = new Column(shown, columnType, !property.isNotNull(), Column.Kind.PROPERTY, property.getName(), link);
