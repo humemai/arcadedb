@@ -25,6 +25,7 @@ import com.arcadedb.query.postgresql.ast.CreateExtensionStatement;
 import com.arcadedb.query.postgresql.ast.CreateIndexStatement;
 import com.arcadedb.query.postgresql.ast.CreateTableStatement;
 import com.arcadedb.query.postgresql.ast.DeleteStatement;
+import com.arcadedb.query.postgresql.ast.DropStatement;
 import com.arcadedb.query.postgresql.ast.EmptyStatement;
 import com.arcadedb.query.postgresql.ast.ExplainStatement;
 import com.arcadedb.query.postgresql.ast.ExplainWriteStatement;
@@ -97,6 +98,8 @@ final class AstBuilder {
       return createExtension(command.createExtensionStmt());
     if (stmt instanceof AlterTableCommandContext command)
       return alterTable(command.alterTableStmt());
+    if (stmt instanceof DropCommandContext command)
+      return drop(command.dropStmt());
     if (stmt instanceof EmptyCommandContext)
       return new EmptyStatement(position(stmt.getStart()));
     throw new IllegalStateException("A statement the parser did not refuse has no tree: " + stmt.getText());
@@ -150,6 +153,17 @@ final class AstBuilder {
     }
     return new AlterTableStatement(position(context.getStart()), qualifiedName(context.table, context.table.getStart()),
         context.EXISTS() != null, actions);
+  }
+
+  // ------------------------------------------------------------------------------------------------ DROP
+
+  private DropStatement drop(final DropStmtContext context) {
+    final List<List<Name>> names = new ArrayList<>(context.names.size());
+    for (final QualifiedNameContext each : context.names)
+      names.add(qualifiedName(each, each.getStart()));
+    return new DropStatement(position(context.getStart()),
+        context.kind.getType() == PostgreSQLParser.TABLE ? DropStatement.Kind.TABLE : DropStatement.Kind.INDEX,
+        context.EXISTS() != null, names, context.behavior != null && context.behavior.getType() == PostgreSQLParser.CASCADE);
   }
 
   // ------------------------------------------------------------------------------------------------ CREATE TABLE

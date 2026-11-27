@@ -98,6 +98,7 @@ final class Diagnostics {
       Map.entry("unsupportedTableConstraint", "This table constraint (CHECK, EXCLUDE, NOT NULL, NULLS NOT DISTINCT or USING INDEX)"),
       Map.entry("unsupportedConstraintOption", "An option of a table constraint (INCLUDE, WITH, DEFERRABLE and the like)"),
       Map.entry("unsupportedConcurrently", "CREATE INDEX CONCURRENTLY"),
+      Map.entry("unsupportedDropConcurrently", "DROP INDEX CONCURRENTLY"),
       Map.entry("unsupportedAlterAction",
           "This action of ALTER TABLE (DROP, RENAME, ADD of a constraint, a change of a type and the like)"),
       Map.entry("unsupportedAlterTarget", "ALTER TABLE ALL IN TABLESPACE"),
@@ -229,8 +230,8 @@ final class Diagnostics {
       case "unsupportedTableKind" -> "Create an ordinary table, or name the query in a WITH clause";
       case "unsupportedExplainedCreate" -> "Run the CREATE statement without EXPLAIN";
       case "unsupportedTableForm" -> "Write CREATE TABLE name (column type, ...) and fill it with INSERT INTO name SELECT ...";
-      case "unsupportedTableOption", "unsupportedIndexOption", "unsupportedConcurrently", "unsupportedReferenceOption",
-          "unsupportedParameterNamespace" -> "Leave the clause out";
+      case "unsupportedTableOption", "unsupportedIndexOption", "unsupportedConcurrently", "unsupportedDropConcurrently",
+          "unsupportedReferenceOption", "unsupportedParameterNamespace" -> "Leave the clause out";
       case "unsupportedExtensionOption" -> "Leave the option out: write CREATE EXTENSION IF NOT EXISTS name";
       case "unsupportedTableElement" -> "Write the columns out";
       case "unsupportedIdentityOption" -> "Leave the options out: the values start at 1 and increase by 1";

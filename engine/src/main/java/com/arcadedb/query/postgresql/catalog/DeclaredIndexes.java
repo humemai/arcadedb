@@ -24,6 +24,7 @@ import com.arcadedb.serializer.json.JSONArray;
 import com.arcadedb.serializer.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -83,6 +84,17 @@ public final class DeclaredIndexes {
   public static void add(final DocumentType type, final String name, final Index index) {
     final Map<String, Index> indexes = of(type);
     indexes.put(name, index);
+    write(type, indexes);
+  }
+
+  /** Takes names off the type (fork issue #230). */
+  public static void remove(final DocumentType type, final Collection<String> names) {
+    final Map<String, Index> indexes = of(type);
+    indexes.keySet().removeAll(names);
+    write(type, indexes);
+  }
+
+  private static void write(final DocumentType type, final Map<String, Index> indexes) {
     final JSONObject json = new JSONObject();
     for (final Map.Entry<String, Index> entry : indexes.entrySet()) {
       final JSONArray columns = new JSONArray();

@@ -37,6 +37,7 @@ import com.arcadedb.query.postgresql.ast.CreateExtensionStatement;
 import com.arcadedb.query.postgresql.ast.CreateIndexStatement;
 import com.arcadedb.query.postgresql.ast.CreateTableStatement;
 import com.arcadedb.query.postgresql.ast.DeleteStatement;
+import com.arcadedb.query.postgresql.ast.DropStatement;
 import com.arcadedb.query.postgresql.ast.EmptyStatement;
 import com.arcadedb.query.postgresql.ast.ExplainStatement;
 import com.arcadedb.query.postgresql.ast.ExplainWriteStatement;
@@ -60,6 +61,7 @@ import com.arcadedb.query.postgresql.parser.StatementParser;
 import com.arcadedb.query.postgresql.plan.CreateIndexPlan;
 import com.arcadedb.query.postgresql.plan.AlterTablePlan;
 import com.arcadedb.query.postgresql.plan.CreateTablePlan;
+import com.arcadedb.query.postgresql.plan.DropPlan;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.postgresql.plan.QueryPlan;
 import com.arcadedb.query.postgresql.plan.SelectPlanner;
@@ -221,6 +223,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       case CreateTableStatement ignored -> SCHEMA_CHANGE;
       case CreateIndexStatement ignored -> SCHEMA_CHANGE;
       case AlterTableStatement ignored -> SCHEMA_CHANGE;
+      case DropStatement ignored -> SCHEMA_CHANGE;
       default -> READ;
     };
   }
@@ -295,7 +298,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       }
       if (readOnly && (statement instanceof WriteStatement || statement instanceof TransactionStatement
           || statement instanceof CreateTableStatement || statement instanceof CreateIndexStatement
-          || statement instanceof AlterTableStatement))
+          || statement instanceof AlterTableStatement || statement instanceof DropStatement))
         throw new PostgreSQLEvaluationException("25006", "cannot execute " + statementName(statement)
             + " in a read-only query: run it with command (" + statement.position() + ")");
       if (statement instanceof TransactionStatement transaction)
@@ -319,6 +322,15 @@ public class PostgreSQLQueryEngine implements QueryEngine {
           throw new PostgreSQLFeatureNotSupportedException("ALTER TABLE inside a transaction block is not supported by the"
               + " postgresql language, because a rollback would not take the change back (" + alter.position() + ")");
         return new AlterTablePlan(database, catalog(), alter, parameters.at(TransactionClock.now(database))).execute();
+      }
+      if (statement instanceof DropStatement drop) {
+        // the schema is not transactional, and a rollback could not bring dropped rows back (fork issue #230); a transaction
+        // that a server opened around one request is not a block, unless it has changes of its own
+        if (database.isTransactionActive() && (state.open || !database.getTransaction().isImplicit()
+            || database.getTransaction().hasChanges()))
+          throw new PostgreSQLFeatureNotSupportedException("DROP " + drop.kind() + " inside a transaction block is not supported"
+              + " by the postgresql language, because a rollback would not bring back what it drops (" + drop.position() + ")");
+        return new DropPlan(database, catalog(), drop).execute();
       }
       // the time of the transaction, which every clock function and default of the statement answers (fork issue #222)
       final Parameters timed = parameters.at(TransactionClock.now(database));
@@ -500,6 +512,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       case CreateTableStatement ignored -> "CREATE TABLE";
       case CreateIndexStatement ignored -> "CREATE INDEX";
       case AlterTableStatement ignored -> "ALTER TABLE";
+      case DropStatement drop -> "DROP " + drop.kind();
       case TransactionStatement transaction -> transaction.kind().name();
       default -> throw new IllegalStateException("Not a write: " + statement);
     };
@@ -614,7 +627,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   private List<PostgreSQLResultSet.Column> plannedColumns(final Statement statement, final Parameters parameters) {
     if (statement instanceof TransactionStatement || statement instanceof CreateTableStatement
         || statement instanceof CreateIndexStatement || statement instanceof CreateExtensionStatement
-        || statement instanceof AlterTableStatement)
+        || statement instanceof AlterTableStatement || statement instanceof DropStatement)
       return List.of();
     if (statement instanceof ExplainWriteStatement explain)
       return new WritePlanner(database, catalog(), parameters).plan(explain.statement()).columns();

@@ -67,6 +67,8 @@ public final class AstPrinter {
       case CreateIndexStatement create -> print(create);
       case CreateExtensionStatement create -> "CREATE EXTENSION IF NOT EXISTS " + print(create.name());
       case AlterTableStatement alter -> print(alter);
+      case DropStatement drop -> "DROP " + drop.kind().name() + (drop.ifExists() ? " IF EXISTS " : " ")
+          + drop.names().stream().map(AstPrinter::dotted).collect(Collectors.joining(", ")) + (drop.cascade() ? " CASCADE" : "");
     };
   }
 

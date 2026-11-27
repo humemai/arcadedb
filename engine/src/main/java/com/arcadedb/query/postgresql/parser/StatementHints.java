@@ -83,7 +83,8 @@ public final class StatementHints {
   private String hint() {
     return switch (word(0)) {
       case "ALTER" -> "TABLE".equals(word(1)) ? alterTable() : NO_WAY;
-      case "DROP" -> drop();
+      // a table and an index are dropped by the language itself
+      case "DROP" -> NO_WAY + ": the language makes no object of this kind, so it drops none";
       case "CREATE" -> create();
       case "TRUNCATE" -> {
         final int at = "TABLE".equals(word(1)) ? 2 : 1;
@@ -102,8 +103,8 @@ public final class StatementHints {
       case "PREPARE", "EXECUTE", "DEALLOCATE" -> "Use the prepared statements of your driver, with the parameters $1, $2 and so on";
       case "GRANT", "REVOKE", "REASSIGN", "SECURITY" -> NO_WAY + ": the ArcadeDB server manages users and permissions";
       case "DO", "CALL" -> NO_WAY + ": do the work in your program, in one transaction";
-      default -> NO_WAY + ": the language runs SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, CREATE INDEX and the transaction"
-          + " statements";
+      default -> NO_WAY + ": the language runs SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, CREATE INDEX, ALTER TABLE, DROP"
+          + " TABLE, DROP INDEX and the transaction statements";
     };
   }
 
@@ -121,20 +122,6 @@ public final class StatementHints {
       case "USER", "ROLE", "GROUP", "DATABASE" -> NO_WAY + ": the ArcadeDB server manages users and databases";
       default -> NO_WAY;
     };
-  }
-
-  private String drop() {
-    if ("INDEX".equals(word(1)))
-      return "Drop it in the sql language with DROP INDEX `name`, one of the names listed by " + LIST_INDEXES;
-    if (!"TABLE".equals(word(1)))
-      return NO_WAY + ": the language makes no object of this kind, so it drops none";
-    final boolean ifExists = "IF".equals(word(2));
-    int at = ifExists ? 4 : 2;
-    if (".".equals(word(at + 1)))
-      at += 2;
-    return "Empty the table with DELETE FROM " + raw(at) + ", which also deletes the edges at its rows, then drop it in the sql"
-        + " language, outside a transaction block: {sql}DROP TYPE " + sqlName(names.table(name(at)))
-        + (ifExists ? " IF EXISTS" : "");
   }
 
   private String alterTable() {

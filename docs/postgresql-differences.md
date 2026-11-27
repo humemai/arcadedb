@@ -162,6 +162,21 @@ The engine applies the length of a `varchar(n)` and the precision and scale of a
 | `SET DEFAULT` on a column that the same statement adds | allowed | `0A000` |
 | `ADD CONSTRAINT`, `DROP`, `RENAME`, `ALTER COLUMN ... TYPE`, and the other actions | allowed | `0A000`; the hint names the `sql` statement where there is one |
 
+### DROP TABLE and DROP INDEX
+
+Fork issue [#230](https://github.com/humemai/arcadedb/issues/230), `PostgreSQLDropTest`. A statement is checked whole before anything changes.
+
+| topic | PostgreSQL 18 | `postgresql` |
+| --- | --- | --- |
+| A transaction block | allowed, and a rollback brings the table or index back | `0A000`: run it in autocommit |
+| A table | any table | one that `CREATE TABLE` of this language made; for another type the hint names the `sql` statement |
+| The rows | go with the table | every edge, and every row that an edge holds, is deleted first, in one transaction of its own, so a large table needs the memory for it; then the type is dropped. A server that stops between the two leaves the table without some of its rows |
+| An edge that `sql` or openCypher made at a row | not applicable | deleted with the row |
+| `CASCADE` of a table that a link table refers to | drops the foreign key, and the rows of the link table stay | `0A000`: an edge cannot stay without its ends, so name both tables in one statement |
+| The index behind a foreign key, which `CREATE TABLE` made over the referring columns | not there | `DROP INDEX` refuses its name (`0A000`). A name that `CREATE INDEX` gave to it goes, and the index stays |
+| The index of a primary key or unique constraint | `2BP01`; `ALTER TABLE ... DROP CONSTRAINT` removes it | `2BP01`; `DROP CONSTRAINT` is not supported yet |
+| The notice of `IF EXISTS` | `NOTICE: table "t" does not exist, skipping` | no notice |
+
 ### Check constraints
 
 The engine evaluates each `CHECK` for every record that any language creates or updates, always as the `postgresql` language reads the expression (fork issue [#227](https://github.com/humemai/arcadedb/issues/227), `PostgreSQLCheckConstraintTest`).
@@ -330,7 +345,7 @@ Limits:
 
 | area | state |
 | --- | --- |
-| `ALTER` other than [`ALTER TABLE` of columns](#alter-table), `DROP`, and every `CREATE` but `CREATE TABLE`, `CREATE INDEX`, and `CREATE EXTENSION IF NOT EXISTS` of [what is built in](#create-extension) | refused; use ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
+| `ALTER` other than [`ALTER TABLE` of columns](#alter-table), `DROP` other than [`DROP TABLE` and `DROP INDEX`](#drop-table-and-drop-index), and every `CREATE` but `CREATE TABLE`, `CREATE INDEX`, and `CREATE EXTENSION IF NOT EXISTS` of [what is built in](#create-extension) | refused; use ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
 | Types | no `json` columns (a `json` value goes into `jsonb`), `time`, `timetz`, `uuid[]` or `timestamptz[]` columns, or `char(n)` |
 | Syntax | a whole-row value such as `(t.*)`, `WITHOUT OVERLAPS`, `COALESCE`, `GREATEST`, `LEAST`, and `NULLIF` as functions in `FROM`, and an index parameter with a namespace are read and refused (`0A000`; fork issue [#202](https://github.com/humemai/arcadedb/issues/202)) |
 | Queries | refused: `array_agg` of arrays and of `jsonb`, the operators of `json`, most window frames, `ntile`, named windows, `WITH RECURSIVE`, `ANY` and `ALL` with an operator that is not a comparison, the order of arrays (`<`, `>`) and of `jsonb` values, `unnest`, the `?` operators of `jsonb` (write `jsonb_exists`), set-returning `jsonb` functions, `LATERAL`, `NATURAL` joins, `SIMILAR TO` |
