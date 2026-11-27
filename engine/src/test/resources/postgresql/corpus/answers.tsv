@@ -274,6 +274,13 @@ err-c1-union-literal-not-a-number	multiset	-	ok	SELECT 1 UNION SELECT 'a'	{"erro
 err-c1-union-order-by-expression	multiset	-	ok	SELECT pid FROM person UNION SELECT oid FROM orders ORDER BY pid + 1	{"error":"0A000"}
 err-c1-union-order-by-unknown-column	multiset	-	ok	SELECT pid FROM person UNION SELECT oid FROM orders ORDER BY nosuch	{"error":"42703"}
 err-c1-multiple-order-by	multiset	-	ok	(SELECT pid FROM person ORDER BY pid) ORDER BY pid	{"error":"42601"}
+sqrt-numeric-two	multiset	-	ok	SELECT sqrt(2::numeric)::text	{"columns":["sqrt"],"types":["text"],"rows":[["1.414213562373095"]]}
+sqrt-numeric-half-way-below-and-above	multiset	-	ok	SELECT sqrt(1.000000000000003::numeric)::text AS a, sqrt(1.000000000000004::numeric)::text AS b	{"columns":["a","b"],"types":["text","text"],"rows":[["1.000000000000001","1.000000000000002"]]}
+sqrt-numeric-large	multiset	-	ok	SELECT sqrt(96627521408608.56340355805::numeric)::text AS a, sqrt(96627521408608.56340355806::numeric)::text AS b, sqrt(515549506212297735.073688290367::numeric)::text AS c, sqrt(515549506212297735.073688290368::numeric)::text AS d	{"columns":["a","b","c","d"],"types":["text","text","text","text"],"rows":[["9829929.87811248648","9829929.87811248649","718017761.766585921184","718017761.766585921185"]]}
+sqrt-numeric-more-digits-than-sixteen	multiset	-	ok	SELECT sqrt(8015491789940783531003294973900306::numeric)::text AS a, sqrt(8015491789940783531003294973900307::numeric)::text AS b	{"columns":["a","b"],"types":["text","text"],"rows":[["89529278953540017","89529278953540018"]]}
+sqrt-numeric-zero-and-small	multiset	-	ok	SELECT sqrt(0.0)::text AS a, sqrt(0.000000000000000000000004)::text AS b, sqrt(4.00)::text AS c	{"columns":["a","b","c"],"types":["text","text","text"],"rows":[["0.000000000000000","0.000000000002000000000000000","2.000000000000000"]]}
+sqrt-of-an-integer-and-a-float	multiset	-	ok	SELECT sqrt(16) AS a, sqrt(2::float8) AS b	{"columns":["a","b"],"types":["float8","float8"],"rows":[[4.0,1.4142135623730951]]}
+err-sqrt-numeric-negative	multiset	-	ok	SELECT sqrt(-1.0)	{"error":"2201F"}
 c1-with-basic	ordered	-	ok	WITH d AS (SELECT name, age FROM person WHERE city = 'Delft') SELECT * FROM d ORDER BY name	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Ada",36],["Bo",41]]}
 c1-with-read-twice	multiset	-	ok	WITH d AS (SELECT pid FROM person WHERE age > 30) SELECT count(*) FROM d a JOIN d b ON a.pid = b.pid	{"columns":["count"],"types":["int8"],"rows":[[3]]}
 c1-with-chain	ordered	-	ok	WITH a AS (SELECT pid FROM person), b AS (SELECT pid FROM a WHERE pid > 2) SELECT * FROM b ORDER BY pid	{"columns":["pid"],"types":["int4"],"rows":[[3],[4],[5]]}

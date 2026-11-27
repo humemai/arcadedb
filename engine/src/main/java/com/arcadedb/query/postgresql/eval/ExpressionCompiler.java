@@ -1346,6 +1346,9 @@ public final class ExpressionCompiler {
       return strictCall(PgType.FLOAT8, a, v -> floor ? Math.floor((Double) v[0]) : Math.ceil((Double) v[0]));
     }
     case "sqrt": {
+      // numeric has its own root; any other number takes the one of double precision
+      if (args.length == 1 && args[0].type() == PgType.NUMERIC)
+        return strictCall(PgType.NUMERIC, args, v -> Numbers.sqrt((BigDecimal) v[0]));
       final Evaluable[] a = arguments(name, args, PgType.FLOAT8);
       return strictCall(PgType.FLOAT8, a, v -> {
         if ((Double) v[0] < 0.0)

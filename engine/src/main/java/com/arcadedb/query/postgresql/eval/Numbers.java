@@ -439,6 +439,21 @@ public final class Numbers {
   }
 
   /**
+   * {@code sqrt(numeric)} as {@code numeric_sqrt} of {@code numeric.c} answers it: at least 16 significant digits and at least
+   * the scale of the argument, rounded half away from zero; {@code 2201F} for a negative number.
+   */
+  public static BigDecimal sqrt(final BigDecimal value) {
+    if (value.signum() < 0)
+      throw new PostgreSQLEvaluationException("2201F", "cannot take square root of a negative number");
+    // the digits that the root has before the point at least, from the weight of the argument in base 10000
+    final int before = weightAndFirstDigit(value)[0] * 2 + 1;
+    final int scale = Math.min(Math.max(MIN_SIGNIFICANT_DIGITS - before, Math.max(value.scale(), 0)), MAX_DISPLAY_SCALE);
+    // the root cut off one digit after the last one of the result, which decides the rounding
+    final BigInteger root = value.movePointRight(2 * (scale + 1)).toBigInteger().sqrt();
+    return new BigDecimal(root, scale + 1).setScale(scale, RoundingMode.HALF_UP);
+  }
+
+  /**
    * The quotient of two {@code numeric} values with the scale PostgreSQL gives it ({@code select_div_scale}): enough decimals
    * for 16 significant digits, but at least the scale of either operand, rounded half away from zero. {@code 10.0 / 3} is
    * {@code 3.3333333333333333} and {@code 1.0 / 3.0} is {@code 0.33333333333333333333}.
