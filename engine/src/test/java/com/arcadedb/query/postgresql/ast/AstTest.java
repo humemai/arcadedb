@@ -165,6 +165,7 @@ class AstTest {
       case CreateTableStatement s -> "create table";
       case CreateIndexStatement s -> "create index";
       case CreateExtensionStatement s -> "create extension";
+      case AlterTableStatement s -> "alter table";
     };
     assertThat(statementKind).isEqualTo("empty");
 
