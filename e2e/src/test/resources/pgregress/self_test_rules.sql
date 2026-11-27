@@ -1,12 +1,13 @@
 --
 -- The script of the self-test of the rules of the regression harness that block a statement or put it out of scope (fork issue
--- #121, class PgRegressSelfIT). It is no file of PostgreSQL. 35 statements reach the server.
+-- #121, class PgRegressSelfIT). It is no file of PostgreSQL. 36 statements reach the server.
 --
 CREATE TABLE ruled (a int);
 CREATE RULE keep_out AS ON INSERT TO ruled DO INSTEAD NOTHING;
 INSERT INTO ruled VALUES (1);
 CREATE TABLE preset (a int DEFAULT 7, b int);
 INSERT INTO preset (b) VALUES (1);
+INSERT INTO preset VALUES (NULL, 2);
 SELECT b FROM preset;
 CREATE TEMP TABLE emptied (a int) ON COMMIT DELETE ROWS;
 INSERT INTO emptied VALUES (1);

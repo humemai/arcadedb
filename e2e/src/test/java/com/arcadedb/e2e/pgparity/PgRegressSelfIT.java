@@ -44,7 +44,7 @@ class PgRegressSelfIT {
   private static final String FILE       = "self_test";
   private static final int    STATEMENTS = 27;
   private static final String RULES      = "self_test_rules";
-  private static final int    RULE_STATEMENTS = 35;
+  private static final int    RULE_STATEMENTS = 36;
 
   private static RegressServer first;
   private static RegressServer second;
@@ -179,6 +179,7 @@ class PgRegressSelfIT {
     // a write into a table with a rule, which the plan does not name, and into a table of the language with a default
     assertBlocked(line(result, "INSERT INTO ruled"), "a rule");
     assertBlocked(line(result, "INSERT INTO preset"), "the table has a default");
+    // judged although the harness then writes the rows of PostgreSQL into it, a NULL where the table has a default included
     assertJudged(line(result, "SELECT b FROM preset"));
     // writes that depend on what a copy does not carry, and the COMMIT after one
     assertBlocked(line(result, "INSERT INTO emptied"), "ON COMMIT DELETE ROWS");

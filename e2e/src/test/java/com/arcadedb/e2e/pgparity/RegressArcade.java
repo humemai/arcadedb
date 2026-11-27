@@ -495,10 +495,12 @@ final class RegressArcade implements RegressSubject {
   }
 
   private void insert(final RegressDatabase.Table table, final List<Object[]> rows) {
+    // a table of the language can have defaults: a NULL of the reference is written, or the engine would fill the default in
+    final Set<String> defaults = database().getSchema().getType(table.name()).getPolymorphicPropertiesWithDefaultDefined();
     for (final Object[] row : rows) {
       final MutableVertex vertex = database().newVertex(table.name());
       for (int i = 0; i < row.length; i++)
-        if (row[i] != null)
+        if (row[i] != null || defaults.contains(table.columns().get(i).name()))
           vertex.set(table.columns().get(i).name(), row[i]);
       vertex.save();
     }
