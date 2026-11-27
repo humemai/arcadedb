@@ -376,7 +376,7 @@ public final class JoinPlanner {
       root = new TableReference.Join(from.get(i).position(), root, TableReference.JoinType.INNER, from.get(i),
           new Expression.BooleanLiteral(from.get(i).position(), true));
     final Node tree = analyze(root);
-    final List<Conjunct> incoming = where == null ? List.of() : Pushdown.terms(where, scope(tree));
+    final List<Conjunct> incoming = where == null ? List.of() : Pushdown.terms(where, scope(tree), parameters);
     final Built built = build(tree, incoming);
     final List<Expression> remaining = new ArrayList<>();
     for (final Conjunct term : built.remaining())
@@ -435,7 +435,7 @@ public final class JoinPlanner {
     final Expression condition = join.using().isEmpty() ? join.condition() : usingCondition(join, left, right, using);
     new ExpressionCompiler(scope, parameters).compileCondition(condition, join.using().isEmpty() ? "JOIN/ON" : "JOIN/USING");
     final List<Conjunct> on = new ArrayList<>();
-    for (final Conjunct term : Pushdown.terms(condition, scope))
+    for (final Conjunct term : Pushdown.terms(condition, scope, parameters))
       if (!(term.expression() instanceof Expression.BooleanLiteral literal && literal.value()))
         on.add(term);
     return new JoinNode(join.type(), left, right, on, using);
@@ -811,8 +811,8 @@ public final class JoinPlanner {
       final ExpressionCompiler leftCompiler, final ExpressionCompiler rightCompiler, final ExpressionCompiler nodeCompiler) {
     if (!(term.expression() instanceof Expression.BinaryOp op) || op.operator() != Expression.BinaryOperator.EQUAL)
       return null;
-    final Set<String> a = Pushdown.relations(op.left(), nodeScope);
-    final Set<String> b = Pushdown.relations(op.right(), nodeScope);
+    final Set<String> a = Pushdown.relations(op.left(), nodeScope, parameters);
+    final Set<String> b = Pushdown.relations(op.right(), nodeScope, parameters);
     if (a.isEmpty() || b.isEmpty())
       return null;
     final Expression leftExpression;
