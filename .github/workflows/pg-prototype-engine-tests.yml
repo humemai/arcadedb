@@ -18,13 +18,13 @@
 #
 
 # Fork only (humemai/arcadedb, PostgreSQL-style SQL prototype): the fast loop. mvn-test.yml builds a Docker image and runs the
-# whole suite, which takes the better part of an hour; this runs only the tests of the postgresql packages: the engine tests (a
-# build of the engine module and a few seconds of tests) and the tests of the same packages in postgresw, which compare the engine
-# with the wire module (a build of the modules postgresw needs); and the census module, whose checks read the classes of every
+# whole suite, which takes the better part of an hour; this runs the tests that cover the prototype: the engine tests of the
+# postgresql packages (a build of the engine module and a few seconds of tests); every unit test and integration test of
+# postgresw, the wire module (a build of the modules postgresw needs); the census module, whose checks read the classes of every
 # module (a build of all of them); and the list of PostgreSQL's functions and operators, which a PostgreSQL 18 server writes.
-# Four jobs, side by side, on every push to a feat/pg-* branch and to the prototype branch, and on every pull request into the
-# prototype branch. The full suite is started by hand (mvn-test.yml, whose modules shard of unit-tests runs the postgresw tests
-# and the censuses too). Drop this file when anything goes upstream.
+# Jobs side by side, on every push to a feat/pg-* branch and to the prototype branch, and on every pull request into the
+# prototype branch. The client suites that need the server image run after a merge (pg-client-e2e.yml). The full suite is started
+# by hand (mvn-test.yml). Drop this file when anything goes upstream.
 name: PostgreSQL prototype - engine tests
 
 on:
@@ -95,7 +95,7 @@ jobs:
   # tree. The test phase is enough: the tests selected here use no TinkerPop class, which is what the shaded gremlin jar of a
   # package-phase build would bring (CLAUDE.md, "Any reactor invocation containing gremlin").
   wire-tests:
-    name: Wire module tests of the postgresql packages
+    name: Wire module unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -104,13 +104,14 @@ jobs:
       - name: Set up JDK 21 and Maven
         uses: ./.github/actions/pg-maven-setup
 
-      # The second pattern is the wire tests of the language (fork issue #12): they extend PostgresWireProtocolTestBase, which is package
-      # private, so they live in com.arcadedb.postgres and are named PostgreSQL*Test. They start an in-process server, which discovers
-      # the Gremlin plugin on its class path, and that plugin needs the TinkerPop classes of the shaded gremlin jar: so this step is a
-      # package-phase build (the earlier note about the test phase held for tests that start no server). They connect with the JDBC
-      # driver of PostgreSQL, and psql and psycopg run in containers.
-      - name: Run the postgresw tests of the postgresql packages
-        run: ./mvnw package --batch-mode --errors --show-version -pl postgresw -am "-Dsurefire.includes=**/postgresql/**/*Test.java,**/postgres/PostgreSQL*Test.java,**/postgres/PostgresCatalog*Test.java,**/postgres/PostgresIndexCatalogTest.java"
+      # The second pattern is every unit test of the wire module (fork issue #282), whose package is com.arcadedb.postgres. The wire
+      # tests of the language (fork issue #12) are among them: they extend PostgresWireProtocolTestBase, which is package private, so
+      # they are named PostgreSQL*Test there. They start an in-process server, which discovers the Gremlin plugin on its class path,
+      # and that plugin needs the TinkerPop classes of the shaded gremlin jar: so this step is a package-phase build (the earlier
+      # note about the test phase held for tests that start no server). They connect with the JDBC driver of PostgreSQL, and psql
+      # and psycopg run in containers.
+      - name: Run the unit tests of the wire module and of the postgresql packages
+        run: ./mvnw package --batch-mode --errors --show-version -pl postgresw -am "-Dsurefire.includes=**/postgresql/**/*Test.java,**/postgres/**/*Test.java"
 
       # What the psql corpus (fork issue #12, W3) got from real PostgreSQL 18 and from this server, one file per case. A new case has its
       # expected output here: review it and commit it to postgresw/src/test/resources/pgwire/expected.
@@ -127,7 +128,47 @@ jobs:
         if: always()
         run: bash .github/scripts/pg_maven_report.sh
 
-  # The censuses range over the compiled classes of every module, the postgresql packages among them, and the two jobs above run
+  # The integration tests of the wire module (fork issue #282). Surefire excludes *IT classes, so the job above runs none of them.
+  # In a row they take about ten minutes, nearly half of that in two classes, so two jobs share them: one runs those two, the
+  # other every other class of the module, a new one among them. -DskipTests leaves the unit tests out, and
+  # failIfNoSpecifiedTests lets the modules that -am builds, which have no class of the pattern, pass.
+  wire-integration-tests:
+    name: Wire module integration tests (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: follower forwarding and JDBC
+            tests: "**/postgres/PostgresFollowerForwardingIT.java,**/postgres/PostgresWJdbcIT.java"
+          - shard: all others
+            tests: "**/postgres/**/*IT.java,!**/postgres/PostgresFollowerForwardingIT.java,!**/postgres/PostgresWJdbcIT.java"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK 21 and Maven
+        uses: ./.github/actions/pg-maven-setup
+
+      - name: Run the integration tests of the wire module
+        run: >-
+          ./mvnw verify -Pintegration -DskipTests --batch-mode --errors --show-version -pl postgresw -am
+          "-Dit.test=${{ matrix.tests }}" -Dfailsafe.failIfNoSpecifiedTests=false
+
+      - name: Upload the test reports of a red run
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pg-wire-it-reports-${{ strategy.job-index }}
+          path: postgresw/target/failsafe-reports/*
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Where the Maven files came from
+        if: always()
+        run: bash .github/scripts/pg_maven_report.sh
+
+  # The censuses range over the compiled classes of every module, the postgresql packages among them, and the jobs above run
   # none of them: a pull request with refusals or a schema walk that a census rejects was green (fork issue #160). A census fails
   # when a module is missing from its class path, so -am builds them all from this tree; the includes pattern selects the tests of
   # the census module.

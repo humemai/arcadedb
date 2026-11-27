@@ -212,7 +212,8 @@ class PostgresErrorClassificationTest {
       ValidationException.Kind.READONLY, "23514", //
       ValidationException.Kind.MAX_LENGTH, "22001", //
       ValidationException.Kind.TYPE, "42804", //
-      ValidationException.Kind.ENCODING, "22021"));
+      ValidationException.Kind.ENCODING, "22021", //
+      ValidationException.Kind.FOREIGN_KEY, "23503"));
 
   // Regression: #11314
   @Test
