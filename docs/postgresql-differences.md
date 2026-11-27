@@ -148,6 +148,20 @@ The engine applies the length of a `varchar(n)` and the precision and scale of a
 | An end of a link table | any compatible type | the length or precision of its key, or `text` |
 | Removing a limit | `ALTER TABLE ... ALTER COLUMN ... TYPE` | in `sql`: `ALTER PROPERTY t.c CUSTOM typeModifier = null`. A limit set by editing the custom value does not change or check the rows that exist until they are written again |
 
+### ALTER TABLE
+
+`ADD [COLUMN] [IF NOT EXISTS]` with `NULL`, `NOT NULL`, and `DEFAULT`, `ALTER [COLUMN] c SET` and `DROP DEFAULT`, and `SET` and `DROP NOT NULL`, one or several in a statement (fork issue [#230](https://github.com/humemai/arcadedb/issues/230), `PostgreSQLAlterTableTest`). The rows that exist end up as PostgreSQL 18 leaves them, and the change is in the schema of the engine, so `sql` and openCypher see it.
+
+| topic | PostgreSQL 18 | `postgresql` |
+| --- | --- | --- |
+| A transaction block | allowed, and a rollback takes the change back | `0A000`: run it in autocommit |
+| A table | any table | one that `CREATE TABLE` of this language made; for another type the hint names the `sql` statement |
+| An added column with a default | the rows are usually not rewritten | each row is written, in one transaction, so a very large table needs the memory for it |
+| A record that already has an undeclared property of the new name, written by `sql` or openCypher | not applicable | `0A000`: remove the property first |
+| A constraint on an added column, a serial or identity column | allowed | `0A000`. For a unique column, add it and then `CREATE UNIQUE INDEX` |
+| `SET DEFAULT` on a column that the same statement adds | allowed | `0A000` |
+| `ADD CONSTRAINT`, `DROP`, `RENAME`, `ALTER COLUMN ... TYPE`, and the other actions | allowed | `0A000`; the hint names the `sql` statement where there is one |
+
 ### Check constraints
 
 The engine evaluates each `CHECK` for every record that any language creates or updates, always as the `postgresql` language reads the expression (fork issue [#227](https://github.com/humemai/arcadedb/issues/227), `PostgreSQLCheckConstraintTest`).
@@ -271,7 +285,7 @@ Read the hint. It is sent in the protocol's hint field, which `psql` and drivers
 
 | statement | SQLSTATE | hint |
 | --- | --- | --- |
-| `ALTER TABLE acc ADD COLUMN extra text` | `0A000` | Add the column in the sql language, outside a transaction block: ``{sql}CREATE PROPERTY `acc`.`extra` STRING`` |
+| `ALTER TABLE acc DROP COLUMN extra` | `0A000` | Drop the column in the sql language, outside a transaction block, where FORCE also drops its indexes: ``{sql}DROP PROPERTY `acc`.`extra` FORCE`` |
 | `SELECT 1 FOR UPDATE` | `0A000` | Leave the clause out: no row is locked. Of two transactions that change one row the later commit fails with SQLSTATE 40001, run it again |
 | `JOIN knows k ON k.source_id = p.id` | `42883` | k.source_id holds record ids, which are text such as '#12:3', not the values of p.id: join on p.rid. A cast will not match them |
 | `SELECT v FROM acc LIMIT 1, 2` | `42601`, as PostgreSQL | Use separate LIMIT and OFFSET clauses: LIMIT 1, 2 is LIMIT 2 OFFSET 1 |
@@ -316,7 +330,7 @@ Limits:
 
 | area | state |
 | --- | --- |
-| `ALTER`, `DROP`, and every `CREATE` but `CREATE TABLE`, `CREATE INDEX`, and `CREATE EXTENSION IF NOT EXISTS` of [what is built in](#create-extension) | refused; use ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
+| `ALTER` other than [`ALTER TABLE` of columns](#alter-table), `DROP`, and every `CREATE` but `CREATE TABLE`, `CREATE INDEX`, and `CREATE EXTENSION IF NOT EXISTS` of [what is built in](#create-extension) | refused; use ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
 | Types | no `json` columns (a `json` value goes into `jsonb`), `time`, `timetz`, `uuid[]` or `timestamptz[]` columns, or `char(n)` |
 | Syntax | a whole-row value such as `(t.*)`, `WITHOUT OVERLAPS`, `COALESCE`, `GREATEST`, `LEAST`, and `NULLIF` as functions in `FROM`, and an index parameter with a namespace are read and refused (`0A000`; fork issue [#202](https://github.com/humemai/arcadedb/issues/202)) |
 | Queries | refused: `array_agg` of arrays and of `jsonb`, the operators of `json`, most window frames, `ntile`, named windows, `WITH RECURSIVE`, `ANY` and `ALL` with an operator that is not a comparison, the order of arrays (`<`, `>`) and of `jsonb` values, `unnest`, the `?` operators of `jsonb` (write `jsonb_exists`), set-returning `jsonb` functions, `LATERAL`, `NATURAL` joins, `SIMILAR TO` |

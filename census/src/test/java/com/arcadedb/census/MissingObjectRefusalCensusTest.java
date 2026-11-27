@@ -218,6 +218,7 @@ class MissingObjectRefusalCensusTest {
       Map.entry("query/postgresql/PostgreSQLUndefinedTableException#<init>", SQLSTATE),
       Map.entry("query/postgresql/eval/PostgreSQLEvaluationException#noFunction", SQLSTATE),
       Map.entry("query/postgresql/eval/PostgreSQLEvaluationException#noOperator", SQLSTATE),
+      Map.entry("query/postgresql/plan/AlterTablePlan#column", SQLSTATE),
       Map.entry("query/postgresql/plan/CreateIndexPlan#execute", SQLSTATE),
       Map.entry("query/postgresql/plan/CreateTablePlan#readTableConstraint", SQLSTATE),
       Map.entry("query/postgresql/plan/CreateTablePlan#referencedColumn", SQLSTATE),

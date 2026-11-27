@@ -121,9 +121,8 @@ class PostgreSQLErrorHintTest extends PostgreSQLSessionAgainstPostgresTestBase {
 
         // each suggestion of a statement of another language is sent exactly as the hint writes it
         runSuggestion(own, "WITH RECURSIVE t AS (SELECT 1) SELECT * FROM t");
-        runSuggestion(own, "ALTER TABLE acc ADD COLUMN extra text");
+        assertThat(answer(own, "ALTER TABLE acc ADD COLUMN extra text")).doesNotStartWith("error");
         assertThat(answer(own, "SELECT extra FROM acc WHERE id = 1")).isEqualTo("rows [null]");
-        runSuggestion(own, "ALTER TABLE IF EXISTS public.acc ADD score double precision NOT NULL DEFAULT 0");
         runSuggestion(own, "ALTER TABLE acc DROP COLUMN IF EXISTS extra");
         assertThat(answer(own, "SELECT extra FROM acc")).isEqualTo("error 42703");
         // sql reads names as they are stored

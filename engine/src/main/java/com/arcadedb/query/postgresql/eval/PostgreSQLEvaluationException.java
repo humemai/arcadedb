@@ -183,6 +183,12 @@ public class PostgreSQLEvaluationException extends CommandExecutionException imp
     return taken("42P07", new AlreadyExistsException(holder, "relation \"" + name + "\" already exists"));
   }
 
+  /** {@code 42701}: {@code column "x" of relation "y" already exists}. */
+  public static PostgreSQLEvaluationException duplicateColumn(final String name, final String table) {
+    return taken("42701", new AlreadyExistsException(AlreadyExistsException.Kind.PROPERTY,
+        "column \"" + name + "\" of relation \"" + table + "\" already exists"));
+  }
+
   /** {@code 42710}: {@code constraint "x" for relation "y" already exists}. */
   public static PostgreSQLEvaluationException duplicateConstraint(final String name, final String table) {
     return taken("42710", new AlreadyExistsException(AlreadyExistsException.Kind.CONSTRAINT,
