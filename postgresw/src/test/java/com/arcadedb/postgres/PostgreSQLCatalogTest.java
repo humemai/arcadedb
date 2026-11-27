@@ -342,7 +342,7 @@ class PostgreSQLCatalogTest extends PostgresWireProtocolTestBase {
           .containsExactly("5|0");
       assertThat(query(connection, "SELECT a.relname, array_agg(CAST(a.attname AS TEXT) ORDER BY a.attnum DESC) AS cols FROM "
           + "(SELECT c.relname, t.attname, t.attnum FROM pg_catalog.pg_class c JOIN pg_catalog.pg_attribute t ON t.attrelid = c.oid "
-          + "WHERE c.relname = 'company') AS a GROUP BY a.relname")).containsExactly("company|{name,cid,rid}");
+          + "WHERE c.relname = 'company') AS a GROUP BY a.relname")).containsExactly("company|{\"name\",\"cid\",\"rid\"}");
     }
   }
 
