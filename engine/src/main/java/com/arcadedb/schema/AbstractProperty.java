@@ -23,6 +23,7 @@ import com.arcadedb.database.Record;
 import com.arcadedb.exception.SchemaException;
 import com.arcadedb.index.Index;
 import com.arcadedb.log.LogManager;
+import com.arcadedb.query.postgresql.catalog.Sequences;
 import com.arcadedb.query.sql.executor.BasicCommandContext;
 import com.arcadedb.query.sql.antlr.SQLAntlrParser;
 import com.arcadedb.query.sql.parser.Expression;
@@ -178,6 +179,13 @@ public abstract class AbstractProperty implements Property {
   @Override
   public Object getDefaultValue() {
     final DefaultValue current = defaultValue;
+    final String counter = Sequences.keyOf(current.value());
+    if (counter != null) {
+      // a serial or identity column of the postgresql language: the next value of its counter (fork issue #221)
+      final Database database = owner.getSchema().getEmbedded().getDatabase();
+      return Type.convert(database, Sequences.next(database, counter), type.javaDefaultType);
+    }
+
     if (current.expression() == null)
       // Nothing to evaluate: the default is unset, is null, is not a String (set through the API and used verbatim), or
       // is a persisted one that does not compile, which falls back to its source text. The DEFAULT_NOT_SET sentinel is

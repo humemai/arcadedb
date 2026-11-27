@@ -60,7 +60,7 @@ CREATE TABLE knows (
 | A taken name | `42P07`, or `42710` for a constraint | the same SQLSTATE, also from `CREATE INDEX`. As for a taken name in `sql`, every protocol of ArcadeDB answers it as a conflict: HTTP with 409 and `AlreadyExistsException` |
 | Column types | all, with modifiers | `bool`, `int2`, `int4`, `int8`, `float4`, `float8`, `numeric`, `text`, `varchar`, `bytea`, `date`, `timestamp`, `timestamptz`, `jsonb`, `vector` and `vector(n)`, and arrays of `bool`, `int4`, `int8`, `float4`, `float8`, `numeric`, `bytea`, `text`, `date`, and `timestamp`. No other type modifier |
 | A `jsonb` column | any JSON | a JSON object; an array or a scalar is refused when it is written |
-| Constraints | all | `NULL`, `NOT NULL`, `UNIQUE`, `PRIMARY KEY`, `DEFAULT`. No `CHECK`, `EXCLUDE`, `serial`, identity or generated columns, deferrable constraints, `NULLS NOT DISTINCT`, or table options (`TEMP`, `INHERITS`, `PARTITION BY`, `LIKE`, `AS`, `WITH`) |
+| Constraints | all | `NULL`, `NOT NULL`, `UNIQUE`, `PRIMARY KEY`, `DEFAULT`, and [`serial` and identity columns](#serial-and-identity-columns). No `CHECK`, `EXCLUDE`, generated columns, deferrable constraints, `NULLS NOT DISTINCT`, or table options (`TEMP`, `INHERITS`, `PARTITION BY`, `LIKE`, `AS`, `WITH`) |
 | Defaults | any expression | a constant, for `bool`, the number types, `text`, and `varchar`; and `now()`, `CURRENT_TIMESTAMP`, `transaction_timestamp()`, `LOCALTIMESTAMP`, or `CURRENT_DATE` without a precision, for `date`, `timestamp`, and `timestamptz` |
 | Keys | any type with an index | `bool`, the number types, `text`, `varchar`, `date`, `timestamp`, and `timestamptz` |
 | `23505` | names the constraint | names the index of the engine |
@@ -68,6 +68,28 @@ CREATE TABLE knows (
 | A name in a subquery that its tables do not declare | read from a query around it | the same, also where a table of the subquery reads its record id under that name: a record id that the catalog does not list gives way to a column of that name in a query around the subquery. In a join condition of an `EXISTS` subquery, in a subquery inside it, and beside another `EXISTS` in its `WHERE`, such a name is refused |
 
 `NOT NULL`, unique keys, defaults, and the dimensions of a `vector(n)` are kept by the schema of the engine, so they hold for writes of every language.
+
+### `serial` and identity columns
+
+```sql
+CREATE TABLE users (id serial PRIMARY KEY, name text NOT NULL);
+CREATE TABLE events (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, user_id int NOT NULL);
+INSERT INTO users (name) VALUES ('Ada'), ('Bo') RETURNING id;
+```
+
+`serial`, `bigserial`, `smallserial`, and `GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY` give 1, 2, and so on, and gaps are possible, as in PostgreSQL. The engine has no sequence: each such column has a counter, one record of the document type `_postgresql_sequences`, and the default of its property (`postgresql_nextval('...')`) takes the next value.
+
+| area | PostgreSQL | `postgresql` |
+| --- | --- | --- |
+| Writes of another language | a sequence fills a `serial` column of any `INSERT` | an `INSERT` of `sql` or openCypher, or a record of the Java API, that leaves the column out takes the next value. `sql` and openCypher can also write any value, to a `GENERATED ALWAYS` column too |
+| A value that a statement gives | the sequence does not move | the same: a later generated value can meet it (`23505` on a key) |
+| Rollback | the value is not given again | the same: the counter is committed in a transaction of its own |
+| The cost of a value | a sequence call | one commit of the counter for each value. In one server process the commits of all counters of a database follow one another |
+| Sequences | objects of their own, with `nextval`, `setval`, `ALTER SEQUENCE` | none: those are refused, and no sequence is listed anywhere. `column_default` of a `serial` column shows `nextval('users_id_seq'::regclass)`, a name that no statement can use |
+| Identity options | start, increment, bounds, cycle | only those that restate the defaults (`START WITH 1`, `INCREMENT BY 1`, `NO CYCLE`); `OVERRIDING` is refused |
+| Permissions | `USAGE` on the sequence of a `serial` column | an ArcadeDB user whose permissions are set for each type needs to read and update `_postgresql_sequences` to insert |
+| The type of a result column in a driver | pgjdbc says `serial` or `bigserial` for a generated key that it reads from a table | `int4` or `int8`, because an answer does not name its table; the values are the same |
+| A dropped table | drops its sequences | `DROP TYPE` in `sql` leaves the counter record; a table made again counts from 1 |
 
 ## Embedded documents
 

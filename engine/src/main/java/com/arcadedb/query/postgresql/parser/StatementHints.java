@@ -115,8 +115,8 @@ public final class StatementHints {
       case "MATERIALIZED" -> NO_WAY + ": the sql language has CREATE MATERIALIZED VIEW for a query that it reads";
       case "SCHEMA" -> "Leave the statement out and write table names without a schema: there is one schema, public";
       case "TYPE", "DOMAIN" -> NO_WAY + ": declare the column text or jsonb and check the values in your program";
-      case "SEQUENCE" -> NO_WAY + ": make the keys in your program, or declare no id column and read the record id with"
-          + " INSERT ... RETURNING id";
+      case "SEQUENCE" -> "Leave the statement out and declare the key column bigserial or GENERATED ALWAYS AS IDENTITY:"
+          + " there are no sequences of their own";
       case "FUNCTION", "PROCEDURE", "TRIGGER", "RULE", "AGGREGATE" -> NO_WAY + ": do the work in your program, in one transaction";
       case "USER", "ROLE", "GROUP", "DATABASE" -> NO_WAY + ": the ArcadeDB server manages users and databases";
       default -> NO_WAY;

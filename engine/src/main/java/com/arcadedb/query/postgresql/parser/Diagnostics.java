@@ -93,8 +93,9 @@ final class Diagnostics {
           "A table option (INHERITS, PARTITION BY, USING, WITH, ON COMMIT or TABLESPACE)"),
       Map.entry("unsupportedTableElement", "LIKE in CREATE TABLE"),
       Map.entry("unsupportedColumnConstraint",
-          "This column option (CHECK, GENERATED, COLLATE, storage, a deferrable or unenforced constraint and the like)"),
+          "This column option (CHECK, a generated column, COLLATE, storage, a deferrable or unenforced constraint and the like)"),
       Map.entry("unsupportedReferenceOption", "MATCH in a foreign key"),
+      Map.entry("unsupportedIdentityOption", "An identity option other than the defaults"),
       Map.entry("unsupportedTableConstraint", "This table constraint (CHECK, EXCLUDE, NOT NULL, NULLS NOT DISTINCT or USING INDEX)"),
       Map.entry("unsupportedConstraintOption", "An option of a table constraint (INCLUDE, WITH, DEFERRABLE and the like)"),
       Map.entry("unsupportedConcurrently", "CREATE INDEX CONCURRENTLY"),
@@ -172,8 +173,8 @@ final class Diagnostics {
   private static String hint(final String ruleName, final String what, final String first) {
     return switch (ruleName) {
       case "unsupportedColumnConstraint" -> "GENERATED".equals(first) ?
-          "Leave GENERATED out. For generated keys declare no id column: the table then has a record id as id, which"
-              + " INSERT ... RETURNING id returns" :
+          "Leave GENERATED ALWAYS AS (...) out and compute the value in the queries that read it. For generated keys write"
+              + " bigserial or GENERATED ALWAYS AS IDENTITY" :
           "Leave " + first + " and what belongs to it out, and check in your program what it would have checked";
       case "unsupportedTableConstraint", "unsupportedConstraintOption" ->
           "Leave " + first + " and what belongs to it out; UNIQUE (columns) and PRIMARY KEY (columns) keep values unique";
@@ -222,6 +223,7 @@ final class Diagnostics {
           "unsupportedParameterNamespace" -> "Leave the clause out";
       case "unsupportedExtensionOption" -> "Leave the option out: write CREATE EXTENSION IF NOT EXISTS name";
       case "unsupportedTableElement" -> "Write the columns out";
+      case "unsupportedIdentityOption" -> "Leave the options out: the values start at 1 and increase by 1";
       case "unsupportedIndexExpression" -> "Store the computed value in a column of its own and index that column";
       case "unsupportedIndexElementOption" -> "Name the column only, for a vector index with its operator class";
       case "unsupportedIndexParameter" -> "Give a whole number";

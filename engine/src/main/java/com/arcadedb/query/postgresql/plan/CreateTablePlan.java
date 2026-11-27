@@ -33,6 +33,7 @@ import com.arcadedb.query.postgresql.catalog.ColumnType;
 import com.arcadedb.query.postgresql.catalog.EdgeEndpoints;
 import com.arcadedb.query.postgresql.catalog.Identifier;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
+import com.arcadedb.query.postgresql.catalog.Sequences;
 import com.arcadedb.query.postgresql.catalog.Table;
 import com.arcadedb.query.postgresql.catalog.TableDefinition;
 import com.arcadedb.query.postgresql.eval.Evaluable;
@@ -62,8 +63,10 @@ import java.util.Set;
  * <p>
  * What a write has to keep goes into the schema, so it holds for every language: the property types, mandatory and not-null for
  * {@code NOT NULL}, a unique index for each {@code UNIQUE} and {@code PRIMARY KEY} (a unique edge type for a key over the two
- * ends), the defaults, and the dimensions of a {@code vector(n)} as the minimum and maximum size of its property. What only
- * describes the table is its {@link TableDefinition}.
+ * ends), the defaults, and the dimensions of a {@code vector(n)} as the minimum and maximum size of its property. A
+ * {@code serial} column and an identity column (fork issue #221) are an integer property whose default takes the next value of a
+ * counter of their own ({@link Sequences}). What only describes the table is its {@link TableDefinition}, the generation of an
+ * identity column among it.
  * <p>
  * The whole statement is checked before the schema changes, and a change that fails takes the new type back. The checks follow
  * PostgreSQL's SQLSTATEs; what PostgreSQL accepts and the engine cannot keep is {@code 0A000} with its position.
@@ -85,8 +88,17 @@ public final class CreateTablePlan {
 
   private static final List<String> ENDS = List.of(Column.SOURCE_ID, Column.TARGET_ID);
 
+  /** The types an identity column can have, each with the largest value it holds. */
+  private static final Map<ColumnType, Long> COUNTED_TYPES = Map.of(ColumnType.INT2, (long) Short.MAX_VALUE, ColumnType.INT4,
+      (long) Integer.MAX_VALUE, ColumnType.INT8, Long.MAX_VALUE);
+
   /** The type of a column, in the engine and in the view; {@code dimensions} is 0 unless the column is a {@code vector(n)}. */
   private record Mapped(ColumnType type, Type engine, String ofType, int dimensions) {
+  }
+
+  /** How a column that the engine counts was declared. */
+  private enum Counted {
+    SERIAL, ALWAYS, BY_DEFAULT
   }
 
   /** A column as it will be made. */
@@ -103,6 +115,8 @@ public final class CreateTablePlan {
     boolean                clock;
     Object                 defaultValue;
     String                 defaultText;
+    /** {@code serial} or identity, {@code null} for any other column */
+    Counted                counted;
 
     Spec(final String name, final SourcePosition position, final Mapped mapped) {
       this.name = name;
@@ -132,6 +146,9 @@ public final class CreateTablePlan {
   /** Makes the table; the answer has no column and no row. */
   public PostgreSQLResultSet execute() {
     final String table = tableName(statement.table(), statement.position());
+    if (Sequences.TYPE_NAME.equals(table))
+      throw unsupported("A table named " + table + ", which holds the counters of serial and identity columns,",
+          statement.position());
     if (exists(statement.table().get(statement.table().size() - 1))) {
       if (statement.ifNotExists())
         return answer("CREATE TABLE " + table + ": the table exists, nothing to do");
@@ -224,11 +241,17 @@ public final class CreateTablePlan {
       throw new PostgreSQLEvaluationException("42701", "column name \"" + name + "\" conflicts with a system column name");
     if (name.startsWith("@"))
       throw unsupported("A column name that starts with @", column.position());
-    final Spec spec = new Spec(name, column.position(), type(column.type()));
+    final Mapped serial = serialType(column.type());
+    final Spec spec = new Spec(name, column.position(), serial != null ? serial : type(column.type()));
     if (columns.put(name, spec) != null)
       throw new PostgreSQLEvaluationException("42701", "column \"" + name + "\" specified more than once");
+    if (serial != null) {
+      spec.counted = Counted.SERIAL;
+      spec.notNull = true;
+    }
 
-    boolean defaultSeen = false;
+    // serial is a default of its own
+    boolean defaultSeen = serial != null;
     for (final CreateTableStatement.Constraint constraint : column.constraints()) {
       final String given = constraint.name() == null ? null : constraint.name().value();
       switch (constraint.kind()) {
@@ -242,7 +265,22 @@ public final class CreateTablePlan {
           throw conflictingNull(table, name);
         spec.nullable = true;
       }
+      case IDENTITY_ALWAYS, IDENTITY_BY_DEFAULT -> {
+        if (spec.counted == Counted.ALWAYS || spec.counted == Counted.BY_DEFAULT)
+          throw new PostgreSQLEvaluationException("42601",
+              "multiple identity specifications for column \"" + name + "\" of table \"" + table + "\"");
+        if (defaultSeen)
+          throw defaultAndIdentity(table, name);
+        if (!COUNTED_TYPES.containsKey(spec.mapped.type()))
+          throw new PostgreSQLEvaluationException("22023", "identity column type must be smallint, integer, or bigint");
+        if (spec.nullable)
+          throw conflictingNull(table, name);
+        spec.notNull = true;
+        spec.counted = constraint.kind() == CreateTableStatement.Kind.IDENTITY_ALWAYS ? Counted.ALWAYS : Counted.BY_DEFAULT;
+      }
       case DEFAULT -> {
+        if (spec.counted == Counted.ALWAYS || spec.counted == Counted.BY_DEFAULT)
+          throw defaultAndIdentity(table, name);
         if (defaultSeen)
           throw new PostgreSQLEvaluationException("42601",
               "multiple default values specified for column \"" + name + "\" of table \"" + table + "\"");
@@ -350,6 +388,30 @@ public final class CreateTablePlan {
   }
 
   // ------------------------------------------------------------------------------------------------ types
+
+  /**
+   * The type of a column declared {@code serial}, {@code bigserial} or {@code smallserial}, {@code null} for any other type: as in
+   * PostgreSQL, the word is no type but a short form of a column definition, which only an unqualified name without a modifier
+   * and without {@code []} is.
+   */
+  private static Mapped serialType(final TypeName type) {
+    if (type.name().size() != 1 || !type.modifiers().isEmpty() || type.arrayDimensions() != 0)
+      return null;
+    return switch (type.name().get(0)) {
+      case "smallserial", "serial2" -> scalarType("int2");
+      case "serial", "serial4" -> scalarType("int4");
+      case "bigserial", "serial8" -> scalarType("int8");
+      default -> null;
+    };
+  }
+
+  /** The default of a {@code serial} column as PostgreSQL 18 shows it, with the sequence it would make. */
+  private static String serialDefault(final String table, final String column) {
+    String sequence = table + "_" + column + "_seq";
+    if (!sequence.matches("[a-z_][a-z0-9_$]*"))
+      sequence = "\"" + sequence.replace("\"", "\"\"") + "\"";
+    return "nextval('" + sequence.replace("'", "''") + "'::regclass)";
+  }
 
   private static Mapped type(final TypeName type) {
     final List<String> parts = type.name();
@@ -585,10 +647,15 @@ public final class CreateTablePlan {
       foreignKeys.put(end.getKey(), name);
     }
     final Map<String, String> defaults = new LinkedHashMap<>();
+    final Map<String, String> identity = new LinkedHashMap<>();
     for (final Spec spec : columns.values())
       if (spec.hasDefault)
         defaults.put(spec.name, spec.defaultText);
-    return new TableDefinition(List.copyOf(columns.keySet()), text, primary, unique, defaults, foreignKeys, instants);
+      else if (spec.counted == Counted.SERIAL)
+        defaults.put(spec.name, serialDefault(table, spec.name));
+      else if (spec.counted != null)
+        identity.put(spec.name, spec.counted == Counted.ALWAYS ? Column.ALWAYS : Column.BY_DEFAULT);
+    return new TableDefinition(List.copyOf(columns.keySet()), text, primary, unique, defaults, foreignKeys, instants, identity);
   }
 
   private void create(final String table, final Map<String, Spec> columns, final List<Key> keys,
@@ -598,10 +665,17 @@ public final class CreateTablePlan {
     final DocumentType type = edge ? schema.buildEdgeType().withName(table).withUnique(uniqueEnds).create()
         : schema.buildVertexType().withName(table).create();
     boolean made = false;
+    final List<String> counters = new ArrayList<>();
     try {
       for (final Spec spec : columns.values())
-        if (!endTables.containsKey(spec.name))
-          createProperty(type, spec);
+        if (!endTables.containsKey(spec.name)) {
+          final Property property = createProperty(type, spec);
+          if (spec.counted != null) {
+            final String counter = Sequences.create(database, table, spec.name, COUNTED_TYPES.get(spec.mapped.type()));
+            counters.add(counter);
+            property.setDefaultValue(Sequences.defaultDefinition(counter));
+          }
+        }
       for (final Key key : keys)
         if (key.columns().stream().noneMatch(endTables::containsKey))
           type.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, key.columns().toArray(new String[0]));
@@ -613,12 +687,14 @@ public final class CreateTablePlan {
       made = true;
     } finally {
       // the schema is not transactional: a table that could not be made whole is taken back
-      if (!made)
+      if (!made) {
         schema.dropType(table);
+        Sequences.drop(database, counters);
+      }
     }
   }
 
-  private void createProperty(final DocumentType type, final Spec spec) {
+  private Property createProperty(final DocumentType type, final Spec spec) {
     final Mapped mapped = spec.mapped;
     final Property property = mapped.ofType() == null ? type.createProperty(spec.name, mapped.engine())
         : type.createProperty(spec.name, mapped.engine(), mapped.ofType());
@@ -640,6 +716,7 @@ public final class CreateTablePlan {
       if (spec.defaultValue instanceof String text && !Objects.equals(text, property.getDefaultValue()))
         throw unsupported("This text as a DEFAULT", spec.literal.position());
     }
+    return property;
   }
 
   private static String sqlLiteral(final String text) {
@@ -647,6 +724,11 @@ public final class CreateTablePlan {
   }
 
   // ------------------------------------------------------------------------------------------------ errors
+
+  private static PostgreSQLEvaluationException defaultAndIdentity(final String table, final String column) {
+    return new PostgreSQLEvaluationException("42601",
+        "both default and identity specified for column \"" + column + "\" of table \"" + table + "\"");
+  }
 
   private static PostgreSQLEvaluationException conflictingNull(final String table, final String column) {
     return new PostgreSQLEvaluationException("42601",

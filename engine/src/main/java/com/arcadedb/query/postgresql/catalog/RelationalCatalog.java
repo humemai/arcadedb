@@ -96,6 +96,9 @@ public final class RelationalCatalog {
   /** The schema every table is in. The name of the database is accepted as an alias of it. */
   public static final String SCHEMA = "public";
 
+  /** How the text of the default of a {@code serial} column starts. */
+  private static final String SEQUENCE_CALL = "nextval(";
+
   private final String             databaseName;
   private final List<Table>        tables;
   private final Map<String, Table> tablesByName;
@@ -115,7 +118,8 @@ public final class RelationalCatalog {
 
     final List<DocumentType> types = new ArrayList<>();
     for (final DocumentType type : schema.getTypes())
-      if (!(type instanceof TimeSeriesType))
+      // the counters of the serial and identity columns are no table of the view (fork issue #221)
+      if (!(type instanceof TimeSeriesType) && !Sequences.TYPE_NAME.equals(type.getName()))
         types.add(type);
     types.sort(Comparator.comparing(DocumentType::getName));
 
@@ -324,9 +328,17 @@ public final class RelationalCatalog {
       if (columnType == ColumnType.TIMESTAMP && definition != null && definition.timestamptzColumns().contains(property.getName()))
         columnType = ColumnType.TIMESTAMPTZ;
       Column column = new Column(shown, columnType, !property.isNotNull(), Column.Kind.PROPERTY, property.getName(), link);
-      // a default that a later statement dropped is not shown
-      if (definition != null && property.getDefaultValue() != null)
-        column = column.withDefaultText(definition.defaults().get(property.getName()));
+      if (definition != null) {
+        // a default that a later statement dropped is not shown. The definition is asked, because reading the default of a
+        // serial or identity column takes its next value (fork issue #221)
+        final boolean counted = Sequences.keyOf(property.getDefaultValueDefinition()) != null;
+        final String text = definition.defaults().get(property.getName());
+        if (property.hasDefaultFillingInAValue() && (counted || text == null || !text.startsWith(SEQUENCE_CALL)))
+          column = column.withDefaultText(text);
+        final String generation = definition.identity().get(property.getName());
+        if (generation != null && counted)
+          column = column.withIdentity(generation);
+      }
       columns.add(column);
       if (link && property.getOfType() != null && !property.getOfType().isBlank())
         linkTargets.put(shown, property.getOfType());

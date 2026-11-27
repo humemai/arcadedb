@@ -99,11 +99,9 @@ public final class PostgreSQLHints {
     rule("A type modifier on a column", "Leave the modifier out: declare text or numeric, whose length and precision are not checked");
     rule("A column of type timestamptz[]", "Declare timestamp[] and keep its times in UTC");
     rule("A column of type uuid", "Declare the column text and send the UUID as text");
-    rule("A column of type serial", "Declare no id column, so the table has a record id as id, or declare bigint and give each value");
-    rule("A column of type bigserial",
-        "Declare no id column, so the table has a record id as id, or declare bigint and give each value");
-    rule("A column of type", "Declare one of boolean, smallint, integer, bigint, real, double precision, numeric, text, bytea,"
-        + " date, timestamp, timestamptz, jsonb or vector(n)");
+    rule("A table named", "Choose another name");
+    rule("A column of type", "Declare one of boolean, smallint, integer, bigint, serial, bigserial, real, double precision,"
+        + " numeric, text, bytea, date, timestamp, timestamptz, jsonb or vector(n)");
     rule("DEFAULT", "Write a constant as the DEFAULT, or leave it out and give the value in each INSERT");
     // CREATE INDEX
     rule("The index method", "Leave USING out for an ordinary index, or write USING hnsw for a vector column");

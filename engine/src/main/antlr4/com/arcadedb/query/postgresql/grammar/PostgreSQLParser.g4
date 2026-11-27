@@ -159,12 +159,38 @@ columnConstraintElem
   | PRIMARY KEY                             # primaryKeyColumnConstraint
   | DEFAULT bExpr                           # defaultConstraint
   | REFERENCES references                   # referencesColumnConstraint
+  // an identity column, fork issue #221
+  | GENERATED generatedWhen AS IDENTITY (LPAREN identityOptions+=identityOption+ RPAREN)?   # identityColumnConstraint
   | unsupportedColumnConstraint skipRest    # otherColumnConstraint
   ;
 
+// GENERATED ALWAYS AS (expression) is a generated column, which the language does not run
 unsupportedColumnConstraint
-  : CHECK | GENERATED | COLLATE | STORAGE | COMPRESSION | OPTIONS | DEFERRABLE | INITIALLY | ENFORCED | NO | NULLS | WITH
-  | USING | NOT DEFERRABLE | NOT ENFORCED
+  : CHECK | GENERATED ALWAYS AS LPAREN | COLLATE | STORAGE | COMPRESSION | OPTIONS | DEFERRABLE | INITIALLY | ENFORCED | NO
+  | NULLS | WITH | USING | NOT DEFERRABLE | NOT ENFORCED
+  ;
+
+generatedWhen
+  : ALWAYS       # generatedAlways
+  | BY DEFAULT   # generatedByDefault
+  ;
+
+// the options of the sequence of an identity column; the tree builder takes those that say what holds anyway
+identityOption
+  : START WITH? signedInteger                       # startOption
+  | INCREMENT BY? signedInteger                     # incrementOption
+  | MINVALUE signedInteger                          # minValueOption
+  | CACHE signedInteger                             # cacheOption
+  | NO (MINVALUE | MAXVALUE | CYCLE)                # noOption
+  | unsupportedIdentityOption skipRest              # otherIdentityOption
+  ;
+
+signedInteger
+  : (PLUS | MINUS)? ICONST
+  ;
+
+unsupportedIdentityOption
+  : AS | CYCLE | MAXVALUE | OWNED | RESTART | SEQUENCE | LOGGED | UNLOGGED
   ;
 
 references

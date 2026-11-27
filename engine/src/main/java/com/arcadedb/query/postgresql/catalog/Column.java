@@ -65,14 +65,20 @@ public final class Column {
   private final boolean    hidden;
   private final boolean    listed;
   private final String     defaultText;
+  private final String     identity;
+
+  /** The generation of an identity column that takes no value of a statement. */
+  public static final String ALWAYS     = "ALWAYS";
+  /** The generation of an identity column that a statement may write. */
+  public static final String BY_DEFAULT = "BY DEFAULT";
 
   Column(final String name, final ColumnType type, final boolean nullable, final Kind kind, final String property,
       final boolean link) {
-    this(name, type, nullable, kind, property, link, false, true, null);
+    this(name, type, nullable, kind, property, link, false, true, null, null);
   }
 
   private Column(final String name, final ColumnType type, final boolean nullable, final Kind kind, final String property,
-      final boolean link, final boolean hidden, final boolean listed, final String defaultText) {
+      final boolean link, final boolean hidden, final boolean listed, final String defaultText, final String identity) {
     this.name = Objects.requireNonNull(name);
     this.type = Objects.requireNonNull(type);
     this.nullable = nullable;
@@ -82,6 +88,7 @@ public final class Column {
     this.hidden = hidden;
     this.listed = listed;
     this.defaultText = defaultText;
+    this.identity = identity;
   }
 
   /**
@@ -94,17 +101,35 @@ public final class Column {
 
   /** The same column, not nullable: a property that is the primary key of its table. */
   Column notNull() {
-    return new Column(name, type, false, kind, property, link, hidden, listed, defaultText);
+    return new Column(name, type, false, kind, property, link, hidden, listed, defaultText, identity);
   }
 
   /** The same column, hidden: see {@link #isHidden()} and, for {@code listInCatalog}, {@link #isListed()}. */
   Column hide(final boolean listInCatalog) {
-    return new Column(name, type, nullable, kind, property, link, true, listInCatalog, defaultText);
+    return new Column(name, type, nullable, kind, property, link, true, listInCatalog, defaultText, identity);
   }
 
   /** The same column with the text that {@code column_default} shows for it. */
   Column withDefaultText(final String text) {
-    return new Column(name, type, nullable, kind, property, link, hidden, listed, text);
+    return new Column(name, type, nullable, kind, property, link, hidden, listed, text, identity);
+  }
+
+  /** The same column as an identity column, {@value #ALWAYS} or {@value #BY_DEFAULT} (fork issue #221). */
+  Column withIdentity(final String generation) {
+    return new Column(name, type, nullable, kind, property, link, hidden, listed, defaultText, generation);
+  }
+
+  /**
+   * {@code information_schema.columns.identity_generation}: {@value #ALWAYS} for the record id, what {@code CREATE TABLE}
+   * declared for an identity column, {@code null} for any other column.
+   */
+  public String identityGeneration() {
+    return kind == Kind.IDENTITY ? ALWAYS : identity;
+  }
+
+  /** Whether {@code CREATE TABLE} declared the column {@code serial}, {@code bigserial} or {@code smallserial}. */
+  public boolean isSerial() {
+    return defaultText != null && defaultText.startsWith("nextval(");
   }
 
   /**
@@ -154,12 +179,13 @@ public final class Column {
   }
 
   /**
-   * Whether the engine gives the value of this column and a statement cannot choose it: the record id ({@link Kind#IDENTITY}).
-   * The views report it as {@code GENERATED ALWAYS AS IDENTITY}, and a value given for it is {@code 428C9}, as PostgreSQL
-   * refuses a value for such a column. The endpoints of an edge are not generated: a statement names them.
+   * Whether the engine gives the value of this column and a statement of this language cannot choose it: the record id
+   * ({@link Kind#IDENTITY}), and a column declared {@code GENERATED ALWAYS AS IDENTITY}. The views report both as that, and a
+   * value given for one is {@code 428C9}, as PostgreSQL refuses a value for such a column. The endpoints of an edge are not
+   * generated: a statement names them.
    */
   public boolean isGeneratedAlways() {
-    return kind == Kind.IDENTITY;
+    return ALWAYS.equals(identityGeneration());
   }
 
   /**
