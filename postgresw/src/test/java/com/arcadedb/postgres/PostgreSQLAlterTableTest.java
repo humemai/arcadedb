@@ -99,7 +99,7 @@ class PostgreSQLAlterTableTest extends PostgreSQLSideBySideTestBase {
             + " WHERE id = 1", false).replaceFirst("^[^\n]*\n", ""));
         run(arcade, "{sql} INSERT INTO facts SET id = 6, content = 'six', price = 2");
         compare("defaults of a row of sql", "    6|5|true|\n",
-            answer(arcade, "SELECT id, importance, gone FROM facts WHERE id = 6", false).replaceFirst("^[^\n]*\n", ""));
+            answer(arcade, "SELECT id, importance, gone::text FROM facts WHERE id = 6", false).replaceFirst("^[^\n]*\n", ""));
 
         // a property that the table does not declare is neither shown nor written over
         run(arcade, "{sql} UPDATE facts SET extra = 'kept' WHERE id = 1");
