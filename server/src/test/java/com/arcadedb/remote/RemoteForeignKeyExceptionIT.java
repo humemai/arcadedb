@@ -19,6 +19,7 @@
 package com.arcadedb.remote;
 
 import com.arcadedb.exception.ForeignKeyException;
+import com.arcadedb.exception.TransactionException;
 import com.arcadedb.server.BaseGraphServerTest;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.AfterEach;
@@ -30,7 +31,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Fork issue #228: a write that a foreign key refuses reaches a caller of the Java driver as a {@link ForeignKeyException}, with
- * the SQLSTATE that tells a violated key from a restricted one, whether the statement or the commit is refused.
+ * the SQLSTATE that tells a violated key from a restricted one. A refused statement raises it, and a refused commit carries it as
+ * the cause of the {@link TransactionException} in which the driver reports a failed commit.
  */
 class RemoteForeignKeyExceptionIT extends BaseGraphServerTest {
   private static final String DATABASE_NAME = "remote-database-foreign-keys";
@@ -48,12 +50,18 @@ class RemoteForeignKeyExceptionIT extends BaseGraphServerTest {
     assertRefused(() -> remote.command("sql", "DELETE FROM parent WHERE id = 1").close(), "23001");
     assertRefused(() -> remote.command("postgresql", "INSERT INTO child (id, pid) VALUES (3, 99)").close(), "23503");
     // the commit of a transaction of the caller
-    assertRefused(() -> remote.transaction(() -> remote.command("sql", "INSERT INTO child SET id = 4, pid = 99").close()), "23503");
+    assertThatThrownBy(
+        () -> remote.transaction(() -> remote.command("sql", "INSERT INTO child SET id = 4, pid = 99").close())).isExactlyInstanceOf(
+        TransactionException.class).satisfies(e -> assertForeignKey(e.getCause(), "23503"));
   }
 
   private static void assertRefused(final ThrowingCallable write, final String sqlState) {
-    assertThatThrownBy(write).isExactlyInstanceOf(ForeignKeyException.class)
-        .satisfies(e -> assertThat(((ForeignKeyException) e).getSqlState()).isEqualTo(sqlState));
+    assertThatThrownBy(write).satisfies(e -> assertForeignKey(e, sqlState));
+  }
+
+  private static void assertForeignKey(final Throwable refusal, final String sqlState) {
+    assertThat(refusal).isExactlyInstanceOf(ForeignKeyException.class);
+    assertThat(((ForeignKeyException) refusal).getSqlState()).isEqualTo(sqlState);
   }
 
   @BeforeEach
