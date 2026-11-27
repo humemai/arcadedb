@@ -22,6 +22,9 @@ import com.arcadedb.database.Database;
 import com.arcadedb.database.Document;
 import com.arcadedb.database.MutableDocument;
 import com.arcadedb.database.Record;
+import com.arcadedb.exception.AlreadyExistsException;
+import com.arcadedb.exception.DuplicatedKeyException;
+import com.arcadedb.index.TypeIndex;
 import com.arcadedb.log.LogManager;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.PostgreSQLUndefinedTableException;
@@ -32,6 +35,8 @@ import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.SourcePosition;
 import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.ColumnType;
+import com.arcadedb.query.postgresql.catalog.DeclaredIndexes;
+import com.arcadedb.query.postgresql.catalog.Identifier;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.catalog.Sequences;
 import com.arcadedb.query.postgresql.catalog.Table;
@@ -40,20 +45,28 @@ import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.schema.CheckConstraint;
 import com.arcadedb.schema.DocumentType;
+import com.arcadedb.schema.EdgeType;
+import com.arcadedb.schema.ForeignKey;
 import com.arcadedb.schema.Property;
+import com.arcadedb.schema.Schema;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 
@@ -123,9 +136,11 @@ public final class AlterTablePlan {
     final Map<String, State> changed = new LinkedHashMap<>();
     final Map<String, CreateTablePlan.Spec> defaults = new LinkedHashMap<>();
     final Map<String, Boolean> notNull = new LinkedHashMap<>();
+    final List<CreateTableStatement.Constraint> constraints = new ArrayList<>();
     for (final AlterTableStatement.Action action : statement.actions())
       switch (action) {
-      case AlterTableStatement.AddColumn add -> readColumn(table, add, added);
+      case AlterTableStatement.AddColumn add -> readColumn(table, add, added, constraints);
+      case AlterTableStatement.AddConstraint add -> constraints.add(add.constraint());
       case AlterTableStatement.SetDefault set -> {
         final State column = column(table, set.column(), added, changed);
         if (column.identity != null)
@@ -168,14 +183,21 @@ public final class AlterTablePlan {
         required.add(property);
     });
     checkRows(table, type, added, required);
-    change(table, type, definition, added, defaults, notNull, required);
+    // as PostgreSQL does: the keys first, so that a foreign key of the statement can refer to one of them
+    constraints.sort(Comparator.comparingInt((CreateTableStatement.Constraint each) -> switch (each.kind()) {
+      case PRIMARY_KEY -> 0;
+      case UNIQUE -> 1;
+      case CHECK -> 2;
+      default -> 3;
+    }));
+    change(table, type, definition, added, defaults, notNull, required, constraints);
     return answer("ALTER TABLE " + table.name());
   }
 
   // ------------------------------------------------------------------------------------------------ reading
 
   private void readColumn(final Table table, final AlterTableStatement.AddColumn add,
-      final Map<String, CreateTablePlan.Spec> added) {
+      final Map<String, CreateTablePlan.Spec> added, final List<CreateTableStatement.Constraint> constraints) {
     final CreateTableStatement.Column column = add.column();
     final String name = column.name().value();
     if (CreateTablePlan.SYSTEM_COLUMNS.contains(name))
@@ -210,10 +232,13 @@ public final class AlterTablePlan {
         defaultSeen = true;
         spec.literal = constraint.value() instanceof Expression.NullLiteral ? null : constraint.value();
       }
-      case UNIQUE -> throw refused("ADD COLUMN with UNIQUE", constraint.position(),
-          "Add the column without UNIQUE, then write CREATE UNIQUE INDEX ON " + table.name() + " (" + name + ")");
-      default -> throw refused("ADD COLUMN with a primary key, a check, a reference, or an identity", constraint.position(),
-          "Declare the column with its constraint in CREATE TABLE: ALTER TABLE adds a column with NOT NULL and DEFAULT only");
+      // a constraint of the column is added as the constraint of the table that says the same
+      case UNIQUE, PRIMARY_KEY, CHECK, FOREIGN_KEY -> constraints.add(new CreateTableStatement.Constraint(
+          constraint.position(), constraint.kind(), constraint.name(),
+          constraint.kind() == CreateTableStatement.Kind.CHECK ? List.of() : List.of(column.name()), constraint.value(),
+          constraint.reference(), constraint.text()));
+      case IDENTITY_ALWAYS, IDENTITY_BY_DEFAULT -> throw refused("ADD COLUMN of an identity column", constraint.position(),
+          "Declare the identity column in CREATE TABLE");
       }
     if (spec.literal != null)
       declarations.readDefault(spec);
@@ -289,7 +314,8 @@ public final class AlterTablePlan {
 
   private void change(final Table table, final DocumentType type, final TableDefinition definition,
       final Map<String, CreateTablePlan.Spec> added, final Map<String, CreateTablePlan.Spec> defaults,
-      final Map<String, Boolean> notNull, final Set<String> required) {
+      final Map<String, Boolean> notNull, final Set<String> required,
+      final List<CreateTableStatement.Constraint> constraints) {
     // an undo may run after the transaction has ended: it looks the type and the property up again by name
     final String typeName = type.getName();
     final Supplier<DocumentType> now = () -> database.getSchema().getType(typeName);
@@ -333,19 +359,306 @@ public final class AlterTablePlan {
         });
       }
 
-      write(table, type, added, required);
-
-      created.forEach((spec, property) -> {
-        if (spec.notNull) {
-          property.setMandatory(true);
-          property.setNotNull(true);
-        }
-      });
+      final Database.TransactionScope rows = () -> {
+        write(table, type, added, required);
+        created.forEach((spec, property) -> {
+          if (spec.notNull) {
+            property.setMandatory(true);
+            property.setNotNull(true);
+          }
+        });
+      };
+      if (constraints.isEmpty())
+        rows.execute();
+      else
+        // the rows of the added columns and the checks of the constraints are one transaction, so that a constraint that the
+        // rows break leaves no value behind. It is not run again: it changes the schema
+        database.transaction(() -> {
+          rows.execute();
+          for (final CreateTableStatement.Constraint constraint : constraints)
+            add(typeName, constraint);
+        }, true, 1);
       done = true;
+    } catch (final RuntimeException e) {
+      throw WriteErrors.translate(e);
     } finally {
       if (!done)
         takeBack();
     }
+  }
+
+  // ------------------------------------------------------------------------------------------------ constraints
+
+  /**
+   * Adds one constraint: it is registered first, so that no write of another session slips past it, and the rows are then read
+   * against it. The catalog is built again for each, with the columns and keys that the statement has added by then.
+   */
+  private void add(final String typeName, final CreateTableStatement.Constraint constraint) {
+    final RelationalCatalog current = RelationalCatalog.of(database);
+    final Table table = current.findTable(Identifier.quoted(typeName));
+    switch (constraint.kind()) {
+    case PRIMARY_KEY, UNIQUE -> addKey(table, constraint);
+    case CHECK -> addCheck(table, constraint);
+    case FOREIGN_KEY -> addForeignKey(current, table, constraint);
+    default -> throw new IllegalStateException("Not a constraint of a table: " + constraint.kind());
+    }
+  }
+
+  /** The columns of a key, as the properties of the type: each a column of the table, written once. */
+  private List<Column> keyColumns(final Table table, final CreateTableStatement.Constraint constraint, final String missing) {
+    final List<Column> columns = new ArrayList<>();
+    for (final Name name : constraint.columns()) {
+      final Column column = table.findColumn(CreateTablePlan.identifier(name));
+      if (column == null)
+        throw new PostgreSQLEvaluationException("42703", "column \"" + name.value() + "\" " + missing);
+      if (column.kind() != Column.Kind.PROPERTY)
+        throw refused("A constraint over the column " + column.name() + ", which the engine fills,", constraint.position(),
+            "Declare the constraint in CREATE TABLE");
+      if (columns.contains(column))
+        throw new PostgreSQLEvaluationException(constraint.kind() == CreateTableStatement.Kind.FOREIGN_KEY ? "42830" : "42701",
+            "column \"" + name.value() + "\" appears twice in a constraint");
+      columns.add(column);
+    }
+    return columns;
+  }
+
+  private void addKey(final Table table, final CreateTableStatement.Constraint constraint) {
+    final boolean primary = constraint.kind() == CreateTableStatement.Kind.PRIMARY_KEY;
+    final DocumentType type = table.documentType();
+    final TableDefinition definition = TableDefinition.of(type);
+    final List<Column> columns = keyColumns(table, constraint, "named in key does not exist");
+    for (final Column column : columns)
+      if (!RelationalCatalog.KEY_TYPES.contains(column.type()))
+        throw refused("A key over a column of type " + column.type(), constraint.position(),
+            "Keep the values unique over columns of other types");
+    if (primary && definition.primaryKey() != null)
+      throw new PostgreSQLEvaluationException("42P16",
+          "multiple primary keys for table \"" + table.name() + "\" are not allowed");
+    final List<String> properties = columns.stream().map(Column::property).toList();
+    final String name = keyName(table, constraint,
+        primary ? table.name() + "_pkey" : table.name() + "_" + String.join("_", properties) + "_key");
+    final String typeName = type.getName();
+
+    if (primary) {
+      for (final Iterator<Record> records = database.iterateType(typeName, true); records.hasNext(); ) {
+        final Document record = records.next().asDocument(true);
+        for (final String property : properties)
+          if (record.get(property) == null)
+            throw containsNull(table, property);
+      }
+    }
+    uniqueIndex(type, name, properties);
+    // the index refuses a committed key that is there twice, and this one that the transaction wrote
+    final Set<List<Object>> seen = new HashSet<>();
+    for (final Iterator<Record> records = database.iterateType(typeName, true); records.hasNext(); ) {
+      final Document record = records.next().asDocument(true);
+      final List<Object> key = new ArrayList<>(properties.size());
+      for (final String property : properties) {
+        final Object value = record.get(property);
+        if (value == null)
+          break;
+        key.add(value instanceof BigDecimal decimal ? decimal.stripTrailingZeros() : value);
+      }
+      if (key.size() == properties.size() && !seen.add(key))
+        throw notUnique(name, null);
+    }
+    if (primary)
+      for (final String property : properties) {
+        final Property declared = type.getPolymorphicPropertyIfExists(property);
+        final boolean wasMandatory = declared.isMandatory();
+        final boolean wasNotNull = declared.isNotNull();
+        undo.push(() -> {
+          final Property then = database.getSchema().getType(typeName).getPolymorphicPropertyIfExists(property);
+          then.setMandatory(wasMandatory);
+          then.setNotNull(wasNotNull);
+        });
+        declared.setMandatory(true);
+        declared.setNotNull(true);
+      }
+
+    final Table.Key key = new Table.Key(name, properties);
+    final List<Table.Key> unique = new ArrayList<>(definition.uniqueKeys());
+    if (!primary)
+      unique.add(key);
+    setCustomValue(typeName, TableDefinition.CUSTOM_KEY,
+        new TableDefinition(definition.columns(), definition.textColumns(), primary ? key : definition.primaryKey(), unique,
+            definition.defaults(), definition.foreignKeys(), definition.timestamptzColumns(), definition.identity(),
+            definition.uuidColumns()).toJson());
+  }
+
+  /** The unique index of a key: one that is there, else a new one, in place of an index over the same columns that is not. */
+  private void uniqueIndex(final DocumentType type, final String name, final List<String> properties) {
+    final String typeName = type.getName();
+    final String[] columns = properties.toArray(new String[0]);
+    final TypeIndex existing = type.getPolymorphicIndexByProperties(columns);
+    if (existing != null) {
+      if (existing.isUnique())
+        return;
+      if (existing.getType() != Schema.INDEX_TYPE.LSM_TREE)
+        throw refused("A key over columns that have an index of another kind", statement.position(),
+            "Drop the index first: {sql}DROP INDEX `" + existing.getName() + "`");
+      undo.push(() -> database.getSchema().getType(typeName).createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, false, columns));
+      database.getSchema().dropIndex(existing.getName());
+    }
+    // pushed before the index is made: a build that fails can leave a part of it
+    undo.push(() -> {
+      final TypeIndex made = database.getSchema().getType(typeName).getPolymorphicIndexByProperties(columns);
+      if (made != null && made.isUnique())
+        database.getSchema().dropIndex(made.getName());
+    });
+    try {
+      type.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, columns);
+    } catch (final RuntimeException e) {
+      for (Throwable cause = e; cause != null; cause = cause.getCause())
+        if (cause instanceof DuplicatedKeyException)
+          throw notUnique(name, e);
+      throw e;
+    }
+  }
+
+  private void addCheck(final Table table, final CreateTableStatement.Constraint constraint) {
+    final DocumentType type = table.documentType();
+    final String typeName = type.getName();
+    final Function<String, Column> declared = CheckExpression.declared(type, type);
+    final CheckExpression compiled = CheckExpression.compile(table.name(), constraint.value(), column -> {
+      if (type instanceof EdgeType && (Column.SOURCE_ID.equals(column) || Column.TARGET_ID.equals(column)))
+        throw refused("A CHECK that reads an end of a link table", constraint.position(), "Check a column of the table");
+      return declared.apply(column);
+    });
+    final Object value = type.getCustomValue(CheckConstraint.CUSTOM_KEY);
+    final List<CheckConstraint> checks = new ArrayList<>(value == null ? List.of() : CheckConstraint.fromJson(value.toString()));
+    final String name = constraintName(table, constraint, table.name()
+        + (compiled.columnNames().size() == 1 ? "_" + compiled.columnNames().get(0) : "") + "_check");
+    checks.add(new CheckConstraint(name, constraint.text()));
+    setCustomValue(typeName, CheckConstraint.CUSTOM_KEY, CheckConstraint.toJson(checks));
+    for (final Iterator<Record> records = database.iterateType(typeName, true); records.hasNext(); )
+      if (compiled.isViolatedBy(records.next().asDocument(true)))
+        throw new PostgreSQLEvaluationException("23514",
+            "check constraint \"" + name + "\" of relation \"" + table.name() + "\" is violated by some row");
+  }
+
+  private void addForeignKey(final RelationalCatalog current, final Table table,
+      final CreateTableStatement.Constraint constraint) {
+    final DocumentType type = table.documentType();
+    final String typeName = type.getName();
+    final List<Column> columns = keyColumns(table, constraint, "referenced in foreign key constraint does not exist");
+    final Map<String, CreateTablePlan.Spec> referring = new LinkedHashMap<>();
+    for (final Column column : columns) {
+      final Property property = type.getPolymorphicPropertyIfExists(column.property());
+      referring.put(column.property(), new CreateTablePlan.Spec(column.property(), constraint.position(),
+          new CreateTablePlan.Mapped(column.type(), property.getType(), property.getOfType(), 0, column.modifier())));
+    }
+    final List<String> properties = List.copyOf(referring.keySet());
+    final String name = constraintName(table, constraint, table.name() + "_" + String.join("_", properties) + "_fkey");
+    final CreateTablePlan keys = new CreateTablePlan(database, current, null);
+    final ForeignKey key = keys.checkedKey(table.name(), referring, List.of(),
+        new CreateTablePlan.ForeignKey(properties, name, constraint.reference()), name);
+
+    final Object before = type.getCustomValue(ForeignKey.CUSTOM_KEY);
+    final Set<String> indexes = new HashSet<>();
+    type.getAllIndexes(false).forEach(index -> indexes.add(index.getName()));
+    undo.push(() -> {
+      final DocumentType then = database.getSchema().getType(typeName);
+      then.setCustomValue(ForeignKey.CUSTOM_KEY, before);
+      for (final TypeIndex index : new ArrayList<>(then.getAllIndexes(false)))
+        if (!indexes.contains(index.getName()))
+          database.getSchema().dropIndex(index.getName());
+    });
+    keys.createForeignKeys(type, List.of(key));
+
+    // the rows that are there: one with a value in every referring column has to refer to a row
+    final DocumentType referenced = database.getSchema().getType(key.referencedType());
+    final TypeIndex unique = referenced.getAllIndexes(false).stream()
+        .filter(index -> index.isUnique() && index.getPropertyNames().size() == key.referencedColumns().size()
+            && index.getPropertyNames().containsAll(key.referencedColumns()))
+        .findFirst().orElseThrow();
+    final String[] order = unique.getPropertyNames().toArray(new String[0]);
+    for (final Iterator<Record> records = database.iterateType(typeName, true); records.hasNext(); ) {
+      final Document record = records.next().asDocument(true);
+      final Object[] values = new Object[order.length];
+      boolean complete = true;
+      for (int i = 0; i < order.length; i++) {
+        values[i] = record.get(key.columns().get(key.referencedColumns().indexOf(order[i])));
+        complete &= values[i] != null;
+      }
+      if (complete && !database.lookupByKey(referenced.getName(), order, values).hasNext())
+        throw new PostgreSQLEvaluationException("23503", "insert or update on table \"" + table.name()
+            + "\" violates foreign key constraint \"" + name + "\"");
+    }
+  }
+
+  /** The name of a key, which an index and so a relation has: the one written, else the default with a number when it is taken. */
+  private String keyName(final Table table, final CreateTableStatement.Constraint constraint, final String otherwise) {
+    if (constraint.name() != null) {
+      final String name = constraint.name().value();
+      if (relationNamed(name))
+        throw PostgreSQLEvaluationException.duplicateRelation(
+            database.getSchema().existsType(name) ? AlreadyExistsException.Kind.TYPE : AlreadyExistsException.Kind.INDEX, name);
+      if (constraintNames(table.documentType()).contains(name))
+        throw PostgreSQLEvaluationException.duplicateConstraint(name, table.name());
+      return name;
+    }
+    final Set<String> taken = constraintNames(table.documentType());
+    String name = otherwise;
+    for (int next = 1; taken.contains(name) || relationNamed(name); next++)
+      name = otherwise + next;
+    return name;
+  }
+
+  /** The name of a check or a foreign key: one that no other constraint of the table has. */
+  private static String constraintName(final Table table, final CreateTableStatement.Constraint constraint,
+      final String otherwise) {
+    final Set<String> taken = constraintNames(table.documentType());
+    if (constraint.name() != null) {
+      if (taken.contains(constraint.name().value()))
+        throw PostgreSQLEvaluationException.duplicateConstraint(constraint.name().value(), table.name());
+      return constraint.name().value();
+    }
+    String name = otherwise;
+    for (int next = 1; taken.contains(name); next++)
+      name = otherwise + next;
+    return name;
+  }
+
+  private static Set<String> constraintNames(final DocumentType type) {
+    final Set<String> names = new HashSet<>();
+    final TableDefinition definition = TableDefinition.of(type);
+    if (definition != null) {
+      if (definition.primaryKey() != null)
+        names.add(definition.primaryKey().name());
+      definition.uniqueKeys().forEach(key -> names.add(key.name()));
+      names.addAll(definition.foreignKeys().values());
+    }
+    final Object checks = type.getCustomValue(CheckConstraint.CUSTOM_KEY);
+    if (checks != null)
+      CheckConstraint.fromJson(checks.toString()).forEach(check -> names.add(check.name()));
+    final Object keys = type.getCustomValue(ForeignKey.CUSTOM_KEY);
+    if (keys != null)
+      ForeignKey.fromJson(keys.toString()).forEach(key -> names.add(key.name()));
+    return names;
+  }
+
+  /** Whether a table, an index that {@code CREATE INDEX} named, or a key has the name. */
+  private boolean relationNamed(final String name) {
+    if (database.getSchema().existsType(name))
+      return true;
+    for (final DocumentType type : database.getSchema().getTypes()) {
+      if (DeclaredIndexes.of(type).containsKey(name))
+        return true;
+      final TableDefinition definition = TableDefinition.of(type);
+      if (definition != null && (definition.primaryKey() != null && definition.primaryKey().name().equals(name)
+          || definition.uniqueKeys().stream().anyMatch(key -> key.name().equals(name))))
+        return true;
+    }
+    return false;
+  }
+
+  /** Changes a custom value of the type, and keeps how to take that back. */
+  private void setCustomValue(final String typeName, final String key, final Object value) {
+    final DocumentType type = database.getSchema().getType(typeName);
+    final Object before = type.getCustomValue(key);
+    type.setCustomValue(key, value);
+    undo.push(() -> database.getSchema().getType(typeName).setCustomValue(key, before));
   }
 
   /** Writes the default of each added column into the rows that exist, and looks again for the rows without a required value. */
@@ -430,6 +743,10 @@ public final class AlterTablePlan {
 
   private static PostgreSQLResultSet answer(final String step) {
     return new PostgreSQLResultSet(List.of(), new PostgreSQLResultSet.Plan(List.of(step))).rowless().withAffectedRows(0);
+  }
+
+  private static PostgreSQLEvaluationException notUnique(final String name, final Throwable cause) {
+    return new PostgreSQLEvaluationException("23505", "could not create unique index \"" + name + "\"", cause);
   }
 
   private static PostgreSQLEvaluationException containsNull(final Table table, final String column) {

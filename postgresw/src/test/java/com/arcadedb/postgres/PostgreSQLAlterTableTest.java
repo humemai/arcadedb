@@ -86,8 +86,7 @@ class PostgreSQLAlterTableTest extends PostgreSQLSideBySideTestBase {
             + " numeric_scale FROM information_schema.columns WHERE table_name = 'facts' ORDER BY ordinal_position");
 
         // what PostgreSQL runs and the language does not yet says what to write
-        refused(arcade, "ALTER TABLE facts ADD COLUMN u int UNIQUE", "CREATE UNIQUE INDEX ON facts (u)");
-        refused(arcade, "ALTER TABLE facts ADD COLUMN c int CHECK (c > 0)", "in CREATE TABLE");
+        refused(arcade, "ALTER TABLE facts ADD COLUMN g int GENERATED ALWAYS AS IDENTITY", "CREATE TABLE");
         refused(arcade, "ALTER TABLE facts ADD COLUMN s serial", "CREATE TABLE");
 
         // sql sees the columns and their values, and its writes keep them

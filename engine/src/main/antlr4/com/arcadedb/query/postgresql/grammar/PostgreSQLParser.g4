@@ -246,7 +246,7 @@ unsupportedConstraintOption
   ;
 
 // ============================================================================
-// ALTER TABLE (AlterTableStmt of gram.y), fork issue #230: adding a column, its default and its NOT NULL
+// ALTER TABLE (AlterTableStmt of gram.y), fork issue #230: adding a column or a constraint, a default and NOT NULL
 // ============================================================================
 
 alterTableStmt
@@ -261,6 +261,7 @@ unsupportedAlterTarget
 
 alterTableAction
   : ADD COLUMN? (IF NOT EXISTS)? column=colId typename constraints+=columnOption*   # addColumnAction
+  | ADD tableConstraint                                                             # addConstraintAction
   | ALTER COLUMN? column=colId SET DEFAULT bExpr                                    # setColumnDefaultAction
   | ALTER COLUMN? column=colId DROP DEFAULT                                         # dropColumnDefaultAction
   | ALTER COLUMN? column=colId SET NOT NULL                                         # setColumnNotNullAction
@@ -269,8 +270,7 @@ alterTableAction
   ;
 
 unsupportedAlterAction
-  : ADD (CONSTRAINT | CHECK | UNIQUE | PRIMARY | FOREIGN)
-  | DROP | RENAME | SET | RESET | OWNER | VALIDATE | ENABLE | DISABLE | ATTACH | DETACH | INHERIT | NO | CLUSTER | REPLICA
+  : DROP | RENAME | SET | RESET | OWNER | VALIDATE | ENABLE | DISABLE | ATTACH | DETACH | INHERIT | NO | CLUSTER | REPLICA
   | FORCE | OF | NOT OF
   | ALTER CONSTRAINT
   | ALTER COLUMN? colId (TYPE | SET ~(NOT | DEFAULT) | RESET | ADD | DROP (IDENTITY | EXPRESSION) | RESTART | OPTIONS)
