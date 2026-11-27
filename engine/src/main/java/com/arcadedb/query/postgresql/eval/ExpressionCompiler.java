@@ -42,6 +42,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -537,8 +538,18 @@ public final class ExpressionCompiler {
       return concat(compile(e.left()), compile(e.right()));
     case CONTAINS:
     case CONTAINED_BY:
-    case OVERLAPS:
-      return arrayContainment(operator, compile(e.left()), compile(e.right()));
+    case OVERLAPS: {
+      final Evaluable left = compile(e.left());
+      final Evaluable right = compile(e.right());
+      if (operator != Expression.BinaryOperator.OVERLAPS && (left.type() == PgType.JSONB || right.type() == PgType.JSONB))
+        return jsonbContainment(operator, left, right);
+      return arrayContainment(operator, left, right);
+    }
+    case JSON_FIELD:
+    case JSON_FIELD_TEXT:
+    case JSON_PATH:
+    case JSON_PATH_TEXT:
+      return jsonbAccess(operator, compile(e.left()), compile(e.right()));
     case L2_DISTANCE:
     case COSINE_DISTANCE:
     case NEGATIVE_INNER_PRODUCT:
@@ -608,6 +619,8 @@ public final class ExpressionCompiler {
 
   /** The comparison of two expressions, {@code operator} one of the six comparison operators. */
   public Evaluable comparison(final Expression.BinaryOperator operator, final Evaluable left, final Evaluable right) {
+    if (left.type() == PgType.JSONB || right.type() == PgType.JSONB)
+      return jsonbEquality(operator, left, right);
     if (left.type() == PgType.ARRAY || right.type() == PgType.ARRAY)
       return arrayEquality(operator, left, right);
     final Unified unified = unify(operator.symbol(), left, right);
@@ -641,6 +654,143 @@ public final class ExpressionCompiler {
         default -> order >= 0;
       };
     }, l, r);
+  }
+
+  // ---- jsonb ----
+
+  /** An operand of an operator of two {@code jsonb} values: one, or an operand of no type, which is read as one. */
+  private static Evaluable jsonbOperand(final Evaluable operand, final String operator, final Evaluable left, final Evaluable right) {
+    if (operand.type() == PgType.JSONB)
+      return operand;
+    final Evaluable converted = operand.type() == PgType.UNKNOWN ? implicit(operand, PgType.JSONB) : null;
+    if (converted == null)
+      throw PostgreSQLEvaluationException.noOperator(operator, left.type(), right.type());
+    return converted;
+  }
+
+  /**
+   * {@code =}, {@code <>} and {@code IS [NOT] DISTINCT FROM} of two {@code jsonb} values, equal as PostgreSQL has them
+   * ({@link Jsonb#key}). The order of {@code jsonb} values is refused.
+   */
+  private static Evaluable jsonbEquality(final Expression.BinaryOperator operator, final Evaluable left, final Evaluable right) {
+    final Evaluable l = jsonbOperand(left, operator.symbol(), left, right);
+    final Evaluable r = jsonbOperand(right, operator.symbol(), left, right);
+    final boolean distinctness = operator == Expression.BinaryOperator.IS_DISTINCT_FROM
+        || operator == Expression.BinaryOperator.IS_NOT_DISTINCT_FROM;
+    if (!distinctness && operator != Expression.BinaryOperator.EQUAL && operator != Expression.BinaryOperator.NOT_EQUAL)
+      throw PostgreSQLEvaluationException.unsupported("The operator " + operator.symbol() + " is not supported for type jsonb");
+    final boolean whenSame = operator == Expression.BinaryOperator.EQUAL || operator == Expression.BinaryOperator.IS_NOT_DISTINCT_FROM;
+    return new Evaluable.Node(PgType.BOOL, row -> {
+      final Object x = l.eval(row);
+      final Object y = r.eval(row);
+      if (x == null || y == null)
+        return distinctness ? (Object) ((x == null && y == null) == whenSame) : null;
+      return Jsonb.equal(x, y) == whenSame;
+    }, l, r);
+  }
+
+  /** {@code @>} and {@code <@} of two {@code jsonb} values. */
+  private static Evaluable jsonbContainment(final Expression.BinaryOperator operator, final Evaluable left, final Evaluable right) {
+    final Evaluable l = jsonbOperand(left, operator.symbol(), left, right);
+    final Evaluable r = jsonbOperand(right, operator.symbol(), left, right);
+    final boolean reversed = operator == Expression.BinaryOperator.CONTAINED_BY;
+    return strictCall(PgType.BOOL, new Evaluable[] { l, r },
+        v -> reversed ? Jsonb.contains(v[1], v[0]) : Jsonb.contains(v[0], v[1]));
+  }
+
+  /**
+   * {@code ->} and {@code ->>} with the name of a member ({@code text}) or the index of an element ({@code integer}), and
+   * {@code #>} and {@code #>>} with a path ({@code text[]}). The operators with the second {@code >} give text.
+   */
+  private static Evaluable jsonbAccess(final Expression.BinaryOperator operator, final Evaluable left, final Evaluable right) {
+    final String symbol = operator.symbol();
+    final PgType a = left.type();
+    final PgType b = right.type();
+    // an untyped operand on the left could be json as well as jsonb: PostgreSQL does not choose either
+    if (a == PgType.UNKNOWN)
+      throw new PostgreSQLEvaluationException("42725", "operator is not unique: unknown " + symbol + " " + b.displayName());
+    if (a != PgType.JSONB)
+      throw PostgreSQLEvaluationException.noOperator(symbol, a, b);
+    final boolean text = operator == Expression.BinaryOperator.JSON_FIELD_TEXT
+        || operator == Expression.BinaryOperator.JSON_PATH_TEXT;
+    final PgType result = text ? PgType.TEXT : PgType.JSONB;
+    if (operator == Expression.BinaryOperator.JSON_PATH || operator == Expression.BinaryOperator.JSON_PATH_TEXT) {
+      final Evaluable steps = textArray(right);
+      if (steps == null)
+        throw PostgreSQLEvaluationException.noOperator(symbol, a, b);
+      return strictCall(result, new Evaluable[] { left, steps }, v -> {
+        final Object found = Jsonb.path(v[0], elements(v[1], PgType.TEXT));
+        return text ? Jsonb.asText(found) : found;
+      });
+    }
+    if (b == PgType.INT2 || b == PgType.INT4)
+      return strictCall(result, new Evaluable[] { left, right }, v -> {
+        final Object found = Jsonb.element(v[0], ((Number) v[1]).longValue());
+        return text ? Jsonb.asText(found) : found;
+      });
+    final Evaluable name = b.isString() || b == PgType.UNKNOWN ? implicit(right, PgType.TEXT) : null;
+    if (name == null)
+      throw PostgreSQLEvaluationException.noOperator(symbol, a, b);
+    return strictCall(result, new Evaluable[] { left, name }, v -> {
+      final Object found = Jsonb.field(v[0], (String) v[1]);
+      return text ? Jsonb.asText(found) : found;
+    });
+  }
+
+  /** The operand as a {@code text[]}, also one of no type, or {@code null} when it is something else. */
+  private static Evaluable textArray(final Evaluable operand) {
+    if (operand.type() == PgType.UNKNOWN)
+      return arrayOfUntyped(operand, PgType.TEXT);
+    if (operand.type() != PgType.ARRAY)
+      return null;
+    final PgType element = declaredElement(operand);
+    return element == null || element.isString() ? operand : null;
+  }
+
+  /** The functions of {@code jsonb} that the language has. */
+  private Evaluable jsonbFunction(final String name, final Evaluable[] args) {
+    switch (name) {
+    case "jsonb_typeof": {
+      final Evaluable[] a = arguments(name, args, PgType.JSONB);
+      return strictCall(PgType.TEXT, a, v -> Jsonb.typeOf(v[0]));
+    }
+    case "jsonb_array_length": {
+      final Evaluable[] a = arguments(name, args, PgType.JSONB);
+      return strictCall(PgType.INT4, a, v -> Jsonb.arrayLength(v[0]));
+    }
+    case "jsonb_exists": {
+      final Evaluable[] a = arguments(name, args, PgType.JSONB, PgType.TEXT);
+      return strictCall(PgType.BOOL, a, v -> Jsonb.exists(v[0], (String) v[1]));
+    }
+    case "jsonb_exists_any":
+    case "jsonb_exists_all": {
+      final Evaluable names = args.length == 2 ? textArray(args[1]) : null;
+      if (names == null)
+        throw PostgreSQLEvaluationException.noFunction(name, types(args));
+      final boolean all = name.endsWith("_all");
+      return strictCall(PgType.BOOL, new Evaluable[] { require(args[0], PgType.JSONB, name, args), names }, v -> {
+        for (final Object key : elements(v[1], PgType.TEXT))
+          // a NULL name says nothing; one name that is there decides _any, one that is not decides _all
+          if (key != null && Jsonb.exists(v[0], (String) key) != all)
+            return !all;
+        return all;
+      });
+    }
+    default: {
+      // jsonb_extract_path and jsonb_extract_path_text, VARIADIC text
+      if (args.length < 2)
+        throw PostgreSQLEvaluationException.noFunction(name, types(args));
+      final Evaluable[] a = new Evaluable[args.length];
+      a[0] = require(args[0], PgType.JSONB, name, args);
+      for (int i = 1; i < a.length; i++)
+        a[i] = require(args[i], PgType.TEXT, name, args);
+      final boolean text = name.endsWith("_text");
+      return strictCall(text ? PgType.TEXT : PgType.JSONB, a, v -> {
+        final Object found = Jsonb.path(v[0], Arrays.asList(v).subList(1, v.length));
+        return text ? Jsonb.asText(found) : found;
+      });
+    }
+    }
   }
 
   // ---- arrays ----
@@ -749,6 +899,9 @@ public final class ExpressionCompiler {
   private Evaluable concat(final Evaluable left, final Evaluable right) {
     final PgType a = left.type();
     final PgType b = right.type();
+    // two jsonb values, or one and an operand of no type, are not concatenated as text: PostgreSQL merges them
+    if (a == PgType.JSONB && (b == PgType.JSONB || b == PgType.UNKNOWN) || b == PgType.JSONB && a == PgType.UNKNOWN)
+      throw PostgreSQLEvaluationException.unsupported("The operator jsonb || jsonb is not supported by the postgresql language");
     final boolean textLike = a.isString() || a == PgType.UNKNOWN || b.isString() || b == PgType.UNKNOWN;
     if (!textLike)
       throw PostgreSQLEvaluationException.noOperator("||", a, b);
@@ -768,7 +921,7 @@ public final class ExpressionCompiler {
     final PgType type = expression.type();
     if (type.isString() || type == PgType.UNKNOWN)
       return implicit(expression, PgType.TEXT);
-    if (type.isOpaque())
+    if (type.isOpaque() && type != PgType.JSONB)
       throw PostgreSQLEvaluationException.unsupported("The text form of a value of type " + type.displayName() + " is not supported");
     return new Evaluable.Node(PgType.TEXT, row -> {
       final Object value = expression.eval(row);
@@ -1377,7 +1530,9 @@ public final class ExpressionCompiler {
       return new Evaluable.Constant(target,
           target == PgType.JSONB ? ValueInput.toJson(constant.value()) : Casts.cast(constant.value(), PgType.ARRAY, target, typmod));
     final PgType from = operand.type();
-    final boolean possible = from == target || (target == PgType.VECTOR && from == PgType.ARRAY) || from == PgType.UNKNOWN || (target.isString() && !from.isOpaque()) || from.isString()
+    final boolean possible = from == target || (target == PgType.VECTOR && from == PgType.ARRAY) || from == PgType.UNKNOWN
+        || (target.isString() && (!from.isOpaque() || from == PgType.JSONB)) || from.isString()
+        || (from == PgType.JSONB && (target.isNumber() || target == PgType.BOOL))
         || (from.isNumber() && target.isNumber()) || (from == PgType.BOOL && target == PgType.INT4)
         || (from == PgType.INT4 && target == PgType.BOOL) || (from.isDateTime() && target.isDateTime());
     // text, and a string literal, is read by the input function of any type; another type has no cast to jsonb or bytea
@@ -1701,6 +1856,14 @@ public final class ExpressionCompiler {
     case "extract":
     case "date_part":
       return extract(name, args);
+    case "jsonb_typeof":
+    case "jsonb_array_length":
+    case "jsonb_exists":
+    case "jsonb_exists_any":
+    case "jsonb_exists_all":
+    case "jsonb_extract_path":
+    case "jsonb_extract_path_text":
+      return jsonbFunction(name, args);
     default:
       throw PostgreSQLEvaluationException.noFunction(name, types(args));
     }

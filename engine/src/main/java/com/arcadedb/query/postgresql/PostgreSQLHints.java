@@ -33,7 +33,8 @@ public final class PostgreSQLHints {
   public static final String NO_WAY = "There is no way to write this in the postgresql language yet";
 
   private static final String IN_THE_PROGRAM = NO_WAY + ": select the values and compute the result in your program";
-  private static final String JSON_KEY       = "Select the jsonb column whole and read or test the key in your program";
+  private static final String JSON_KEY       = "Write the function: jsonb_exists(value, 'a'), jsonb_exists_any(value,"
+      + " ARRAY['a', 'b']) or jsonb_exists_all(value, ARRAY['a', 'b'])";
   private static final String SQL_WRITES     = "Write this value with an INSERT or UPDATE in the sql language";
 
   private record Rule(String part, String hint) {
@@ -69,6 +70,7 @@ public final class PostgreSQLHints {
     rule("An aggregate over columns of the outer query", "Compute the aggregate in the outer query and compare with its result");
     rule("A result column of type interval", "Add the interval to a date or a timestamp and select that");
     rule("ORDER BY clause: only result column names", "Order by a result column name, or select the expression as a column");
+    rule("ORDER BY a value of type jsonb", "Order by a value taken from it, as in ORDER BY (value->>'a')::numeric");
     rule("ORDER BY a value of type", NO_WAY + ": sort the rows in your program");
     rule("which EXISTS can express", "Write it with NOT EXISTS: for a < ALL (SELECT b FROM t) write NOT EXISTS"
         + " (SELECT 1 FROM t WHERE b <= a), when b holds no NULL");
@@ -129,13 +131,10 @@ public final class PostgreSQLHints {
     rule("The type interval", "Name one field, as in interval '1 day'");
     rule("This form of a", "Write the value in ISO 8601 form, such as 2026-11-27 or 2026-11-27 12:00:00");
     // operators, functions and types
-    for (final String json : new String[] { "->>", "->", "#>>", "#>", "@>", "<@", "?", "?|", "?&" })
-      rule("The operator " + json + " is not supported", JSON_KEY);
-    rule("jsonb @>", JSON_KEY);
-    rule("jsonb <@", JSON_KEY);
-    rule("jsonb ->", JSON_KEY);
-    rule("jsonb #>", JSON_KEY);
+    for (final String exists : new String[] { "?", "?|", "?&" })
+      rule("The operator " + exists + " is not supported", JSON_KEY);
     rule("jsonb ?", JSON_KEY);
+    rule("not supported for type jsonb", "Compare a value taken from it, as in (value->>'a')::numeric > 5");
     for (final String match : new String[] { "~", "~*", "!~", "!~*" })
       rule("The operator " + match + " is not supported", "Match with LIKE or ILIKE");
     rule("The operator", IN_THE_PROGRAM);

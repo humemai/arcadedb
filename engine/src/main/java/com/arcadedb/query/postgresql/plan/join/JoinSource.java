@@ -26,6 +26,7 @@ import com.arcadedb.graph.Vertex;
 import com.arcadedb.query.postgresql.ast.TableReference;
 import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.eval.Evaluable;
+import com.arcadedb.query.postgresql.eval.Jsonb;
 import com.arcadedb.query.postgresql.eval.Numbers;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.plan.RelationSource;
@@ -640,6 +641,8 @@ public final class JoinSource implements RelationSource {
       final double number = ((Number) value).doubleValue();
       return number == 0.0 ? 0.0 : number;
     }
+    if (type == PgType.JSONB)
+      return Jsonb.key(value);
     return value;
   }
 

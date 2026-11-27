@@ -22,6 +22,7 @@ import com.arcadedb.database.Database;
 import com.arcadedb.query.postgresql.eval.Comparison;
 import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
+import com.arcadedb.query.postgresql.eval.Jsonb;
 import com.arcadedb.query.postgresql.eval.Numbers;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
@@ -262,7 +263,10 @@ public final class SelectPlan implements QueryPlan {
     return number;
   }
 
-  /** What makes two rows the same for {@code DISTINCT} and {@code GROUP BY}: numbers by value, {@code NULL} equal to itself. */
+  /**
+   * What makes two rows the same for {@code DISTINCT} and {@code GROUP BY}: numbers by value, also those inside a {@code jsonb}
+   * value or an array ({@link Jsonb#key}), {@code NULL} equal to itself.
+   */
   static List<Object> distinctKey(final Object[] row, final int count) {
     final List<Object> key = new ArrayList<>(count);
     for (int i = 0; i < count; i++)
@@ -275,6 +279,8 @@ public final class SelectPlan implements QueryPlan {
       return decimal.signum() == 0 ? BigDecimal.ZERO : decimal.stripTrailingZeros();
     if (value instanceof Float || value instanceof Double)
       return ((Number) value).doubleValue() == 0.0 ? (Object) 0.0 : value;
+    if (value instanceof Map<?, ?> || value instanceof List<?> || value instanceof Jsonb.Scalar)
+      return Jsonb.key(value);
     return value;
   }
 
