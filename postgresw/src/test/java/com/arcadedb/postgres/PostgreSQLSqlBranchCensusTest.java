@@ -71,11 +71,10 @@ class PostgreSQLSqlBranchCensusTest {
               + "the rewriting is for the back-ticks of ArcadeDB SQL"),
       Map.entry("return \"sql\".equalsIgnoreCase(language) || \"sqlscript\".equalsIgnoreCase(language) ?",
           "SQL only, decided in #12: the literals of the postgresql language are read by its own lexer, as PostgreSQL reads them"),
-      Map.entry("return \"sql\".equalsIgnoreCase(query.language) ? transactionControlOf(parseStatement(query.query)) : null;",
+      Map.entry("return \"sql\".equalsIgnoreCase(language) ? transactionControlOf(parseStatement(text)) : null;",
           "SQL only: the spellings the SQL grammar accepts for BEGIN and COMMIT; the wire's own PostgresTransactionStatement "
-              + "recognizes PostgreSQL's for both languages"),
-      Map.entry("return \"sql\".equalsIgnoreCase(portal.language) ? transactionControlOf(parseStatement(portal.query)) : null;",
-          "SQL only: see the line before")));
+              + "recognizes PostgreSQL's for both languages, and for the postgresql language reads a comment as white space (fork "
+              + "issue #236), decided in the branch before this line")));
 
   private static Path sourceFile() {
     Path directory = Path.of(System.getProperty("basedir", "")).toAbsolutePath();
