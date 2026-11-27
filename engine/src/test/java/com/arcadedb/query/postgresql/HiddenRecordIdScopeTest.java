@@ -80,6 +80,18 @@ class HiddenRecordIdScopeTest extends TestHelper {
         .containsExactly("Ada", "Bob");
   }
 
+  /** A record id that the catalog lists is a column of its table, as the table has it in PostgreSQL: it takes part as one. */
+  @Test
+  void aRecordIdThatTheCatalogListsIsAColumnOfItsTable() {
+    run("CREATE TABLE likes (source_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE,"
+        + " target_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE)");
+
+    // of a table of the subquery: it wins over the column of the query around
+    assertThat(lines("SELECT (SELECT rid <> '7' FROM person WHERE id = 1) AS other FROM ticket")).containsExactly("true");
+    // of the query around: the hidden record id of the subquery gives way to it
+    assertThat(lines("SELECT name FROM person WHERE rid = (SELECT rid FROM badge) ORDER BY name")).containsExactly("Ada", "Bob");
+  }
+
   /** Places of an {@code EXISTS} subquery that cannot read the query around it: refused, and not answered with a record id. */
   @ParameterizedTest
   @ValueSource(strings = {

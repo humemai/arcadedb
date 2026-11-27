@@ -73,8 +73,8 @@ public final class ExpressionCompiler {
     Evaluable column(Expression.ColumnRef reference);
 
     /**
-     * Whether this query, or one around it, shows a column of this unqualified name: a column that a table hides gives way to such a
-     * column inside a subquery (fork issue #157).
+     * Whether this query, or one around it, has a column of this unqualified name that the catalog lists: a column that the catalog
+     * does not list, a hidden record id, gives way to such a column inside a subquery (fork issue #157).
      */
     default boolean shows(final Name column) {
       return false;
