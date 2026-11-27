@@ -72,6 +72,7 @@ public final class PostgreSQLHints {
     rule("ORDER BY a value of type", NO_WAY + ": sort the rows in your program");
     rule("which EXISTS can express", "Write it with NOT EXISTS: for a < ALL (SELECT b FROM t) write NOT EXISTS"
         + " (SELECT 1 FROM t WHERE b <= a), when b holds no NULL");
+    rule("has no type for the value of parameter", "Send the value as text");
     rule("GROUP BY the position of a * item", "Name the columns after GROUP BY");
     rule("A window function in a query with GROUP BY", "Aggregate in a WITH query and apply the window function to its rows");
     rule("DISTINCT is not implemented for window functions", "Count the distinct values in a WITH query with GROUP BY and join it");
