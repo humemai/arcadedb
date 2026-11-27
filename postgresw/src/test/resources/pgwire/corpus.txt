@@ -34,4 +34,4 @@ SELECT oid, total, placed, tags FROM orders ORDER BY oid;
 == select-edge-property
 SELECT since FROM works_at ORDER BY since;
 == select-foreign-key-join
-SELECT p.name, c.name AS company FROM works_at w JOIN person p ON w.source_id = p.id JOIN company c ON w.target_id = c.id ORDER BY p.name, c.name, w.since;
+SELECT p.name, c.name AS company FROM works_at w JOIN person p ON w.source_id = p.rid JOIN company c ON w.target_id = c.rid ORDER BY p.name, c.name, w.since;

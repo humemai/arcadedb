@@ -1,15 +1,15 @@
                     Table "public.person"
  Column |       Type        | Collation | Nullable | Default 
 --------+-------------------+-----------+----------+---------
- id     | text              |           | not null | 
+ rid    | text              |           | not null | 
  age    | integer           |           |          | 
  city   | character varying |           |          | 
  name   | character varying |           |          | 
  pid    | integer           |           |          | 
 Indexes:
-    "person_pkey" PRIMARY KEY, btree (id)
+    "person_pkey" PRIMARY KEY, btree (rid)
     "person_pid_key" UNIQUE CONSTRAINT, btree (pid)
 Referenced by:
-    TABLE "orders" CONSTRAINT "orders_buyer_fkey" FOREIGN KEY (buyer) REFERENCES person(id) NOT ENFORCED
-    TABLE "works_at" CONSTRAINT "works_at_source_id_fkey" FOREIGN KEY (source_id) REFERENCES person(id) ON DELETE CASCADE
+    TABLE "orders" CONSTRAINT "orders_buyer_fkey" FOREIGN KEY (buyer) REFERENCES person(rid) NOT ENFORCED
+    TABLE "works_at" CONSTRAINT "works_at_source_id_fkey" FOREIGN KEY (source_id) REFERENCES person(rid) ON DELETE CASCADE
 

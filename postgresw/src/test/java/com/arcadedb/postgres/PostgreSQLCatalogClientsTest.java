@@ -107,26 +107,26 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
 
       final Container.ExecResult edge = psql(container, "-q -c '\\d works_at'");
       assertThat(edge.getExitCode()).as(edge.getStderr()).isZero();
-      assertThat(lines(edge.getStdout())).containsSubsequence("Table \"public.works_at\"", "id | text | | not null | generated always as identity",
+      assertThat(lines(edge.getStdout())).containsSubsequence("Table \"public.works_at\"", "rid | text | | not null | generated always as identity",
           "source_id | text | | not null |", "target_id | text | | not null |", "since | integer | | |", "Indexes:",
-          "\"works_at_pkey\" PRIMARY KEY, btree (id)", "Foreign-key constraints:",
-          "\"works_at_source_id_fkey\" FOREIGN KEY (source_id) REFERENCES person(id) ON DELETE CASCADE",
-          "\"works_at_target_id_fkey\" FOREIGN KEY (target_id) REFERENCES company(id) ON DELETE CASCADE");
+          "\"works_at_pkey\" PRIMARY KEY, btree (rid)", "Foreign-key constraints:",
+          "\"works_at_source_id_fkey\" FOREIGN KEY (source_id) REFERENCES person(rid) ON DELETE CASCADE",
+          "\"works_at_target_id_fkey\" FOREIGN KEY (target_id) REFERENCES company(rid) ON DELETE CASCADE");
 
       final Container.ExecResult vertex = psql(container, "-q -c '\\d person'");
       assertThat(vertex.getExitCode()).as(vertex.getStderr()).isZero();
-      assertThat(lines(vertex.getStdout())).containsSubsequence("Table \"public.person\"", "id | text | | not null | generated always as identity",
+      assertThat(lines(vertex.getStdout())).containsSubsequence("Table \"public.person\"", "rid | text | | not null | generated always as identity",
           "age | integer | | |", "city | character varying | | |", "name | character varying | | |", "pid | integer | | |", "Indexes:",
-          "\"person_pkey\" PRIMARY KEY, btree (id)", "\"person_pid_key\" UNIQUE CONSTRAINT, btree (pid)", "Referenced by:",
-          "TABLE \"orders\" CONSTRAINT \"orders_buyer_fkey\" FOREIGN KEY (buyer) REFERENCES person(id) NOT ENFORCED",
-          "TABLE \"works_at\" CONSTRAINT \"works_at_source_id_fkey\" FOREIGN KEY (source_id) REFERENCES person(id) ON DELETE CASCADE");
+          "\"person_pkey\" PRIMARY KEY, btree (rid)", "\"person_pid_key\" UNIQUE CONSTRAINT, btree (pid)", "Referenced by:",
+          "TABLE \"orders\" CONSTRAINT \"orders_buyer_fkey\" FOREIGN KEY (buyer) REFERENCES person(rid) NOT ENFORCED",
+          "TABLE \"works_at\" CONSTRAINT \"works_at_source_id_fkey\" FOREIGN KEY (source_id) REFERENCES person(rid) ON DELETE CASCADE");
 
       // a table with a link has the foreign key of it
       final Container.ExecResult document = psql(container, "-q -c '\\d orders'");
       assertThat(document.getExitCode()).as(document.getStderr()).isZero();
-      assertThat(lines(document.getStdout())).containsSubsequence("Table \"public.orders\"", "id | text | | not null | generated always as identity",
-          "\"orders_pkey\" PRIMARY KEY, btree (id)", "\"orders_oid_key\" UNIQUE CONSTRAINT, btree (oid)",
-          "Foreign-key constraints:", "\"orders_buyer_fkey\" FOREIGN KEY (buyer) REFERENCES person(id) NOT ENFORCED");
+      assertThat(lines(document.getStdout())).containsSubsequence("Table \"public.orders\"", "rid | text | | not null | generated always as identity",
+          "\"orders_pkey\" PRIMARY KEY, btree (rid)", "\"orders_oid_key\" UNIQUE CONSTRAINT, btree (oid)",
+          "Foreign-key constraints:", "\"orders_buyer_fkey\" FOREIGN KEY (buyer) REFERENCES person(rid) NOT ENFORCED");
     }
   }
 
@@ -208,12 +208,12 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
 
       assertThat(out).as(result.getStderr()).contains(
           "tables|[\"company\", \"orders\", \"person\", \"works_at\"]",
-          "columns|[[\"id\", \"TEXT\", false], [\"source_id\", \"TEXT\", false], [\"target_id\", \"TEXT\", false], [\"since\", \"INTEGER\", true]]",
-          "pk|[[\"id\"], \"works_at_pkey\"]",
+          "columns|[[\"rid\", \"TEXT\", false], [\"source_id\", \"TEXT\", false], [\"target_id\", \"TEXT\", false], [\"since\", \"INTEGER\", true]]",
+          "pk|[[\"rid\"], \"works_at_pkey\"]",
           // one entry for each key
-          "fks|[[\"works_at_source_id_fkey\", [\"source_id\"], \"person\", [\"id\"]], "
-              + "[\"works_at_target_id_fkey\", [\"target_id\"], \"company\", [\"id\"]]]",
-          "orders fks|[[\"orders_buyer_fkey\", [\"buyer\"], \"person\", [\"id\"]]]",
+          "fks|[[\"works_at_source_id_fkey\", [\"source_id\"], \"person\", [\"rid\"]], "
+              + "[\"works_at_target_id_fkey\", [\"target_id\"], \"company\", [\"rid\"]]]",
+          "orders fks|[[\"orders_buyer_fkey\", [\"buyer\"], \"person\", [\"rid\"]]]",
           "fk options|[[\"orders_buyer_fkey\", null], [\"works_at_source_id_fkey\", \"CASCADE\"], "
               + "[\"works_at_target_id_fkey\", \"CASCADE\"]]",
           "unique|[[\"person_pid_key\", [\"pid\"]]]",
@@ -223,12 +223,12 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
           "checks|[]",
           "comment|{\"text\": null}",
           "options|{}",
-          "reflect|[[\"company\", [\"id\", \"cid\", \"name\"], [\"id\"], [], [[\"company_cid_key\", [\"cid\"]]]], "
-              + "[\"orders\", [\"id\", \"address\", \"buyer\", \"oid\", \"pid\", \"placed\", \"tags\", \"total\"], [\"id\"], "
-              + "[[\"buyer\", \"person.id\"]], [[\"orders_oid_key\", [\"oid\"]]]], "
-              + "[\"person\", [\"id\", \"age\", \"city\", \"name\", \"pid\"], [\"id\"], [], [[\"person_pid_key\", [\"pid\"]]]], "
-              + "[\"works_at\", [\"id\", \"source_id\", \"target_id\", \"since\"], [\"id\"], "
-              + "[[\"source_id\", \"person.id\"], [\"target_id\", \"company.id\"]], []]]");
+          "reflect|[[\"company\", [\"rid\", \"cid\", \"name\"], [\"rid\"], [], [[\"company_cid_key\", [\"cid\"]]]], "
+              + "[\"orders\", [\"rid\", \"address\", \"buyer\", \"oid\", \"pid\", \"placed\", \"tags\", \"total\"], [\"rid\"], "
+              + "[[\"buyer\", \"person.rid\"]], [[\"orders_oid_key\", [\"oid\"]]]], "
+              + "[\"person\", [\"rid\", \"age\", \"city\", \"name\", \"pid\"], [\"rid\"], [], [[\"person_pid_key\", [\"pid\"]]]], "
+              + "[\"works_at\", [\"rid\", \"source_id\", \"target_id\", \"since\"], [\"rid\"], "
+              + "[[\"source_id\", \"person.rid\"], [\"target_id\", \"company.rid\"]], []]]");
       // the schemas of PostgreSQL's own are filtered out by SQLAlchemy's NOT LIKE ... ESCAPE
       assertThat(out).as(result.getStderr())
           .anyMatch(line -> line.startsWith("schemas|") && line.contains("\"public\"") && !line.contains("\"pg_"));
@@ -239,11 +239,11 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
 
   /** The statements of the hand-written test: a join over the edge table, a report, a row, a relationship, and a delete. */
   private static final String USER_SQL = """
-      SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON c.id = w.target_id ORDER BY w.since;
-      SELECT c.name, count(*) AS employees, min(w.since) AS first_year FROM company c JOIN works_at w ON w.target_id = c.id GROUP BY c.name ORDER BY employees DESC, c.name;
+      SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.rid JOIN company c ON c.rid = w.target_id ORDER BY w.since;
+      SELECT c.name, count(*) AS employees, min(w.since) AS first_year FROM company c JOIN works_at w ON w.target_id = c.rid GROUP BY c.name ORDER BY employees DESC, c.name;
       INSERT INTO person (pid, name, age, city) VALUES (6, 'Fay', 33, 'Delft') RETURNING pid, name;
-      INSERT INTO works_at (source_id, target_id, since) SELECT p.id, c.id, 2026 FROM person p, company c WHERE p.pid = 6 AND c.name = 'Cedar' RETURNING since;
-      SELECT p.name, c.name FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON c.id = w.target_id WHERE p.pid = 6;
+      INSERT INTO works_at (source_id, target_id, since) SELECT p.rid, c.rid, 2026 FROM person p, company c WHERE p.pid = 6 AND c.name = 'Cedar' RETURNING since;
+      SELECT p.name, c.name FROM person p JOIN works_at w ON w.source_id = p.rid JOIN company c ON c.rid = w.target_id WHERE p.pid = 6;
       DELETE FROM person WHERE pid = 6;
       SELECT count(*) FROM works_at;
       """;
@@ -323,7 +323,7 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
       def joined():
           with Session(engine) as session:
               query = (select(Person.name, Company.name, WorksAt.since)
-                       .join(WorksAt, WorksAt.source_id == Person.id).join(Company, Company.id == WorksAt.target_id)
+                       .join(WorksAt, WorksAt.source_id == Person.rid).join(Company, Company.rid == WorksAt.target_id)
                        .order_by(WorksAt.since))
               return [list(row) for row in session.execute(query)]
 
@@ -351,12 +351,12 @@ class PostgreSQLCatalogClientsTest extends PostgresWireProtocolTestBase {
 
       class person(Declared):
           __tablename__ = "person"
-          id = Column(Text, primary_key=True, server_default=FetchedValue())
+          rid = Column(Text, primary_key=True, server_default=FetchedValue())
 
 
       class works_at(Declared):
           __tablename__ = "works_at"
-          id = Column(Text, primary_key=True, server_default=FetchedValue())
+          rid = Column(Text, primary_key=True, server_default=FetchedValue())
 
 
       Declared.prepare(autoload_with=engine)

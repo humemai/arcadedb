@@ -159,7 +159,10 @@ class PostgreSQLErrorHintTest extends PostgreSQLSessionAgainstPostgresTestBase {
           assertThat(answer(own, "SELECT q.name FROM person p JOIN knows k ON k.source_id = p.rid JOIN person q"
               + " ON q.rid = k.target_id")).isEqualTo("rows []");
           assertThat(error(own, "SELECT name FROM person WHERE rid = 1").getHint()).contains("compare person.id");
-          assertThat(error(own, "SELECT name FROM City WHERE id = 1").getHint()).contains("name the row by another column");
+          assertThat(error(own, "SELECT name FROM City WHERE rid = 1").getHint()).contains("name the row by another column");
+          // City declares no column id: the error says to read rid (fork issue #240)
+          assertThat(error(own, "SELECT name FROM City WHERE id = 1").getHint())
+              .isEqualTo("no column id: read rid, or declare id bigserial PRIMARY KEY");
           // another pair of types keeps PostgreSQL's hint
           assertThat(error(own, "SELECT name FROM person WHERE name = 1").getHint()).contains("explicit type casts");
         }
