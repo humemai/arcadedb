@@ -308,13 +308,19 @@ public final class Numbers {
       return powerNumeric((BigDecimal) a, (BigDecimal) b);
     final double x = d(a);
     final double y = d(b);
+    // as dpow of float.c: NaN gives NaN, but for the power 0 of NaN and the power NaN of 1, which are 1
+    if (Double.isNaN(x) || Double.isNaN(y))
+      return x == 1.0 || y == 0.0 ? 1.0 : Double.NaN;
+    // Java answers NaN for 1 and -1 to an infinite power, PostgreSQL answers 1
+    if (Double.isInfinite(y) && Math.abs(x) == 1.0)
+      return 1.0;
     if (x == 0.0 && y < 0.0)
       throw new PostgreSQLEvaluationException("2201F", "zero raised to a negative number is undefined");
     if (x < 0.0 && y != Math.rint(y))
       throw new PostgreSQLEvaluationException("2201F", "a negative number raised to a non-integer power yields a complex result");
     final double result = Math.pow(x, y);
     checkDouble(result, x, y);
-    if (result == 0.0 && x != 0.0 && !Double.isInfinite(y))
+    if (result == 0.0 && x != 0.0 && !Double.isInfinite(x) && !Double.isInfinite(y))
       throw floatRange("underflow");
     return result;
   }
