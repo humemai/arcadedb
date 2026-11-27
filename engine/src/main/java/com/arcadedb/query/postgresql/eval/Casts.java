@@ -40,7 +40,9 @@ import java.util.regex.Pattern;
  * The input and output functions of the types, and the casts between them (chapter 10.3 of the manual and {@code pg_cast}).
  * <ul>
  * <li>{@link #parse(String, PgType)} is the input function: what a string literal or a cast from text becomes. A text that is no
- * value of the type is SQLSTATE {@code 22P02} ({@code 22007} for a date), a value out of range is {@code 22003}.</li>
+ * value of the type is SQLSTATE {@code 22P02}, a value out of range is {@code 22003}. A date and a timestamp are read as
+ * year-month-day only; what another text answers ({@code 22007}, {@code 22008}, or {@code 0A000}) is in
+ * {@link DateTimeText}.</li>
  * <li>{@link #toText(Object, PgType)} is the output function, with the spelling PostgreSQL writes: {@code true}, {@code 1e+20},
  * {@code 2026-03-09 10:00:00}.</li>
  * <li>{@link #cast(Object, PgType, PgType, int[])} is an explicit cast {@code x::t}: integers narrow with a range check,
@@ -252,29 +254,35 @@ public final class Casts {
   private static LocalDate parseDate(final String text) {
     final Matcher matcher = DATE.matcher(text.strip());
     if (!matcher.matches())
-      throw new PostgreSQLEvaluationException("22007", "invalid input syntax for type date: \"" + text + "\"");
+      throw DateTimeText.unread(text, PgType.DATE);
+    final int year = Integer.parseInt(matcher.group(1));
+    // PostgreSQL has no year 0: 1 BC comes before the year 1
+    if (year == 0)
+      throw DateTimeText.outOfRange(text);
     try {
-      return LocalDate.of(Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)),
-          Integer.parseInt(matcher.group(3)));
+      return LocalDate.of(year, Integer.parseInt(matcher.group(2)), Integer.parseInt(matcher.group(3)));
     } catch (final DateTimeException e) {
-      throw new PostgreSQLEvaluationException("22008", "date/time field value out of range: \"" + text + "\"");
+      throw DateTimeText.outOfRange(text);
     }
   }
 
   private static LocalDateTime parseTimestamp(final String text) {
     final Matcher matcher = TIMESTAMP.matcher(text.strip());
     if (!matcher.matches())
-      throw new PostgreSQLEvaluationException("22007", "invalid input syntax for type timestamp: \"" + text + "\"");
+      throw DateTimeText.unread(text, PgType.TIMESTAMP);
+    final int year = Integer.parseInt(matcher.group(1));
+    if (year == 0)
+      throw DateTimeText.outOfRange(text);
     try {
       final int hour = matcher.group(4) == null ? 0 : Integer.parseInt(matcher.group(4));
       final int minute = matcher.group(5) == null ? 0 : Integer.parseInt(matcher.group(5));
       final int second = matcher.group(6) == null ? 0 : Integer.parseInt(matcher.group(6));
       // timestamps have a precision of microseconds: further digits are rounded, as ParseFractionalSecond does (rint)
       final long micros = matcher.group(7) == null ? 0 : (long) Math.rint(Double.parseDouble("0." + matcher.group(7)) * 1_000_000);
-      return LocalDateTime.of(Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)),
-          Integer.parseInt(matcher.group(3)), hour, minute, second).plus(micros, ChronoUnit.MICROS);
+      return LocalDateTime.of(year, Integer.parseInt(matcher.group(2)), Integer.parseInt(matcher.group(3)), hour, minute, second)
+          .plus(micros, ChronoUnit.MICROS);
     } catch (final DateTimeException e) {
-      throw new PostgreSQLEvaluationException("22008", "date/time field value out of range: \"" + text + "\"");
+      throw DateTimeText.outOfRange(text);
     }
   }
 
