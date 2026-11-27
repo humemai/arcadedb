@@ -19,10 +19,16 @@
 package com.arcadedb.postgres;
 
 import com.arcadedb.database.Database;
+import com.arcadedb.serializer.json.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,14 +77,14 @@ class PostgreSQLColumnDefaultTest extends PostgreSQLSideBySideTestBase {
             "SELECT * FROM p08 ORDER BY id", "SELECT * FROM p09 ORDER BY id", "SELECT * FROM d1 ORDER BY id",
             "SELECT count(*) FROM entities WHERE metadata = '{}'",
             "INSERT INTO p08 (id) VALUES (4) RETURNING id, meta", "INSERT INTO p09 (id) VALUES (3) RETURNING *"))
-          sameValues(postgres, arcade, query);
+          sameData(postgres, arcade, query);
 
         // a record that another language creates takes the defaults too
         final Database database = getServerDatabase(0, getDatabaseName());
         database.transaction(() -> database.command("sql", "INSERT INTO d1 SET id = 100"));
         database.transaction(() -> database.command("opencypher", "CREATE (:d1 {id: 101})"));
         run(postgres, "INSERT INTO d1 (id) VALUES (100), (101)");
-        sameValues(postgres, arcade, "SELECT * FROM d1 WHERE id >= 100 ORDER BY id");
+        sameData(postgres, arcade, "SELECT * FROM d1 WHERE id >= 100 ORDER BY id");
 
         sameError(postgres, arcade, "CREATE TABLE e (a jsonb DEFAULT 'not json')", "22P02");
         sameError(postgres, arcade, "CREATE TABLE e (a int[] DEFAULT 'abc')", "22P02");
@@ -98,5 +104,38 @@ class PostgreSQLColumnDefaultTest extends PostgreSQLSideBySideTestBase {
         assertThat(failures).as(String.join("\n", failures)).isEmpty();
       }
     }
+  }
+
+  /**
+   * The rows with the elements of each array and the value of each {@code jsonb}: the text of both differs between the servers
+   * (the wire quotes every text element and writes JSON without spaces), the values may not.
+   */
+  private void sameData(final Connection postgres, final Connection arcade, final String query) throws SQLException {
+    compare(query, data(postgres, query), data(arcade, query));
+  }
+
+  private static String data(final Connection connection, final String query) throws SQLException {
+    final StringBuilder out = new StringBuilder();
+    try (final Statement run = connection.createStatement(); final ResultSet rows = run.executeQuery(query)) {
+      final ResultSetMetaData columns = rows.getMetaData();
+      while (rows.next()) {
+        out.append("    ");
+        for (int i = 1; i <= columns.getColumnCount(); i++) {
+          out.append(columns.getColumnLabel(i)).append('=');
+          final String text = rows.getString(i);
+          if (text == null)
+            out.append("null");
+          else if (columns.getColumnTypeName(i).startsWith("_"))
+            out.append(Arrays.toString((Object[]) rows.getArray(i).getArray()));
+          else if (columns.getColumnTypeName(i).equals("jsonb"))
+            out.append(new JSONObject(text));
+          else
+            out.append(text);
+          out.append('|');
+        }
+        out.append('\n');
+      }
+    }
+    return out.toString();
   }
 }

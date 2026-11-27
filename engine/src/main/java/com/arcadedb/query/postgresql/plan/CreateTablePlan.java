@@ -763,14 +763,19 @@ public final class CreateTablePlan {
       return;
     }
     if (!(literal instanceof Expression.StringLiteral || literal instanceof Expression.IntegerLiteral
-        || literal instanceof Expression.DecimalLiteral || literal instanceof Expression.BooleanLiteral))
+        || literal instanceof Expression.DecimalLiteral || literal instanceof Expression.BooleanLiteral)) {
+      // a constant of another type that the column cannot take is PostgreSQL's 42804
+      if (literal instanceof Expression.Cast cast && cast.operand() instanceof Expression.StringLiteral) {
+        final Evaluable other = constants().compile(cast);
+        Assignments.check(other.type(), other.typeName(), Column.declaration(spec.name, type));
+      }
       throw unsupported("A DEFAULT that is not a constant", literal.position());
+    }
     if (!DEFAULT_TYPES.contains(type) && !type.isArray())
       throw unsupported("A DEFAULT on a column of type " + type, literal.position());
 
     final Column column = Column.declaration(spec.name, type);
-    final Evaluable compiled = new ExpressionCompiler(new RelationScope(List.of(), catalog),
-        Parameters.of(new Object[0])).compile(literal);
+    final Evaluable compiled = constants().compile(literal);
     Assignments.check(compiled.type(), compiled.typeName(), column);
     final Object value;
     try {
@@ -796,6 +801,11 @@ public final class CreateTablePlan {
     spec.hasDefault = true;
     spec.defaultValue = value;
     spec.defaultText = defaultText(literal, type, value);
+  }
+
+  /** A compiler of expressions that read no column. */
+  private ExpressionCompiler constants() {
+    return new ExpressionCompiler(new RelationScope(List.of(), catalog), Parameters.of(new Object[0]));
   }
 
   /** {@code DEFAULT ARRAY[]::text[]}, whose type has to be the one of the column. */
