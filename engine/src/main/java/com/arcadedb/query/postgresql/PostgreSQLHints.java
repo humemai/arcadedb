@@ -92,7 +92,7 @@ public final class PostgreSQLHints {
     rule("A column name that starts with @", "Choose a name that does not start with @");
     rule("A foreign key other than the two ends",
         "Leave REFERENCES out, then nothing checks the values, or declare a link table with the columns source_id and target_id,"
-            + " each text NOT NULL REFERENCES the table at that end");
+            + " each text NOT NULL REFERENCES table (rid) ON DELETE CASCADE");
     rule("A type modifier on a column", "Leave the modifier out: declare text or numeric, whose length and precision are not checked");
     rule("A column of type timestamptz[]", "Declare timestamp[] and keep its times in UTC");
     rule("A column of type uuid", "Declare the column text and send the UUID as text");

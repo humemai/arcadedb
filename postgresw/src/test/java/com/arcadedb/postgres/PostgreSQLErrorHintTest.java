@@ -40,7 +40,8 @@ class PostgreSQLErrorHintTest extends PostgreSQLSessionAgainstPostgresTestBase {
       "CREATE TABLE acc (id bigint PRIMARY KEY, v text)",
       "INSERT INTO acc (id, v) VALUES (1, 'a'), (2, 'b')",
       "CREATE TABLE person (id bigint PRIMARY KEY, name text)",
-      "CREATE TABLE knows (source_id text NOT NULL REFERENCES person, target_id text NOT NULL REFERENCES person)",
+      "CREATE TABLE knows (source_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE,"
+          + " target_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE)",
       "{sql}CREATE VERTEX TYPE City",
       "{sql}CREATE PROPERTY City.name STRING");
 
