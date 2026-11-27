@@ -31,6 +31,7 @@ import com.arcadedb.query.postgresql.ast.SortItem;
 import com.arcadedb.query.postgresql.ast.SourcePosition;
 import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.ColumnType;
+import com.arcadedb.query.postgresql.catalog.Identifier;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.catalog.TableDefinition;
 import com.arcadedb.query.postgresql.eval.Casts;
@@ -44,6 +45,7 @@ import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.Property;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -113,6 +115,39 @@ public final class CheckExpression {
         || !(select.items().get(0) instanceof SelectItem.Projection projection))
       throw new IllegalArgumentException("not an expression: " + text);
     return compile(declaring.getName(), projection.expression(), declared(declaring, type));
+  }
+
+  /** The text of a check with every reference to the column {@code from} naming {@code to}, as a rename of the column leaves it. */
+  static String renamed(final String text, final String from, final String to) {
+    final String select = "SELECT " + text;
+    final SelectStatement statement = (SelectStatement) StatementParser.parse(select);
+    final List<Name> found = new ArrayList<>();
+    walk(((SelectItem.Projection) statement.items().get(0)).expression(), node -> {
+      if (node instanceof Expression.ColumnRef reference && reference.column().value().equals(from))
+        found.add(reference.column());
+    });
+    // from the last one, so that the places of the others stay
+    found.sort(Comparator.comparingInt((Name name) -> name.position().offset()).reversed());
+    final StringBuilder changed = new StringBuilder(select);
+    for (final Name name : found) {
+      final int start = name.position().offset();
+      int end = start;
+      if (select.charAt(start) == '"') {
+        for (end = start + 1; end < select.length(); end++)
+          if (select.charAt(end) == '"') {
+            if (end + 1 < select.length() && select.charAt(end + 1) == '"')
+              end++;
+            else
+              break;
+          }
+        end++;
+      } else
+        while (end < select.length() && (Character.isLetterOrDigit(select.charAt(end)) || select.charAt(end) == '_'
+            || select.charAt(end) == '$'))
+          end++;
+      changed.replace(start, end, Identifier.written(to));
+    }
+    return changed.substring("SELECT ".length());
   }
 
   /** The columns that a check of the type {@code declaring} reads in the records of {@code type}, by name. */

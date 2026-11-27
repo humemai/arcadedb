@@ -135,17 +135,8 @@ public final class StatementHints {
     final String otherwise = NO_WAY + ": make a new table or column, copy the values, and drop the old one";
     return switch (word(at + 1)) {
       case "ADD" -> add(table, next);
-      case "DROP" -> {
-        if ("CONSTRAINT".equals(word(next)))
-          yield "Drop its index in the sql language with DROP INDEX `name`, one of the names listed by " + LIST_INDEXES;
-        int column = "COLUMN".equals(word(next)) ? next + 1 : next;
-        final boolean ifExists = "IF".equals(word(column));
-        if (ifExists)
-          column += 2;
-        yield "Drop the column in the sql language, outside a transaction block, where FORCE also drops its indexes:"
-            + " {sql}DROP PROPERTY " + sqlName(table) + "." + sqlName(names.column(table, name(column)))
-            + (ifExists ? " IF EXISTS" : "") + " FORCE";
-      }
+      // DROP CONSTRAINT: a drop of a column runs
+      case "DROP" -> "Drop its index in the sql language with DROP INDEX `name`, one of the names listed by " + LIST_INDEXES;
       case "RENAME" -> "TO".equals(word(next)) ?
           "Rename the table in the sql language, outside a transaction block: {sql}ALTER TYPE " + sqlName(table) + " NAME "
               + sqlName(name(next + 1)) :
