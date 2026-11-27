@@ -43,11 +43,12 @@ class PostgreSQLDropRenameColumnTest extends PostgreSQLSideBySideTestBase {
       + " ORDER BY table_name, ordinal_position";
   private static final List<String> SETUP = List.of(
       "CREATE TABLE acc (id int PRIMARY KEY, code text UNIQUE, name varchar(10) NOT NULL DEFAULT 'n', lo int, hi int,"
-          + " note text, at timestamptz DEFAULT '2026-01-01 00:00:00+00', n serial, UNIQUE (name, lo), CHECK (lo >= 0),"
-          + " CHECK (lo < hi), CONSTRAINT named CHECK (name <> 'lo'))",
+          + " note text, at date, n serial, UNIQUE (name, lo), CHECK (lo >= 0), CHECK (lo < hi),"
+          + " CONSTRAINT named CHECK (name <> 'lo'))",
       "CREATE TABLE child (id int PRIMARY KEY, code text REFERENCES acc (code), acc int REFERENCES acc)",
       "CREATE INDEX acc_note_idx ON acc (note)", "CREATE INDEX ON acc (hi, note)",
-      "INSERT INTO acc (id, code, name, lo, hi, note) VALUES (1, 'a', 'one', 1, 5, 'x'), (2, 'b', 'two', 2, 6, NULL)",
+      "INSERT INTO acc (id, code, name, lo, hi, note, at) VALUES (1, 'a', 'one', 1, 5, 'x', '2026-01-01'),"
+          + " (2, 'b', 'two', 2, 6, NULL, NULL)",
       "INSERT INTO child VALUES (1, 'a', 1)");
 
   @Test
@@ -90,7 +91,7 @@ class PostgreSQLDropRenameColumnTest extends PostgreSQLSideBySideTestBase {
         both(postgres, arcade, "DROP INDEX acc_note_idx");
 
         // sql and openCypher read the new names, and no old one
-        compare("sql", "    0|3|\n", rows(arcade, "{sql} SELECT count(code) AS before, count(sku) AS after FROM acc"));
+        compare("sql", "    0|3|\n", rows(arcade, "{sql} SELECT count(code) AS a, count(sku) AS b FROM acc"));
         compare("openCypher", "    one|\n", rows(arcade, "{opencypher} MATCH (a:acc) WHERE a.acc_id = 1 RETURN a.title AS t"));
 
         // a rollback gives the old names back, with their values
