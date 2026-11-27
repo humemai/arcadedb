@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql.plan;
 
 import com.arcadedb.database.Database;
+import com.arcadedb.exception.AlreadyExistsException;
 import com.arcadedb.exception.DuplicatedKeyException;
 import com.arcadedb.index.TypeIndex;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
@@ -88,7 +89,8 @@ public final class CreateIndexPlan {
     if (given != null && taken(given)) {
       if (statement.ifNotExists())
         return answer("CREATE INDEX " + given + ": the relation exists, nothing to do");
-      throw new PostgreSQLEvaluationException("42P07", "relation \"" + given + "\" already exists");
+      throw PostgreSQLEvaluationException.duplicateRelation(
+          database.getSchema().existsType(given) ? AlreadyExistsException.Kind.TYPE : AlreadyExistsException.Kind.INDEX, given);
     }
 
     final String method = statement.method() == null ? "btree" : statement.method().value();

@@ -136,6 +136,9 @@ class SchemaPresentationReadableWalkCensusTest {
       Map.entry("query/postgresql/catalog/RelationalCatalog#of",
           "the relational view the postgresql binder resolves names against, whose records are read through the per-bucket gate: "
               + "information_schema and the wire catalog present only RelationalCatalog#readableBy of it"),
+      Map.entry("query/postgresql/plan/CreateIndexPlan#taken",
+          "whether an index or a constraint of any type holds a name, for CREATE INDEX: DDL, where a name is taken whoever may "
+              + "read the type that holds it"),
       // GREMLIN
       Map.entry("gremlin/ArcadeCountGlobalStep#processNextStart", "a traversal: the count reads every bucket through the per-bucket gate, which refuses a denied type"),
       Map.entry("gremlin/ArcadeGraph#edges", READ_THROUGH_GATE),
