@@ -24,6 +24,7 @@ import com.arcadedb.database.DatabaseInternal;
 import com.arcadedb.query.OperationType;
 import com.arcadedb.query.QueryEngine;
 import com.arcadedb.query.postgresql.ast.AstPrinter;
+import com.arcadedb.query.postgresql.ast.CreateExtensionStatement;
 import com.arcadedb.query.postgresql.ast.CreateIndexStatement;
 import com.arcadedb.query.postgresql.ast.CreateTableStatement;
 import com.arcadedb.query.postgresql.ast.DeleteStatement;
@@ -272,6 +273,10 @@ public class PostgreSQLQueryEngine implements QueryEngine {
             + " in a read-only query: run it with command (" + statement.position() + ")");
       if (statement instanceof TransactionStatement transaction)
         return transaction(transaction.kind(), state);
+      // what the extension would add is built in: nothing is read or changed, in a transaction block too (fork issue #231)
+      if (statement instanceof CreateExtensionStatement extension)
+        return new PostgreSQLResultSet(List.of(), new PostgreSQLResultSet.Plan(List.of("CREATE EXTENSION "
+            + extension.name().value() + ": built in, nothing to do"))).rowless().withAffectedRows(0);
       if (statement instanceof CreateTableStatement create) {
         requireNoBlock(state, create);
         return new CreateTablePlan(database, catalog(), create).execute();
@@ -436,7 +441,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   /** The columns of a statement planned with described parameters; for {@code EXPLAIN} those of the statement it explains. */
   private List<PostgreSQLResultSet.Column> plannedColumns(final Statement statement, final Parameters parameters) {
     if (statement instanceof TransactionStatement || statement instanceof CreateTableStatement
-        || statement instanceof CreateIndexStatement)
+        || statement instanceof CreateIndexStatement || statement instanceof CreateExtensionStatement)
       return List.of();
     if (statement instanceof ExplainWriteStatement explain)
       return new WritePlanner(database, catalog(), parameters).plan(explain.statement()).columns();

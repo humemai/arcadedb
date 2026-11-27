@@ -103,7 +103,8 @@ final class Diagnostics {
           "This option of an index column (COLLATE, DESC, NULLS, a qualified operator class or its parameters)"),
       Map.entry("unsupportedIndexParameter", "An index parameter that is not a whole number"),
       Map.entry("unsupportedParameterNamespace", "An index parameter name with a namespace"),
-      Map.entry("unsupportedIndexOption", "This clause of CREATE INDEX (INCLUDE, NULLS NOT DISTINCT, TABLESPACE or WHERE)"));
+      Map.entry("unsupportedIndexOption", "This clause of CREATE INDEX (INCLUDE, NULLS NOT DISTINCT, TABLESPACE or WHERE)"),
+      Map.entry("unsupportedExtensionOption", "This option of CREATE EXTENSION (VERSION, FROM or CASCADE)"));
 
   private static final Set<Integer> NOT_WRITES = Set.of(PostgreSQLParser.WITH, PostgreSQLParser.VALUES, PostgreSQLParser.TABLE,
       PostgreSQLParser.LPAREN);
@@ -219,6 +220,7 @@ final class Diagnostics {
       case "unsupportedTableForm" -> "Write CREATE TABLE name (column type, ...) and fill it with INSERT INTO name SELECT ...";
       case "unsupportedTableOption", "unsupportedIndexOption", "unsupportedConcurrently", "unsupportedReferenceOption",
           "unsupportedParameterNamespace" -> "Leave the clause out";
+      case "unsupportedExtensionOption" -> "Leave the option out: write CREATE EXTENSION IF NOT EXISTS name";
       case "unsupportedTableElement" -> "Write the columns out";
       case "unsupportedIndexExpression" -> "Store the computed value in a column of its own and index that column";
       case "unsupportedIndexElementOption" -> "Name the column only, for a vector index with its operator class";

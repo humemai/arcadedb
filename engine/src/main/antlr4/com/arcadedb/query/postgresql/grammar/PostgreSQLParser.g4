@@ -60,6 +60,7 @@ stmt
   | explainStmt SEMI?      # explainCommand
   | createTableStmt SEMI?  # createTableCommand
   | createIndexStmt SEMI?  # createIndexCommand
+  | createExtensionStmt SEMI?  # createExtensionCommand
   | unsupportedTransactionStmt skipRest SEMI?   # unsupportedTransactionCommand
   | unsupportedStatement skipRest SEMI?   # unsupportedCommand
   | SEMI?                  # emptyCommand
@@ -89,8 +90,9 @@ unsupportedExplainOption
 // the first words of every other statement of PostgreSQL (WITH, VALUES, TABLE and a parenthesised query start a selectStmt)
 unsupportedStatement
   : ALTER | ANALYSE | ANALYZE | CALL | CHECKPOINT | CLOSE | CLUSTER | COMMENT | COPY
-  // CREATE of anything but a table or an index, which createTableStmt and createIndexStmt read
-  | CREATE ~(TABLE | TEMP | TEMPORARY | UNLOGGED | LOCAL | GLOBAL | INDEX | UNIQUE)
+  // CREATE of anything but a table, an index or an extension, which createTableStmt, createIndexStmt and createExtensionStmt
+  // read
+  | CREATE ~(TABLE | TEMP | TEMPORARY | UNLOGGED | LOCAL | GLOBAL | INDEX | UNIQUE | EXTENSION)
   | DEALLOCATE | DECLARE | DISCARD | DO | DROP | EXECUTE | FETCH | GRANT | IMPORT | LISTEN | LOAD
   | LOCK | MERGE | MOVE | NOTIFY | PREPARE | REASSIGN | REFRESH | REINDEX | RELEASE | RESET | REVOKE | SAVEPOINT
   | SECURITY | SET | SHOW | TRUNCATE | UNLISTEN | VACUUM
@@ -260,6 +262,19 @@ unsupportedIndexParameter
 
 unsupportedIndexOption
   : INCLUDE | NULLS | TABLESPACE | WHERE
+  ;
+
+// ============================================================================
+// CREATE EXTENSION (CreateExtensionStmt of gram.y), fork issue #231: what is built in needs no statement, so the ones that a
+// schema usually starts with run and change nothing. The tree builder refuses every other name
+// ============================================================================
+
+createExtensionStmt
+  : CREATE EXTENSION (IF NOT EXISTS)? name=colId WITH? (SCHEMA schema=colId)? (unsupportedExtensionOption skipRest)?
+  ;
+
+unsupportedExtensionOption
+  : VERSION | FROM | CASCADE
   ;
 
 // ============================================================================

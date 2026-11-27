@@ -65,6 +65,7 @@ public final class AstPrinter {
       case TransactionStatement transaction -> transaction.kind().name();
       case CreateTableStatement create -> print(create);
       case CreateIndexStatement create -> print(create);
+      case CreateExtensionStatement create -> "CREATE EXTENSION IF NOT EXISTS " + print(create.name());
     };
   }
 
