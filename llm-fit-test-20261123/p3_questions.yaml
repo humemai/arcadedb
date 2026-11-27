@@ -1,0 +1,546 @@
+# PHASE 3 (writes and advanced constructs): 40 tasks over the sf1 graph and a memory store (Memory, MemoryArchive).
+# Written BEFORE any model call. Each task has
+#   text   what the model is asked (the only thing it sees besides the schema)
+#   pg     the gold statements in PostgreSQL, run on PostgreSQL 18 (reference), on the prototype (goldcheck) and never shown
+#   sql    the gold statements in ANSI SQL, run on DuckDB (the control arm's goldcheck) and never shown
+#   rb     read-back family: mem (Memory and MemoryArchive in full) | custom (rb_pg and rb_sql, same rows by position)
+# The answer is the table state after the statements, read back by the fixed read-back queries and compared as a multiset
+# against what PostgreSQL 18 holds after the gold statements. `unchanged: true`: the reference state equals the seed state.
+# construct: upsert, update_delete, edge, insert_select, window_latest, window_running, dedup, transaction, join_aggregate
+
+questions:
+  # ---------------------------------------------------------------- upsert (5)
+  - id: U01
+    construct: upsert
+    text: "Store a memory with id 9001, agent 'alice', kind 'fact', content 'likes tea', importance 4 and created 1700100000 (no subject). If a memory with id 9001 already exists, replace only its content and importance with these values."
+    pg:
+      - |-
+        INSERT INTO "Memory" (id, agent, kind, content, importance, created) VALUES (9001, 'alice', 'fact', 'likes tea', 4, 1700100000) ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, importance = EXCLUDED.importance
+    sql:
+      - |-
+        INSERT INTO Memory (id, agent, kind, content, importance, created) VALUES (9001, 'alice', 'fact', 'likes tea', 4, 1700100000) ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, importance = EXCLUDED.importance
+    rb: mem
+  - id: U02
+    construct: upsert
+    text: "Memory 17 may or may not exist. If it exists, set its content to 'prefers coffee' and its importance to 5 and leave its other columns as they are. If it does not exist, insert it with agent 'alice', kind 'fact', created 1700100001 and the same content and importance. There must be exactly one row with id 17 afterwards."
+    pg:
+      - |-
+        INSERT INTO "Memory" (id, agent, kind, content, importance, created) VALUES (17, 'alice', 'fact', 'prefers coffee', 5, 1700100001) ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, importance = EXCLUDED.importance
+    sql:
+      - |-
+        INSERT INTO Memory (id, agent, kind, content, importance, created) VALUES (17, 'alice', 'fact', 'prefers coffee', 5, 1700100001) ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, importance = EXCLUDED.importance
+    rb: mem
+  - id: U03
+    construct: upsert
+    text: "Try to store a memory with id 18, agent 'bob', kind 'note', content 'overwritten', importance 1 and created 1700100002. If a memory with id 18 already exists, leave that row exactly as it is and raise no error."
+    pg:
+      - |-
+        INSERT INTO "Memory" (id, agent, kind, content, importance, created) VALUES (18, 'bob', 'note', 'overwritten', 1, 1700100002) ON CONFLICT (id) DO NOTHING
+    sql:
+      - |-
+        INSERT INTO Memory (id, agent, kind, content, importance, created) VALUES (18, 'bob', 'note', 'overwritten', 1, 1700100002) ON CONFLICT (id) DO NOTHING
+    rb: mem
+    unchanged: true
+  - id: U04
+    construct: upsert
+    text: "In one statement, store three memories: ids 19, 9002 and 9003, all with agent 'carol', kind 'event', importance 2 and created 1700100003, and contents 'm19', 'm9002' and 'm9003'. For an id that already exists, only set the content to the new content and leave the other columns of that row as they are."
+    pg:
+      - |-
+        INSERT INTO "Memory" (id, agent, kind, content, importance, created) VALUES (19, 'carol', 'event', 'm19', 2, 1700100003), (9002, 'carol', 'event', 'm9002', 2, 1700100003), (9003, 'carol', 'event', 'm9003', 2, 1700100003) ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content
+    sql:
+      - |-
+        INSERT INTO Memory (id, agent, kind, content, importance, created) VALUES (19, 'carol', 'event', 'm19', 2, 1700100003), (9002, 'carol', 'event', 'm9002', 2, 1700100003), (9003, 'carol', 'event', 'm9003', 2, 1700100003) ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content
+    rb: mem
+  - id: U05
+    construct: upsert
+    text: "Record a recall of memories 23 and 24 in one statement. For a memory that exists, add 1 to its importance, but never let the importance go above 5. A memory that does not exist is inserted with agent 'dave', kind 'event', content 'recalled', importance 1 and created 1700100004."
+    pg:
+      - |-
+        INSERT INTO "Memory" (id, agent, kind, content, importance, created) VALUES (23, 'dave', 'event', 'recalled', 1, 1700100004), (24, 'dave', 'event', 'recalled', 1, 1700100004) ON CONFLICT (id) DO UPDATE SET importance = "Memory".importance + 1 WHERE "Memory".importance < 5
+    sql:
+      - |-
+        INSERT INTO Memory (id, agent, kind, content, importance, created) VALUES (23, 'dave', 'event', 'recalled', 1, 1700100004), (24, 'dave', 'event', 'recalled', 1, 1700100004) ON CONFLICT (id) DO UPDATE SET importance = Memory.importance + 1 WHERE Memory.importance < 5
+    rb: mem
+
+  # ---------------------------------------------------------------- update and delete by key or predicate (6)
+  - id: W01
+    construct: update_delete
+    text: "Change the importance of memory 31 to 2."
+    pg:
+      - |-
+        UPDATE "Memory" SET importance = 2 WHERE id = 31
+    sql:
+      - |-
+        UPDATE Memory SET importance = 2 WHERE id = 31
+    rb: mem
+  - id: W02
+    construct: update_delete
+    text: "For every memory of agent 'bob' with kind 'note', add 1 to its importance."
+    pg:
+      - |-
+        UPDATE "Memory" SET importance = importance + 1 WHERE agent = 'bob' AND kind = 'note'
+    sql:
+      - |-
+        UPDATE Memory SET importance = importance + 1 WHERE agent = 'bob' AND kind = 'note'
+    rb: mem
+  - id: W03
+    construct: update_delete
+    text: "Delete memory 40."
+    pg:
+      - |-
+        DELETE FROM "Memory" WHERE id = 40
+    sql:
+      - |-
+        DELETE FROM Memory WHERE id = 40
+    rb: mem
+  - id: W04
+    construct: update_delete
+    text: "Delete every memory whose created value is smaller than 1700003000."
+    pg:
+      - |-
+        DELETE FROM "Memory" WHERE created < 1700003000
+    sql:
+      - |-
+        DELETE FROM Memory WHERE created < 1700003000
+    rb: mem
+  - id: W05
+    construct: update_delete
+    text: "For every memory whose content equals the content of a row in MemoryArchive, set the memory's importance to the importance of that archive row. (Each content occurs at most once in MemoryArchive.)"
+    pg:
+      - |-
+        UPDATE "Memory" m SET importance = a.importance FROM "MemoryArchive" a WHERE m.content = a.content
+    sql:
+      - |-
+        UPDATE Memory AS m SET importance = a.importance FROM MemoryArchive AS a WHERE m.content = a.content
+    rb: mem
+  - id: W06
+    construct: update_delete
+    text: "Delete every memory whose content also appears in MemoryArchive."
+    pg:
+      - |-
+        DELETE FROM "Memory" WHERE content IN (SELECT content FROM "MemoryArchive")
+    sql:
+      - |-
+        DELETE FROM Memory WHERE content IN (SELECT content FROM MemoryArchive)
+    rb: mem
+
+  # ---------------------------------------------------------------- edges of the graph (5)
+  - id: E01
+    construct: edge
+    text: "Make persons 65 and 933 friends since 2013 (store the friendship the way the table stores every friendship)."
+    pg:
+      - |-
+        INSERT INTO "KNOWS" (source_id, target_id, "sinceYear") SELECT a.rid, b.rid, 2013 FROM "Person" a, "Person" b WHERE a.id = 65 AND b.id = 933
+    sql:
+      - |-
+        INSERT INTO Knows (person1_id, person2_id, since_year) VALUES (65, 933, 2013)
+    rb: custom
+    rb_pg:
+      - |-
+        SELECT a.id, b.id, k."sinceYear" FROM "KNOWS" k JOIN "Person" a ON a.rid = k.source_id JOIN "Person" b ON b.rid = k.target_id WHERE a.id IN (65, 933)
+      - |-
+        SELECT a.id, b.id, k."sinceYear" FROM "KNOWS" k JOIN "Person" a ON a.rid = k.source_id JOIN "Person" b ON b.rid = k.target_id WHERE b.id IN (65, 933)
+      - |-
+        SELECT count(*), sum("sinceYear") FROM "KNOWS"
+    rb_sql:
+      - |-
+        SELECT person1_id, person2_id, since_year FROM Knows WHERE person1_id IN (65, 933)
+      - |-
+        SELECT person1_id, person2_id, since_year FROM Knows WHERE person2_id IN (65, 933)
+      - |-
+        SELECT count(*), sum(since_year) FROM Knows
+  - id: E02
+    construct: edge
+    text: "Person 933 is interested in the tag named 'Rumi'. Add that interest."
+    pg:
+      - |-
+        INSERT INTO "HAS_INTEREST" (source_id, target_id) SELECT p.rid, t.rid FROM "Person" p, "Tag" t WHERE p.id = 933 AND t.name = 'Rumi'
+    sql:
+      - |-
+        INSERT INTO HasInterest (person_id, tag_id) SELECT p.id, t.id FROM Person p, Tag t WHERE p.id = 933 AND t.name = 'Rumi'
+    rb: custom
+    rb_pg: &rb_interest_pg
+      - |-
+        SELECT p.id, t.id FROM "HAS_INTEREST" h JOIN "Person" p ON p.rid = h.source_id JOIN "Tag" t ON t.rid = h.target_id WHERE t.name = 'Rumi'
+      - |-
+        SELECT count(*) FROM "HAS_INTEREST"
+    rb_sql: &rb_interest_sql
+      - |-
+        SELECT h.person_id, h.tag_id FROM HasInterest h JOIN Tag t ON t.id = h.tag_id WHERE t.name = 'Rumi'
+      - |-
+        SELECT count(*) FROM HasInterest
+  - id: E03
+    construct: edge
+    text: "Remove the friendship between persons 933 and 4139."
+    pg:
+      - |-
+        DELETE FROM "KNOWS" WHERE source_id = (SELECT rid FROM "Person" WHERE id = 933) AND target_id = (SELECT rid FROM "Person" WHERE id = 4139)
+    sql:
+      - |-
+        DELETE FROM Knows WHERE person1_id = 933 AND person2_id = 4139
+    rb: custom
+    rb_pg:
+      - |-
+        SELECT a.id, b.id, k."sinceYear" FROM "KNOWS" k JOIN "Person" a ON a.rid = k.source_id JOIN "Person" b ON b.rid = k.target_id WHERE a.id IN (933, 4139)
+      - |-
+        SELECT a.id, b.id, k."sinceYear" FROM "KNOWS" k JOIN "Person" a ON a.rid = k.source_id JOIN "Person" b ON b.rid = k.target_id WHERE b.id IN (933, 4139)
+      - |-
+        SELECT count(*), sum("sinceYear") FROM "KNOWS"
+    rb_sql:
+      - |-
+        SELECT person1_id, person2_id, since_year FROM Knows WHERE person1_id IN (933, 4139)
+      - |-
+        SELECT person1_id, person2_id, since_year FROM Knows WHERE person2_id IN (933, 4139)
+      - |-
+        SELECT count(*), sum(since_year) FROM Knows
+  - id: E04
+    construct: edge
+    text: "The friendship between persons 933 and 6597069777240 started in a different year than recorded. Set its year to 2015."
+    pg:
+      - |-
+        UPDATE "KNOWS" SET "sinceYear" = 2015 WHERE source_id = (SELECT rid FROM "Person" WHERE id = 933) AND target_id = (SELECT rid FROM "Person" WHERE id = 6597069777240)
+    sql:
+      - |-
+        UPDATE Knows SET since_year = 2015 WHERE person1_id = 933 AND person2_id = 6597069777240
+    rb: custom
+    rb_pg:
+      - |-
+        SELECT a.id, b.id, k."sinceYear" FROM "KNOWS" k JOIN "Person" a ON a.rid = k.source_id JOIN "Person" b ON b.rid = k.target_id WHERE a.id IN (933, 6597069777240)
+      - |-
+        SELECT a.id, b.id, k."sinceYear" FROM "KNOWS" k JOIN "Person" a ON a.rid = k.source_id JOIN "Person" b ON b.rid = k.target_id WHERE b.id IN (933, 6597069777240)
+      - |-
+        SELECT count(*), sum("sinceYear") FROM "KNOWS"
+    rb_sql:
+      - |-
+        SELECT person1_id, person2_id, since_year FROM Knows WHERE person1_id IN (933, 6597069777240)
+      - |-
+        SELECT person1_id, person2_id, since_year FROM Knows WHERE person2_id IN (933, 6597069777240)
+      - |-
+        SELECT count(*), sum(since_year) FROM Knows
+  - id: E05
+    construct: edge
+    text: "Add an interest in the tag named 'Rumi' for every person born in 1990 who is not interested in it yet."
+    pg:
+      - |-
+        INSERT INTO "HAS_INTEREST" (source_id, target_id) SELECT p.rid, t.rid FROM "Person" p, "Tag" t WHERE t.name = 'Rumi' AND p."birthYear" = 1990 AND NOT EXISTS (SELECT 1 FROM "HAS_INTEREST" h WHERE h.source_id = p.rid AND h.target_id = t.rid)
+    sql:
+      - |-
+        INSERT INTO HasInterest (person_id, tag_id) SELECT p.id, t.id FROM Person p, Tag t WHERE t.name = 'Rumi' AND p.birth_year = 1990 AND NOT EXISTS (SELECT 1 FROM HasInterest h WHERE h.person_id = p.id AND h.tag_id = t.id)
+    rb: custom
+    rb_pg: *rb_interest_pg
+    rb_sql: *rb_interest_sql
+
+  # ---------------------------------------------------------------- insert ... select (3)
+  - id: I01
+    construct: insert_select
+    text: "Copy every memory of agent 'alice' whose importance is at least 4 into MemoryArchive, with the same ids and the same values in every column."
+    pg:
+      - |-
+        INSERT INTO "MemoryArchive" (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM "Memory" WHERE agent = 'alice' AND importance >= 4
+    sql:
+      - |-
+        INSERT INTO MemoryArchive (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM Memory WHERE agent = 'alice' AND importance >= 4
+    rb: mem
+  - id: I02
+    construct: insert_select
+    text: "Copy every memory of agent 'dave' that was created before 1700001200 into MemoryArchive, with the same ids and values, except that the archived copy has importance 1."
+    pg:
+      - |-
+        INSERT INTO "MemoryArchive" (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, 1, created, subject FROM "Memory" WHERE agent = 'dave' AND created < 1700001200
+    sql:
+      - |-
+        INSERT INTO MemoryArchive (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, 1, created, subject FROM Memory WHERE agent = 'dave' AND created < 1700001200
+    rb: mem
+  - id: I03
+    construct: insert_select
+    text: "For every person born before 1982 who is interested in the tag named 'Rumi', insert one memory about that person into Memory: id equal to 1000000 plus the person's id, agent 'graph', kind 'fact', content the first name, a space and the last name, importance 3, created 1700200000, subject the person's id."
+    pg:
+      - |-
+        INSERT INTO "Memory" (id, agent, kind, content, importance, created, subject) SELECT p.id + 1000000, 'graph', 'fact', p."firstName" || ' ' || p."lastName", 3, 1700200000, p.id FROM "Person" p JOIN "HAS_INTEREST" h ON h.source_id = p.rid JOIN "Tag" t ON t.rid = h.target_id WHERE t.name = 'Rumi' AND p."birthYear" < 1982
+    sql:
+      - |-
+        INSERT INTO Memory (id, agent, kind, content, importance, created, subject) SELECT p.id + 1000000, 'graph', 'fact', p.first_name || ' ' || p.last_name, 3, 1700200000, p.id FROM Person p JOIN HasInterest h ON h.person_id = p.id JOIN Tag t ON t.id = h.tag_id WHERE t.name = 'Rumi' AND p.birth_year < 1982
+    rb: mem
+
+  # ---------------------------------------------------------------- latest N per key, window functions (4)
+  - id: L01
+    construct: window_latest
+    text: "Copy the most recent memory of every agent into MemoryArchive, with the same ids and values. The most recent is the one with the largest created; if two share it, the one with the larger id."
+    pg:
+      - |-
+        INSERT INTO "MemoryArchive" (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM (SELECT id, agent, kind, content, importance, created, subject, row_number() OVER (PARTITION BY agent ORDER BY created DESC, id DESC) AS rn FROM "Memory") t WHERE rn = 1
+    sql:
+      - |-
+        INSERT INTO MemoryArchive (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM (SELECT id, agent, kind, content, importance, created, subject, row_number() OVER (PARTITION BY agent ORDER BY created DESC, id DESC) AS rn FROM Memory) t WHERE rn = 1
+    rb: mem
+  - id: L02
+    construct: window_latest
+    text: "Copy the 2 most recent memories of every combination of agent and kind into MemoryArchive, with the same ids and values. Most recent means the larger created; if two share it, the larger id."
+    pg:
+      - |-
+        INSERT INTO "MemoryArchive" (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM (SELECT id, agent, kind, content, importance, created, subject, row_number() OVER (PARTITION BY agent, kind ORDER BY created DESC, id DESC) AS rn FROM "Memory") t WHERE rn <= 2
+    sql:
+      - |-
+        INSERT INTO MemoryArchive (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM (SELECT id, agent, kind, content, importance, created, subject, row_number() OVER (PARTITION BY agent, kind ORDER BY created DESC, id DESC) AS rn FROM Memory) t WHERE rn <= 2
+    rb: mem
+  - id: L03
+    construct: window_latest
+    text: "Keep only the 3 most recent memories of each agent and delete all the others from Memory. Most recent means the larger created; if two share it, the larger id."
+    pg:
+      - |-
+        DELETE FROM "Memory" WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY agent ORDER BY created DESC, id DESC) AS rn FROM "Memory") t WHERE rn > 3)
+    sql:
+      - |-
+        DELETE FROM Memory WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY agent ORDER BY created DESC, id DESC) AS rn FROM Memory) t WHERE rn > 3)
+    rb: mem
+  - id: L04
+    construct: window_latest
+    text: "For every kind, set the importance of its most recent memory to 5. Most recent means the larger created; if two share it, the larger id."
+    pg:
+      - |-
+        UPDATE "Memory" SET importance = 5 WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY kind ORDER BY created DESC, id DESC) AS rn FROM "Memory") t WHERE rn = 1)
+    sql:
+      - |-
+        UPDATE Memory SET importance = 5 WHERE id IN (SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY kind ORDER BY created DESC, id DESC) AS rn FROM Memory) t WHERE rn = 1)
+    rb: mem
+
+  # ---------------------------------------------------------------- running totals, ranks and neighbours, window functions (4)
+  - id: R01
+    construct: window_running
+    text: "Copy every memory of agent 'carol' into MemoryArchive with the same ids and values, except that importance holds the running total of the importance of carol's memories in the order of created and then id (the first memory's value is its own importance)."
+    pg:
+      - |-
+        INSERT INTO "MemoryArchive" (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, CAST(sum(importance) OVER (ORDER BY created, id) AS integer), created, subject FROM "Memory" WHERE agent = 'carol'
+    sql:
+      - |-
+        INSERT INTO MemoryArchive (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, CAST(sum(importance) OVER (ORDER BY created, id) AS integer), created, subject FROM Memory WHERE agent = 'carol'
+    rb: mem
+  - id: R02
+    construct: window_running
+    text: "Copy every memory of kind 'event' into MemoryArchive with the same ids and values, except that importance holds the rank of the memory within its agent by importance, highest importance first: equal importances get the same rank and the next rank is skipped (1, 1, 3)."
+    pg:
+      - |-
+        INSERT INTO "MemoryArchive" (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, CAST(rank() OVER (PARTITION BY agent ORDER BY importance DESC) AS integer), created, subject FROM "Memory" WHERE kind = 'event'
+    sql:
+      - |-
+        INSERT INTO MemoryArchive (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, CAST(rank() OVER (PARTITION BY agent ORDER BY importance DESC) AS integer), created, subject FROM Memory WHERE kind = 'event'
+    rb: mem
+  - id: R03
+    construct: window_running
+    text: "Copy every memory of agent 'alice' into MemoryArchive with the same ids and values, except that importance holds the number of seconds between the memory's created and the created of the previous memory of alice in the order of created and then id (0 for alice's first memory)."
+    pg:
+      - |-
+        INSERT INTO "MemoryArchive" (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, CAST(coalesce(created - lag(created) OVER (ORDER BY created, id), 0) AS integer), created, subject FROM "Memory" WHERE agent = 'alice'
+    sql:
+      - |-
+        INSERT INTO MemoryArchive (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, CAST(coalesce(created - lag(created) OVER (ORDER BY created, id), 0) AS integer), created, subject FROM Memory WHERE agent = 'alice'
+    rb: mem
+  - id: R04
+    construct: window_running
+    text: "For every memory of agent 'dave', set importance to the number of dave's memories whose created is smaller than or equal to this memory's created (memories created at the same second count together)."
+    pg:
+      - |-
+        UPDATE "Memory" m SET importance = t.c FROM (SELECT id, count(*) OVER (ORDER BY created) AS c FROM "Memory" WHERE agent = 'dave') t WHERE m.id = t.id
+    sql:
+      - |-
+        UPDATE Memory AS m SET importance = t.c FROM (SELECT id, count(*) OVER (ORDER BY created) AS c FROM Memory WHERE agent = 'dave') AS t WHERE m.id = t.id
+    rb: mem
+
+  # ---------------------------------------------------------------- de-duplication (4)
+  - id: X01
+    construct: dedup
+    text: "Some memories are duplicates of each other: same agent, same kind and same content. For each such group keep only the memory with the smallest id and delete the others from Memory."
+    pg:
+      - |-
+        DELETE FROM "Memory" WHERE id NOT IN (SELECT min(id) FROM "Memory" GROUP BY agent, kind, content)
+    sql:
+      - |-
+        DELETE FROM Memory WHERE id NOT IN (SELECT min(id) FROM Memory GROUP BY agent, kind, content)
+    rb: mem
+  - id: X02
+    construct: dedup
+    text: "Some memories are duplicates of each other: same agent, same kind and same content. For each such group keep only the most recent memory (the larger created; if two share it, the larger id) and delete the others from Memory."
+    pg:
+      - |-
+        DELETE FROM "Memory" m WHERE EXISTS (SELECT 1 FROM "Memory" n WHERE n.agent = m.agent AND n.kind = m.kind AND n.content = m.content AND (n.created > m.created OR (n.created = m.created AND n.id > m.id)))
+    sql:
+      - |-
+        DELETE FROM Memory AS m WHERE EXISTS (SELECT 1 FROM Memory AS n WHERE n.agent = m.agent AND n.kind = m.kind AND n.content = m.content AND (n.created > m.created OR (n.created = m.created AND n.id > m.id)))
+    rb: mem
+  - id: X03
+    construct: dedup
+    text: "Copy the memories of agent 'dave' into MemoryArchive without duplicates: for each combination of kind and content that dave has, copy only the most recent memory (the larger created; if two share it, the larger id), with the same id and values."
+    pg:
+      - |-
+        INSERT INTO "MemoryArchive" (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM (SELECT id, agent, kind, content, importance, created, subject, row_number() OVER (PARTITION BY kind, content ORDER BY created DESC, id DESC) AS rn FROM "Memory" WHERE agent = 'dave') t WHERE rn = 1
+    sql:
+      - |-
+        INSERT INTO MemoryArchive (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM (SELECT id, agent, kind, content, importance, created, subject, row_number() OVER (PARTITION BY kind, content ORDER BY created DESC, id DESC) AS rn FROM Memory WHERE agent = 'dave') t WHERE rn = 1
+    rb: mem
+  - id: X04
+    construct: dedup
+    text: "Set importance to 0 for every memory that has an older twin: another memory with the same agent, kind and content and a smaller id."
+    pg:
+      - |-
+        UPDATE "Memory" m SET importance = 0 WHERE EXISTS (SELECT 1 FROM "Memory" n WHERE n.agent = m.agent AND n.kind = m.kind AND n.content = m.content AND n.id < m.id)
+    sql:
+      - |-
+        UPDATE Memory AS m SET importance = 0 WHERE EXISTS (SELECT 1 FROM Memory AS n WHERE n.agent = m.agent AND n.kind = m.kind AND n.content = m.content AND n.id < m.id)
+    rb: mem
+
+  # ---------------------------------------------------------------- multi-statement transactions (5)
+  - id: T01
+    construct: transaction
+    text: "Move memory 50 into MemoryArchive (same id and values) and delete it from Memory. Either both changes happen or neither: use one transaction."
+    pg:
+      - BEGIN
+      - |-
+        INSERT INTO "MemoryArchive" (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM "Memory" WHERE id = 50
+      - |-
+        DELETE FROM "Memory" WHERE id = 50
+      - COMMIT
+    sql:
+      - BEGIN
+      - |-
+        INSERT INTO MemoryArchive (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM Memory WHERE id = 50
+      - |-
+        DELETE FROM Memory WHERE id = 50
+      - COMMIT
+    rb: mem
+  - id: T02
+    construct: transaction
+    text: "In one transaction, subtract 1 from the importance of memory 62 and add 1 to the importance of memory 63."
+    pg:
+      - BEGIN
+      - |-
+        UPDATE "Memory" SET importance = importance - 1 WHERE id = 62
+      - |-
+        UPDATE "Memory" SET importance = importance + 1 WHERE id = 63
+      - COMMIT
+    sql:
+      - BEGIN
+      - |-
+        UPDATE Memory SET importance = importance - 1 WHERE id = 62
+      - |-
+        UPDATE Memory SET importance = importance + 1 WHERE id = 63
+      - COMMIT
+    rb: mem
+  - id: T03
+    construct: transaction
+    text: "In one transaction, copy every memory of agent 'bob' that was created before 1700001500 into MemoryArchive (same ids and values) and delete those memories from Memory."
+    pg:
+      - BEGIN
+      - |-
+        INSERT INTO "MemoryArchive" (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM "Memory" WHERE agent = 'bob' AND created < 1700001500
+      - |-
+        DELETE FROM "Memory" WHERE agent = 'bob' AND created < 1700001500
+      - COMMIT
+    sql:
+      - BEGIN
+      - |-
+        INSERT INTO MemoryArchive (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM Memory WHERE agent = 'bob' AND created < 1700001500
+      - |-
+        DELETE FROM Memory WHERE agent = 'bob' AND created < 1700001500
+      - COMMIT
+    rb: mem
+  - id: T04
+    construct: transaction
+    text: "Try two changes in a transaction and then roll the transaction back, so that the data stays exactly as it is: insert memory 9100 (agent 'alice', kind 'note', content 'draft', importance 1, created 1700100100) and set the importance of memory 70 to 1."
+    pg:
+      - BEGIN
+      - |-
+        INSERT INTO "Memory" (id, agent, kind, content, importance, created) VALUES (9100, 'alice', 'note', 'draft', 1, 1700100100)
+      - |-
+        UPDATE "Memory" SET importance = 1 WHERE id = 70
+      - ROLLBACK
+    sql:
+      - BEGIN
+      - |-
+        INSERT INTO Memory (id, agent, kind, content, importance, created) VALUES (9100, 'alice', 'note', 'draft', 1, 1700100100)
+      - |-
+        UPDATE Memory SET importance = 1 WHERE id = 70
+      - ROLLBACK
+    rb: mem
+    unchanged: true
+  - id: T05
+    construct: transaction
+    text: "In one transaction, add a new person with id 99999901, first name 'Ada', last name 'Lovelace', gender 'female', birth year 1990 and creation year 2013, and make that person a friend of person 933 since 2013 (store the friendship the way the table stores every friendship)."
+    pg:
+      - BEGIN
+      - |-
+        INSERT INTO "Person" (id, "firstName", "lastName", gender, "birthYear", "creationYear") VALUES (99999901, 'Ada', 'Lovelace', 'female', 1990, 2013)
+      - |-
+        INSERT INTO "KNOWS" (source_id, target_id, "sinceYear") SELECT a.rid, b.rid, 2013 FROM "Person" a, "Person" b WHERE a.id = 933 AND b.id = 99999901
+      - COMMIT
+    sql:
+      - BEGIN
+      - |-
+        INSERT INTO Person (id, first_name, last_name, gender, birth_year, creation_year) VALUES (99999901, 'Ada', 'Lovelace', 'female', 1990, 2013)
+      - |-
+        INSERT INTO Knows (person1_id, person2_id, since_year) VALUES (933, 99999901, 2013)
+      - COMMIT
+    rb: custom
+    rb_pg:
+      - |-
+        SELECT id, "firstName", "lastName", gender, "birthYear", "creationYear" FROM "Person" WHERE id = 99999901
+      - |-
+        SELECT count(*) FROM "Person"
+      - |-
+        SELECT a.id, b.id, k."sinceYear" FROM "KNOWS" k JOIN "Person" a ON a.rid = k.source_id JOIN "Person" b ON b.rid = k.target_id WHERE a.id IN (933, 99999901)
+      - |-
+        SELECT a.id, b.id, k."sinceYear" FROM "KNOWS" k JOIN "Person" a ON a.rid = k.source_id JOIN "Person" b ON b.rid = k.target_id WHERE b.id IN (933, 99999901)
+      - |-
+        SELECT count(*), sum("sinceYear") FROM "KNOWS"
+    rb_sql:
+      - |-
+        SELECT id, first_name, last_name, gender, birth_year, creation_year FROM Person WHERE id = 99999901
+      - |-
+        SELECT count(*) FROM Person
+      - |-
+        SELECT person1_id, person2_id, since_year FROM Knows WHERE person1_id IN (933, 99999901)
+      - |-
+        SELECT person1_id, person2_id, since_year FROM Knows WHERE person2_id IN (933, 99999901)
+      - |-
+        SELECT count(*), sum(since_year) FROM Knows
+
+  # ---------------------------------------------------------------- a join, then an aggregate, then a write (4)
+  - id: J01
+    construct: join_aggregate
+    text: "Find the 3 tags that the most persons are interested in (ties: smaller tag id first) and insert one memory per tag into Memory: id equal to 700000 plus the tag id, agent 'graph', kind 'stat', content the tag name, importance the number of persons interested in the tag, created 1700300000, no subject."
+    pg:
+      - |-
+        INSERT INTO "Memory" (id, agent, kind, content, importance, created) SELECT 700000 + t.id, 'graph', 'stat', t.name, count(*), 1700300000 FROM "HAS_INTEREST" h JOIN "Tag" t ON t.rid = h.target_id GROUP BY t.id, t.name ORDER BY count(*) DESC, t.id LIMIT 3
+    sql:
+      - |-
+        INSERT INTO Memory (id, agent, kind, content, importance, created) SELECT 700000 + t.id, 'graph', 'stat', t.name, count(*), 1700300000 FROM HasInterest h JOIN Tag t ON t.id = h.tag_id GROUP BY t.id, t.name ORDER BY count(*) DESC, t.id LIMIT 3
+    rb: mem
+  - id: J02
+    construct: join_aggregate
+    text: "For every country in which at least 300 persons live (a person lives in a city and a city is part of a country), insert one memory into Memory: id equal to 800000 plus the country id, agent 'graph', kind 'stat', content the country name, importance the number of persons living in the country, created 1700300001, no subject."
+    pg:
+      - |-
+        INSERT INTO "Memory" (id, agent, kind, content, importance, created) SELECT 800000 + co.id, 'graph', 'stat', co.name, count(*), 1700300001 FROM "Person" p JOIN "IS_LOCATED_IN" l ON l.source_id = p.rid JOIN "City" c ON c.rid = l.target_id JOIN "IS_PART_OF" e ON e.source_id = c.rid JOIN "Country" co ON co.rid = e.target_id GROUP BY co.id, co.name HAVING count(*) >= 300
+    sql:
+      - |-
+        INSERT INTO Memory (id, agent, kind, content, importance, created) SELECT 800000 + co.id, 'graph', 'stat', co.name, count(*), 1700300001 FROM Person p JOIN City c ON c.id = p.city_id JOIN Country co ON co.id = c.country_id GROUP BY co.id, co.name HAVING count(*) >= 300
+    rb: mem
+  - id: J03
+    construct: join_aggregate
+    text: "Delete from Memory every memory whose subject is a person who has no friends at all (a person with no row in KNOWS, as either end of a friendship). Memories without a subject stay."
+    pg:
+      - |-
+        DELETE FROM "Memory" WHERE subject IN (SELECT p.id FROM "Person" p WHERE NOT EXISTS (SELECT 1 FROM "KNOWS" k WHERE k.source_id = p.rid OR k.target_id = p.rid))
+    sql:
+      - |-
+        DELETE FROM Memory WHERE subject IN (SELECT p.id FROM Person p WHERE NOT EXISTS (SELECT 1 FROM Knows k WHERE k.person1_id = p.id OR k.person2_id = p.id))
+    rb: mem
+  - id: J04
+    construct: join_aggregate
+    text: "Copy into MemoryArchive (same ids and values) every memory whose subject is a person with at least 60 friends. A friendship counts for both of its persons."
+    pg:
+      - |-
+        INSERT INTO "MemoryArchive" (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM "Memory" WHERE subject IN (SELECT p.id FROM "Person" p JOIN (SELECT source_id AS r FROM "KNOWS" UNION ALL SELECT target_id FROM "KNOWS") f ON f.r = p.rid GROUP BY p.id HAVING count(*) >= 60)
+    sql:
+      - |-
+        INSERT INTO MemoryArchive (id, agent, kind, content, importance, created, subject) SELECT id, agent, kind, content, importance, created, subject FROM Memory WHERE subject IN (SELECT p.id FROM Person p JOIN (SELECT person1_id AS r FROM Knows UNION ALL SELECT person2_id FROM Knows) f ON f.r = p.id GROUP BY p.id HAVING count(*) >= 60)
+    rb: mem

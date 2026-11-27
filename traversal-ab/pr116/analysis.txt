@@ -1,0 +1,13 @@
+jvm            J us     C us     Z us     D us    J/C    Z/C  valid
+jvm1-before    42.58    27.16    27.26    19.27  1.568  1.004  True
+jvm2-after     36.45    27.19    27.24    14.51  1.340  1.002  True
+jvm3-after     36.15    27.29    27.30    14.38  1.325  1.000  True
+jvm4-before    41.45    26.72    26.69    19.00  1.551  0.999  True
+jvm5-before    41.75    27.24    27.19    18.24  1.533  0.998  True
+jvm6-after     36.45    26.82    26.77    14.68  1.359  0.998  True
+jvm7-after     37.80    27.62    27.60    14.41  1.368  0.999  True
+jvm8-before    40.73    26.38    26.36    18.83  1.544  0.999  True
+before  median of 4 JVMs: J 41.60 us, C 26.94 us, D 18.91 us, J/C 1.547
+after   median of 4 JVMs: J 36.45 us, C 27.24 us, D 14.46 us, J/C 1.350
+after/before of J/C 0.872, every after below every before: True
+verdict: helps

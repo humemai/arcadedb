@@ -1,0 +1,23 @@
+versions | ok | sqlalchemy 2.1.9, psycopg 3.3.9
+connect, server version | ok | [12, 0]
+CREATE TABLE inside engine.begin() | error 0A000 | CREATE TABLE inside a transaction block is not supported by the postgresql language, because a rollback would not take it back LINE 1: CREATE TABLE raw_t (id bigint PRIMARY KEY, name text)         ^
+CREATE TABLE with AUTOCOMMIT | ok | "done"
+psycopg.connect() with defaults, CREATE TABLE | error FeatureNotSupported | CREATE TABLE inside a transaction block is not supported by the postgresql language, because a rollback would not take it back LINE 1: CREATE TABLE raw_t3 (id bigint PRIMARY KEY, name text)         ^
+metadata.create_all with a typical model | error 0A000 | CREATE TABLE inside a transaction block is not supported by the postgresql language, because a rollback would not take it back LINE 2: CREATE TABLE orm_account (         ^
+setup u2 | ok | "done"
+setup p2 | ok | "done"
+ORM insert, naive datetime and JSONB | ok | "added"
+ORM insert, aware datetime | error 0A000 | The value of parameter $3 has the unsupported class java.time.ZonedDateTime
+ORM insert, parent with two children | ok | "added"
+select with in_ | ok | [[1, "a@x"], [3, "c@x"]]
+selectinload of a relationship | ok | [[1, []], [3, ["hi", "yo"]]]
+filter on a JSON key | error 0A000 | The operator ->> is not supported by the postgresql language LINE 3: WHERE (u2.meta ->> $1::TEXT) = $2::VARCHAR                        ^
+select(func.now()) | error 0A000 | The function now() is not supported by the postgresql language
+count per user | error 42803 | column "email" must appear in the GROUP BY clause or be used in an aggregate function
+update by primary key | ok | [["a2@x"]]
+select ... with_for_update() | error 0A000 | A locking clause (FOR UPDATE and the others) is not supported by the postgresql language LINE 3: WHERE u2.id = $1::INTEGER FOR UPDATE                                   ^
+begin_nested() around a duplicate, then commit | error 25P02 | current transaction is aborted, commands ignored until end of transaction block
+rows after the nested transaction | ok | []
+inspect the columns | ok | [["id", "BIGINT"], ["email", "TEXT"], ["created_at", "TIMESTAMP"], ["meta", "JSONB"]]
+
+--- stderr ---

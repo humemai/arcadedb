@@ -1,0 +1,157 @@
+# PostgreSQL-dialect gold queries for the 40 questions, over the table view of the prototype (README of this directory).
+# Written BEFORE any model call, from the ANSI SQL golds of the original experiment (questions.yaml, commit ce4ed5e9327f),
+# mapped to the tables the prototype exposes: vertex type = table (id = record id text, id_ = the LDBC id, a declared
+# property named id), edge type = link table (id, source_id, target_id, own properties). A relationship that the ANSI
+# schema had as a column (Person.city_id) is a join through its edge table here.
+# Role: pg_gold_check.py runs every gold on the prototype and compares it with the reference rows of the original
+# experiment (gold_rows.json). A gold that errors or differs is an ENGINE GAP of the phase (reported, never edited
+# silently; the question is still asked and scored against the reference rows). Golds are not shown to any model.
+# `ordered` and the reference rows come from the original questions.yaml / gold_rows.json, not from this file.
+golds:
+  A01: SELECT count(*) AS n FROM "Person"
+  A02: SELECT gender, count(*) AS n FROM "Person" GROUP BY gender ORDER BY gender
+  A03: SELECT count(*) AS n FROM "Person" WHERE gender = 'female' AND "birthYear" >= 1985
+  A04: SELECT avg("birthYear") AS avg_birth_year FROM "Person" WHERE gender = 'male'
+  A05: SELECT "firstName", count(*) AS n FROM "Person" GROUP BY "firstName" ORDER BY n DESC, "firstName" ASC LIMIT 5
+  A06: SELECT "sinceYear" AS yr, count(*) AS n FROM "KNOWS" GROUP BY "sinceYear" ORDER BY yr
+  A07: SELECT count(*) AS n FROM "Person" WHERE "firstName" LIKE 'A%'
+  A08: SELECT min("creationYear") AS first_year, max("creationYear") AS last_year FROM "Person"
+  A09: SELECT count(*) AS n FROM "Forum" WHERE title LIKE 'Album%'
+  A10: SELECT count(*) AS n FROM "Tag" WHERE name LIKE '%The%'
+  B01: >-
+    SELECT c.name AS city, count(*) AS n FROM "Person" p
+    JOIN "IS_LOCATED_IN" l ON l.source_id = p.id JOIN "City" c ON c.id = l.target_id
+    GROUP BY c.name ORDER BY n DESC, city ASC LIMIT 1
+  B02: >-
+    SELECT co.name AS country, count(*) AS n FROM "City" c
+    JOIN "IS_PART_OF" e ON e.source_id = c.id JOIN "Country" co ON co.id = e.target_id
+    GROUP BY co.name ORDER BY n DESC, country ASC LIMIT 5
+  B03: >-
+    SELECT count(*) AS n FROM "Forum" f
+    JOIN "HAS_MODERATOR" m ON m.source_id = f.id JOIN "Person" p ON p.id = m.target_id
+    WHERE p."firstName" = 'Mahinda'
+  B04: >-
+    SELECT p."firstName", p."lastName", count(*) AS n FROM "HAS_MODERATOR" m
+    JOIN "Person" p ON p.id = m.target_id
+    GROUP BY p.id_, p."firstName", p."lastName" ORDER BY n DESC, p.id_ ASC LIMIT 1
+  B05: >-
+    SELECT t.name AS tag, count(*) AS n FROM "HAS_INTEREST" hi
+    JOIN "Tag" t ON t.id = hi.target_id GROUP BY t.name ORDER BY n DESC, tag ASC LIMIT 5
+  B06: >-
+    SELECT count(*) AS n FROM "Tag" t
+    JOIN "HAS_TYPE" ht ON ht.source_id = t.id JOIN "TagClass" tc ON tc.id = ht.target_id
+    WHERE tc.name = 'OfficeHolder'
+  B07: >-
+    SELECT count(*) AS n FROM "Person" p
+    WHERE EXISTS (SELECT 1 FROM "KNOWS" k WHERE k.source_id = p.id OR k.target_id = p.id)
+  B08: >-
+    WITH sym AS (SELECT source_id AS a, target_id AS b FROM "KNOWS" UNION ALL SELECT target_id, source_id FROM "KNOWS")
+    SELECT p."firstName", p."lastName", count(*) AS n FROM sym s JOIN "Person" p ON p.id = s.a
+    GROUP BY p.id_, p."firstName", p."lastName" ORDER BY n DESC, p.id_ ASC LIMIT 3
+  B09: >-
+    SELECT count(*) AS n FROM "Person" p
+    JOIN "IS_LOCATED_IN" l ON l.source_id = p.id JOIN "City" c ON c.id = l.target_id
+    WHERE c.name LIKE 'B%'
+  B10: >-
+    SELECT t.name AS name FROM "Person" p
+    JOIN "HAS_INTEREST" hi ON hi.source_id = p.id JOIN "Tag" t ON t.id = hi.target_id
+    WHERE p.id_ = 933 ORDER BY t.name LIMIT 5
+  C01: >-
+    SELECT co.name AS country, count(*) AS n FROM "Person" p
+    JOIN "IS_LOCATED_IN" l ON l.source_id = p.id JOIN "City" c ON c.id = l.target_id
+    JOIN "IS_PART_OF" e ON e.source_id = c.id JOIN "Country" co ON co.id = e.target_id
+    GROUP BY co.name ORDER BY n DESC, country ASC LIMIT 5
+  C02: >-
+    SELECT count(*) AS n FROM "Person" p
+    JOIN "IS_LOCATED_IN" l ON l.source_id = p.id JOIN "City" c ON c.id = l.target_id
+    JOIN "IS_PART_OF" e ON e.source_id = c.id JOIN "Country" co ON co.id = e.target_id
+    WHERE co.name = 'India' AND p.gender = 'female'
+  C03: >-
+    SELECT count(*) AS n FROM "KNOWS" k
+    JOIN "IS_LOCATED_IN" la ON la.source_id = k.source_id
+    JOIN "IS_LOCATED_IN" lb ON lb.source_id = k.target_id
+    WHERE la.target_id = lb.target_id
+  C04: >-
+    SELECT co.name AS country, count(*) AS n FROM "Forum" f
+    JOIN "HAS_MODERATOR" m ON m.source_id = f.id JOIN "Person" p ON p.id = m.target_id
+    JOIN "IS_LOCATED_IN" l ON l.source_id = p.id JOIN "City" c ON c.id = l.target_id
+    JOIN "IS_PART_OF" e ON e.source_id = c.id JOIN "Country" co ON co.id = e.target_id
+    GROUP BY co.name ORDER BY n DESC, country ASC LIMIT 5
+  C05: >-
+    SELECT t.name AS tag, count(*) AS n FROM "Country" co
+    JOIN "IS_PART_OF" e ON e.target_id = co.id JOIN "City" c ON c.id = e.source_id
+    JOIN "IS_LOCATED_IN" l ON l.target_id = c.id JOIN "Person" p ON p.id = l.source_id
+    JOIN "HAS_INTEREST" hi ON hi.source_id = p.id JOIN "Tag" t ON t.id = hi.target_id
+    WHERE co.name = 'India' GROUP BY t.name ORDER BY n DESC, tag ASC LIMIT 5
+  C06: >-
+    SELECT count(DISTINCT hi.source_id) AS n FROM "HAS_INTEREST" hi
+    JOIN "Tag" t ON t.id = hi.target_id JOIN "HAS_TYPE" ht ON ht.source_id = t.id
+    JOIN "TagClass" tc ON tc.id = ht.target_id WHERE tc.name = 'OfficeHolder'
+  C07: >-
+    SELECT count(*) AS n FROM "KNOWS" k
+    JOIN "Person" a ON a.id = k.source_id JOIN "Person" b ON b.id = k.target_id
+    WHERE a.gender <> b.gender
+  C08: >-
+    SELECT count(*) AS n FROM "KNOWS" k
+    JOIN "IS_LOCATED_IN" la ON la.source_id = k.source_id JOIN "IS_PART_OF" pa ON pa.source_id = la.target_id
+    JOIN "Country" coa ON coa.id = pa.target_id
+    JOIN "IS_LOCATED_IN" lb ON lb.source_id = k.target_id JOIN "IS_PART_OF" pb ON pb.source_id = lb.target_id
+    JOIN "Country" cob ON cob.id = pb.target_id
+    WHERE coa.name = 'India' AND cob.name = 'India'
+  C09: >-
+    WITH sym AS (SELECT source_id AS a, target_id AS b FROM "KNOWS" UNION ALL SELECT target_id, source_id FROM "KNOWS")
+    SELECT t.name AS tag, count(DISTINCT hi.source_id) AS n FROM sym s
+    JOIN "Person" me ON me.id = s.a JOIN "HAS_INTEREST" hi ON hi.source_id = s.b
+    JOIN "Tag" t ON t.id = hi.target_id WHERE me.id_ = 933
+    GROUP BY t.name ORDER BY n DESC, tag ASC LIMIT 5
+  C10: >-
+    SELECT count(*) AS n FROM "Person" p
+    JOIN "IS_LOCATED_IN" lp ON lp.source_id = p.id JOIN "IS_LOCATED_IN" lq ON lq.target_id = lp.target_id
+    WHERE p.id_ = 933 AND lq.source_id <> p.id
+  D01: >-
+    SELECT count(*) AS n FROM "KNOWS" k
+    JOIN "Person" a ON a.id = k.source_id JOIN "Person" b ON b.id = k.target_id
+    WHERE a.id_ = 933 OR b.id_ = 933
+  D02: >-
+    WITH sym AS (SELECT source_id AS a, target_id AS b FROM "KNOWS" UNION ALL SELECT target_id, source_id FROM "KNOWS")
+    SELECT count(DISTINCT s2.b) AS n FROM sym s1 JOIN sym s2 ON s1.b = s2.a
+    JOIN "Person" me ON me.id = s1.a WHERE me.id_ = 933 AND s2.b <> me.id
+  D03: >-
+    WITH sym AS (SELECT source_id AS a, target_id AS b FROM "KNOWS" UNION ALL SELECT target_id, source_id FROM "KNOWS")
+    SELECT count(DISTINCT s2.b) AS n FROM sym s1 JOIN sym s2 ON s1.b = s2.a
+    JOIN "Person" me ON me.id = s1.a
+    WHERE me.id_ = 933 AND s2.b <> me.id AND s2.b NOT IN (SELECT x.b FROM sym x WHERE x.a = me.id)
+  D04: >-
+    SELECT count(*) AS n FROM "KNOWS" k1
+    JOIN "KNOWS" k2 ON k1.target_id = k2.source_id
+    JOIN "KNOWS" k3 ON k3.source_id = k1.source_id AND k3.target_id = k2.target_id
+  D05: >-
+    WITH sym AS (SELECT source_id AS a, target_id AS b FROM "KNOWS" UNION ALL SELECT target_id, source_id FROM "KNOWS")
+    SELECT count(*) AS n FROM sym s
+    JOIN "Person" p ON p.id = s.a JOIN "IS_LOCATED_IN" lp ON lp.source_id = p.id
+    JOIN "IS_PART_OF" ep ON ep.source_id = lp.target_id
+    JOIN "IS_LOCATED_IN" lf ON lf.source_id = s.b JOIN "IS_PART_OF" ef ON ef.source_id = lf.target_id
+    WHERE p.id_ = 933 AND ef.target_id = ep.target_id
+  D06: >-
+    WITH sym AS (SELECT source_id AS a, target_id AS b FROM "KNOWS" UNION ALL SELECT target_id, source_id FROM "KNOWS")
+    SELECT count(*) AS n FROM (SELECT a FROM sym GROUP BY a HAVING count(*) > 50) AS big
+  D07: >-
+    WITH sym AS (SELECT source_id AS a, target_id AS b FROM "KNOWS" UNION ALL SELECT target_id, source_id FROM "KNOWS")
+    SELECT count(DISTINCT s1.b) AS n FROM sym s1 JOIN sym s2 ON s1.b = s2.b
+    JOIN "Person" p1 ON p1.id = s1.a JOIN "Person" p2 ON p2.id = s2.a
+    WHERE p1.id_ = 933 AND p2.id_ = 4139
+  D08: >-
+    SELECT count(*) AS n FROM (SELECT DISTINCT k.source_id, k.target_id FROM "KNOWS" k
+    JOIN "HAS_INTEREST" h1 ON h1.source_id = k.source_id
+    JOIN "HAS_INTEREST" h2 ON h2.source_id = k.target_id AND h2.target_id = h1.target_id) AS shared
+  D09: >-
+    WITH sym AS (SELECT source_id AS a, target_id AS b FROM "KNOWS" UNION ALL SELECT target_id, source_id FROM "KNOWS"),
+    deg AS (SELECT a, count(*) AS d FROM sym GROUP BY a)
+    SELECT p."firstName", p."lastName", deg.d AS d FROM sym s
+    JOIN "Person" me ON me.id = s.a JOIN "Person" p ON p.id = s.b JOIN deg ON deg.a = p.id
+    WHERE me.id_ = 933 ORDER BY d DESC, p.id_ ASC LIMIT 3
+  D10: >-
+    WITH sym AS (SELECT source_id AS a, target_id AS b FROM "KNOWS" UNION ALL SELECT target_id, source_id FROM "KNOWS")
+    SELECT p."firstName", p."lastName", p."birthYear" FROM sym s
+    JOIN "Person" me ON me.id = s.a JOIN "Person" p ON p.id = s.b
+    WHERE me.id_ = 933 ORDER BY p."birthYear" ASC, p.id_ ASC LIMIT 1

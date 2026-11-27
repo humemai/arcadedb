@@ -1,0 +1,54 @@
+pg13 run pg13-main  phase main  rounds measured 5  caps {'lineitem_limit': '0', 'p1_starts': '200', 'person_limit': '0', 'snb_scale': 'sf1', 'tpch_sf': '1'}
+lane {'cpus_allowed_list': '0,2', 'humem_host_cell_class': 'paired_ab', 'humem_host_cpus': '0,2', 'humem_host_lane': 'compare1', 'humem_host_lane_class': 'compare', 'nproc': 20}
+engine {'branch': 'feat/postgresql-prototype', 'build': '132525868a0956b962f60466c5c50b485ee1f308', 'version': '26.12.1-SNAPSHOT (build 132525868a0956b962f60466c5c50b485ee1f308/1795446295906/feat/postgresql-prototype)'}
+load_snb {'endpoints': ['Person', 'Person'], 'knows': 180623, 'knows_streamed': 180623, 'persons': 9892, 'persons_streamed': 9892}
+load_snb_s 3.8974076279992005
+load_tpch {'lineitem': 6001215, 'part': 200000, 'types': ['LineItem', 'Part'], 'writers': 1}
+load_tpch_s 79.5231042450032
+GATES 22: 22 ok, 0 answer failures, 0 other failures
+
+RESULT 3: a join against the traversal (ratio of medians of the mean call time over the measured rounds; arms interleaved)
+p1  one hop from one vertex
+    arm                    median ms    rounds  r1  r2  r3  r4  r5
+    J join, rule on             0.217       5  0.236  0.225  0.217  0.201  0.197
+    C Cypher                    0.049       5  0.071  0.054  0.049  0.048  0.047
+    O join, rule off           58.708       5  57.036  58.930  58.694  58.728  58.708
+    Z Cypher again (A/A)        0.048       5  0.080  0.126  0.047  0.048  0.046
+    J/C 4.453   Z/C (A/A) 0.989   O/J (what the rule is worth) 271.150   O/C 1207.517
+    J/C per round: 3.317  4.176  4.453  4.177  4.185
+    VERDICT p1: OUTSIDE THE RANGE (report with its plan)
+p2  one hop from all vertices, aggregate
+    arm                    median ms    rounds  r1  r2  r3  r4  r5
+    J join, rule on           248.895       5  249.299  248.891  248.895  248.827  249.639
+    C Cypher                   95.911       5  96.071  95.483  95.381  95.911  98.436
+    O join, rule off          103.324       5  101.384  152.319  103.778  102.596  103.324
+    Z Cypher again (A/A)       95.906       5  96.085  95.359  95.391  95.952  95.906
+    J/C 2.595   Z/C (A/A) 1.000   O/J (what the rule is worth) 0.415   O/C 1.077
+    J/C per round: 2.595  2.607  2.609  2.594  2.536
+    VERDICT p2: OUTSIDE THE RANGE (report with its plan)
+p3  one hop, LEFT JOIN
+    arm                    median ms    rounds  r1  r2  r3  r4  r5
+    J join, rule on           250.361       5  247.091  257.496  250.361  250.197  251.088
+    C Cypher                  194.061       5  192.901  194.061  218.405  193.561  194.788
+    O join, rule off          226.159       5  218.533  229.614  232.530  222.005  226.159
+    Z Cypher again (A/A)      193.829       5  191.597  193.070  193.829  213.484  193.873
+    J/C 1.290   Z/C (A/A) 0.999   O/J (what the rule is worth) 0.903   O/C 1.165
+    J/C per round: 1.281  1.327  1.146  1.293  1.289
+    VERDICT p3: IN THE RANGE
+
+RESULTS 1 and 2: the four TPC-H statements unchanged, and the parity of their answers
+query  answer vs PostgreSQL 18   prototype median ms (min .. max)   PostgreSQL 18 median ms   prototype / PostgreSQL 18 (a reference point)
+q1     equal                     7,599.843 (7,423.727 .. 7,841.021) n=5   1,113.454   6.83
+q6     equal                     5,800.421 (5,690.168 .. 5,838.225) n=5   464.118   12.50
+q14    equal                     6,032.760 (5,901.733 .. 6,152.601) n=5   196.635   30.68
+q19    equal                     6,143.112 (6,102.038 .. 6,154.914) n=5   570.948   10.76
+
+every comparison outside 0.90 .. 1.10, whatever its verdict (the control-rows rule); O/J and O/C show the rule's own effect
+  p1 J/C = 4.453
+  p1 O/J = 271.150
+  p1 O/C = 1207.517
+  p2 J/C = 2.595
+  p2 O/J = 0.415
+  p3 J/C = 1.290
+  p3 O/C = 1.165
+READER STATUS 0 (0 read, 3 an A/A control out of band, 4 a gate failed, 6 an answer differed)

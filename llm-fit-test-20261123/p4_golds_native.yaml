@@ -1,0 +1,314 @@
+# Phase 4 gold statements in ArcadeDB native SQL (sql) and openCypher run by ArcadeDB (cypher), for the 40 tasks of p3_questions.yaml.
+# Each statement is run by db.command("sql" | "opencypher", s), one by one. Verified against the PostgreSQL 18 reference state by check_native_golds.py (its verdict file and that script are not in this record).
+
+U01:
+  sql:
+    - |-
+      UPDATE Memory SET id = 9001, agent = ifnull(agent, 'alice'), kind = ifnull(kind, 'fact'), created = ifnull(created, 1700100000), content = 'likes tea', importance = 4 UPSERT WHERE id = 9001
+  cypher:
+    - |-
+      MERGE (m:Memory {id: 9001}) ON CREATE SET m.agent = 'alice', m.kind = 'fact', m.created = 1700100000 SET m.content = 'likes tea', m.importance = 4
+U02:
+  sql:
+    - |-
+      UPDATE Memory SET id = 17, agent = ifnull(agent, 'alice'), kind = ifnull(kind, 'fact'), created = ifnull(created, 1700100001), content = 'prefers coffee', importance = 5 UPSERT WHERE id = 17
+  cypher:
+    - |-
+      MERGE (m:Memory {id: 17}) ON CREATE SET m.agent = 'alice', m.kind = 'fact', m.created = 1700100001 SET m.content = 'prefers coffee', m.importance = 5
+U03:
+  sql:
+    - |-
+      INSERT INTO Memory SET id = 18, agent = 'bob', kind = 'note', content = 'overwritten', importance = 1, created = 1700100002 ON DUPLICATE KEY SKIP
+  cypher:
+    - |-
+      MERGE (m:Memory {id: 18}) ON CREATE SET m.agent = 'bob', m.kind = 'note', m.content = 'overwritten', m.importance = 1, m.created = 1700100002
+# author note: sql is null because the task says 'in one statement'. A 3-statement script (one UPDATE ... SET id = X, agent = ifnull(agent, ...), ..., content = ... UPSERT WHERE id = X per id) was run and its
+# state equals the reference (key U04@alt3 of check_native_golds.py run, explore3.yaml).
+U04:
+  sql: null
+  sql_null_reason: "language: no multi-row upsert that updates on conflict in ONE statement (INSERT has only ON DUPLICATE KEY SKIP, UPDATE ... UPSERT takes one WHERE key); a script of three UPDATE ... UPSERT statements gives the reference state but breaks 'in one statement'"
+  cypher:
+    - |-
+      UNWIND [{id: 19, content: 'm19'}, {id: 9002, content: 'm9002'}, {id: 9003, content: 'm9003'}] AS r MERGE (m:Memory {id: r.id}) ON CREATE SET m.agent = 'carol', m.kind = 'event', m.importance = 2, m.created = 1700100003 SET m.content = r.content
+# author note: sql is null because the task says 'in one statement'. A 2-statement script (UPDATE Memory SET importance = importance + 1 WHERE id IN [23, 24] AND importance < 5, then INSERT ... VALUES ... ON DUPLICATE KEY SKIP)
+# was run and its state equals the reference (key U05@alt2, explore3.yaml).
+U05:
+  sql: null
+  sql_null_reason: "language: no multi-row upsert with a capped increment in ONE statement (INSERT has only ON DUPLICATE KEY SKIP, UPDATE ... UPSERT takes one WHERE key); a script of an UPDATE ... WHERE id IN then INSERT ... ON DUPLICATE KEY SKIP gives the reference state but breaks 'in one statement'"
+  cypher:
+    - |-
+      UNWIND [23, 24] AS i MERGE (m:Memory {id: i}) ON CREATE SET m.agent = 'dave', m.kind = 'event', m.content = 'recalled', m.importance = 1, m.created = 1700100004 ON MATCH SET m.importance = CASE WHEN m.importance < 5 THEN m.importance + 1 ELSE m.importance END
+W01:
+  sql:
+    - |-
+      UPDATE Memory SET importance = 2 WHERE id = 31
+  cypher:
+    - |-
+      MATCH (m:Memory {id: 31}) SET m.importance = 2
+W02:
+  sql:
+    - |-
+      UPDATE Memory SET importance = importance + 1 WHERE agent = 'bob' AND kind = 'note'
+  cypher:
+    - |-
+      MATCH (m:Memory {agent: 'bob', kind: 'note'}) SET m.importance = m.importance + 1
+W03:
+  sql:
+    - |-
+      DELETE FROM Memory WHERE id = 40
+  cypher:
+    - |-
+      MATCH (m:Memory {id: 40}) DELETE m
+W04:
+  sql:
+    - |-
+      DELETE FROM Memory WHERE created < 1700003000
+  cypher:
+    - |-
+      MATCH (m:Memory) WHERE m.created < 1700003000 DELETE m
+W05:
+  sql:
+    - |-
+      UPDATE Memory SET importance = (SELECT importance FROM MemoryArchive WHERE content = $parent.$current.content)[0].importance WHERE content IN (SELECT content FROM MemoryArchive)
+  cypher:
+    - |-
+      MATCH (m:Memory), (a:MemoryArchive) WHERE m.content = a.content SET m.importance = a.importance
+W06:
+  sql:
+    - |-
+      DELETE FROM Memory WHERE content IN (SELECT content FROM MemoryArchive)
+  cypher:
+    - |-
+      MATCH (m:Memory) WHERE EXISTS { MATCH (a:MemoryArchive) WHERE a.content = m.content } DELETE m
+E01:
+  sql:
+    - |-
+      CREATE EDGE KNOWS FROM (SELECT FROM Person WHERE id = 65) TO (SELECT FROM Person WHERE id = 933) SET sinceYear = 2013
+  cypher:
+    - |-
+      MATCH (a:Person {id: 65}), (b:Person {id: 933}) CREATE (a)-[:KNOWS {sinceYear: 2013}]->(b)
+E02:
+  sql:
+    - |-
+      CREATE EDGE HAS_INTEREST FROM (SELECT FROM Person WHERE id = 933) TO (SELECT FROM Tag WHERE name = 'Rumi')
+  cypher:
+    - |-
+      MATCH (p:Person {id: 933}), (t:Tag {name: 'Rumi'}) CREATE (p)-[:HAS_INTEREST]->(t)
+E03:
+  sql:
+    - |-
+      DELETE FROM KNOWS WHERE (out.id = 933 AND in.id = 4139) OR (out.id = 4139 AND in.id = 933)
+  cypher:
+    - |-
+      MATCH (:Person {id: 933})-[k:KNOWS]-(:Person {id: 4139}) DELETE k
+E04:
+  sql:
+    - |-
+      UPDATE KNOWS SET sinceYear = 2015 WHERE (out.id = 933 AND in.id = 6597069777240) OR (out.id = 6597069777240 AND in.id = 933)
+  cypher:
+    - |-
+      MATCH (:Person {id: 933})-[k:KNOWS]-(:Person {id: 6597069777240}) SET k.sinceYear = 2015
+E05:
+  sql:
+    - |-
+      CREATE EDGE HAS_INTEREST FROM (SELECT FROM Person WHERE birthYear = 1990 AND NOT (out('HAS_INTEREST').name CONTAINS 'Rumi')) TO (SELECT FROM Tag WHERE name = 'Rumi')
+  cypher:
+    - |-
+      MATCH (t:Tag {name: 'Rumi'}), (p:Person {birthYear: 1990}) WHERE NOT (p)-[:HAS_INTEREST]->(t) CREATE (p)-[:HAS_INTEREST]->(t)
+I01:
+  sql:
+    - |-
+      INSERT INTO MemoryArchive FROM SELECT id, agent, kind, content, importance, created, subject FROM Memory WHERE agent = 'alice' AND importance >= 4
+  cypher:
+    - |-
+      MATCH (m:Memory) WHERE m.agent = 'alice' AND m.importance >= 4 CREATE (:MemoryArchive {id: m.id, agent: m.agent, kind: m.kind, content: m.content, importance: m.importance, created: m.created, subject: m.subject})
+I02:
+  sql:
+    - |-
+      INSERT INTO MemoryArchive FROM SELECT id, agent, kind, content, 1 AS importance, created, subject FROM Memory WHERE agent = 'dave' AND created < 1700001200
+  cypher:
+    - |-
+      MATCH (m:Memory) WHERE m.agent = 'dave' AND m.created < 1700001200 CREATE (:MemoryArchive {id: m.id, agent: m.agent, kind: m.kind, content: m.content, importance: 1, created: m.created, subject: m.subject})
+I03:
+  sql:
+    - |-
+      INSERT INTO Memory FROM SELECT id AS subject, id + 1000000 AS id, 'graph' AS agent, 'fact' AS kind, firstName + ' ' + lastName AS content, 3 AS importance, 1700200000 AS created FROM (SELECT expand(in('HAS_INTEREST')) FROM Tag WHERE name = 'Rumi') WHERE birthYear < 1982
+  cypher:
+    - |-
+      MATCH (p:Person)-[:HAS_INTEREST]->(:Tag {name: 'Rumi'}) WHERE p.birthYear < 1982 CREATE (:Memory {id: p.id + 1000000, agent: 'graph', kind: 'fact', content: p.firstName + ' ' + p.lastName, importance: 3, created: 1700200000, subject: p.id})
+L01:
+  sql:
+    - |-
+      INSERT INTO MemoryArchive FROM SELECT id, agent, kind, content, importance, created, subject FROM Memory WHERE (SELECT count(*) AS c FROM Memory WHERE agent = $parent.$current.agent AND (created > $parent.$current.created OR (created = $parent.$current.created AND id > $parent.$current.id)))[0].c = 0
+  cypher:
+    - |-
+      MATCH (m:Memory) WITH m ORDER BY m.created DESC, m.id DESC WITH m.agent AS agent, collect(m) AS ms WITH ms[0] AS m CREATE (:MemoryArchive {id: m.id, agent: m.agent, kind: m.kind, content: m.content, importance: m.importance, created: m.created, subject: m.subject})
+L02:
+  sql:
+    - |-
+      INSERT INTO MemoryArchive FROM SELECT id, agent, kind, content, importance, created, subject FROM Memory WHERE (SELECT count(*) AS c FROM Memory WHERE agent = $parent.$current.agent AND kind = $parent.$current.kind AND (created > $parent.$current.created OR (created = $parent.$current.created AND id > $parent.$current.id)))[0].c < 2
+  cypher:
+    - |-
+      MATCH (m:Memory) WITH m ORDER BY m.created DESC, m.id DESC WITH m.agent AS agent, m.kind AS kind, collect(m) AS ms UNWIND ms[0..2] AS m CREATE (:MemoryArchive {id: m.id, agent: m.agent, kind: m.kind, content: m.content, importance: m.importance, created: m.created, subject: m.subject})
+L03:
+  sql:
+    - |-
+      DELETE FROM Memory WHERE (SELECT count(*) AS c FROM Memory WHERE agent = $parent.$current.agent AND (created > $parent.$current.created OR (created = $parent.$current.created AND id > $parent.$current.id)))[0].c >= 3
+  cypher:
+    - |-
+      MATCH (m:Memory) WITH m ORDER BY m.created DESC, m.id DESC WITH m.agent AS agent, collect(m) AS ms UNWIND ms[3..] AS d DELETE d
+L04:
+  sql:
+    - |-
+      UPDATE Memory SET importance = 5 WHERE (SELECT count(*) AS c FROM Memory WHERE kind = $parent.$current.kind AND (created > $parent.$current.created OR (created = $parent.$current.created AND id > $parent.$current.id)))[0].c = 0
+  cypher:
+    - |-
+      MATCH (m:Memory) WITH m ORDER BY m.created DESC, m.id DESC WITH m.kind AS kind, collect(m)[0] AS top SET top.importance = 5
+R01:
+  sql:
+    - |-
+      INSERT INTO MemoryArchive FROM SELECT id, agent, kind, content, (SELECT sum(importance) AS s FROM Memory WHERE agent = 'carol' AND (created < $parent.$current.created OR (created = $parent.$current.created AND id <= $parent.$current.id)))[0].s AS importance, created, subject FROM Memory WHERE agent = 'carol'
+  cypher:
+    - |-
+      MATCH (m:Memory {agent: 'carol'}), (n:Memory {agent: 'carol'}) WHERE n.created < m.created OR (n.created = m.created AND n.id <= m.id) WITH m, sum(n.importance) AS run CREATE (:MemoryArchive {id: m.id, agent: m.agent, kind: m.kind, content: m.content, importance: run, created: m.created, subject: m.subject})
+R02:
+  sql:
+    - |-
+      INSERT INTO MemoryArchive FROM SELECT id, agent, kind, content, (SELECT count(*) + 1 AS r FROM Memory WHERE kind = 'event' AND agent = $parent.$current.agent AND importance > $parent.$current.importance)[0].r AS importance, created, subject FROM Memory WHERE kind = 'event'
+  cypher:
+    - |-
+      MATCH (m:Memory {kind: 'event'}) OPTIONAL MATCH (n:Memory {kind: 'event'}) WHERE n.agent = m.agent AND n.importance > m.importance WITH m, count(n) + 1 AS rk CREATE (:MemoryArchive {id: m.id, agent: m.agent, kind: m.kind, content: m.content, importance: rk, created: m.created, subject: m.subject})
+R03:
+  sql:
+    - |-
+      INSERT INTO MemoryArchive FROM SELECT id, agent, kind, content, created - ifnull((SELECT max(created) AS p FROM Memory WHERE agent = 'alice' AND (created < $parent.$current.created OR (created = $parent.$current.created AND id < $parent.$current.id)))[0].p, created) AS importance, created, subject FROM Memory WHERE agent = 'alice'
+  cypher:
+    - |-
+      MATCH (m:Memory {agent: 'alice'}) OPTIONAL MATCH (n:Memory {agent: 'alice'}) WHERE n.created < m.created OR (n.created = m.created AND n.id < m.id) WITH m, max(n.created) AS prev CREATE (:MemoryArchive {id: m.id, agent: m.agent, kind: m.kind, content: m.content, importance: m.created - coalesce(prev, m.created), created: m.created, subject: m.subject})
+R04:
+  sql:
+    - |-
+      UPDATE Memory SET importance = (SELECT count(*) AS c FROM Memory WHERE agent = 'dave' AND created <= $parent.$current.created)[0].c WHERE agent = 'dave'
+  cypher:
+    - |-
+      MATCH (m:Memory {agent: 'dave'}), (n:Memory {agent: 'dave'}) WHERE n.created <= m.created WITH m, count(n) AS c SET m.importance = c
+X01:
+  sql:
+    - |-
+      DELETE FROM Memory WHERE id NOT IN (SELECT min(id) FROM Memory GROUP BY agent, kind, content)
+  cypher:
+    - |-
+      MATCH (m:Memory), (n:Memory) WHERE n.agent = m.agent AND n.kind = m.kind AND n.content = m.content AND n.id < m.id WITH DISTINCT m DELETE m
+X02:
+  sql:
+    - |-
+      DELETE FROM Memory WHERE (SELECT count(*) AS c FROM Memory WHERE agent = $parent.$current.agent AND kind = $parent.$current.kind AND content = $parent.$current.content AND (created > $parent.$current.created OR (created = $parent.$current.created AND id > $parent.$current.id)))[0].c > 0
+  cypher:
+    - |-
+      MATCH (m:Memory), (n:Memory) WHERE n.agent = m.agent AND n.kind = m.kind AND n.content = m.content AND (n.created > m.created OR (n.created = m.created AND n.id > m.id)) WITH DISTINCT m DELETE m
+X03:
+  sql:
+    - |-
+      INSERT INTO MemoryArchive FROM SELECT id, agent, kind, content, importance, created, subject FROM Memory WHERE agent = 'dave' AND (SELECT count(*) AS c FROM Memory WHERE agent = 'dave' AND kind = $parent.$current.kind AND content = $parent.$current.content AND (created > $parent.$current.created OR (created = $parent.$current.created AND id > $parent.$current.id)))[0].c = 0
+  cypher:
+    - |-
+      MATCH (m:Memory {agent: 'dave'}) OPTIONAL MATCH (n:Memory {agent: 'dave'}) WHERE n.kind = m.kind AND n.content = m.content AND (n.created > m.created OR (n.created = m.created AND n.id > m.id)) WITH m, count(n) AS better WHERE better = 0 CREATE (:MemoryArchive {id: m.id, agent: m.agent, kind: m.kind, content: m.content, importance: m.importance, created: m.created, subject: m.subject})
+X04:
+  sql:
+    - |-
+      UPDATE Memory SET importance = 0 WHERE (SELECT count(*) AS c FROM Memory WHERE agent = $parent.$current.agent AND kind = $parent.$current.kind AND content = $parent.$current.content AND id < $parent.$current.id)[0].c > 0
+  cypher:
+    - |-
+      MATCH (m:Memory), (n:Memory) WHERE n.agent = m.agent AND n.kind = m.kind AND n.content = m.content AND n.id < m.id WITH DISTINCT m SET m.importance = 0
+T01:
+  sql:
+    - |-
+      BEGIN
+    - |-
+      INSERT INTO MemoryArchive FROM SELECT id, agent, kind, content, importance, created, subject FROM Memory WHERE id = 50
+    - |-
+      DELETE FROM Memory WHERE id = 50
+    - |-
+      COMMIT
+  cypher:
+    - |-
+      MATCH (m:Memory {id: 50}) CREATE (:MemoryArchive {id: m.id, agent: m.agent, kind: m.kind, content: m.content, importance: m.importance, created: m.created, subject: m.subject}) WITH m DELETE m
+T02:
+  sql:
+    - |-
+      BEGIN
+    - |-
+      UPDATE Memory SET importance = importance - 1 WHERE id = 62
+    - |-
+      UPDATE Memory SET importance = importance + 1 WHERE id = 63
+    - |-
+      COMMIT
+  cypher:
+    - |-
+      MATCH (a:Memory {id: 62}), (b:Memory {id: 63}) SET a.importance = a.importance - 1, b.importance = b.importance + 1
+T03:
+  sql:
+    - |-
+      BEGIN
+    - |-
+      INSERT INTO MemoryArchive FROM SELECT id, agent, kind, content, importance, created, subject FROM Memory WHERE agent = 'bob' AND created < 1700001500
+    - |-
+      DELETE FROM Memory WHERE agent = 'bob' AND created < 1700001500
+    - |-
+      COMMIT
+  cypher:
+    - |-
+      MATCH (m:Memory) WHERE m.agent = 'bob' AND m.created < 1700001500 CREATE (:MemoryArchive {id: m.id, agent: m.agent, kind: m.kind, content: m.content, importance: m.importance, created: m.created, subject: m.subject}) WITH m DELETE m
+T04:
+  sql:
+    - |-
+      BEGIN
+    - |-
+      INSERT INTO Memory SET id = 9100, agent = 'alice', kind = 'note', content = 'draft', importance = 1, created = 1700100100
+    - |-
+      UPDATE Memory SET importance = 1 WHERE id = 70
+    - |-
+      ROLLBACK
+  cypher: null
+  cypher_null_reason: "language: openCypher has no ROLLBACK or BEGIN statement, so a transaction cannot be opened and rolled back from a statement list"
+T05:
+  sql:
+    - |-
+      BEGIN
+    - |-
+      INSERT INTO Person SET id = 99999901, firstName = 'Ada', lastName = 'Lovelace', gender = 'female', birthYear = 1990, creationYear = 2013
+    - |-
+      CREATE EDGE KNOWS FROM (SELECT FROM Person WHERE id = 933) TO (SELECT FROM Person WHERE id = 99999901) SET sinceYear = 2013
+    - |-
+      COMMIT
+  cypher:
+    - |-
+      MATCH (b:Person {id: 933}) CREATE (b)-[:KNOWS {sinceYear: 2013}]->(:Person {id: 99999901, firstName: 'Ada', lastName: 'Lovelace', gender: 'female', birthYear: 1990, creationYear: 2013})
+J01:
+  sql:
+    - |-
+      INSERT INTO Memory FROM SELECT 700000 + id AS id, 'graph' AS agent, 'stat' AS kind, name AS content, inE('HAS_INTEREST').size() AS importance, 1700300000 AS created FROM Tag ORDER BY importance DESC, id LIMIT 3
+  cypher:
+    - |-
+      MATCH (p:Person)-[:HAS_INTEREST]->(t:Tag) WITH t, count(p) AS n ORDER BY n DESC, t.id LIMIT 3 CREATE (:Memory {id: 700000 + t.id, agent: 'graph', kind: 'stat', content: t.name, importance: n, created: 1700300000})
+J02:
+  sql:
+    - |-
+      INSERT INTO Memory FROM SELECT 800000 + id AS id, 'graph' AS agent, 'stat' AS kind, name AS content, n AS importance, 1700300001 AS created FROM (SELECT id, name, in('IS_PART_OF').in('IS_LOCATED_IN').size() AS n FROM Country) WHERE n >= 300
+  cypher:
+    - |-
+      MATCH (p:Person)-[:IS_LOCATED_IN]->(:City)-[:IS_PART_OF]->(co:Country) WITH co, count(p) AS n WHERE n >= 300 CREATE (:Memory {id: 800000 + co.id, agent: 'graph', kind: 'stat', content: co.name, importance: n, created: 1700300001})
+J03:
+  sql:
+    - |-
+      DELETE FROM Memory WHERE subject IN (SELECT id FROM Person WHERE bothE('KNOWS').size() = 0)
+  cypher:
+    - |-
+      MATCH (m:Memory) WHERE m.subject IS NOT NULL MATCH (p:Person {id: m.subject}) WHERE NOT (p)-[:KNOWS]-() DELETE m
+J04:
+  sql:
+    - |-
+      INSERT INTO MemoryArchive FROM SELECT id, agent, kind, content, importance, created, subject FROM Memory WHERE subject IN (SELECT id FROM Person WHERE bothE('KNOWS').size() >= 60)
+  cypher:
+    - |-
+      MATCH (m:Memory) MATCH (p:Person {id: m.subject})-[k:KNOWS]-() WITH m, p, count(k) AS f WHERE f >= 60 CREATE (:MemoryArchive {id: m.id, agent: m.agent, kind: m.kind, content: m.content, importance: m.importance, created: m.created, subject: m.subject})

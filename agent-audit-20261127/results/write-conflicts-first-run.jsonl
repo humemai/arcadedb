@@ -1,0 +1,25 @@
+{"side":"pg","step":"create","result":{"ok":true,"count":0}}
+{"side":"pg","step":"insert","result":{"ok":true,"count":2}}
+{"side":"pg","step":"A BEGIN","result":{"ok":true,"count":0}}
+{"side":"pg","step":"B BEGIN","result":{"ok":true,"count":0}}
+{"side":"pg","step":"A UPDATE","result":{"ok":true,"count":1}}
+{"side":"pg","step":"B UPDATE waits while A is open","result":{"ok":true}}
+{"side":"pg","step":"A COMMIT","result":{"ok":true,"count":0}}
+{"side":"pg","step":"B UPDATE returned after A committed","result":{"ok":true,"count":1}}
+{"side":"pg","step":"B COMMIT","result":{"ok":true,"count":0}}
+{"side":"pg","step":"balance","result":{"ok":true,"columns":["bal"],"types":["int4"],"rows":[["70"]],"count":1}}
+{"side":"pg","step":"autocommit increments of session 1","result":{"ok":true,"succeeded":200,"errors":{},"firstError":null}}
+{"side":"pg","step":"autocommit increments of session 2","result":{"ok":true,"succeeded":200,"errors":{},"firstError":null}}
+{"side":"pg","step":"counter","result":{"ok":true,"columns":["bal"],"types":["int4"],"rows":[["400"]],"count":1}}
+{"side":"arc","step":"create","result":{"ok":true,"count":0}}
+{"side":"arc","step":"insert","result":{"ok":true,"count":2}}
+{"side":"arc","step":"A BEGIN","result":{"ok":true,"count":0}}
+{"side":"arc","step":"B BEGIN","result":{"ok":true,"count":0}}
+{"side":"arc","step":"A UPDATE","result":{"ok":true,"count":1}}
+{"side":"arc","step":"B UPDATE returned while A is open","result":{"ok":true,"count":1}}
+{"side":"arc","step":"A COMMIT","result":{"ok":true,"count":0}}
+{"side":"arc","step":"B COMMIT","result":{"ok":false,"state":"40001","message":"ERROR: Error on executing query: Record #1:0 was modified by a concurrent transaction. Please retry the operation","text":"Error on executing query: Record #1:0 was modified by a concurrent transaction. Please retry the operation","detail":null,"hint":null,"position":0}}
+{"side":"arc","step":"balance","result":{"ok":true,"columns":["bal"],"types":["int4"],"rows":[["90"]],"count":1}}
+{"side":"arc","step":"autocommit increments of session 1","result":{"ok":true,"succeeded":128,"errors":{"40001":72},"firstError":"ERROR: Error on committing transaction: Record #4:0 was modified by a concurrent transaction. Please retry the operation"}}
+{"side":"arc","step":"autocommit increments of session 2","result":{"ok":true,"succeeded":110,"errors":{"40001":90},"firstError":"ERROR: Error on committing transaction: Record #4:0 was modified by a concurrent transaction. Please retry the operation"}}
+{"side":"arc","step":"counter","result":{"ok":true,"columns":["bal"],"types":["int4"],"rows":[["238"]],"count":1}}

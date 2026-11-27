@@ -1,0 +1,1038 @@
+[
+ {
+  "id": "R1",
+  "family": "remember",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Store a memory with content \"Carol booked the Osaka flights\", kind \"event\", importance 4, created 2026-07-01, filed under the topic travel and mentioning Carol.",
+    "answer": null,
+    "ops": [
+     [
+      "add",
+      "Memory",
+      {
+       "id": 121,
+       "content": "Carol booked the Osaka flights",
+       "kind": "event",
+       "importance": 4,
+       "created": "2026-07-01"
+      }
+     ],
+     [
+      "link",
+      "ABOUT",
+      121,
+      1
+     ],
+     [
+      "link",
+      "MENTIONS",
+      121,
+      3
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "8a0a1e5a933610956307447a2515e1fa2722295f158b61d6409681f8f25b8e07"
+ },
+ {
+  "id": "R2",
+  "family": "remember",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Store two new memories, in this order. First: content \"Lena prefers window seats\", kind \"preference\", importance 3, created 2026-07-02, filed under travel, mentioning Lena. Second: content \"Renew the gym membership\", kind \"plan\", importance 5, created 2026-07-03, filed under health, mentioning nobody.",
+    "answer": null,
+    "ops": [
+     [
+      "add",
+      "Memory",
+      {
+       "id": 121,
+       "content": "Lena prefers window seats",
+       "kind": "preference",
+       "importance": 3,
+       "created": "2026-07-02"
+      }
+     ],
+     [
+      "link",
+      "ABOUT",
+      121,
+      1
+     ],
+     [
+      "link",
+      "MENTIONS",
+      121,
+      12
+     ],
+     [
+      "add",
+      "Memory",
+      {
+       "id": 122,
+       "content": "Renew the gym membership",
+       "kind": "plan",
+       "importance": 5,
+       "created": "2026-07-03"
+      }
+     ],
+     [
+      "link",
+      "ABOUT",
+      122,
+      2
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "2da235c312d9c457fc84ccca89a9df3b61f39f80dbae5009de04c3c4e6859c33"
+ },
+ {
+  "id": "R3",
+  "family": "remember",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Store a memory: content \"Bob and Eve discussed the Lisbon conference\", kind \"event\", importance 2, created 2026-07-04, filed under work, mentioning Bob and Eve.",
+    "answer": null,
+    "ops": [
+     [
+      "add",
+      "Memory",
+      {
+       "id": 121,
+       "content": "Bob and Eve discussed the Lisbon conference",
+       "kind": "event",
+       "importance": 2,
+       "created": "2026-07-04"
+      }
+     ],
+     [
+      "link",
+      "ABOUT",
+      121,
+      3
+     ],
+     [
+      "link",
+      "MENTIONS",
+      121,
+      2
+     ],
+     [
+      "link",
+      "MENTIONS",
+      121,
+      5
+     ]
+    ]
+   },
+   {
+    "text": "You have no memory of earlier sessions. Some time ago a memory about Bob, Eve and the Lisbon conference was stored. Raise its importance to 4 and also file it under travel (keep its other links).",
+    "answer": null,
+    "ops": [
+     [
+      "set",
+      "Memory",
+      121,
+      {
+       "importance": 4
+      }
+     ],
+     [
+      "link",
+      "ABOUT",
+      121,
+      1
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "640f2b33aaffb54db12f699d4a624c7baf413cca6b249a020489e6c5640f2368"
+ },
+ {
+  "id": "R4",
+  "family": "remember",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Add a new person to the memory with name \"Mira\" and role \"friend\". Then store a memory with content \"Mira lives next to the old harbour\", kind \"note\", importance 2, created 2026-07-05, filed under home and mentioning Mira.",
+    "answer": null,
+    "ops": [
+     [
+      "add",
+      "Person",
+      {
+       "id": 13,
+       "name": "Mira",
+       "role": "friend"
+      }
+     ],
+     [
+      "add",
+      "Memory",
+      {
+       "id": 121,
+       "content": "Mira lives next to the old harbour",
+       "kind": "note",
+       "importance": 2,
+       "created": "2026-07-05"
+      }
+     ],
+     [
+      "link",
+      "ABOUT",
+      121,
+      6
+     ],
+     [
+      "link",
+      "MENTIONS",
+      121,
+      13
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "36ad551127a6e7d68fdd635bcfd9bdb518931098dd659a20f6431c7420d38616"
+ },
+ {
+  "id": "R5",
+  "family": "remember",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Add a new topic called \"gardening\".",
+    "answer": null,
+    "ops": [
+     [
+      "add",
+      "Topic",
+      {
+       "id": 9,
+       "name": "gardening"
+      }
+     ]
+    ]
+   },
+   {
+    "text": "You have no memory of earlier sessions. Store two memories, in this order, both filed under the topic gardening and mentioning nobody: \"Plant the tomatoes in May\" (kind \"plan\", importance 3, created 2026-07-06) and \"Buy compost in April\" (kind \"plan\", importance 2, created 2026-07-07).",
+    "answer": null,
+    "ops": [
+     [
+      "add",
+      "Memory",
+      {
+       "id": 121,
+       "content": "Plant the tomatoes in May",
+       "kind": "plan",
+       "importance": 3,
+       "created": "2026-07-06"
+      }
+     ],
+     [
+      "link",
+      "ABOUT",
+      121,
+      9
+     ],
+     [
+      "add",
+      "Memory",
+      {
+       "id": 122,
+       "content": "Buy compost in April",
+       "kind": "plan",
+       "importance": 2,
+       "created": "2026-07-07"
+      }
+     ],
+     [
+      "link",
+      "ABOUT",
+      122,
+      9
+     ]
+    ]
+   },
+   {
+    "text": "You have no memory of earlier sessions. How many memories are filed under the topic gardening? Give the answer as a single integer; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "int",
+     2
+    ],
+    "ops": []
+   }
+  ],
+  "final_state_sha256": "b604d30c94f1ac0065284692474ca7f0fd8c560472f948509be88eab5cca0ea0"
+ },
+ {
+  "id": "Q1",
+  "family": "recall",
+  "read_only": true,
+  "sessions": [
+   {
+    "text": "What are the three most recent memories (by created date) filed under the topic travel? Give their ids, newest first. Give the answer as values separated by commas, in the order asked; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "list",
+     [
+      24,
+      67,
+      87
+     ]
+    ],
+    "ops": []
+   }
+  ],
+  "final_state_sha256": "baf6a5be8b327d4f562b9f15ff454f408e1a9e8d10e0b4fd83aa611b87074716"
+ },
+ {
+  "id": "Q2",
+  "family": "recall",
+  "read_only": true,
+  "sessions": [
+   {
+    "text": "Which memories that mention Bob have importance 4 or 5? Give their ids. Give the answer as names or numbers separated by commas, in any order; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "set",
+     [
+      22,
+      24,
+      47,
+      49,
+      51,
+      96
+     ]
+    ],
+    "ops": []
+   }
+  ],
+  "final_state_sha256": "baf6a5be8b327d4f562b9f15ff454f408e1a9e8d10e0b4fd83aa611b87074716"
+ },
+ {
+  "id": "Q3",
+  "family": "recall",
+  "read_only": true,
+  "sessions": [
+   {
+    "text": "Under which topics are the memories that mention Alice filed? Give the topic names. Give the answer as names or numbers separated by commas, in any order; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "set",
+     [
+      "books",
+      "food",
+      "home",
+      "job",
+      "travel",
+      "work"
+     ]
+    ],
+    "ops": []
+   }
+  ],
+  "final_state_sha256": "baf6a5be8b327d4f562b9f15ff454f408e1a9e8d10e0b4fd83aa611b87074716"
+ },
+ {
+  "id": "Q4",
+  "family": "recall",
+  "read_only": true,
+  "sessions": [
+   {
+    "text": "In which city does Dana live now? Use the city fact that has no end date. Give the answer as a short text; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "text",
+     "Amsterdam"
+    ],
+    "ops": []
+   },
+   {
+    "text": "You have no memory of earlier sessions. Which city did Dana live in just before her current city? Use the facts and their dates. Give the answer as a short text; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "text",
+     "Rotterdam"
+    ],
+    "ops": []
+   }
+  ],
+  "final_state_sha256": "baf6a5be8b327d4f562b9f15ff454f408e1a9e8d10e0b4fd83aa611b87074716"
+ },
+ {
+  "id": "Q5",
+  "family": "recall",
+  "read_only": true,
+  "sessions": [
+   {
+    "text": "What is the average importance of the memories filed under the topic food? Give the number with two decimals. Give the answer as a single number with two decimals; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "float",
+     3.15
+    ],
+    "ops": []
+   }
+  ],
+  "final_state_sha256": "baf6a5be8b327d4f562b9f15ff454f408e1a9e8d10e0b4fd83aa611b87074716"
+ },
+ {
+  "id": "C1",
+  "family": "correct",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "The memory \"Frank mentioned the jazz concert\" is more important than recorded. Set its importance to 5.",
+    "answer": null,
+    "ops": [
+     [
+      "set",
+      "Memory",
+      12,
+      {
+       "importance": 5
+      }
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "e8498d73b8ea4cfd102dc87680b3710ab84f81c6d161b213bb23e88776cb5607"
+ },
+ {
+  "id": "C2",
+  "family": "correct",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Append \" by Friday\" to the content of the memory \"Ask Kofi about the roadmap review\" (the content then ends with \"by Friday\"). Change nothing else.",
+    "answer": null,
+    "ops": [
+     [
+      "set",
+      "Memory",
+      46,
+      {
+       "content": "Ask Kofi about the roadmap review by Friday"
+      }
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "d2f1fa97b41d455174cb31028ef8ffdc8308eacd7c4379632f71380fb9aaeaf0"
+ },
+ {
+  "id": "C3",
+  "family": "correct",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Dana moved from Amsterdam to Groningen on 2026-08-01. Record it: end her current city fact on 2026-07-31, add a new fact with attribute \"city\" and detail \"Groningen\", valid from 2026-08-01 with valid_to null (no end date), describing Dana, and record that the new fact supersedes the old one.",
+    "answer": null,
+    "ops": [
+     [
+      "set",
+      "Fact",
+      7,
+      {
+       "valid_to": "2026-07-31"
+      }
+     ],
+     [
+      "add",
+      "Fact",
+      {
+       "id": 33,
+       "attribute": "city",
+       "detail": "Groningen",
+       "valid_from": "2026-08-01",
+       "valid_to": null
+      }
+     ],
+     [
+      "link",
+      "DESCRIBES",
+      33,
+      4
+     ],
+     [
+      "link",
+      "SUPERSEDES",
+      33,
+      7
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "4e3cac3ac4c671df1bdac7c0f1a90fc03bff821c03f2eda94a288e5444962136"
+ },
+ {
+  "id": "C4",
+  "family": "correct",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Eve's current employer fact is wrong: it must say \"Initech\", not \"Hooli\". Correct that fact in place: do not add a fact and do not change its dates.",
+    "answer": null,
+    "ops": [
+     [
+      "set",
+      "Fact",
+      23,
+      {
+       "detail": "Initech"
+      }
+     ]
+    ]
+   },
+   {
+    "text": "You have no memory of earlier sessions. Which employer does the memory hold for Eve now (the employer fact with no end date)? Give the answer as a short text; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "text",
+     "Initech"
+    ],
+    "ops": []
+   }
+  ],
+  "final_state_sha256": "9544f386f97a1d9c5b843a9e885d7c06cfad191993834e1cc78c86496ee5a048"
+ },
+ {
+  "id": "C5",
+  "family": "correct",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "The memory \"Kofi likes the garden shed\" is filed under home by mistake. File it under books instead of home (keep its other links).",
+    "answer": null,
+    "ops": [
+     [
+      "unlink",
+      "ABOUT",
+      1,
+      6
+     ],
+     [
+      "link",
+      "ABOUT",
+      1,
+      7
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "f384db5ded7bbf86ee298dbefb8d574d7130d7a3f4b60d5f5c7cb24f8a44f644"
+ },
+ {
+  "id": "F1",
+  "family": "forget",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Forget the memory \"Julia and I discussed the birthday cake\": remove it and its links, and nothing else.",
+    "answer": null,
+    "ops": [
+     [
+      "del",
+      "Memory",
+      2
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "2606524e256b04b4e27a7604511b1bbc8054ad92e7a54d05e0413a401e40b496"
+ },
+ {
+  "id": "F2",
+  "family": "forget",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Forget every memory filed under the topic music that was created before 2026-03-01. Keep the topic, the persons and every other memory.",
+    "answer": null,
+    "ops": [
+     [
+      "del",
+      "Memory",
+      5
+     ],
+     [
+      "del",
+      "Memory",
+      41
+     ],
+     [
+      "del",
+      "Memory",
+      66
+     ],
+     [
+      "del",
+      "Memory",
+      96
+     ],
+     [
+      "del",
+      "Memory",
+      97
+     ],
+     [
+      "del",
+      "Memory",
+      99
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "a3690251f50a5be860896013ce27d687a6475cac3dbd58eabfd1110cb7c6ba8a"
+ },
+ {
+  "id": "F3",
+  "family": "forget",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Forget Frank completely: delete the person Frank and every fact that describes him. Keep the memories that mention him (they only lose the link to him). Remove every link of the deleted records.",
+    "answer": null,
+    "ops": [
+     [
+      "del",
+      "Fact",
+      9
+     ],
+     [
+      "del",
+      "Fact",
+      24
+     ],
+     [
+      "del",
+      "Person",
+      6
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "ddb8eab8f46c795af4383a8a4ae6dbfe2a18b570d71c3a68a56ac2905da90299"
+ },
+ {
+  "id": "F4",
+  "family": "forget",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "How many memories mention Gina? Give the answer as a single integer; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "int",
+     13
+    ],
+    "ops": []
+   },
+   {
+    "text": "You have no memory of earlier sessions. Forget every memory that mentions Gina and no other person (a memory that mentions Gina and somebody else stays). Remove the links of the forgotten memories.",
+    "answer": null,
+    "ops": [
+     [
+      "del",
+      "Memory",
+      15
+     ],
+     [
+      "del",
+      "Memory",
+      19
+     ],
+     [
+      "del",
+      "Memory",
+      21
+     ],
+     [
+      "del",
+      "Memory",
+      40
+     ],
+     [
+      "del",
+      "Memory",
+      72
+     ],
+     [
+      "del",
+      "Memory",
+      93
+     ],
+     [
+      "del",
+      "Memory",
+      103
+     ],
+     [
+      "del",
+      "Memory",
+      105
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "c26d50d0d7d0fabf265d5047efc796bc667961772c399a4fc561db79ce29bbc0"
+ },
+ {
+  "id": "F5",
+  "family": "forget",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "The memory \"Carol and Henry and I discussed the flu shot\" mentions Henry by mistake. Remove only the link between this memory and Henry. Keep the memory and its other links.",
+    "answer": null,
+    "ops": [
+     [
+      "unlink",
+      "MENTIONS",
+      7,
+      8
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "87bb3da6302f0da11a8e9833b0f525f5f36031c6727aa501161ae9fe2789fd99"
+ },
+ {
+  "id": "K1",
+  "family": "consolidate",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Some memories were stored twice (identical content). For every content that occurs more than once, keep the copy with the earliest created date and forget the later copies together with their links.",
+    "answer": null,
+    "ops": [
+     [
+      "del",
+      "Memory",
+      113
+     ],
+     [
+      "del",
+      "Memory",
+      120
+     ],
+     [
+      "del",
+      "Memory",
+      115
+     ],
+     [
+      "del",
+      "Memory",
+      117
+     ],
+     [
+      "del",
+      "Memory",
+      116
+     ],
+     [
+      "del",
+      "Memory",
+      114
+     ],
+     [
+      "del",
+      "Memory",
+      118
+     ],
+     [
+      "del",
+      "Memory",
+      119
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "a1f88fd8b5e500172aad59f3c2e3c55fcafb5361c7e1289cccd214e384be8097"
+ },
+ {
+  "id": "K2",
+  "family": "consolidate",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Count the memories created in each of January, February and March 2026 (count before you add anything). Then store three new memories, one per month in that order: content \"Summary 2026-01: N memories\" (and likewise 2026-02, 2026-03) with the real count N, kind \"summary\", importance 3, created on the last day of that month. They have no links.",
+    "answer": null,
+    "ops": [
+     [
+      "add",
+      "Memory",
+      {
+       "id": 121,
+       "content": "Summary 2026-01: 19 memories",
+       "kind": "summary",
+       "importance": 3,
+       "created": "2026-01-31"
+      }
+     ],
+     [
+      "add",
+      "Memory",
+      {
+       "id": 122,
+       "content": "Summary 2026-02: 17 memories",
+       "kind": "summary",
+       "importance": 3,
+       "created": "2026-02-28"
+      }
+     ],
+     [
+      "add",
+      "Memory",
+      {
+       "id": 123,
+       "content": "Summary 2026-03: 20 memories",
+       "kind": "summary",
+       "importance": 3,
+       "created": "2026-03-31"
+      }
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "575a57e7af8e96bebb8bae74bad8a98c16294fbd85c6bc69fc4df1ab2578896e"
+ },
+ {
+  "id": "K3",
+  "family": "consolidate",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "The topics \"job\" and \"work\" mean the same. Merge \"job\" into \"work\": every memory filed under \"job\" must be filed under \"work\" instead (once, never twice), and then the topic \"job\" must be removed.",
+    "answer": null,
+    "ops": [
+     [
+      "link",
+      "ABOUT",
+      16,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      18,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      31,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      33,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      34,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      35,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      38,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      45,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      52,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      68,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      69,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      75,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      84,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      106,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      109,
+      3
+     ],
+     [
+      "link",
+      "ABOUT",
+      114,
+      3
+     ],
+     [
+      "del",
+      "Topic",
+      8
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "bafc2fde6474905f7d6865e72e375acc8dd211a8331afcfe0846dd6b971fe4ca"
+ },
+ {
+  "id": "K4",
+  "family": "consolidate",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "How many memories have kind \"note\" and importance 1? Give the answer as a single integer; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "int",
+     8
+    ],
+    "ops": []
+   },
+   {
+    "text": "You have no memory of earlier sessions. Forget the memories of kind \"note\" with importance 1 that were created before 2026-04-01. Remove their links.",
+    "answer": null,
+    "ops": [
+     [
+      "del",
+      "Memory",
+      55
+     ],
+     [
+      "del",
+      "Memory",
+      56
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "0819264bf6ad62e16ed2b37921b48378715ca6c7803408cdc7c021baff7bcc87"
+ },
+ {
+  "id": "H1",
+  "family": "reason",
+  "read_only": true,
+  "sessions": [
+   {
+    "text": "Which persons are mentioned in memories filed under the topic travel that were created after 2026-04-01? Give their names. Give the answer as names or numbers separated by commas, in any order; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "set",
+     [
+      "Alice",
+      "Bob",
+      "Carol",
+      "Eve",
+      "Frank",
+      "Julia",
+      "Lena"
+     ]
+    ],
+    "ops": []
+   }
+  ],
+  "final_state_sha256": "baf6a5be8b327d4f562b9f15ff454f408e1a9e8d10e0b4fd83aa611b87074716"
+ },
+ {
+  "id": "H2",
+  "family": "reason",
+  "read_only": true,
+  "sessions": [
+   {
+    "text": "Which topics have at least one memory that mentions Alice and at least one memory that mentions Bob? Give the topic names. Give the answer as names or numbers separated by commas, in any order; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "set",
+     [
+      "books",
+      "food",
+      "job",
+      "travel"
+     ]
+    ],
+    "ops": []
+   }
+  ],
+  "final_state_sha256": "baf6a5be8b327d4f562b9f15ff454f408e1a9e8d10e0b4fd83aa611b87074716"
+ },
+ {
+  "id": "H3",
+  "family": "reason",
+  "read_only": true,
+  "sessions": [
+   {
+    "text": "Follow the chain of superseded facts: what was the earliest city recorded for Dana (the oldest fact in her chain of city facts)? Give the answer as a short text; finish your final message with a line ANSWER: followed by the answer.",
+    "answer": [
+     "text",
+     "Utrecht"
+    ],
+    "ops": []
+   }
+  ],
+  "final_state_sha256": "baf6a5be8b327d4f562b9f15ff454f408e1a9e8d10e0b4fd83aa611b87074716"
+ },
+ {
+  "id": "H4",
+  "family": "reason",
+  "read_only": false,
+  "sessions": [
+   {
+    "text": "Link every memory filed under the topic travel whose content contains the word \"Lisbon\" to Ivan (a mentions link), unless it already mentions Ivan. Change nothing else.",
+    "answer": null,
+    "ops": [
+     [
+      "link",
+      "MENTIONS",
+      56,
+      9
+     ],
+     [
+      "link",
+      "MENTIONS",
+      73,
+      9
+     ],
+     [
+      "link",
+      "MENTIONS",
+      74,
+      9
+     ]
+    ]
+   }
+  ],
+  "final_state_sha256": "75d58d48ec16311b6269392770bbc4f011dd6524ae00e84d3defb72b0393d824"
+ }
+]

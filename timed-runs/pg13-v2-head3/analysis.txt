@@ -1,0 +1,105 @@
+pg13 run pg13-main  phase main  rounds measured 5  caps {'lineitem_limit': '0', 'p1_starts': '200', 'person_limit': '0', 'snb_scale': 'sf1', 'tpch_sf': '1'}
+lane {'cpus_allowed_list': '0,2', 'humem_host_cell_class': 'paired_ab', 'humem_host_cpus': '0,2', 'humem_host_lane': 'compare1', 'humem_host_lane_class': 'compare', 'nproc': 20}
+study role head  traversal model bound-start  engine commit 8bac9613925ef1fb876e943789f65332f6ecdb9f  jar sha256 7a9e87a383122f277cdf74bbf30d5e9177dfa0b3ba5b3a1984947c2f82673a1a
+engine {'branch': 'UNKNOWN_BRANCH', 'build': '8bac9613925e', 'version': '26.12.1-SNAPSHOT (build 8bac9613925e/1795515701934/UNKNOWN_BRANCH)'}
+load_snb {'endpoints': ['Person', 'Person'], 'knows': 180623, 'knows_streamed': 180623, 'persons': 9892, 'persons_streamed': 9892}
+load_snb_s 3.542219526003464
+load_tpch {'lineitem': 6001215, 'part': 200000, 'types': ['LineItem', 'Part'], 'writers': 1}
+load_tpch_s 79.67312132799998
+GATES 22: 22 ok, 0 answer failures, 0 other failures
+
+RESULT 3: a join against the traversal (ratio of medians of the mean call time over the measured rounds; arms interleaved)
+p1  one hop from one vertex
+    arm                    median ms    rounds  r1  r2  r3  r4  r5
+    J join, rule on             0.251       5  0.278  0.251  0.229  0.215  0.285
+    C Cypher                    0.048       5  0.067  0.060  0.047  0.048  0.048
+    O join, rule off           59.094       5  59.041  62.549  60.687  59.094  58.958
+    Z Cypher again (A/A)        0.047       5  0.096  0.050  0.047  0.046  0.046
+    J/C 5.184   Z/C (A/A) 0.966   O/J (what the rule is worth) 235.400   O/C 1220.324
+    J/C per round: 4.127  4.165  4.817  4.436  5.900
+    VERDICT p1: NOT READABLE: A/A control Z/C = 0.966 is outside 1 -+ 0.03
+p2  one hop from all vertices, aggregate
+    arm                    median ms    rounds  r1  r2  r3  r4  r5
+    J join, rule on           104.086       5  106.257  105.988  104.064  103.585  104.086
+    C Cypher                   91.555       5  92.899  105.501  91.299  91.445  91.555
+    O join, rule off          105.722       5  102.723  156.878  106.087  105.722  105.402
+    Z Cypher again (A/A)       91.193       5  90.800  91.193  90.690  91.334  91.769
+    J/C 1.137   Z/C (A/A) 0.996   O/J (what the rule is worth) 1.016   O/C 1.155
+    J/C per round: 1.144  1.005  1.140  1.133  1.137
+    VERDICT p2: IN THE RANGE
+p3  one hop, LEFT JOIN
+    arm                    median ms    rounds  r1  r2  r3  r4  r5
+    J join, rule on           228.596       5  233.754  228.455  229.005  225.333  228.596
+    C Cypher                  190.566       5  189.274  196.878  224.017  189.971  190.566
+    O join, rule off          233.289       5  229.018  279.467  233.289  235.158  229.284
+    Z Cypher again (A/A)      190.328       5  189.778  191.034  190.328  189.531  190.344
+    J/C 1.200   Z/C (A/A) 0.999   O/J (what the rule is worth) 1.021   O/C 1.224
+    J/C per round: 1.235  1.160  1.022  1.186  1.200
+    VERDICT p3: IN THE RANGE
+
+PLANS of the first statement of each pair, as the engine printed them (prettyPrint of the execution plan)
+  p1 rule ON  (model bound-start):
+    + TRAVERSE TO q INNER ON (k.target_id = q.rid) (read q by rid from the edge) = MATCH (p:Person)-[k:KNOWS]->(q:Person) [supported by edge: KNOWS.target_id = Person.rid joins an edge endpoint to an id] [traversal: start bound by p.id = 471]
+    +   TRAVERSE INNER ON (k.source_id = p.rid) (out KNOWS AS k FROM p) = MATCH (p:Person)-[k:KNOWS]->() [supported by edge: Person.rid = KNOWS.source_id joins an edge endpoint to an id] [traversal: start bound by p.id = 471]
+    +     FETCH FROM INDEX Person[id] (id = key)
+    +     FILTER pushed to p: (p.id = 471)
+    +     WALK out EDGES KNOWS AS k of each left row
+    +   READ RECORD BY ID Person AS q (rid = key) for each left row
+    + PROJECT 3 column(s)
+  p1 rule OFF:
+    + HASH JOIN INNER ON (k.target_id = q.rid) (build q) [supported by edge: KNOWS.target_id = Person.rid joins an edge endpoint to an id]
+    +   HASH JOIN INNER ON (k.source_id = p.rid) (build p) [supported by edge: Person.rid = KNOWS.source_id joins an edge endpoint to an id]
+    +     FETCH FROM INDEX Person[id] (id = key)
+    +     FILTER pushed to p: (p.id = 471)
+    +     SCAN TYPE KNOWS AS k (polymorphic)
+    +   SCAN TYPE Person AS q (polymorphic)
+    + PROJECT 3 column(s)
+  p2 rule ON  (model bound-start):
+    + HASH JOIN INNER ON (k.target_id = q.rid) (build q) [supported by edge: KNOWS.target_id = Person.rid joins an edge endpoint to an id] [hash join: no bound start]
+    +   HASH JOIN INNER ON (k.source_id = p.rid) (build p) [supported by edge: Person.rid = KNOWS.source_id joins an edge endpoint to an id] [hash join: no bound start]
+    +     SCAN TYPE Person AS p (polymorphic)
+    +     SCAN TYPE KNOWS AS k (polymorphic)
+    +   SCAN TYPE Person AS q (polymorphic)
+    + AGGREGATE 0 group key(s), 2 aggregate(s)
+    + PROJECT 2 column(s)
+  p2 rule OFF:
+    + HASH JOIN INNER ON (k.target_id = q.rid) (build q) [supported by edge: KNOWS.target_id = Person.rid joins an edge endpoint to an id]
+    +   HASH JOIN INNER ON (k.source_id = p.rid) (build p) [supported by edge: Person.rid = KNOWS.source_id joins an edge endpoint to an id]
+    +     SCAN TYPE Person AS p (polymorphic)
+    +     SCAN TYPE KNOWS AS k (polymorphic)
+    +   SCAN TYPE Person AS q (polymorphic)
+    + AGGREGATE 0 group key(s), 2 aggregate(s)
+    + PROJECT 2 column(s)
+  p3 rule ON  (model bound-start):
+    + INDEX NESTED LOOP LEFT ON (k.target_id = q.rid) (probe q by rid) [supported by edge: KNOWS.target_id = Person.rid joins an edge endpoint to an id] [index nested loop: no bound start]
+    +   HASH JOIN LEFT ON (k.source_id = p.rid) (build k) [supported by edge: Person.rid = KNOWS.source_id joins an edge endpoint to an id] [hash join: no bound start]
+    +     SCAN TYPE Person AS p (polymorphic)
+    +     SCAN TYPE KNOWS AS k (polymorphic)
+    +   READ RECORD BY ID Person AS q (rid = key) for each left row
+    + AGGREGATE 0 group key(s), 3 aggregate(s)
+    + PROJECT 3 column(s)
+  p3 rule OFF:
+    + INDEX NESTED LOOP LEFT ON (k.target_id = q.rid) (probe q by rid) [supported by edge: KNOWS.target_id = Person.rid joins an edge endpoint to an id]
+    +   HASH JOIN LEFT ON (k.source_id = p.rid) (build k) [supported by edge: Person.rid = KNOWS.source_id joins an edge endpoint to an id]
+    +     SCAN TYPE Person AS p (polymorphic)
+    +     SCAN TYPE KNOWS AS k (polymorphic)
+    +   READ RECORD BY ID Person AS q (rid = key) for each left row
+    + AGGREGATE 0 group key(s), 3 aggregate(s)
+    + PROJECT 3 column(s)
+
+RESULTS 1 and 2: the four TPC-H statements unchanged, and the parity of their answers
+query  answer vs PostgreSQL 18   prototype median ms (min .. max)   PostgreSQL 18 median ms   prototype / PostgreSQL 18 (a reference point)
+q1     equal                     7,523.742 (7,423.594 .. 7,644.287) n=5   1,103.973   6.82
+q6     equal                     5,754.709 (5,747.220 .. 5,918.724) n=5   415.606   13.85
+q14    equal                     5,981.801 (5,968.854 .. 6,105.094) n=5   191.410   31.25
+q19    equal                     6,246.170 (6,192.001 .. 6,272.845) n=5   555.279   11.25
+
+every comparison outside 0.90 .. 1.10, whatever its verdict (the control-rows rule); O/J and O/C show the rule's own effect
+  p1 J/C = 5.184
+  p1 O/J = 235.400
+  p1 O/C = 1220.324
+  p2 J/C = 1.137
+  p2 O/C = 1.155
+  p3 J/C = 1.200
+  p3 O/C = 1.224
+READER STATUS 3 (0 read, 3 an A/A control out of band, 4 a gate failed, 6 an answer differed)

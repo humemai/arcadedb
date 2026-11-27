@@ -1,0 +1,6 @@
+{
+ "pg": "PostgreSQL 18 SQL (the database is ArcadeDB, which implements a restricted PostgreSQL 18 dialect)",
+ "sql": "ArcadeDB SQL (the native SQL of ArcadeDB)",
+ "cypher": "openCypher (the Cypher of ArcadeDB)",
+ "duck": "PostgreSQL-compatible SQL (the database is DuckDB)"
+}

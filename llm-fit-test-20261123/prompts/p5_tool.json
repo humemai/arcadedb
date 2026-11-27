@@ -1,0 +1,5 @@
+{
+ "name": "db",
+ "description": "Run one or several statements of {language} on the memory database. Several statements are separated by semicolons, run in order, and stop at the first error. Returns the rows of the last statement as JSON ({columns, rows, row_count}; at most 100 rows) or the error text of the engine. Outside an explicit transaction every statement is committed at once.",
+ "input_schema": {"type": "object", "properties": {"statement": {"type": "string", "description": "The statement or statements to run."}}, "required": ["statement"]}
+}

@@ -1,0 +1,28 @@
+versions | ok | sqlalchemy 2.1.9, psycopg 3.3.9
+connect, server version | ok | [18, 7]
+CREATE TABLE inside engine.begin() | ok | "created"
+CREATE TABLE with AUTOCOMMIT | ok | "done"
+psycopg.connect() with defaults, CREATE TABLE | ok | "created"
+metadata.create_all with a typical model | ok | null
+setup u2 | ok | "done"
+setup p2 | ok | "done"
+ORM insert, naive datetime and JSONB | ok | "added"
+ORM insert, aware datetime | ok | "added"
+ORM insert, parent with two children | ok | "added"
+select with in_ | ok | [[1, "a@x"], [2, "b@x"], [3, "c@x"]]
+selectinload of a relationship | ok | [[1, []], [2, []], [3, ["hi", "yo"]]]
+filter on a JSON key | ok | [[1]]
+select(func.now()) | ok | 1
+count per user | ok | [["a@x", 0], ["b@x", 0], ["c@x", 2]]
+update by primary key | ok | [["a2@x"]]
+select ... with_for_update() | ok | [[1]]
+begin_nested() around a duplicate, then commit | ok | "IntegrityError"
+rows after the nested transaction | ok | [[10], [12]]
+inspect the columns | ok | [["id", "BIGINT"], ["email", "TEXT"], ["created_at", "TIMESTAMP"], ["meta", "JSONB"]]
+
+--- stderr ---
+Downloading sqlalchemy (4.5MiB)
+Downloading psycopg-binary (3.7MiB)
+ Downloaded psycopg-binary
+ Downloaded sqlalchemy
+Installed 4 packages in 6ms
