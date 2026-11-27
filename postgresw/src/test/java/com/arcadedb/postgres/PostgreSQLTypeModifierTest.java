@@ -106,7 +106,7 @@ class PostgreSQLTypeModifierTest extends PostgreSQLSideBySideTestBase {
         for (final String[] error : new String[][] { { "CREATE TABLE e (a varchar(0))", "22023" },
             { "CREATE TABLE e (a varchar(10485761))", "22023" }, { "CREATE TABLE e (a numeric(0))", "22023" },
             { "CREATE TABLE e (a numeric(1001, 2))", "22023" }, { "CREATE TABLE e (a numeric(5, 1001))", "22023" },
-            { "CREATE TABLE e (a numeric(1, 2, 3))", "22023" }, { "CREATE TABLE e (a varchar(1, 2))", "22023" } })
+            { "CREATE TABLE e (a numeric(1, 2, 3))", "22023" }, { "CREATE TABLE e (a varchar(1, 2))", "42601" } })
           sameError(postgres, arcade, error[0], error[1]);
 
         refused(arcade, "CREATE TABLE e (a char(3))", "Write varchar(n)");
