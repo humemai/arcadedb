@@ -557,6 +557,8 @@ public class LocalSchema implements Schema {
    */
   private             boolean                                recordingSavePending          = false;
   private final       AtomicLong                             versionSerial                 = new AtomicLong();
+  /** The foreign keys as the types last declared them, see {@link #getForeignKeys()}. */
+  private volatile    ForeignKeys                            foreignKeys;
   private volatile    UnidirectionalFlag                     unidirectionalFlag;
   private final       AtomicLong                             typesChangeSerial             = new AtomicLong();
   private final       Map<String, FunctionLibraryDefinition> functionLibraries             = new ConcurrentHashMap<>();
@@ -3772,6 +3774,7 @@ public class LocalSchema implements Schema {
       // UNDER THE WRITE LOCK EVERY VIEW AND AGGREGATE REGISTRATION TAKES TOO, SO NOTHING CAN COME TO DEPEND ON THE TYPE
       // BETWEEN THIS VERDICT AND THE DROP (#9978). Before anything below changes, so a refusal leaves the type intact
       final String canonicalTypeName = checkTypeHasNoDependants(typeName);
+      getForeignKeys().checkDroppable(canonicalTypeName);
 
       boolean setMultipleUpdate = !multipleUpdate;
       if (!multipleUpdate)
@@ -7523,6 +7526,17 @@ public class LocalSchema implements Schema {
     // (LocalBucket.fireBeforeReadEvents). A REGISTRY OF ITS OWN WOULD COUNT ITS LISTENERS WHERE NO READ LOOKS, AND THE
     // READS WOULD SKIP THEM
     return ((RecordEventsRegistry) database.getEmbedded().getEvents()).newTypeRegistry();
+  }
+
+  /** The foreign keys of the schema (fork issue #228), resolved again after a change of the types. */
+  public ForeignKeys getForeignKeys() {
+    final long serial = typesChangeSerial.get();
+    ForeignKeys current = foreignKeys;
+    if (current == null || current.serial() != serial) {
+      current = ForeignKeys.of(serial, typeMap().values());
+      foreignKeys = current;
+    }
+    return current;
   }
 
   /**

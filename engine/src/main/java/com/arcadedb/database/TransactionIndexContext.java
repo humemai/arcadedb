@@ -31,6 +31,7 @@ import com.arcadedb.index.lsm.LSMTreeIndexAbstract;
 import com.arcadedb.index.vector.LSMVectorIndex;
 import com.arcadedb.log.LogManager;
 import com.arcadedb.schema.DocumentType;
+import com.arcadedb.schema.ForeignKeys;
 import com.arcadedb.schema.LocalDocumentType;
 import com.arcadedb.schema.Schema;
 import com.arcadedb.serializer.BinaryComparator;
@@ -138,6 +139,8 @@ public class TransactionIndexContext {
    * that is about to have to undo.
    */
   private final List<RecordUndoEntry>                                        recordUndo       = new ArrayList<>();
+  /** What the foreign keys have to check, see {@link #noteForeignKeys}. */
+  private       ForeignKeyChecks                                             foreignKeyChecks;
   /** How many entries {@link #recordUndo} holds right now; -1 when nothing is journalled. */
   private       int                                                          recordUndoSize   = -1;
   /** Where the entries of the record being indexed right now begin: the ones before it belong to the statement (issue #10346). */
@@ -782,6 +785,10 @@ public class TransactionIndexContext {
       // NULL VALUES AND SKIP NUL VALUES
       return;
 
+    final ForeignKeys foreignKeys = database.getSchema().getEmbedded().getForeignKeys();
+    if (!foreignKeys.isEmpty())
+      noteForeignKeys(foreignKeys, index, operation, keysValues, rid);
+
     final String indexName = index.getName();
 
     if (!index.isTransactionKeyOrderRequired()) {
@@ -911,6 +918,28 @@ public class TransactionIndexContext {
     final IndexKey displaced = values.put(v, v);
     ++laneVersion;
     journalPut(indexName, keys, k, values, v, displaced);
+  }
+
+  /**
+   * Notes what a change of an index leaves to check for the foreign keys it holds (fork issue #228): a referring record that
+   * takes a key, or a referenced one that loses it.
+   */
+  private void noteForeignKeys(final ForeignKeys keys, final IndexInternal index, final IndexKey.IndexKeyOperation operation,
+      final Object[] keysValues, final RID rid) {
+    final TypeIndex typeIndex = index.getTypeIndex();
+    if (typeIndex == null)
+      return;
+    for (final ForeignKeys.Role role : keys.rolesOf(typeIndex.getName()))
+      if (role.referencedSide() == (operation == IndexKey.IndexKeyOperation.REMOVE)) {
+        if (foreignKeyChecks == null)
+          foreignKeyChecks = new ForeignKeyChecks(database, this);
+        foreignKeyChecks.note(role.key(), role.referencedSide(), keysValues, rid);
+      }
+  }
+
+  /** What the foreign keys have to check for this transaction, {@code null} when no change touched one. */
+  ForeignKeyChecks getForeignKeyChecks() {
+    return foreignKeyChecks;
   }
 
   /**
@@ -1059,6 +1088,7 @@ public class TransactionIndexContext {
   }
 
   public void reset() {
+    foreignKeyChecks = null;
     indexEntries.clear();
     unorderedEntries.clear();
     indexPerLane.clear();

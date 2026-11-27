@@ -20,6 +20,7 @@ package com.arcadedb.query.postgresql.plan;
 
 import com.arcadedb.exception.ConcurrentModificationException;
 import com.arcadedb.exception.DuplicatedKeyException;
+import com.arcadedb.exception.ForeignKeyException;
 import com.arcadedb.exception.ValidationException;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 
@@ -54,6 +55,9 @@ public final class WriteErrors {
     if (error instanceof ConcurrentModificationException)
       return new PostgreSQLEvaluationException("40001", "could not serialize access due to concurrent update: " + error.getMessage(),
           error);
+    // fork issue #228: a foreign key says which SQLSTATE PostgreSQL answers with
+    if (error instanceof ForeignKeyException foreignKey)
+      return new PostgreSQLEvaluationException(foreignKey.getSqlState(), foreignKey.getMessage(), foreignKey);
     if (error instanceof ValidationException validation)
       return new PostgreSQLEvaluationException(validationState(validation.getKind()), validation.getMessage(), validation);
     return error;
@@ -68,6 +72,7 @@ public final class WriteErrors {
       case MAX_LENGTH -> "22001";
       case TYPE -> "42804";
       case ENCODING -> "22021";
+      case FOREIGN_KEY -> "23503";
     };
   }
 }

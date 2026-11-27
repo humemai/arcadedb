@@ -1620,6 +1620,9 @@ public class LocalDatabase extends RWLockContext implements DatabaseInternal {
     if (record instanceof MutableDocument doc)
       doc.validate();
 
+    // fork issue #228: a foreign key that cannot be checked refuses the writes of its types
+    schema.getForeignKeys().checkWritable(record);
+
     // INVOKE EVENT CALLBACKS
     final int edgeAppend = suspendEdgeAppendForListeners(events.hasBeforeCreateListeners()
         || record instanceof Document listened && ((LocalDocumentType) listened.getType()).hasBeforeCreateListeners());
@@ -1985,6 +1988,8 @@ public class LocalDatabase extends RWLockContext implements DatabaseInternal {
 
     // only the refresh of a materialized view or a continuous aggregate writes its backing type (issue #11020)
     schema.checkBackingTypeWrite(record.getIdentity().getBucketId(), "update a record of");
+    // fork issue #228: a foreign key that cannot be checked refuses the writes of its types
+    schema.getForeignKeys().checkWritable(record);
 
     try {
       if (record instanceof MutableDocument document) {
@@ -2320,6 +2325,8 @@ public class LocalDatabase extends RWLockContext implements DatabaseInternal {
 
     // only the refresh of a materialized view or a continuous aggregate writes its backing type (issue #11020)
     schema.checkBackingTypeWrite(record.getIdentity().getBucketId(), "delete from");
+    // fork issue #228: a foreign key that cannot be checked refuses the writes of its types
+    schema.getForeignKeys().checkWritable(record);
 
     // REFUSE UP FRONT (issue #9305). LocalBucket.deleteRecord checks DELETE_RECORD too, but it is the LAST thing a delete
     // does: by then the index entries, the EXTERNAL values and the edges are already gone, and a caller that owns its

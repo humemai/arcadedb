@@ -710,6 +710,8 @@ public class LocalDocumentType implements DocumentType {
    */
   public void rename(final String newName) {
     checkForSchemaMutation();
+    // fork issue #228: a foreign key refers to a type by its name
+    schema.getForeignKeys().checkRenamable(name);
 
     // Refused rather than nested (issue #9891): this thread is already inside a rename of this type, which publishes once
     // with what it moved, so a rename() from in there would either publish a second time from inside the first one's
