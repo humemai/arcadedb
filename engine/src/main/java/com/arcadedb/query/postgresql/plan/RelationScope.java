@@ -154,6 +154,14 @@ public final class RelationScope implements ExpressionCompiler.Scope {
     return fields;
   }
 
+  /**
+   * A scope of the same columns, in the same query, that has recorded nothing yet: {@link #usedColumns} then says which of these
+   * columns the expressions compiled with it read, the subqueries inside them included.
+   */
+  public RelationScope unused() {
+    return new RelationScope(fields, catalog, subqueries, outputs, outer);
+  }
+
   /** What an unqualified name finds among the columns of this query alone. */
   private enum Found {
     NOTHING, UNLISTED, LISTED

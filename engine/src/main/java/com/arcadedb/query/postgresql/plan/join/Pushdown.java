@@ -22,6 +22,7 @@ import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.TableReference;
 import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
+import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.plan.RelationScope;
 
 import java.util.ArrayList;
@@ -65,6 +66,9 @@ import java.util.Set;
  * subtree) or as the {@code WHERE} filter of the statement. PostgreSQL turns a {@code LEFT} join into an {@code INNER} join when
  * a {@code WHERE} term on the null-supplying side rejects {@code NULL}; this step does not: the term stays above the
  * {@code LEFT} join, which gives the same rows without the faster plan.
+ *
+ * <p>A term mentions the relations of every column it reads, in a subquery too: {@code a.x IN (SELECT d.y FROM d WHERE d.k = b.g)}
+ * mentions {@code a} and {@code b}.
  *
  * <p>A term that mentions no relation ({@code WHERE false}) is placed with the left input, which is valid for both join types.
  * A comma list ({@code FROM a, b}) is a chain of {@code INNER} joins with no {@code ON} term, so the {@code WHERE} terms that
@@ -170,27 +174,32 @@ public final class Pushdown {
   }
 
   /** The terms of a condition with the relations each one reads, resolved in {@code scope}. */
-  static List<Conjunct> terms(final Expression condition, final RelationScope scope) {
+  static List<Conjunct> terms(final Expression condition, final RelationScope scope, final Parameters parameters) {
     final List<Conjunct> out = new ArrayList<>();
     for (final Expression term : conjuncts(condition))
-      out.add(new Conjunct(term, relations(term, scope)));
+      out.add(new Conjunct(term, relations(term, scope, parameters)));
     return out;
   }
 
   /**
-   * The relations whose columns an expression mentions. Every column reference is resolved in {@code scope}, so an unknown or
-   * ambiguous name is the error PostgreSQL gives ({@code 42703}, {@code 42702}, {@code 42P01}).
+   * The relations whose columns an expression mentions, itself or in a subquery of it. Every column reference is resolved in
+   * {@code scope}, so an unknown or ambiguous name is the error PostgreSQL gives ({@code 42703}, {@code 42702}, {@code 42P01}).
    */
-  static Set<String> relations(final Expression expression, final RelationScope scope) {
+  static Set<String> relations(final Expression expression, final RelationScope scope, final Parameters parameters) {
     final Set<String> out = new LinkedHashSet<>();
-    collect(expression, scope, out);
+    collect(expression, scope, parameters, out);
     return out;
   }
 
-  private static void collect(final Expression expression, final RelationScope scope, final Set<String> out) {
+  private static void collect(final Expression expression, final RelationScope scope, final Parameters parameters,
+      final Set<String> out) {
     if (expression instanceof Expression.ColumnRef reference) {
       if (scope.column(reference) instanceof Evaluable.Slot slot)
         out.add(scope.fields().get(slot.index()).relation());
+      return;
+    }
+    if (expression instanceof Expression.ScalarSubquery || expression instanceof Expression.InSubquery) {
+      readByPlanning(expression, scope, parameters, out);
       return;
     }
     if (expression instanceof Expression.Exists) {
@@ -198,14 +207,28 @@ public final class Pushdown {
       // keeps the term higher than it could be); the others belong to the subquery and are its own business
       for (final Expression child : ExpressionCompiler.children(expression)) {
         try {
-          collect(child, scope, out);
+          collect(child, scope, parameters, out);
         } catch (final RuntimeException ignored) {
           // not a column of this scope
         }
       }
+      // those references do not include the ones of a scalar or IN subquery inside it
+      readByPlanning(expression, scope, parameters, out);
       return;
     }
     for (final Expression child : ExpressionCompiler.children(expression))
-      collect(child, scope, out);
+      collect(child, scope, parameters, out);
+  }
+
+  /**
+   * Adds the relations that an expression with a subquery reads, by planning it (fork issue #170): a name that neither the subquery
+   * nor a query inside it has is resolved in a copy of the scope, which records the column that answers it. A column of a query
+   * around the join is not recorded.
+   */
+  private static void readByPlanning(final Expression expression, final RelationScope scope, final Parameters parameters,
+      final Set<String> out) {
+    final RelationScope asked = scope.unused();
+    new ExpressionCompiler(asked, parameters).compile(expression);
+    asked.usedColumns().stream().forEach(column -> out.add(asked.fields().get(column).relation()));
   }
 }
