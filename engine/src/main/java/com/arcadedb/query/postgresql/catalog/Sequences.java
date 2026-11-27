@@ -27,10 +27,13 @@ import com.arcadedb.exception.SchemaException;
 import com.arcadedb.index.IndexCursor;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.schema.DocumentType;
+import com.arcadedb.schema.Property;
 import com.arcadedb.schema.Schema;
 import com.arcadedb.schema.Type;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -95,6 +98,17 @@ public final class Sequences {
     committed(database, () -> database.newDocument(TYPE_NAME).set(KEY, key).set(LAST, 0L).set(MAXIMUM, maximum)
         .set("table_name", table).set("column_name", column).save());
     return key;
+  }
+
+  /** The keys of the counters that the defaults of the properties of the type read. */
+  public static List<String> keysOf(final DocumentType type) {
+    final List<String> keys = new ArrayList<>();
+    for (final Property property : type.getProperties()) {
+      final String key = keyOf(property.getDefaultValueDefinition());
+      if (key != null)
+        keys.add(key);
+    }
+    return keys;
   }
 
   /** Removes the counters of a table that is taken back. */

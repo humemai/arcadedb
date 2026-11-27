@@ -20,12 +20,15 @@ package com.arcadedb.query.postgresql;
 
 import com.arcadedb.ContextConfiguration;
 import com.arcadedb.GlobalConfiguration;
+import com.arcadedb.database.Database;
 import com.arcadedb.database.DatabaseInternal;
+import com.arcadedb.database.TransactionContext;
 import com.arcadedb.exception.CauseChain;
 import com.arcadedb.exception.ConcurrentModificationException;
 import com.arcadedb.exception.DuplicatedKeyException;
 import com.arcadedb.exception.LockTimeoutException;
 import com.arcadedb.exception.WALVersionGapException;
+import com.arcadedb.log.LogManager;
 import com.arcadedb.query.OperationType;
 import com.arcadedb.query.QueryEngine;
 import com.arcadedb.query.postgresql.ast.AstPrinter;
@@ -45,6 +48,7 @@ import com.arcadedb.query.postgresql.ast.WriteStatement;
 import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.Identifier;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
+import com.arcadedb.query.postgresql.catalog.Sequences;
 import com.arcadedb.query.postgresql.catalog.Table;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
@@ -62,6 +66,7 @@ import com.arcadedb.query.postgresql.plan.WritePlanner;
 import com.arcadedb.query.postgresql.plan.join.JoinWarnings;
 import com.arcadedb.query.sql.executor.ResultInternal;
 import com.arcadedb.query.sql.executor.ResultSet;
+import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.Schema;
 import com.arcadedb.utility.CollectionUtils;
 
@@ -71,6 +76,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Level;
 
 /**
  * The {@code postgresql} query language: PostgreSQL-style SQL over a relational view of the schema, next to {@code sql} and
@@ -250,7 +258,10 @@ public class PostgreSQLQueryEngine implements QueryEngine {
 
   private final ThreadLocal<Block> block = ThreadLocal.withInitial(Block::new);
 
-  /** The engine keeps no state but the block of each thread, so one instance serves the database. */
+  /** The tables that {@code CREATE TABLE} made in a transaction that did not commit, until they are looked at (fork issue #229). */
+  private final ConcurrentLinkedDeque<DocumentType> rolledBack = new ConcurrentLinkedDeque<>();
+
+  /** The engine keeps the block of each thread and the tables of rolled back transactions, so one instance serves the database. */
   @Override
   public boolean isReusable() {
     return true;
@@ -262,6 +273,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
    *                 {@code command}, which is what {@link #analyze} says by reporting it as not idempotent
    */
   private ResultSet execute(final String query, final Parameters parameters, final boolean readOnly) {
+    // a transaction that the caller rolled back itself left its tables to this statement (fork issue #229)
+    dropRolledBackTables();
     final Block state = block.get();
     if (state.open && !database.isTransactionActive()) {
       // the transaction ended in another way: the caller committed it, or the database closed it
@@ -287,8 +300,11 @@ public class PostgreSQLQueryEngine implements QueryEngine {
         return new PostgreSQLResultSet(List.of(), new PostgreSQLResultSet.Plan(List.of("CREATE EXTENSION "
             + extension.name().value() + ": built in, nothing to do"))).rowless().withAffectedRows(0);
       if (statement instanceof CreateTableStatement create) {
-        requireNoBlock(state, create);
-        return new CreateTablePlan(database, catalog(), create).execute();
+        final CreateTablePlan plan = new CreateTablePlan(database, catalog(), create);
+        final PostgreSQLResultSet made = plan.execute();
+        if (plan.created() != null && database.isTransactionActive())
+          dropIfRolledBack(plan.created());
+        return made;
       }
       if (statement instanceof CreateIndexStatement create) {
         requireNoBlock(state, create);
@@ -318,9 +334,67 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
-   * The schema of the engine is not transactional, a rollback does not take a type or an index back, so {@code CREATE} is refused
-   * in a transaction block with SQLSTATE {@code 0A000}: one that this language opened, or the caller. A transaction that a server
-   * opened around one request, as its auto-commit, is not a block.
+   * The schema of the engine is not transactional: a table is there, and other sessions see it, as soon as {@code CREATE TABLE}
+   * has run, in a transaction too. When that transaction does not commit, the table is dropped if it holds no record (fork issue
+   * #229). The transaction tells it while the database is locked for its end, where no schema change can be made, so the table is
+   * only noted there and dropped by {@link #dropRolledBackTables}.
+   */
+  private void dropIfRolledBack(final DocumentType table) {
+    final TransactionContext transaction = database.getTransaction();
+    final AtomicBoolean committed = new AtomicBoolean();
+    transaction.addAfterCommitCallback(() -> committed.set(true));
+    transaction.addAfterCompletionCallbackIfAbsent("postgresql:create-table:" + table.getName(), () -> {
+      if (!committed.get())
+        rolledBack.add(table);
+    });
+  }
+
+  /**
+   * For a server that rolls a transaction back itself, as the PostgreSQL protocol does for {@code ROLLBACK}, for an error and for
+   * a connection that ends: drops the empty tables that the transaction made. Nothing is thrown.
+   */
+  public static void afterRollback(final Database database) {
+    try {
+      if (database instanceof DatabaseInternal internal
+          && internal.getQueryEngine(ENGINE_NAME) instanceof PostgreSQLQueryEngine engine)
+        engine.dropRolledBackTables();
+    } catch (final RuntimeException e) {
+      LogManager.instance().log(PostgreSQLQueryEngine.class, Level.WARNING,
+          "Cannot drop the tables that a rolled back transaction made", e);
+    }
+  }
+
+  /** Drops the tables that rolled back transactions made and left empty, the last one made first. */
+  private void dropRolledBackTables() {
+    if (rolledBack.isEmpty() || database.isTransactionActive())
+      return;
+    DocumentType table;
+    while ((table = rolledBack.pollLast()) != null)
+      dropIfEmpty(table);
+  }
+
+  private void dropIfEmpty(final DocumentType table) {
+    final String name = table.getName();
+    try {
+      // no commit comes between the look and the drop: a table that another session has written by now stays
+      final List<String> counters = database.executeInWriteLock(() -> {
+        final Schema schema = database.getSchema();
+        if (!schema.existsType(name) || schema.getType(name) != table || database.countType(name, false) > 0)
+          return List.of();
+        final List<String> keys = Sequences.keysOf(table);
+        schema.dropType(name);
+        return keys;
+      });
+      Sequences.drop(database, counters);
+    } catch (final RuntimeException e) {
+      LogManager.instance().log(this, Level.WARNING, "Cannot drop the table %s that a rolled back transaction made", e, name);
+    }
+  }
+
+  /**
+   * An index cannot be taken back by a rollback, so {@code CREATE INDEX} is refused in a transaction block with SQLSTATE
+   * {@code 0A000}: one that this language opened, or the caller. A transaction that a server opened around one request, as its
+   * auto-commit, is not a block.
    */
   private void requireNoBlock(final Block state, final Statement create) {
     if (state.open || database.isTransactionActive() && !database.getTransaction().isImplicit())
@@ -360,6 +434,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
               e.addSuppressed(suppressed);
             }
           }
+          dropRolledBackTables();
           throw WriteErrors.translate(e);
         }
       }
@@ -369,6 +444,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       state.failed = false;
       if (database.isTransactionActive())
         database.rollback();
+      dropRolledBackTables();
     }
     }
     return new PostgreSQLResultSet(List.of(), new PostgreSQLResultSet.Plan(List.of(kind.name()))).withAffectedRows(0);

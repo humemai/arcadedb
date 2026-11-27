@@ -76,7 +76,7 @@ CREATE TABLE knows (
 | The record id | none | readable by name, as `rid`, and also as `id` in a table with no column `id` (PostgreSQL raises `42703` for a name that the table does not declare). In a table that declares a column `rid` and no column `id`, it is `id` only. Left out of `*` and of an `INSERT` without a column list. Once a foreign key refers to the table, the catalog lists it, under `rid` when that name reads it. An unqualified name in one `FROM` reads a column that the catalog lists before a record id that it does not list, so a listed record id and a declared column of the same name are `42702`, as in PostgreSQL (fork issue [#163](https://github.com/humemai/arcadedb/issues/163)) |
 | An end of an edge | any row of the referenced table | checked by writes of this language only: `sql` and openCypher do not read the declaration |
 | Keys over an end of an edge | any | only `(source_id, target_id)`, together |
-| Transactions | a rollback takes a new table back | the engine's schema is not transactional, so `CREATE TABLE` is refused in a transaction block, also one that a message of several statements opens on the wire |
+| Transactions | nobody else sees a new table before the commit, and a rollback takes it back | the engine's schema is not transactional: `CREATE TABLE` runs at once, in a transaction block too, and **other sessions see the table before the commit** and can write to it. When the block rolls back, the table is dropped if it is still empty; a table that another session has written stays. A transaction that ends without the language or the PostgreSQL protocol, a `rollback()` of the Java API for example, leaves the drop to the next statement of the language. A server that stops inside a block leaves the table |
 | Names | `person` and `"Person"` are two tables | an unquoted name that finds a table in another case counts as taken (`42P07`) |
 | A taken name | `42P07`, or `42710` for a constraint | the same SQLSTATE, also from `CREATE INDEX`. As for a taken name in `sql`, every protocol of ArcadeDB answers it as a conflict: HTTP with 409 and `AlreadyExistsException` |
 | Column types | all, with modifiers | `bool`, `int2`, `int4`, `int8`, `float4`, `float8`, `numeric`, `text`, `varchar`, `bytea`, `date`, `timestamp`, `timestamptz`, `jsonb`, `vector` and `vector(n)`, and arrays of `bool`, `int4`, `int8`, `float4`, `float8`, `numeric`, `bytea`, `text`, `date`, and `timestamp`. No other type modifier |
@@ -149,7 +149,7 @@ Every refusal below is `0A000`.
 | The name of an index | in `pg_indexes` | recorded for `IF NOT EXISTS` and `42P07`; the wire catalog (`\d`) shows the name of the engine's index |
 | What it takes | expressions, `WHERE`, `INCLUDE`, `DESC`, `NULLS`, `COLLATE`, `CONCURRENTLY`, `TABLESPACE` | plain columns, ascending; the rest is refused |
 | Keys | any type with an operator class | tree indexes over `bool`, the number types, `text`, `varchar`, `date`, and `timestamp` |
-| Transactions | a rollback takes the index back | refused in a transaction block, as `CREATE TABLE` is |
+| Transactions | a rollback takes the index back | refused in a transaction block, also for a table that the block made, so `create_all` of SQLAlchemy needs autocommit for a model with an index |
 
 ## `CREATE EXTENSION`
 

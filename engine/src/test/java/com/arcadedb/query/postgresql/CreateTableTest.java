@@ -24,6 +24,7 @@ import com.arcadedb.exception.AlreadyExistsException;
 import com.arcadedb.exception.ErrorCategory;
 import com.arcadedb.query.OperationType;
 import com.arcadedb.query.QueryEngine;
+import com.arcadedb.query.postgresql.catalog.Sequences;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
@@ -311,21 +312,78 @@ class CreateTableTest extends TestHelper {
     assertThat(database.getSchema().existsType("t")).isFalse();
   }
 
+  /** Fork issue #229: it runs in a transaction block, and a rollback drops what it made and nobody wrote. */
   @Test
-  void aTransactionBlockRefusesItAndAServerTransactionDoesNot() {
+  void aRollbackDropsTheEmptyTablesOfItsBlock() {
     run("BEGIN");
-    assertState("CREATE TABLE t (a int)", "0A000");
+    run("CREATE TABLE t (id serial PRIMARY KEY, a int)");
+    run("CREATE TABLE knows (source_id text NOT NULL REFERENCES t (rid) ON DELETE CASCADE,"
+        + " target_id text NOT NULL REFERENCES t (rid) ON DELETE CASCADE)");
+    run("INSERT INTO t (a) VALUES (1), (2)");
+    run("INSERT INTO knows (source_id, target_id) SELECT x.rid, y.rid FROM t x, t y WHERE x.a = 1 AND y.a = 2");
+    assertThat(lines("SELECT id, a FROM t ORDER BY id")).containsExactly("1|1", "2|2");
     run("ROLLBACK");
-    database.begin();
-    assertState("CREATE TABLE t (a int)", "0A000");
-    database.rollback();
+
     assertThat(database.getSchema().existsType("t")).isFalse();
+    assertThat(database.getSchema().existsType("knows")).isFalse();
+    assertThat(database.countType(Sequences.TYPE_NAME, false)).isZero();
+  }
+
+  @Test
+  void aCommitKeepsTheTablesOfItsBlock() {
+    run("BEGIN");
+    run("CREATE TABLE t (id serial PRIMARY KEY, a int)");
+    run("INSERT INTO t (a) VALUES (1)");
+    run("COMMIT");
+    run("BEGIN");
+    run("ROLLBACK");
+
+    assertThat(lines("SELECT id, a FROM t")).containsExactly("1|1");
+  }
+
+  @Test
+  void aFailedBlockAndATransactionOfTheCallerDropThemToo() {
+    run("BEGIN");
+    run("CREATE TABLE t (a int)");
+    assertState("SELECT nope FROM t", "42703");
+    // the commit of a failed block is a rollback
+    run("COMMIT");
+    assertThat(database.getSchema().existsType("t")).isFalse();
+
+    database.begin();
+    run("CREATE TABLE u (a int)");
+    database.rollback();
+    // a rollback that did not pass through the language: its next statement looks at the table
+    run("CREATE TABLE IF NOT EXISTS u (b int)");
+    assertThat(columns("SELECT * FROM u")).containsExactly("b");
 
     database.transaction(() -> {
       ((DatabaseInternal) database).getTransaction().setImplicit(true);
-      run("CREATE TABLE t (a int PRIMARY KEY)");
+      run("CREATE TABLE v (a int PRIMARY KEY)");
     });
-    assertThat(database.getSchema().existsType("t")).isTrue();
+    assertThat(database.getSchema().existsType("v")).isTrue();
+  }
+
+  @Test
+  void aTableThatAnotherSessionWroteIsKept() throws InterruptedException {
+    run("BEGIN");
+    run("CREATE TABLE t (a int)");
+    final Thread other = new Thread(() -> run("INSERT INTO t VALUES (1)"));
+    other.start();
+    other.join();
+    run("ROLLBACK");
+
+    assertThat(lines("SELECT a FROM t")).containsExactly("1");
+  }
+
+  @Test
+  void anIndexStaysRefusedInATransactionBlock() {
+    run("BEGIN");
+    run("CREATE TABLE t (a int)");
+    assertState("CREATE INDEX ON t (a)", "0A000");
+    run("ROLLBACK");
+
+    assertThat(database.getSchema().existsType("t")).isFalse();
   }
 
   @Test
