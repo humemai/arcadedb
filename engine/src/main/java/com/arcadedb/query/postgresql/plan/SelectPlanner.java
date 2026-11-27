@@ -1482,16 +1482,29 @@ public class SelectPlanner {
       return call.name().get(call.name().size() - 1).value();
     if (expression instanceof Expression.SpecialFunction special)
       return special.kind().name().toLowerCase(Locale.ROOT);
-    if (expression instanceof Expression.Case)
-      return "case";
+    if (expression instanceof Expression.Case when)
+      return keepsItsName(when.otherwise()) ? outputName(when.otherwise()) : "case";
     if (expression instanceof Expression.ArrayConstructor)
       return "array";
+    if (expression instanceof Expression.Exists)
+      return "exists";
     if (expression instanceof Expression.ScalarSubquery subquery)
       return firstColumnName(subquery.query());
-    if (expression instanceof Expression.Cast cast) {
-      final String inner = outputName(cast.operand());
-      return "?column?".equals(inner) ? cast.type().name().get(cast.type().name().size() - 1) : inner;
-    }
+    if (expression instanceof Expression.Cast cast)
+      return keepsItsName(cast.operand()) ? outputName(cast.operand()) : cast.type().name().get(cast.type().name().size() - 1);
     return "?column?";
+  }
+
+  /**
+   * Whether a cast around {@code expression}, or a {@code CASE} that has it as its {@code ELSE}, takes its name. A name that comes
+   * from a cast or from a {@code CASE} itself gives way to the one around it; the name of a column, a function or a subquery, also
+   * one below such a cast or {@code CASE}, stays.
+   */
+  private static boolean keepsItsName(final Expression expression) {
+    if (expression instanceof Expression.Cast cast)
+      return keepsItsName(cast.operand());
+    if (expression instanceof Expression.Case when)
+      return keepsItsName(when.otherwise());
+    return expression instanceof Expression.ScalarSubquery || expression != null && !"?column?".equals(outputName(expression));
   }
 }
