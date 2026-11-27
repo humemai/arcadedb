@@ -85,7 +85,7 @@ class PostgreSQLCurrentTimeTest extends PostgreSQLSideBySideTestBase {
 
       // the default holds for the sql language too, in UTC
       final Database database = getServerDatabase(0, getDatabaseName());
-      database.transaction(() -> database.command("sql", "INSERT INTO d SET id = 30"));
+      database.transaction(() -> database.command("sql", "CREATE VERTEX d SET id = 30"));
       assertThat(answer(arcade, "SELECT count(*) AS n FROM d WHERE id = 30 AND a > now() - interval '1 minute' AND a <= now()"
           + " AND e > now() - interval '1 minute' AND c = current_date AND i = current_date", false)).isEqualTo("    n|\n    1|\n");
 
