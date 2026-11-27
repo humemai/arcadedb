@@ -90,8 +90,11 @@ class PostgreSQLArrayAnyTest extends PostgreSQLSideBySideTestBase {
       new Call("SELECT name FROM f WHERE ? = ANY(nums) ORDER BY name", 3),
       new Call("SELECT name FROM f WHERE id = ANY(?) AND name = ANY(?) ORDER BY name", new Bound("int4", 1, 2),
           new Bound("text", "bob")),
-      // an array of another type is no operator, as in PostgreSQL
-      new Call("SELECT name FROM f WHERE id = ANY(?) ORDER BY name", new Bound("text", "1")));
+      // an array of another type is no operator, as in PostgreSQL, also when it has no element that says its type
+      new Call("SELECT name FROM f WHERE id = ANY(?) ORDER BY name", new Bound("text", "1")),
+      new Call("SELECT name FROM f WHERE id = ANY(?) ORDER BY name", new Bound("text")),
+      new Call("SELECT name FROM f WHERE name <> ALL(?) ORDER BY name", new Bound("int4")),
+      new Call("SELECT name FROM f WHERE id = ANY(?) ORDER BY name", new Bound("text", (Object) null)));
 
   /** Python lists, which psycopg binds as arrays, in the text and in the binary format. */
   private static final String SCRIPT = """

@@ -159,7 +159,13 @@ public sealed interface Expression extends Node {
     /** pgvector {@code <=>}, the cosine distance. */
     COSINE_DISTANCE("<=>"),
     /** pgvector {@code <#>}, the negative inner product. */
-    NEGATIVE_INNER_PRODUCT("<#>");
+    NEGATIVE_INNER_PRODUCT("<#>"),
+    /** {@code a @> b}: the left array has every element of the right one. */
+    CONTAINS("@>"),
+    /** {@code a <@ b}: the right array has every element of the left one. */
+    CONTAINED_BY("<@"),
+    /** {@code a && b}: the arrays have an element in common. */
+    OVERLAPS("&&");
 
     private final String symbol;
 

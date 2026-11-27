@@ -770,6 +770,9 @@ final class AstBuilder {
       case "<->" -> BinaryOperator.L2_DISTANCE;
       case "<=>" -> BinaryOperator.COSINE_DISTANCE;
       case "<#>" -> BinaryOperator.NEGATIVE_INNER_PRODUCT;
+      case "@>" -> BinaryOperator.CONTAINS;
+      case "<@" -> BinaryOperator.CONTAINED_BY;
+      case "&&" -> BinaryOperator.OVERLAPS;
       default -> throw Diagnostics.notSupported("The operator " + token.getText(), token);
     };
   }
