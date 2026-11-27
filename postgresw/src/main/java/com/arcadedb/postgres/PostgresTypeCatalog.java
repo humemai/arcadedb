@@ -443,7 +443,7 @@ public class PostgresTypeCatalog {
     if (type.isArrayType())
       return "array_" + suffix;
     return switch (type) {
-      case DATE, TIME, TIMETZ, TIMESTAMP, TIMESTAMPTZ, INTERVAL, JSON, JSONB, NUMERIC -> type.typeName + "_" + suffix;
+      case DATE, TIME, TIMETZ, TIMESTAMP, TIMESTAMPTZ, INTERVAL, JSON, JSONB, NUMERIC, UUID -> type.typeName + "_" + suffix;
       default -> type.typeName + suffix;
     };
   }
@@ -486,7 +486,8 @@ public class PostgresTypeCatalog {
       final PostgresType element = PostgresType.byCode(type.elementCode);
       return element != null && "d".equals(align(element)) ? "d" : "i";
     }
-    if (type == PostgresType.NAME)
+    // name and uuid are sequences of bytes
+    if (type == PostgresType.NAME || type == PostgresType.UUID)
       return "c";
     return switch (type.size) {
       case 1 -> "c";

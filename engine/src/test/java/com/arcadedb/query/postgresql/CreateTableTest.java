@@ -296,7 +296,7 @@ class CreateTableTest extends TestHelper {
 
   @ParameterizedTest
   @ValueSource(strings = { "CREATE TEMP TABLE t (a int)", "CREATE UNLOGGED TABLE t (a int)", "CREATE TABLE t ()",
-      "CREATE TABLE t (a serial[])", "CREATE TABLE t (a uuid)", "CREATE TABLE t (a timetz)", "CREATE TABLE t (a char(3))",
+      "CREATE TABLE t (a serial[])", "CREATE TABLE t (a timetz)", "CREATE TABLE t (a char(3))",
       "CREATE TABLE t (a varchar(5))", "CREATE TABLE t (a numeric(10, 2))", "CREATE TABLE t (a int[][])",
       "CREATE TABLE t (a timestamptz[])", "CREATE TABLE t (a date[][])", "CREATE TABLE t (a date[] UNIQUE)",
       "CREATE TABLE t (a int CHECK (a > 0))", "CREATE TABLE t (a int, CHECK (a > 0))",

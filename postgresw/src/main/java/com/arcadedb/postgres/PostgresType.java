@@ -27,6 +27,8 @@ import com.arcadedb.database.Record;
 import com.arcadedb.query.opencypher.temporal.CypherDuration;
 import com.arcadedb.query.opencypher.temporal.CypherTemporalValue;
 import com.arcadedb.query.opencypher.traversal.TraversalPath;
+import com.arcadedb.query.postgresql.eval.Casts;
+import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.schema.Type;
 import com.arcadedb.serializer.JsonSerializer;
@@ -157,7 +159,15 @@ public enum PostgresType {
   ARRAY_JSONB(3807, "_jsonb", 3802, 0, Collection.class, -1, value -> parseArrayFromString(value, s -> s)),
   ARRAY_NAME(1003, "_name", 19, 0, Collection.class, -1, value -> parseArrayFromString(value, s -> s)),
   ARRAY_OID(1028, "_oid", 26, 0, Collection.class, -1, value -> parseArrayFromString(value, Long::parseLong)),
-  ARRAY_INT2VECTOR(1006, "_int2vector", 22, 0, Collection.class, -1, value -> parseArrayFromString(value, s -> s));
+  ARRAY_INT2VECTOR(1006, "_int2vector", 22, 0, Collection.class, -1, value -> parseArrayFromString(value, s -> s)),
+  // uuid (fork issue #225): a column of the postgresql language, and a parameter of any language
+  UUID(2950, "uuid", 0, 2951, java.util.UUID.class, 16, PostgresType::parseUuidText),
+  ARRAY_UUID(2951, "_uuid", 2950, 0, Collection.class, -1, value -> parseArrayFromString(value, PostgresType::parseUuidText));
+
+  /** The text of a uuid in any form PostgreSQL reads, as the input function of the {@code postgresql} language reads it. */
+  private static java.util.UUID parseUuidText(final String value) {
+    return java.util.UUID.fromString((String) Casts.parse(value, PgType.UUID));
+  }
 
   private static final Map<Integer, PostgresType> CODE_MAP = Arrays.stream(values())
       .collect(Collectors.toMap(type -> type.code, type -> type));
@@ -1351,9 +1361,15 @@ public enum PostgresType {
       typeBuffer.putInt((int) toNumber(value).longValue());
     }
     case INT2VECTOR -> putInt2VectorBinary(typeBuffer, value);
+    case UUID -> {
+      final java.util.UUID uuid = value instanceof java.util.UUID given ? given : parseUuidText(value.toString());
+      typeBuffer.putInt(16);
+      typeBuffer.putLong(uuid.getMostSignificantBits());
+      typeBuffer.putLong(uuid.getLeastSignificantBits());
+    }
     case ARRAY_INT, ARRAY_CHAR, ARRAY_LONG, ARRAY_REAL, ARRAY_DOUBLE, ARRAY_TEXT, ARRAY_JSON, ARRAY_BOOLEAN, ARRAY_NUMERIC, ARRAY_SMALLINT,
          ARRAY_BYTEA, ARRAY_BPCHAR, ARRAY_VARCHAR, ARRAY_DATE, ARRAY_TIMESTAMP, ARRAY_TIMESTAMPTZ, ARRAY_TIME, ARRAY_TIMETZ, ARRAY_INTERVAL,
-         ARRAY_JSONB, ARRAY_NAME, ARRAY_OID, ARRAY_INT2VECTOR -> {
+         ARRAY_JSONB, ARRAY_NAME, ARRAY_OID, ARRAY_INT2VECTOR, ARRAY_UUID -> {
       final Collection<?> elements = value instanceof Collection<?> collection ? collection
           : value.getClass().isArray() ? convertPrimitiveArrayToCollection(value) : null;
       if (elements == null)
@@ -1956,9 +1972,16 @@ public enum PostgresType {
       }
       case ARRAY_INT, ARRAY_LONG, ARRAY_DOUBLE, ARRAY_REAL, ARRAY_TEXT, ARRAY_BOOLEAN, ARRAY_CHAR, ARRAY_JSON, ARRAY_NUMERIC,
            ARRAY_SMALLINT, ARRAY_BYTEA, ARRAY_BPCHAR, ARRAY_VARCHAR, ARRAY_DATE, ARRAY_TIMESTAMP, ARRAY_TIMESTAMPTZ, ARRAY_TIME,
-           ARRAY_TIMETZ, ARRAY_INTERVAL, ARRAY_JSONB, ARRAY_NAME, ARRAY_OID, ARRAY_INT2VECTOR -> deserializeBinaryArray(buffer);
+           ARRAY_TIMETZ, ARRAY_INTERVAL, ARRAY_JSONB, ARRAY_NAME, ARRAY_OID, ARRAY_INT2VECTOR, ARRAY_UUID ->
+          deserializeBinaryArray(buffer);
       // namesend writes the bytes of the name, as text does
       case NAME -> new String(valueAsBytes, DatabaseFactory.getDefaultCharset());
+      // uuid_send writes the sixteen bytes
+      case UUID -> {
+        if (valueAsBytes.length != 16)
+          throw new PostgresProtocolException("A binary uuid has 16 bytes, not " + valueAsBytes.length);
+        yield new java.util.UUID(buffer.getLong(), buffer.getLong());
+      }
       // an oid is an UNSIGNED 32-bit number: read into a long, as the text format reads it, so 4294967295 is not -1
       case OID -> Integer.toUnsignedLong(buffer.getInt());
       // int2vectorsend writes the array format of int2[], and the text format reads it as its "1 2 3" text: read the same way

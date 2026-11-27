@@ -43,6 +43,7 @@ import java.util.Locale;
  * <tr><td>{@code numeric}</td><td>{@link BigDecimal}, finite only (no {@code NaN})</td></tr>
  * <tr><td>{@code float4}, {@code float8}</td><td>{@link Float}, {@link Double}</td></tr>
  * <tr><td>{@code text}, {@code varchar}</td><td>{@link String}</td></tr>
+ * <tr><td>{@code uuid}</td><td>{@link String}: the 36 characters in lower case, whose order is the order of the bytes</td></tr>
  * <tr><td>{@code date}</td><td>{@link LocalDate}</td></tr>
  * <tr><td>{@code timestamp}</td><td>{@link LocalDateTime}</td></tr>
  * <tr><td>{@code timestamptz}</td><td>{@link OffsetDateTime} at the offset zero: an instant. In the rows of an answer it is at
@@ -59,7 +60,7 @@ import java.util.Locale;
 public enum PgType {
   UNKNOWN("unknown"), BOOL("bool"), INT2("int2"), INT4("int4"), INT8("int8"), NUMERIC("numeric"), FLOAT4("float4"),
   FLOAT8("float8"), TEXT("text"), VARCHAR("varchar"), DATE("date"), TIMESTAMP("timestamp"), JSONB("jsonb"), BYTEA("bytea"),
-  ARRAY("array"), VECTOR("vector"), INTERVAL("interval"), TIMESTAMPTZ("timestamptz");
+  ARRAY("array"), VECTOR("vector"), INTERVAL("interval"), TIMESTAMPTZ("timestamptz"), UUID("uuid");
 
   private final String typeName;
 
@@ -135,6 +136,7 @@ public enum PgType {
       case TIMESTAMPTZ -> TIMESTAMPTZ;
       case VARCHAR -> VARCHAR;
       case TEXT -> TEXT;
+      case UUID -> UUID;
       case BYTEA -> BYTEA;
       case JSONB -> JSONB;
       case VECTOR -> VECTOR;
@@ -168,6 +170,8 @@ public enum PgType {
       return FLOAT8;
     if (value instanceof CharSequence || value instanceof Character)
       return TEXT;
+    if (value instanceof java.util.UUID)
+      return UUID;
     if (value instanceof float[])
       return VECTOR;
     if (value instanceof byte[])
@@ -197,6 +201,7 @@ public enum PgType {
       return null;
     return switch (last) {
       case "bool", "boolean" -> BOOL;
+      case "uuid" -> UUID;
       case "int2", "smallint" -> INT2;
       case "int4", "int", "integer" -> INT4;
       case "int8", "bigint" -> INT8;

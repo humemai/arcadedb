@@ -56,6 +56,8 @@ public enum ColumnType {
   TIMESTAMPTZ("timestamptz"),
   VARCHAR("varchar"),
   TEXT("text"),
+  /** A {@code STRING} property that the {@link TableDefinition} declares as {@code uuid}: the 36 characters, in lower case. */
+  UUID("uuid"),
   BYTEA("bytea"),
   JSONB("jsonb"),
   BOOL_ARRAY("bool[]", BOOL),

@@ -56,6 +56,7 @@ record ColumnAttributes(String dataType, String udtName, Integer characterOctetL
       case TIMESTAMPTZ -> new ColumnAttributes("timestamp with time zone", "timestamptz", null, null, null, null, 6);
       case VARCHAR -> new ColumnAttributes("character varying", "varchar", UNBOUNDED_OCTETS, null, null, null, null);
       case TEXT -> new ColumnAttributes("text", "text", UNBOUNDED_OCTETS, null, null, null, null);
+      case UUID -> new ColumnAttributes("uuid", "uuid", null, null, null, null, null);
       case BYTEA -> new ColumnAttributes("bytea", "bytea", null, null, null, null, null);
       case JSONB -> new ColumnAttributes("jsonb", "jsonb", null, null, null, null, null);
       default -> new ColumnAttributes("USER-DEFINED", type.typeName(), null, null, null, null, null);

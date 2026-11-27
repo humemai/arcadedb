@@ -111,6 +111,8 @@ public final class Casts {
     case VARCHAR:
     case UNKNOWN:
       return (String) value;
+    case UUID:
+      return value.toString();
     case DATE:
       return value.toString();
     case TIMESTAMP:
@@ -205,6 +207,8 @@ public final class Casts {
     case VARCHAR:
     case UNKNOWN:
       return text;
+    case UUID:
+      return parseUuid(text);
     case DATE:
       return parseDate(text);
     case TIMESTAMP:
@@ -220,6 +224,34 @@ public final class Casts {
     default:
       throw PostgreSQLEvaluationException.unsupported("A value of type " + type.displayName() + " cannot be written as a literal");
     }
+  }
+
+  /**
+   * {@code uuid_in}: 32 hexadecimal digits, with a hyphen after any group of four of them but the last, in braces or not; the
+   * canonical form is the 36 characters in lower case.
+   */
+  private static String parseUuid(final String text) {
+    final boolean braces = text.startsWith("{");
+    int at = braces ? 1 : 0;
+    final StringBuilder out = new StringBuilder(36);
+    for (int i = 0; i < 16; i++) {
+      if (at + 2 > text.length() || Character.digit(text.charAt(at), 16) < 0 || Character.digit(text.charAt(at + 1), 16) < 0)
+        throw PostgreSQLEvaluationException.invalidText(PgType.UUID, text);
+      if (i == 4 || i == 6 || i == 8 || i == 10)
+        out.append('-');
+      out.append(Character.toLowerCase(text.charAt(at))).append(Character.toLowerCase(text.charAt(at + 1)));
+      at += 2;
+      if (i % 2 == 1 && i < 15 && at < text.length() && text.charAt(at) == '-')
+        at++;
+    }
+    if (braces) {
+      if (at >= text.length() || text.charAt(at) != '}')
+        throw PostgreSQLEvaluationException.invalidText(PgType.UUID, text);
+      at++;
+    }
+    if (at != text.length())
+      throw PostgreSQLEvaluationException.invalidText(PgType.UUID, text);
+    return out.toString();
   }
 
   private static Boolean parseBoolean(final String text) {
@@ -651,6 +683,9 @@ public final class Casts {
     case VARCHAR:
     case UNKNOWN:
       return raw.toString();
+    case UUID:
+      // what another language wrote into the property was checked against its pattern
+      return raw instanceof java.util.UUID ? raw.toString() : parseUuid(raw.toString());
     case DATE:
       return toDate(raw);
     case TIMESTAMP:

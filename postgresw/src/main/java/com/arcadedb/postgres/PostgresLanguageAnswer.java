@@ -229,7 +229,7 @@ final class PostgresLanguageAnswer {
    */
   static long parameterOid(final PgType type, final String typeName) {
     return switch (type) {
-      case BOOL, INT2, INT4, INT8, NUMERIC, FLOAT4, FLOAT8, TEXT, VARCHAR, DATE, TIMESTAMP, TIMESTAMPTZ, JSONB, BYTEA ->
+      case BOOL, INT2, INT4, INT8, NUMERIC, FLOAT4, FLOAT8, TEXT, VARCHAR, DATE, TIMESTAMP, TIMESTAMPTZ, JSONB, BYTEA, UUID ->
           PostgresType.byName(type.typeName()).code;
       case VECTOR -> wireType(type.typeName()).code;
       case ARRAY -> typeName.startsWith("_") ? wireType(typeName).code : 0L;
