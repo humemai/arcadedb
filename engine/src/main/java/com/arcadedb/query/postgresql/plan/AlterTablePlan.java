@@ -22,6 +22,7 @@ import com.arcadedb.database.Database;
 import com.arcadedb.database.Document;
 import com.arcadedb.database.MutableDocument;
 import com.arcadedb.database.Record;
+import com.arcadedb.log.LogManager;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.PostgreSQLUndefinedTableException;
 import com.arcadedb.query.postgresql.ast.AlterTableStatement;
@@ -53,6 +54,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
+import java.util.logging.Level;
 
 /**
  * {@code ALTER TABLE} (fork issue #230) on a table that {@code CREATE TABLE} made: {@code ADD COLUMN} with its {@code NOT NULL}
@@ -61,8 +64,9 @@ import java.util.Set;
  * uuid for each), and one without reads {@code NULL}. The result is in the schema of the engine, so every language sees it.
  * <p>
  * One statement is all or nothing. What the rows say is checked before the schema changes; the rows are then written in one
- * transaction, and a failure takes the schema changes back. The schema of the engine is not transactional, so the statement is
- * refused in a transaction block.
+ * transaction, and a failure takes the schema changes back. In a transaction block the rows are written in the transaction of the
+ * block. The schema of the engine is not transactional: its changes are there at once, for other sessions too, and
+ * {@link #takeBack} undoes them when the transaction does not commit.
  */
 public final class AlterTablePlan {
   /** A column as the statement sees it after the actions before. */
@@ -85,6 +89,10 @@ public final class AlterTablePlan {
   private final AlterTableStatement statement;
   private final Parameters          parameters;
   private final CreateTablePlan     declarations;
+  /** how to take back each change of the schema, the last one first */
+  private final Deque<Runnable>     undo             = new ArrayDeque<>();
+  /** the counters of serial columns whose default the statement replaced, dropped once the change is final */
+  private final List<String>        replacedCounters = new ArrayList<>();
 
   /** @param parameters the parameters at the time of the statement, which a default of the clock reads */
   public AlterTablePlan(final Database database, final RelationalCatalog catalog, final AlterTableStatement statement,
@@ -258,11 +266,33 @@ public final class AlterTablePlan {
     });
   }
 
+  /**
+   * Takes back what the statement changed in the schema, the last change first: after a failure of the statement itself, or when
+   * its transaction did not commit, which is also when another statement may have changed the same since. What cannot be taken
+   * back is logged and the rest still is.
+   */
+  public void takeBack() {
+    while (!undo.isEmpty())
+      try {
+        undo.pop().run();
+      } catch (final RuntimeException e) {
+        LogManager.instance().log(this, Level.WARNING, "Cannot take back a change of ALTER TABLE", e);
+      }
+  }
+
+  /** Once the change is final, because it was made outside a transaction or its transaction committed. */
+  public void finish() {
+    undo.clear();
+    Sequences.drop(database, replacedCounters);
+    replacedCounters.clear();
+  }
+
   private void change(final Table table, final DocumentType type, final TableDefinition definition,
       final Map<String, CreateTablePlan.Spec> added, final Map<String, CreateTablePlan.Spec> defaults,
       final Map<String, Boolean> notNull, final Set<String> required) {
-    final Deque<Runnable> undo = new ArrayDeque<>();
-    final List<String> replacedCounters = new ArrayList<>();
+    // an undo may run after the transaction has ended: it looks the type and the property up again by name
+    final String typeName = type.getName();
+    final Supplier<DocumentType> now = () -> database.getSchema().getType(typeName);
     boolean done = false;
     try {
       final Map<CreateTablePlan.Spec, Property> created = new LinkedHashMap<>();
@@ -273,14 +303,14 @@ public final class AlterTablePlan {
         final Property property = declarations.createProperty(type, spec);
         spec.notNull = mandatory;
         created.put(spec, property);
-        undo.push(() -> type.dropProperty(spec.name));
+        undo.push(() -> now.get().dropProperty(spec.name));
       }
       for (final CreateTablePlan.Spec spec : defaults.values()) {
         final Property property = type.getPolymorphicPropertyIfExists(spec.name);
         final Object before = property.getDefaultValueDefinition();
         final String counter = Sequences.keyOf(before);
         property.setDefaultValue(null);
-        undo.push(() -> property.setDefaultValue(before));
+        undo.push(() -> now.get().getPolymorphicPropertyIfExists(spec.name).setDefaultValue(before));
         CreateTablePlan.setDefault(property, spec);
         if (counter != null)
           replacedCounters.add(counter);
@@ -288,7 +318,7 @@ public final class AlterTablePlan {
 
       final Object before = type.getCustomValue(TableDefinition.CUSTOM_KEY);
       type.setCustomValue(TableDefinition.CUSTOM_KEY, changed(definition, added, defaults).toJson());
-      undo.push(() -> type.setCustomValue(TableDefinition.CUSTOM_KEY, before));
+      undo.push(() -> now.get().setCustomValue(TableDefinition.CUSTOM_KEY, before));
 
       for (final Map.Entry<String, Boolean> each : notNull.entrySet()) {
         final Property property = type.getPolymorphicPropertyIfExists(each.getKey());
@@ -297,8 +327,9 @@ public final class AlterTablePlan {
         property.setMandatory(each.getValue());
         property.setNotNull(each.getValue());
         undo.push(() -> {
-          property.setMandatory(wasMandatory);
-          property.setNotNull(wasNotNull);
+          final Property then = now.get().getPolymorphicPropertyIfExists(each.getKey());
+          then.setMandatory(wasMandatory);
+          then.setNotNull(wasNotNull);
         });
       }
 
@@ -313,10 +344,8 @@ public final class AlterTablePlan {
       done = true;
     } finally {
       if (!done)
-        while (!undo.isEmpty())
-          undo.pop().run();
+        takeBack();
     }
-    Sequences.drop(database, replacedCounters);
   }
 
   /** Writes the default of each added column into the rows that exist, and looks again for the rows without a required value. */

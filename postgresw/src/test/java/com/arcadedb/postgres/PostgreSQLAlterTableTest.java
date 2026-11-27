@@ -89,10 +89,6 @@ class PostgreSQLAlterTableTest extends PostgreSQLSideBySideTestBase {
         refused(arcade, "ALTER TABLE facts ADD COLUMN u int UNIQUE", "CREATE UNIQUE INDEX ON facts (u)");
         refused(arcade, "ALTER TABLE facts ADD COLUMN c int CHECK (c > 0)", "in CREATE TABLE");
         refused(arcade, "ALTER TABLE facts ADD COLUMN s serial", "CREATE TABLE");
-        arcade.setAutoCommit(false);
-        refused(arcade, "ALTER TABLE facts ADD COLUMN b int", "autocommit");
-        arcade.rollback();
-        arcade.setAutoCommit(true);
 
         // sql sees the columns and their values, and its writes keep them
         compare("sql reads", "    0|1.01|\n", answer(arcade, "{sql} SELECT importance, price.asString() AS price FROM facts"

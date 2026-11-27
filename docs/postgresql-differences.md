@@ -154,7 +154,7 @@ The engine applies the length of a `varchar(n)` and the precision and scale of a
 
 | topic | PostgreSQL 18 | `postgresql` |
 | --- | --- | --- |
-| A transaction block | allowed, and a rollback takes the change back | `0A000`: run it in autocommit |
+| A transaction block | allowed; other sessions wait for the lock on the table, and see the change at `COMMIT` | allowed, and a rollback takes the change back. The schema of the engine is not transactional, so **other sessions see the change at once**, and nothing is locked: a write of another session to a row that the block wrote makes the `COMMIT` fail with `40001` and takes the change back (`PostgreSQLAlterTableInBlockTest`). A `rollback()` of the Java API leaves the schema to the next statement of the language, and a server that stops inside a block leaves the change. On a replica of a high availability cluster the statement runs on the leader at once, outside the block (from reading the code, not tested) |
 | A table | any table | one that `CREATE TABLE` of this language made; for another type the hint names the `sql` statement |
 | An added column with a default | the rows are usually not rewritten | each row is written, in one transaction, so a very large table needs the memory for it |
 | A record that already has an undeclared property of the new name, written by `sql` or openCypher | not applicable | `0A000`: remove the property first |
