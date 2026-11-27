@@ -171,6 +171,11 @@ final class Diagnostics {
    * @param first the first word of the construct, in upper case
    */
   private static String hint(final String ruleName, final String what, final String first) {
+    // fork issue #228: foreign keys are checked at the end of each statement, so none can be deferred
+    if (("unsupportedColumnConstraint".equals(ruleName) || "unsupportedConstraintOption".equals(ruleName))
+        && ("DEFERRABLE".equals(first) || "INITIALLY".equals(first)))
+      return "Leave " + first + " and what belongs to it out: a constraint is checked when each statement writes, so insert the"
+          + " referenced row first";
     return switch (ruleName) {
       case "unsupportedColumnConstraint" -> "GENERATED".equals(first) ?
           "Leave GENERATED ALWAYS AS (...) out and compute the value in the queries that read it. For generated keys write"

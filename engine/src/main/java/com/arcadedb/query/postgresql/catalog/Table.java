@@ -86,19 +86,41 @@ public final class Table {
    * property {@code id} of its own and a unique key of one that has. The columns of a foreign key hold record ids, so it refers to
    * the record id column under whatever name the table gives it ({@code id} or {@code rid}).
    */
-  public record ForeignKey(String name, List<String> columns, String referencedTable, List<String> referencedColumns, Origin origin) {
+  public record ForeignKey(String name, List<String> columns, String referencedTable, List<String> referencedColumns, Origin origin,
+      com.arcadedb.schema.ForeignKey declared) {
     public enum Origin {
       /** A {@code LINK} property: a many-to-one reference to the type it links to. */
       LINK_PROPERTY,
       /** {@code source_id}, from the declared source table of the edge type. */
       EDGE_SOURCE,
       /** {@code target_id}, from the declared target table of the edge type. */
-      EDGE_TARGET
+      EDGE_TARGET,
+      /** A foreign key declared on the type, which the engine checks (fork issue #228). It refers to a key over properties. */
+      DECLARED
+    }
+
+    ForeignKey(final String name, final List<String> columns, final String referencedTable, final List<String> referencedColumns,
+        final Origin origin) {
+      this(name, columns, referencedTable, referencedColumns, origin, null);
     }
 
     /** Whether this is an end of an edge: deleting the vertex it refers to deletes the edge, which is {@code ON DELETE CASCADE}. */
     public boolean cascadesOnDelete() {
-      return origin != Origin.LINK_PROPERTY;
+      return origin == Origin.EDGE_SOURCE || origin == Origin.EDGE_TARGET;
+    }
+
+    /** The {@code delete_rule} of {@code information_schema.referential_constraints}. */
+    public String deleteRule() {
+      return declared != null ? rule(declared.onDelete()) : cascadesOnDelete() ? "CASCADE" : "NO ACTION";
+    }
+
+    /** The {@code update_rule} of {@code information_schema.referential_constraints}. */
+    public String updateRule() {
+      return declared != null ? rule(declared.onUpdate()) : "NO ACTION";
+    }
+
+    private static String rule(final com.arcadedb.schema.ForeignKey.Action action) {
+      return action.name().replace('_', ' ');
     }
 
     /**

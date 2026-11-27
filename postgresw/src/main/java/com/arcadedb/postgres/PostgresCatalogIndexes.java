@@ -250,12 +250,23 @@ final class PostgresCatalogIndexes {
    * @param oid             the OID of the constraint
    * @param attnums         the numbers of the referencing columns in the table
    * @param referencedIndex the OID of the index of the key it refers to, {@code pg_constraint.conindid}
-   * @param cascades        whether deleting the referenced row deletes the referencing one: an end of an edge
+   * @param deleteRule      what deleting the referenced row does, as {@code information_schema} names it
+   * @param updateRule      what a change of the referenced key does, as {@code information_schema} names it
    * @param enforced        whether the engine holds the key: not for a {@code LINK} property
    */
   record Reference(String name, DocumentType type, int tableOid, int oid, String[] columns, int[] attnums,
                    DocumentType referencedType, int referencedTableOid, String[] referencedColumns, int[] referencedAttnums,
-                   int referencedIndex, boolean cascades, boolean enforced) {
+                   int referencedIndex, String deleteRule, String updateRule, boolean enforced) {
+  }
+
+  /** The letter of {@code pg_constraint.confdeltype} and {@code confupdtype} for a rule. */
+  private static String actionCode(final String rule) {
+    return switch (rule) {
+      case "RESTRICT" -> "r";
+      case "CASCADE" -> "c";
+      case "SET NULL" -> "n";
+      default -> "a";
+    };
   }
 
   /** The indexes and the foreign keys of a database as a statement of the {@code postgresql} language sees them. */
@@ -382,7 +393,8 @@ final class PostgresCatalogIndexes {
         final Info target = keyIndexes.getOrDefault(referenced.name(), Map.of()).get(key.referencedColumns());
         references.add(new Reference(key.name(), type, tableOid.applyAsInt(type), freeOid("constraint:" + key.name(), used, firstOid,
             oidSpace), columns, attnums, referenced.documentType(), tableOid.applyAsInt(referenced.documentType()),
-            referencedColumns, referencedAttnums, target == null ? 0 : target.oid(), key.cascadesOnDelete(), key.enforced()));
+            referencedColumns, referencedAttnums, target == null ? 0 : target.oid(), key.deleteRule(), key.updateRule(),
+            key.enforced()));
       }
     }
     return new Keys(infos, references);
@@ -624,7 +636,8 @@ final class PostgresCatalogIndexes {
     return new Object[] { "oid", key.oid(), "conname", key.name(), "connamespace", schemaOid, "contype", "f", "condeferrable",
         Boolean.FALSE, "condeferred", Boolean.FALSE, "conenforced", key.enforced(), "convalidated", key.enforced(), "conrelid",
         key.tableOid(), "contypid", 0, "conindid", key.referencedIndex(), "conparentid", 0, "confrelid", key.referencedTableOid(),
-        "confupdtype", "a", "confdeltype", key.cascades() ? "c" : "a", "confmatchtype", "s", "conislocal", Boolean.TRUE,
+        "confupdtype", actionCode(key.updateRule()), "confdeltype", actionCode(key.deleteRule()), "confmatchtype", "s",
+        "conislocal", Boolean.TRUE,
         "coninhcount", 0, "connoinherit", Boolean.TRUE, "conkey", numbers(key.attnums()), "confkey",
         numbers(key.referencedAttnums()) };
   }
@@ -654,8 +667,10 @@ final class PostgresCatalogIndexes {
       definition.append(quoteIdentifier(key.referencedColumns()[k]));
     }
     definition.append(')');
-    if (key.cascades())
-      definition.append(" ON DELETE CASCADE");
+    if (!"NO ACTION".equals(key.updateRule()))
+      definition.append(" ON UPDATE ").append(key.updateRule());
+    if (!"NO ACTION".equals(key.deleteRule()))
+      definition.append(" ON DELETE ").append(key.deleteRule());
     if (!key.enforced())
       definition.append(" NOT ENFORCED");
     return definition.toString();

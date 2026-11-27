@@ -47,11 +47,12 @@ import java.util.Map;
  * @param referencedTable   the table a foreign key refers to, {@code null} for a primary or unique key
  * @param referencedColumns the columns of the referenced table, in the order of the referenced key; empty for a primary or unique key
  * @param referencedKey     the name of the primary or unique key that a foreign key refers to, {@code null} for a primary or unique key
- * @param cascadesOnDelete  whether deleting the referenced row deletes the referencing one, see {@link Table.ForeignKey#cascadesOnDelete()}
+ * @param updateRule        what a change of the referenced key does, see {@link Table.ForeignKey#updateRule()}, {@code null} for a key
+ * @param deleteRule        what deleting the referenced row does, see {@link Table.ForeignKey#deleteRule()}, {@code null} for a key
  * @param enforced          whether the engine holds the constraint, see {@link Table.ForeignKey#enforced()}; a primary or unique key is held
  */
 record Constraint(String name, String table, String type, List<String> columns, String referencedTable,
-    List<String> referencedColumns, String referencedKey, boolean cascadesOnDelete, boolean enforced) {
+    List<String> referencedColumns, String referencedKey, String updateRule, String deleteRule, boolean enforced) {
 
   static final String PRIMARY_KEY = "PRIMARY KEY";
   static final String UNIQUE      = "UNIQUE";
@@ -62,7 +63,27 @@ record Constraint(String name, String table, String type, List<String> columns, 
   }
 
   private static Constraint key(final String table, final String type, final Table.Key key) {
-    return new Constraint(key.name(), table, type, key.columns(), null, List.of(), null, false, true);
+    return new Constraint(key.name(), table, type, key.columns(), null, List.of(), null, null, null, true);
+  }
+
+  /**
+   * The name of the key over the referenced columns, in whatever order the foreign key names them; {@code null} when only a unique
+   * index that is no constraint holds them.
+   */
+  private static String keyName(final Table referenced, final List<String> columns) {
+    final Table.Key inOrder = referenced.keyOn(columns);
+    if (inOrder != null)
+      return inOrder.name();
+    if (referenced.primaryKey() != null && sameColumns(referenced.primaryKey(), columns))
+      return referenced.primaryKey().name();
+    for (final Table.Key key : referenced.uniqueKeys())
+      if (sameColumns(key, columns))
+        return key.name();
+    return null;
+  }
+
+  private static boolean sameColumns(final Table.Key key, final List<String> columns) {
+    return key.columns().size() == columns.size() && key.columns().containsAll(columns);
   }
 
   /**
@@ -82,8 +103,8 @@ record Constraint(String name, String table, String type, List<String> columns, 
       for (final Table.ForeignKey foreignKey : table.foreignKeys()) {
         final Table referenced = byName.get(foreignKey.referencedTable());
         out.add(new Constraint(foreignKey.name(), table.name(), FOREIGN_KEY, foreignKey.columns(), referenced.name(),
-            foreignKey.referencedColumns(), referenced.keyOn(foreignKey.referencedColumns()).name(), foreignKey.cascadesOnDelete(),
-            foreignKey.enforced()));
+            foreignKey.referencedColumns(), keyName(referenced, foreignKey.referencedColumns()), foreignKey.updateRule(),
+            foreignKey.deleteRule(), foreignKey.enforced()));
       }
     }
     return out;

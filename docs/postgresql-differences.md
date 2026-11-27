@@ -71,7 +71,7 @@ CREATE TABLE knows (
 
 | area | PostgreSQL | `postgresql` |
 | --- | --- | --- |
-| Foreign keys | any columns | only the two ends of an edge, written as above (as column or table constraints). Every other `REFERENCES` is refused, a link column included |
+| Foreign keys | any columns | checked, see [Foreign keys](#foreign-keys). A table with `REFERENCES` on both `source_id` and `target_id` has to be a link table, written as above; any other form of the two is refused |
 | A table that an edge table refers to | declares a column `rid` itself | declares nothing when `CREATE TABLE` made it: its record id answers to `rid`, a `text`. A table that declares its own column `rid` cannot be referred to (`0A000`). A type that ArcadeDB `sql` made needs a property `id` of its own (`42703` without one) |
 | The record id | none | readable by name, as `rid`, and also as `id` in a table with no column `id` (PostgreSQL raises `42703` for a name that the table does not declare). In a table that declares a column `rid` and no column `id`, it is `id` only. Left out of `*` and of an `INSERT` without a column list. Once a foreign key refers to the table, the catalog lists it, under `rid` when that name reads it. An unqualified name in one `FROM` reads a column that the catalog lists before a record id that it does not list, so a listed record id and a declared column of the same name are `42702`, as in PostgreSQL (fork issue [#163](https://github.com/humemai/arcadedb/issues/163)) |
 | An end of an edge | any row of the referenced table | checked by writes of this language only: `sql` and openCypher do not read the declaration |
@@ -88,7 +88,33 @@ CREATE TABLE knows (
 | `NOT NULL` in `information_schema.table_constraints` | listed as a `CHECK` constraint | not listed; `is_nullable` says it |
 | A name in a subquery that its tables do not declare | read from a query around it | the same, also where a table of the subquery reads its record id under that name: a record id that the catalog does not list gives way to a column of that name in a query around the subquery. In a join condition of an `EXISTS` subquery, in a subquery inside it, and beside another `EXISTS` in its `WHERE`, such a name is refused |
 
-`NOT NULL`, unique keys, defaults, and the dimensions of a `vector(n)` are kept by the schema of the engine, so they hold for writes of every language.
+`NOT NULL`, unique keys, foreign keys, defaults, and the dimensions of a `vector(n)` are kept by the schema of the engine, so they hold for writes of every language.
+
+## Foreign keys
+
+A foreign key between ordinary tables is written and checked as in PostgreSQL: `REFERENCES t [(columns)]` as a column or table constraint, over one or several columns, also to the table itself, with `ON DELETE` and `ON UPDATE` `NO ACTION`, `RESTRICT`, `CASCADE`, or `SET NULL`. The language checks it at the end of each statement. A row with `NULL` in a referring column is not checked.
+
+```sql
+CREATE TABLE users (id bigint PRIMARY KEY);
+CREATE TABLE orders (id bigint PRIMARY KEY, user_id bigint NOT NULL REFERENCES users ON DELETE CASCADE);
+INSERT INTO orders VALUES (1, 99);  -- 23503
+```
+
+| area | PostgreSQL | `postgresql` |
+| --- | --- | --- |
+| A parent delete or key change against a child insert, in two transactions | the second waits for the first, then `23503` | both statements run, and the commit that comes second fails, normally with `40001` (`23503` when its check had not run before the first commit). Run again, it gets PostgreSQL's answer. Two inserts that refer to one row do not conflict |
+| `DEFERRABLE`, `INITIALLY DEFERRED`, `MATCH`, `NOT ENFORCED` | supported | `0A000` |
+| `SET DEFAULT`, a column list after `SET NULL` | supported | `0A000` |
+| Referenced columns | a primary key, a unique constraint, or a unique index | the same (`42830`). A record id (`rid`) can be referred to only by the two ends of a link table (`0A000`) |
+| Column types | any pair that compares | the same type, or both of `smallint`, `integer`, and `bigint`, or both of `text` and `varchar`. Other pairs that PostgreSQL accepts are `0A000`, the rest `42804` |
+| Indexes | none over the referring columns | `CREATE TABLE` adds one unless a key covers exactly those columns. `CREATE UNIQUE INDEX` over those columns is then `0A000`: declare `UNIQUE` in `CREATE TABLE` |
+| `ALTER TABLE ... ADD CONSTRAINT` | supported | `0A000` |
+| Writes of `sql`, openCypher, and the Java API | | the engine checks the same keys at commit and runs the same actions then, so rows that a cascade will remove are visible until the commit. A violation refuses the commit |
+| `sql` schema changes | | `ALTER TYPE orders CUSTOM foreignKeys = null` removes the keys of a table, and a key declared through that custom value does not check the rows that exist. Dropping or renaming a referenced type is refused. When an index that a key needs is dropped, writes to both tables are `55000` until it is created again |
+| `LOCK TYPE` in `sql` | | the lock list must include the referenced type, or the commit is refused |
+| High availability | | a commit that starts on a replica and has a key to check is refused: run it on the leader |
+
+For every distinct key value that a statement writes, a foreign key costs up to two index lookups at the end of the statement and two at commit, and the referring table has one more index to maintain. Commits that refer to rows in one bucket wait for each other while they commit. These costs have not been measured.
 
 ### `serial` and identity columns
 

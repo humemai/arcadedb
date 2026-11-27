@@ -413,6 +413,39 @@ public final class RelationalCatalog {
         : positions.getOrDefault(column.name(), declared.size())));
   }
 
+  private static List<DocumentType> withSuperTypes(final DocumentType type) {
+    final List<DocumentType> types = new ArrayList<>();
+    types.add(type);
+    for (int i = 0; i < types.size(); i++)
+      for (final DocumentType superType : types.get(i).getSuperTypes())
+        if (!types.contains(superType))
+          types.add(superType);
+    return types;
+  }
+
+  /** The foreign keys a type declares, none for a value that is no list of keys: the engine refuses the writes of such a type. */
+  private static List<com.arcadedb.schema.ForeignKey> declaredKeys(final DocumentType type) {
+    final Object value = type.getCustomValue(com.arcadedb.schema.ForeignKey.CUSTOM_KEY);
+    if (value == null)
+      return List.of();
+    try {
+      return com.arcadedb.schema.ForeignKey.fromJson(value.toString());
+    } catch (final RuntimeException e) {
+      return List.of();
+    }
+  }
+
+  /** The columns that show the properties, {@code null} when one of them is shown by no column. */
+  private static List<String> columnsOf(final Draft draft, final List<String> properties) {
+    final List<String> columns = new ArrayList<>(properties.size());
+    for (final String property : properties) {
+      for (final Column column : draft.columns)
+        if (column.kind() == Column.Kind.PROPERTY && property.equals(column.property()))
+          columns.add(column.name());
+    }
+    return columns.size() == properties.size() ? columns : null;
+  }
+
   private static Table table(final Draft draft, final Schema schema, final Map<String, Draft> drafts, final boolean referenced) {
     final List<Table.ForeignKey> foreignKeys = new ArrayList<>();
     String sourceTable = null;
@@ -440,6 +473,19 @@ public final class RelationalCatalog {
         foreignKeys.add(new Table.ForeignKey(draft.name + "_" + column.name() + "_fkey", List.of(column.name()), targetDraft.name,
             List.of(targetDraft.referable), Table.ForeignKey.Origin.LINK_PROPERTY));
     }
+
+    // the foreign keys the engine checks (fork issue #228), of the type and, as PostgreSQL inherits columns, of its supertypes
+    for (final DocumentType declaring : withSuperTypes(draft.type))
+      for (final com.arcadedb.schema.ForeignKey declared : declaredKeys(declaring)) {
+        final Draft targetDraft = drafts.get(declared.referencedType());
+        if (targetDraft == null)
+          continue;
+        final List<String> columns = columnsOf(draft, declared.columns());
+        final List<String> referencedColumns = columnsOf(targetDraft, declared.referencedColumns());
+        if (columns != null && referencedColumns != null)
+          foreignKeys.add(new Table.ForeignKey(declared.name(), columns, targetDraft.name, referencedColumns,
+              Table.ForeignKey.Origin.DECLARED, declared));
+      }
 
     final List<String> walkFrom = new ArrayList<>();
     if (draft.storage != null && draft.storage != Table.EdgeStorage.REGULAR) {
