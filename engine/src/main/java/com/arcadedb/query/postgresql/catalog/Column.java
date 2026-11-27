@@ -22,6 +22,7 @@ import com.arcadedb.database.Document;
 import com.arcadedb.database.Identifiable;
 import com.arcadedb.database.RID;
 import com.arcadedb.graph.Edge;
+import com.arcadedb.schema.TypeModifier;
 
 import java.util.Objects;
 
@@ -68,6 +69,8 @@ public final class Column {
   private final String     identity;
   /** the key an end of a link table refers to, {@code null} for the record id and for every other column */
   private final EndKey     endKey;
+  /** the length of a {@code varchar(n)} or the precision and scale of a {@code numeric(p,s)}, {@code null} for none */
+  private final TypeModifier modifier;
 
   /** The generation of an identity column that takes no value of a statement. */
   public static final String ALWAYS     = "ALWAYS";
@@ -76,13 +79,14 @@ public final class Column {
 
   Column(final String name, final ColumnType type, final boolean nullable, final Kind kind, final String property,
       final boolean link) {
-    this(name, type, nullable, kind, property, link, false, true, null, null, null);
+    this(name, type, nullable, kind, property, link, false, true, null, null, null, null);
   }
 
   private Column(final String name, final ColumnType type, final boolean nullable, final Kind kind, final String property,
       final boolean link, final boolean hidden, final boolean listed, final String defaultText, final String identity,
-      final EndKey endKey) {
+      final EndKey endKey, final TypeModifier modifier) {
     this.endKey = endKey;
+    this.modifier = modifier;
     this.name = Objects.requireNonNull(name);
     this.type = Objects.requireNonNull(type);
     this.nullable = nullable;
@@ -105,22 +109,35 @@ public final class Column {
 
   /** The same column, not nullable: a property that is the primary key of its table. */
   Column notNull() {
-    return new Column(name, type, false, kind, property, link, hidden, listed, defaultText, identity, endKey);
+    return new Column(name, type, false, kind, property, link, hidden, listed, defaultText, identity, endKey, modifier);
   }
 
   /** The same column, hidden: see {@link #isHidden()} and, for {@code listInCatalog}, {@link #isListed()}. */
   Column hide(final boolean listInCatalog) {
-    return new Column(name, type, nullable, kind, property, link, true, listInCatalog, defaultText, identity, endKey);
+    return new Column(name, type, nullable, kind, property, link, true, listInCatalog, defaultText, identity, endKey, modifier);
   }
 
   /** The same column with the text that {@code column_default} shows for it. */
   Column withDefaultText(final String text) {
-    return new Column(name, type, nullable, kind, property, link, hidden, listed, text, identity, endKey);
+    return new Column(name, type, nullable, kind, property, link, hidden, listed, text, identity, endKey, modifier);
   }
 
   /** The same column as an identity column, {@value #ALWAYS} or {@value #BY_DEFAULT} (fork issue #221). */
   Column withIdentity(final String generation) {
-    return new Column(name, type, nullable, kind, property, link, hidden, listed, defaultText, generation, endKey);
+    return new Column(name, type, nullable, kind, property, link, hidden, listed, defaultText, generation, endKey, modifier);
+  }
+
+  /** The same column with a length, or a precision and a scale (fork issue #226). */
+  Column withModifier(final TypeModifier declared) {
+    return new Column(name, type, nullable, kind, property, link, hidden, listed, defaultText, identity, endKey, declared);
+  }
+
+  /**
+   * The length of a {@code varchar(n)} column, or the precision and scale of a {@code numeric(p,s)} column, {@code null} when the
+   * column has neither (fork issue #226).
+   */
+  public TypeModifier modifier() {
+    return modifier;
   }
 
   /**
@@ -138,7 +155,7 @@ public final class Column {
 
   /** The same end of a link table, which refers to a key and has its type. */
   Column referringTo(final EndKey key, final ColumnType keyType) {
-    return new Column(name, keyType, nullable, kind, property, link, hidden, listed, defaultText, identity, key);
+    return new Column(name, keyType, nullable, kind, property, link, hidden, listed, defaultText, identity, key, modifier);
   }
 
   /**

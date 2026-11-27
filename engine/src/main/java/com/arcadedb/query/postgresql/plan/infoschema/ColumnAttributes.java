@@ -18,13 +18,15 @@
  */
 package com.arcadedb.query.postgresql.plan.infoschema;
 
+import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.ColumnType;
+import com.arcadedb.schema.TypeModifier;
 
 /**
  * What {@code information_schema.columns} says about the type of a column, by the rules of the views of PostgreSQL 18
- * ({@code information_schema.sql} of the server) applied to a column that has no length, precision or scale of its own, which is
- * the only kind of column the relational view has: {@code varchar} and {@code text} are unbounded, {@code numeric} has no
- * precision, and the datetime types have the default precision.
+ * ({@code information_schema.sql} of the server). A {@code varchar(n)} and a {@code numeric(p,s)} have their length or their
+ * precision and scale (fork issue #226); any other column has none of its own: {@code varchar} and {@code text} are unbounded,
+ * {@code numeric} has no precision, and the datetime types have the default precision.
  *
  * @param dataType                 {@code data_type}: the SQL name of the type, {@code ARRAY} for an array
  * @param udtName                  {@code udt_name}: {@code pg_type.typname}, with an underscore in front of the element name for an array
@@ -39,6 +41,25 @@ record ColumnAttributes(String dataType, String udtName, Integer characterOctetL
 
   /** 2^30, what PostgreSQL reports as the octet length of a character type without a length. */
   private static final int UNBOUNDED_OCTETS = 1073741824;
+
+  /** The attributes of a column of a table, with its length or its precision and scale when it has them. */
+  static ColumnAttributes of(final Column column) {
+    final ColumnAttributes bare = of(column.type());
+    final TypeModifier modifier = column.modifier();
+    if (modifier == null)
+      return bare;
+    if (!modifier.isNumeric())
+      // four bytes for each character, the most that UTF-8 takes
+      return new ColumnAttributes(bare.dataType, bare.udtName, modifier.size() * 4, null, null, null, null);
+    // a negative scale reads as the view of PostgreSQL decodes it from the type modifier: its low eleven bits
+    return new ColumnAttributes(bare.dataType, bare.udtName, null, modifier.size(), 10, modifier.scale() & 0x7ff, null);
+  }
+
+  /** {@code character_maximum_length} of a column of a table: only a {@code varchar(n)} has one. */
+  static Integer characterMaximumLength(final Column column) {
+    final TypeModifier modifier = column.modifier();
+    return modifier == null || modifier.isNumeric() ? null : modifier.size();
+  }
 
   static ColumnAttributes of(final ColumnType type) {
     if (type.isArray())

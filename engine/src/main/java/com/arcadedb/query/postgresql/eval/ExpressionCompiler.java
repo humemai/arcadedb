@@ -1753,12 +1753,12 @@ public final class ExpressionCompiler {
   }
 
   /**
-   * The type modifiers of a cast, checked as the {@code typmodin} function of the type checks them, {@code null} for none.
-   * {@code numeric(p,s)}, {@code varchar(n)}, {@code timestamp(p)}, {@code timestamptz(p)} and {@code vector(n)} take one, and
-   * {@link Casts#cast} applies it. Any other type with a modifier is {@code 42601}, so none is accepted and then ignored. A
-   * timestamp precision above 6 is 6, as in PostgreSQL (which also warns).
+   * The type modifiers of a cast, and of a {@code varchar(n)} or {@code numeric(p,s)} column, checked as the {@code typmodin}
+   * function of the type checks them, {@code null} for none. {@code numeric(p,s)}, {@code varchar(n)}, {@code timestamp(p)},
+   * {@code timestamptz(p)} and {@code vector(n)} take one, and {@link Casts#cast} applies it. Any other type with a modifier is
+   * {@code 42601}, so none is accepted and then ignored. A timestamp precision above 6 is 6, as in PostgreSQL (which also warns).
    */
-  private static int[] typeModifiers(final TypeName name, final PgType target) {
+  public static int[] typeModifiers(final TypeName name, final PgType target) {
     if (name.modifiers().isEmpty())
       return null;
     if (target != PgType.NUMERIC && target != PgType.VARCHAR && target != PgType.TIMESTAMP && target != PgType.TIMESTAMPTZ

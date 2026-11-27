@@ -286,7 +286,8 @@ class CreateTableTest extends TestHelper {
       "CREATE TABLE t (a int DEFAULT 'x'); 22P02",
       "CREATE TABLE t (a smallint DEFAULT '100000'); 22003",
       "CREATE TABLE t (a int DEFAULT true); 42804",
-      "CREATE TABLE t (a vector(0)); 22023",
+      "CREATE TABLE t (a vector(0)); 22023", "CREATE TABLE t (a varchar(0)); 22023",
+      "CREATE TABLE t (a numeric(1001)); 22023", "CREATE TABLE t (a numeric(1, 2, 3)); 22023",
       "CREATE TABLE nowhere.t (a int); 3F000",
       "CREATE TABLE t (source_id text NOT NULL REFERENCES nobody (rid) ON DELETE CASCADE, target_id text NOT NULL REFERENCES nobody (rid) ON DELETE CASCADE); 42P01" })
   void anErrorOfPostgreSqlKeepsItsState(final String statement, final String sqlState) {
@@ -297,7 +298,8 @@ class CreateTableTest extends TestHelper {
   @ParameterizedTest
   @ValueSource(strings = { "CREATE TEMP TABLE t (a int)", "CREATE UNLOGGED TABLE t (a int)", "CREATE TABLE t ()",
       "CREATE TABLE t (a serial[])", "CREATE TABLE t (a timetz)", "CREATE TABLE t (a char(3))",
-      "CREATE TABLE t (a varchar(5))", "CREATE TABLE t (a numeric(10, 2))", "CREATE TABLE t (a int[][])",
+      "CREATE TABLE t (a varchar(5)[])", "CREATE TABLE t (a numeric(10, 2)[])", "CREATE TABLE t (a int[][])",
+      "CREATE TABLE t (a varchar(2) DEFAULT 'abc')", "CREATE TABLE t (a numeric(3, 1) DEFAULT 1234)",
       "CREATE TABLE t (a timestamptz[])", "CREATE TABLE t (a date[][])", "CREATE TABLE t (a date[] UNIQUE)",
       "CREATE TABLE t (a int CHECK (a > 0) NO INHERIT)", "CREATE TABLE t (a int, CHECK (a > 0) NOT ENFORCED)",
       "CREATE TABLE t (a timestamptz CHECK (a < now()))",
