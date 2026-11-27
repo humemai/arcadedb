@@ -161,7 +161,9 @@ The engine applies the length of a `varchar(n)` and the precision and scale of a
 | An added serial or identity column | allowed | `0A000` |
 | `SET DEFAULT` on a column that the same statement adds | allowed | `0A000` |
 | `ADD CONSTRAINT` | the table is locked while the rows are read | the constraint is registered first and the rows are then read, with nothing locked, so other sessions meet it before the statement has finished. A key over columns that have an index that is not unique replaces that index with a unique one. `NOT VALID`, `DEFERRABLE`, `USING INDEX`, `EXCLUDE`, and a key or check over an end of a link table are `0A000`. The detail of an error names no row |
-| `DROP`, `RENAME`, `ALTER COLUMN ... TYPE`, and the other actions | allowed | `0A000`; the hint names the `sql` statement where there is one |
+| `DROP COLUMN` | the values stay on disk and are hidden; the statement takes the same time for any table | **the value is removed from every record**, in one transaction, so a very large table needs the memory for it. As in PostgreSQL, the indexes, keys, and checks that involve the column go with it, and a foreign key that refers to it needs `CASCADE` (`2BP01`). A column that a link table refers to, an end of a link table, and the only column of a table are not dropped (`2BP01` or `0A000`) |
+| `RENAME COLUMN` | changes the catalog only | **every record is rewritten**, because the engine renames no property, and the indexes over the column are built again. Indexes, keys, checks, and link tables follow the new name under their own names. Queries of `sql` and openCypher have to use the new name |
+| `DROP CONSTRAINT`, a rename of a table or constraint, `ALTER COLUMN ... TYPE`, and the other actions | allowed | `0A000`; the hint names the `sql` statement where there is one |
 
 ### DROP TABLE and DROP INDEX
 
@@ -301,7 +303,7 @@ Read the hint. It is sent in the protocol's hint field, which `psql` and drivers
 
 | statement | SQLSTATE | hint |
 | --- | --- | --- |
-| `ALTER TABLE acc DROP COLUMN extra` | `0A000` | Drop the column in the sql language, outside a transaction block, where FORCE also drops its indexes: ``{sql}DROP PROPERTY `acc`.`extra` FORCE`` |
+| `ALTER TABLE acc RENAME TO account` | `0A000` | Rename the table in the sql language, outside a transaction block: ``{sql}ALTER TYPE `acc` NAME `account` `` |
 | `SELECT 1 FOR UPDATE` | `0A000` | Leave the clause out: no row is locked. Of two transactions that change one row the later commit fails with SQLSTATE 40001, run it again |
 | `JOIN knows k ON k.source_id = p.id` | `42883` | k.source_id holds record ids, which are text such as '#12:3', not the values of p.id: join on p.rid. A cast will not match them |
 | `SELECT v FROM acc LIMIT 1, 2` | `42601`, as PostgreSQL | Use separate LIMIT and OFFSET clauses: LIMIT 1, 2 is LIMIT 2 OFFSET 1 |

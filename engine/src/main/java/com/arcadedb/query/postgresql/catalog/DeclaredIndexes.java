@@ -94,7 +94,8 @@ public final class DeclaredIndexes {
     write(type, indexes);
   }
 
-  private static void write(final DocumentType type, final Map<String, Index> indexes) {
+  /** Keeps exactly these names on the type, those of an index that is not there yet too. */
+  public static void write(final DocumentType type, final Map<String, Index> indexes) {
     final JSONObject json = new JSONObject();
     for (final Map.Entry<String, Index> entry : indexes.entrySet()) {
       final JSONArray columns = new JSONArray();

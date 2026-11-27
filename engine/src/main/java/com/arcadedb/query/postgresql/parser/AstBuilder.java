@@ -135,8 +135,13 @@ final class AstBuilder {
 
   private AlterTableStatement alterTable(final AlterTableStmtContext context) {
     final List<AlterTableStatement.Action> actions = new ArrayList<>();
+    if (context.RENAME() != null)
+      actions.add(new AlterTableStatement.RenameColumn(name(context.from), name(context.to)));
     for (final AlterTableActionContext action : context.actions) {
-      if (action instanceof AddColumnActionContext add) {
+      if (action instanceof DropColumnActionContext drop)
+        actions.add(new AlterTableStatement.DropColumn(name(drop.column), drop.EXISTS() != null,
+            drop.behavior != null && drop.behavior.getType() == PostgreSQLParser.CASCADE));
+      else if (action instanceof AddColumnActionContext add) {
         final List<CreateTableStatement.Constraint> own = new ArrayList<>();
         for (final ColumnOptionContext option : add.constraints)
           own.add(columnConstraint(option));

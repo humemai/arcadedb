@@ -136,6 +136,13 @@ class SchemaPresentationReadableWalkCensusTest {
       Map.entry("query/postgresql/catalog/RelationalCatalog#of",
           "the relational view the postgresql binder resolves names against, whose records are read through the per-bucket gate: "
               + "information_schema and the wire catalog present only RelationalCatalog#readableBy of it"),
+      Map.entry("query/postgresql/plan/AlterTablePlan#links",
+          "the link tables whose end refers to a column that DROP COLUMN drops: DDL, where a type that the caller cannot read "
+              + "refers to it too"),
+      Map.entry("query/postgresql/plan/AlterTablePlan#referring",
+          "the foreign keys that refer to a column that DROP COLUMN or RENAME COLUMN changes: DDL, as the links"),
+      Map.entry("query/postgresql/plan/AlterTablePlan#renameColumn",
+          "the link tables that follow a renamed column: DDL, as the links"),
       Map.entry("query/postgresql/plan/AlterTablePlan#relationNamed",
           "whether a table, an index or a key of any type holds a name, for ALTER TABLE ... ADD CONSTRAINT: DDL, as "
               + "CreateIndexPlan#taken"),

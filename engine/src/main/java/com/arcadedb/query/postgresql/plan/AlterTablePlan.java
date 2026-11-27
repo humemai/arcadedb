@@ -36,6 +36,7 @@ import com.arcadedb.query.postgresql.ast.SourcePosition;
 import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.ColumnType;
 import com.arcadedb.query.postgresql.catalog.DeclaredIndexes;
+import com.arcadedb.query.postgresql.catalog.EdgeEndpoints;
 import com.arcadedb.query.postgresql.catalog.Identifier;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.catalog.Sequences;
@@ -57,6 +58,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
@@ -126,12 +128,61 @@ public final class AlterTablePlan {
         return answer("ALTER TABLE " + name + ": no such table, nothing to do");
       throw new PostgreSQLUndefinedTableException(name);
     }
-    final DocumentType type = table.documentType();
-    final TableDefinition definition = TableDefinition.of(type);
-    if (definition == null)
+    if (TableDefinition.of(table.documentType()) == null)
       throw madeAnotherWay(table);
 
-    // every action is read, and what the rows say about it checked, before anything changes
+    boolean done = false;
+    try {
+      if (statement.actions().stream().anyMatch(AlterTablePlan::needsOneTransaction))
+        // rows change or are checked after the schema has changed, so the statement is one transaction, which a failure rolls
+        // back. It is not run again, because it changes the schema
+        database.transaction(() -> apply(table), true, 1);
+      else
+        apply(table);
+      done = true;
+    } catch (final RuntimeException e) {
+      throw WriteErrors.translate(e);
+    } finally {
+      if (!done)
+        takeBack();
+    }
+    return answer("ALTER TABLE " + table.name());
+  }
+
+  /** Whether the action drops or renames a column, or adds a constraint. */
+  private static boolean needsOneTransaction(final AlterTableStatement.Action action) {
+    return switch (action) {
+      case AlterTableStatement.DropColumn ignored -> true;
+      case AlterTableStatement.RenameColumn ignored -> true;
+      case AlterTableStatement.AddConstraint ignored -> true;
+      case AlterTableStatement.AddColumn add -> add.column().constraints().stream()
+          .anyMatch(constraint -> constraint.kind() != CreateTableStatement.Kind.NOT_NULL
+              && constraint.kind() != CreateTableStatement.Kind.NULL && constraint.kind() != CreateTableStatement.Kind.DEFAULT);
+      case AlterTableStatement.SetDefault ignored -> false;
+      case AlterTableStatement.SetNotNull ignored -> false;
+    };
+  }
+
+  private void apply(final Table found) {
+    final String typeName = found.documentType().getName();
+    // as PostgreSQL does, the columns are dropped first
+    boolean reshaped = false;
+    for (final AlterTableStatement.Action action : statement.actions())
+      if (action instanceof AlterTableStatement.DropColumn drop) {
+        dropColumn(typeName, drop);
+        reshaped = true;
+      } else if (action instanceof AlterTableStatement.RenameColumn rename) {
+        renameColumn(typeName, rename);
+        reshaped = true;
+      }
+    if (reshaped && statement.actions().stream().allMatch(action -> action instanceof AlterTableStatement.DropColumn
+        || action instanceof AlterTableStatement.RenameColumn))
+      return;
+    final Table table = reshaped ? current(typeName) : found;
+    final DocumentType type = table.documentType();
+    final TableDefinition definition = TableDefinition.of(type);
+
+    // every other action is read, and what the rows say about it checked, before it changes anything
     final Map<String, CreateTablePlan.Spec> added = new LinkedHashMap<>();
     final Map<String, State> changed = new LinkedHashMap<>();
     final Map<String, CreateTablePlan.Spec> defaults = new LinkedHashMap<>();
@@ -139,6 +190,12 @@ public final class AlterTablePlan {
     final List<CreateTableStatement.Constraint> constraints = new ArrayList<>();
     for (final AlterTableStatement.Action action : statement.actions())
       switch (action) {
+      case AlterTableStatement.DropColumn ignored -> {
+        // done above
+      }
+      case AlterTableStatement.RenameColumn ignored -> {
+        // done above
+      }
       case AlterTableStatement.AddColumn add -> readColumn(table, add, added, constraints);
       case AlterTableStatement.AddConstraint add -> constraints.add(add.constraint());
       case AlterTableStatement.SetDefault set -> {
@@ -191,7 +248,6 @@ public final class AlterTablePlan {
       default -> 3;
     }));
     change(table, type, definition, added, defaults, notNull, required, constraints);
-    return answer("ALTER TABLE " + table.name());
   }
 
   // ------------------------------------------------------------------------------------------------ reading
@@ -319,72 +375,325 @@ public final class AlterTablePlan {
     // an undo may run after the transaction has ended: it looks the type and the property up again by name
     final String typeName = type.getName();
     final Supplier<DocumentType> now = () -> database.getSchema().getType(typeName);
-    boolean done = false;
-    try {
-      final Map<CreateTablePlan.Spec, Property> created = new LinkedHashMap<>();
-      for (final CreateTablePlan.Spec spec : added.values()) {
-        // NOT NULL is set once every row has its value
-        final boolean mandatory = spec.notNull;
-        spec.notNull = false;
-        final Property property = declarations.createProperty(type, spec);
-        spec.notNull = mandatory;
-        created.put(spec, property);
-        undo.push(() -> now.get().dropProperty(spec.name));
-      }
-      for (final CreateTablePlan.Spec spec : defaults.values()) {
-        final Property property = type.getPolymorphicPropertyIfExists(spec.name);
-        final Object before = property.getDefaultValueDefinition();
-        final String counter = Sequences.keyOf(before);
-        property.setDefaultValue(null);
-        undo.push(() -> now.get().getPolymorphicPropertyIfExists(spec.name).setDefaultValue(before));
-        CreateTablePlan.setDefault(property, spec);
-        if (counter != null)
-          replacedCounters.add(counter);
-      }
-
-      final Object before = type.getCustomValue(TableDefinition.CUSTOM_KEY);
-      type.setCustomValue(TableDefinition.CUSTOM_KEY, changed(definition, added, defaults).toJson());
-      undo.push(() -> now.get().setCustomValue(TableDefinition.CUSTOM_KEY, before));
-
-      for (final Map.Entry<String, Boolean> each : notNull.entrySet()) {
-        final Property property = type.getPolymorphicPropertyIfExists(each.getKey());
-        final boolean wasMandatory = property.isMandatory();
-        final boolean wasNotNull = property.isNotNull();
-        property.setMandatory(each.getValue());
-        property.setNotNull(each.getValue());
-        undo.push(() -> {
-          final Property then = now.get().getPolymorphicPropertyIfExists(each.getKey());
-          then.setMandatory(wasMandatory);
-          then.setNotNull(wasNotNull);
-        });
-      }
-
-      final Database.TransactionScope rows = () -> {
-        write(table, type, added, required);
-        created.forEach((spec, property) -> {
-          if (spec.notNull) {
-            property.setMandatory(true);
-            property.setNotNull(true);
-          }
-        });
-      };
-      if (constraints.isEmpty())
-        rows.execute();
-      else
-        // the rows of the added columns and the checks of the constraints are one transaction, so that a constraint that the
-        // rows break leaves no value behind. It is not run again: it changes the schema
-        database.transaction(() -> {
-          rows.execute();
-          for (final CreateTableStatement.Constraint constraint : constraints)
-            add(typeName, constraint);
-        }, true, 1);
-      done = true;
-    } catch (final RuntimeException e) {
-      throw WriteErrors.translate(e);
-    } finally {
-      if (!done)
-        takeBack();
+    final Map<CreateTablePlan.Spec, Property> created = new LinkedHashMap<>();
+    for (final CreateTablePlan.Spec spec : added.values()) {
+      // NOT NULL is set once every row has its value
+      final boolean mandatory = spec.notNull;
+      spec.notNull = false;
+      final Property property = declarations.createProperty(type, spec);
+      spec.notNull = mandatory;
+      created.put(spec, property);
+      undo.push(() -> now.get().dropProperty(spec.name));
     }
+    for (final CreateTablePlan.Spec spec : defaults.values()) {
+      final Property property = type.getPolymorphicPropertyIfExists(spec.name);
+      final Object before = property.getDefaultValueDefinition();
+      final String counter = Sequences.keyOf(before);
+      property.setDefaultValue(null);
+      undo.push(() -> now.get().getPolymorphicPropertyIfExists(spec.name).setDefaultValue(before));
+      CreateTablePlan.setDefault(property, spec);
+      if (counter != null)
+        replacedCounters.add(counter);
+    }
+
+    setCustomValue(typeName, TableDefinition.CUSTOM_KEY, changed(definition, added, defaults).toJson());
+
+    for (final Map.Entry<String, Boolean> each : notNull.entrySet())
+      setNotNull(typeName, each.getKey(), each.getValue());
+
+    write(table, type, added, required);
+    created.forEach((spec, property) -> {
+      if (spec.notNull) {
+        property.setMandatory(true);
+        property.setNotNull(true);
+      }
+    });
+    for (final CreateTableStatement.Constraint constraint : constraints)
+      add(typeName, constraint);
+  }
+
+  /** Sets or removes {@code NOT NULL} on a property, and keeps how to take that back. */
+  private void setNotNull(final String typeName, final String name, final boolean required) {
+    final Property property = database.getSchema().getType(typeName).getPolymorphicPropertyIfExists(name);
+    final boolean wasMandatory = property.isMandatory();
+    final boolean wasNotNull = property.isNotNull();
+    property.setMandatory(required);
+    property.setNotNull(required);
+    undo.push(() -> {
+      final Property then = database.getSchema().getType(typeName).getPolymorphicPropertyIfExists(name);
+      then.setMandatory(wasMandatory);
+      then.setNotNull(wasNotNull);
+    });
+  }
+
+  private Table current(final String typeName) {
+    return RelationalCatalog.of(database).findTable(Identifier.quoted(typeName));
+  }
+
+  // ------------------------------------------------------------------------------------------------ columns that go or change
+
+  /** What depends on a column from outside its table's own definition: keys that refer to it, by the type that declares them. */
+  private record Referring(String declaring, ForeignKey key) {
+  }
+
+  /** The column that a drop or a rename names, which has to be a column that the type itself declares. */
+  private Column ownColumn(final Table table, final Name name, final String missing) {
+    final Column column = table.findColumn(CreateTablePlan.identifier(name));
+    if (column == null)
+      throw new PostgreSQLEvaluationException("42703", missing);
+    if (column.kind() != Column.Kind.PROPERTY || table.documentType().getPropertyIfExists(column.property()) == null
+        || !table.documentType().getSubTypes().isEmpty())
+      throw refused("DROP or RENAME of the column " + column.name() + ", which the engine fills or another type shares,",
+          statement.position(), "Leave the column in place");
+    return column;
+  }
+
+  /**
+   * {@code DROP COLUMN}: as PostgreSQL does, the keys, checks and indexes that involve the column go with it, and what refers to it
+   * from elsewhere needs {@code CASCADE}. The value goes out of every record.
+   */
+  private void dropColumn(final String typeName, final AlterTableStatement.DropColumn drop) {
+    final Table table = current(typeName);
+    if (drop.ifExists() && table.findColumn(CreateTablePlan.identifier(drop.column())) == null)
+      return;
+    final Column column = ownColumn(table, drop.column(),
+        "column \"" + drop.column().value() + "\" of relation \"" + table.name() + "\" does not exist");
+    final String property = column.property();
+    final DocumentType type = table.documentType();
+    final TableDefinition definition = TableDefinition.of(type);
+    if (!(type instanceof EdgeType) && type.getPropertyNames().size() <= 1)
+      throw refused("DROP COLUMN of the only column of a table", statement.position(), "Write DROP TABLE " + table.name());
+
+    final List<Referring> referring = referring(typeName, property);
+    final List<String> links = links(typeName, property);
+    if (!links.isEmpty() || !referring.isEmpty() && !drop.cascade()) {
+      final List<String> found = new ArrayList<>();
+      referring.forEach(each -> found.add("constraint " + each.key().name() + " on table " + each.declaring()));
+      links.forEach(link -> found.add("link table " + link));
+      if (drop.cascade())
+        throw refused("DROP COLUMN CASCADE of a column that a link table refers to, whose rows cannot stay without their ends,",
+            statement.position(), "Drop the link table first: DROP TABLE " + String.join(", ", links));
+      throw new PostgreSQLEvaluationException("2BP01", "cannot drop column " + column.name() + " of table " + table.name()
+          + " because other objects depend on it: " + String.join("; ", found) + ". Hint: "
+          + (links.isEmpty() ? "Use DROP ... CASCADE to drop the dependent objects too."
+          : "Drop the link table first: DROP TABLE " + String.join(", ", links)));
+    }
+    referring.forEach(each -> removeKey(each.declaring(), each.key().name()));
+    for (final ForeignKey key : foreignKeys(type))
+      if (key.columns().contains(property))
+        removeKey(typeName, key.name());
+    final List<CheckConstraint> checks = checks(type);
+    final List<CheckConstraint> kept = checks.stream().filter(check -> !reads(type, check, property)).toList();
+    if (kept.size() != checks.size())
+      setCustomValue(typeName, CheckConstraint.CUSTOM_KEY, kept.isEmpty() ? null : CheckConstraint.toJson(kept));
+
+    final Map<String, DeclaredIndexes.Index> declared = DeclaredIndexes.of(type);
+    for (final IndexSnapshot index : indexesOf(type, property))
+      drop(typeName, index);
+    if (declared.values().removeIf(index -> index.columns().contains(property)))
+      declare(typeName, declared);
+
+    final Map<String, String> defaults = new LinkedHashMap<>(definition.defaults());
+    defaults.remove(property);
+    final Map<String, String> identity = new LinkedHashMap<>(definition.identity());
+    identity.remove(property);
+    final Table.Key primary = definition.primaryKey() != null && definition.primaryKey().columns().contains(property) ? null
+        : definition.primaryKey();
+    setCustomValue(typeName, TableDefinition.CUSTOM_KEY, new TableDefinition(without(definition.columns(), property),
+        new LinkedHashSet<>(without(definition.textColumns(), property)), primary,
+        definition.uniqueKeys().stream().filter(key -> !key.columns().contains(property)).toList(), defaults,
+        definition.foreignKeys(), new LinkedHashSet<>(without(definition.timestamptzColumns(), property)), identity,
+        new LinkedHashSet<>(without(definition.uuidColumns(), property))).toJson());
+
+    final PropertySnapshot snapshot = PropertySnapshot.of(type.getPropertyIfExists(property));
+    final String counter = Sequences.keyOf(snapshot.defaultDefinition());
+    if (counter != null)
+      replacedCounters.add(counter);
+    type.dropProperty(property);
+    undo.push(() -> snapshot.create(database.getSchema().getType(typeName), property));
+
+    for (final Iterator<Record> records = database.iterateType(typeName, true); records.hasNext(); ) {
+      final Document record = records.next().asDocument(true);
+      if (record.has(property)) {
+        final MutableDocument changed = record.modify();
+        changed.remove(property);
+        changed.save();
+      }
+    }
+  }
+
+  /**
+   * {@code RENAME COLUMN}: the engine renames no property, so a new one takes the values, record by record, and the indexes, keys,
+   * checks and links that name the column follow it under their own names.
+   */
+  private void renameColumn(final String typeName, final AlterTableStatement.RenameColumn rename) {
+    final Table table = current(typeName);
+    final Column column = ownColumn(table, rename.from(), "column \"" + rename.from().value() + "\" does not exist");
+    final String from = column.property();
+    final String to = rename.to().value();
+    final DocumentType type = table.documentType();
+    if (CreateTablePlan.SYSTEM_COLUMNS.contains(to))
+      throw new PostgreSQLEvaluationException("42701", "column name \"" + to + "\" conflicts with a system column name");
+    if (to.startsWith("@") || Column.RID.equals(to))
+      throw refused("A column renamed to " + to, statement.position(), "Give the column another name");
+    if (type.getPolymorphicPropertyIfExists(to) != null || table.findColumn(CreateTablePlan.identifier(rename.to())) != null
+        && !table.findColumn(CreateTablePlan.identifier(rename.to())).property().equals(from))
+      throw PostgreSQLEvaluationException.duplicateColumn(to, table.name());
+    if (to.equals(from))
+      throw PostgreSQLEvaluationException.duplicateColumn(to, table.name());
+    for (final Iterator<Record> records = database.iterateType(typeName, true); records.hasNext(); )
+      if (records.next().asDocument(true).has(to))
+        throw refused("RENAME COLUMN to " + to + ", where a record already holds a property of that name that the table does"
+            + " not declare,", statement.position(),
+            "Remove the property first, in the sql language: {sql}UPDATE `" + typeName + "` REMOVE `" + to + "`");
+
+    final TableDefinition definition = TableDefinition.of(type);
+    // the checks and keys that name the column are taken off while the rows change, and put back under the new name
+    final List<CheckConstraint> checks = checks(type);
+    final List<CheckConstraint> renamedChecks = checks.stream().map(check -> reads(type, check, from) ?
+        new CheckConstraint(check.name(), CheckExpression.renamed(check.expression(), from, to)) : check).toList();
+    if (!checks.isEmpty())
+      setCustomValue(typeName, CheckConstraint.CUSTOM_KEY, null);
+    final Map<String, List<ForeignKey>> keys = new LinkedHashMap<>();
+    for (final Referring each : referring(typeName, from))
+      keys.putIfAbsent(each.declaring(), foreignKeys(database.getSchema().getType(each.declaring())));
+    if (foreignKeys(type).stream().anyMatch(key -> key.columns().contains(from)))
+      keys.putIfAbsent(typeName, foreignKeys(type));
+    keys.keySet().forEach(declaring -> setCustomValue(declaring, ForeignKey.CUSTOM_KEY, null));
+    final Map<String, DeclaredIndexes.Index> declared = DeclaredIndexes.of(type);
+    final List<IndexSnapshot> indexes = indexesOf(type, from);
+    for (final IndexSnapshot index : indexes)
+      drop(typeName, index);
+
+    final PropertySnapshot snapshot = PropertySnapshot.of(type.getPropertyIfExists(from));
+    snapshot.withoutNotNull().create(type, to);
+    undo.push(() -> database.getSchema().getType(typeName).dropProperty(to));
+    setNotNull(typeName, from, false);
+    for (final Iterator<Record> records = database.iterateType(typeName, true); records.hasNext(); ) {
+      final Document record = records.next().asDocument(true);
+      if (record.has(from)) {
+        final MutableDocument changed = record.modify();
+        changed.set(to, record.get(from));
+        changed.remove(from);
+        changed.save();
+      }
+    }
+    database.getSchema().getType(typeName).dropProperty(from);
+    undo.push(() -> snapshot.withoutNotNull().create(database.getSchema().getType(typeName), from));
+    if (snapshot.mandatory() || snapshot.notNull()) {
+      final Property made = database.getSchema().getType(typeName).getPropertyIfExists(to);
+      made.setMandatory(snapshot.mandatory());
+      made.setNotNull(snapshot.notNull());
+    }
+
+    final Map<String, String> defaults = new LinkedHashMap<>();
+    definition.defaults().forEach((name, text) -> defaults.put(name.equals(from) ? to : name, text));
+    final Map<String, String> identity = new LinkedHashMap<>();
+    definition.identity().forEach((name, generation) -> identity.put(name.equals(from) ? to : name, generation));
+    final Table.Key primary = definition.primaryKey() == null ? null : renamed(definition.primaryKey(), from, to);
+    setCustomValue(typeName, TableDefinition.CUSTOM_KEY, new TableDefinition(renamed(definition.columns(), from, to),
+        new LinkedHashSet<>(renamed(definition.textColumns(), from, to)), primary,
+        definition.uniqueKeys().stream().map(key -> renamed(key, from, to)).toList(), defaults, definition.foreignKeys(),
+        new LinkedHashSet<>(renamed(definition.timestamptzColumns(), from, to)), identity,
+        new LinkedHashSet<>(renamed(definition.uuidColumns(), from, to))).toJson());
+
+    for (final IndexSnapshot index : indexes) {
+      final IndexSnapshot next = index.renamed(from, to);
+      undo.push(() -> next.dropFrom(database.getSchema(), typeName));
+      next.create(database.getSchema(), typeName);
+    }
+    if (!declared.isEmpty()) {
+      declared.replaceAll((name, index) -> new DeclaredIndexes.Index(renamed(index.columns(), from, to), index.unique(),
+          index.engine()));
+      declare(typeName, declared);
+    }
+    keys.forEach((declaring, before) -> setCustomValue(declaring, ForeignKey.CUSTOM_KEY, ForeignKey.toJson(before.stream()
+        .map(key -> new ForeignKey(key.name(),
+            declaring.equals(typeName) ? renamed(key.columns(), from, to) : key.columns(), key.referencedType(),
+            key.referencedType().equals(typeName) ? renamed(key.referencedColumns(), from, to) : key.referencedColumns(),
+            key.onDelete(), key.onUpdate()))
+        .toList())));
+    if (!checks.isEmpty())
+      setCustomValue(typeName, CheckConstraint.CUSTOM_KEY, CheckConstraint.toJson(renamedChecks));
+    for (final DocumentType link : database.getSchema().getTypes()) {
+      if (typeName.equals(link.getCustomValue(EdgeEndpoints.SOURCE_KEY))
+          && from.equals(link.getCustomValue(EdgeEndpoints.SOURCE_COLUMN_KEY)))
+        setCustomValue(link.getName(), EdgeEndpoints.SOURCE_COLUMN_KEY, to);
+      if (typeName.equals(link.getCustomValue(EdgeEndpoints.TARGET_KEY))
+          && from.equals(link.getCustomValue(EdgeEndpoints.TARGET_COLUMN_KEY)))
+        setCustomValue(link.getName(), EdgeEndpoints.TARGET_COLUMN_KEY, to);
+    }
+  }
+
+  /** The foreign keys, of the type itself too, that refer to the property of the type. */
+  private List<Referring> referring(final String typeName, final String property) {
+    final List<Referring> found = new ArrayList<>();
+    for (final DocumentType each : database.getSchema().getTypes())
+      for (final ForeignKey key : foreignKeys(each))
+        if (key.referencedType().equals(typeName) && key.referencedColumns().contains(property))
+          found.add(new Referring(each.getName(), key));
+    return found;
+  }
+
+  /** The link tables with an end that refers to the property of the type. */
+  private List<String> links(final String typeName, final String property) {
+    final List<String> found = new ArrayList<>();
+    for (final DocumentType each : database.getSchema().getTypes())
+      if (typeName.equals(each.getCustomValue(EdgeEndpoints.SOURCE_KEY))
+          && property.equals(each.getCustomValue(EdgeEndpoints.SOURCE_COLUMN_KEY))
+          || typeName.equals(each.getCustomValue(EdgeEndpoints.TARGET_KEY))
+          && property.equals(each.getCustomValue(EdgeEndpoints.TARGET_COLUMN_KEY)))
+        found.add(each.getName());
+    return found;
+  }
+
+  private static List<ForeignKey> foreignKeys(final DocumentType type) {
+    final Object value = type.getCustomValue(ForeignKey.CUSTOM_KEY);
+    return value == null ? List.of() : ForeignKey.fromJson(value.toString());
+  }
+
+  private static List<CheckConstraint> checks(final DocumentType type) {
+    final Object value = type.getCustomValue(CheckConstraint.CUSTOM_KEY);
+    return value == null ? List.of() : CheckConstraint.fromJson(value.toString());
+  }
+
+  private static boolean reads(final DocumentType type, final CheckConstraint check, final String property) {
+    return CheckExpression.of(type, type, check.expression()).columnNames().contains(property);
+  }
+
+  private void removeKey(final String declaring, final String name) {
+    final List<ForeignKey> left = foreignKeys(database.getSchema().getType(declaring)).stream()
+        .filter(key -> !key.name().equals(name)).toList();
+    setCustomValue(declaring, ForeignKey.CUSTOM_KEY, left.isEmpty() ? null : ForeignKey.toJson(left));
+  }
+
+  private static List<IndexSnapshot> indexesOf(final DocumentType type, final String property) {
+    return type.getAllIndexes(false).stream().filter(index -> index.getPropertyNames().contains(property))
+        .map(IndexSnapshot::of).toList();
+  }
+
+  private void drop(final String typeName, final IndexSnapshot index) {
+    database.getSchema().dropIndex(index.name());
+    undo.push(() -> index.create(database.getSchema(), typeName));
+  }
+
+  private void declare(final String typeName, final Map<String, DeclaredIndexes.Index> indexes) {
+    final DocumentType type = database.getSchema().getType(typeName);
+    final Object before = type.getCustomValue(DeclaredIndexes.CUSTOM_KEY);
+    DeclaredIndexes.write(type, indexes);
+    undo.push(() -> database.getSchema().getType(typeName).setCustomValue(DeclaredIndexes.CUSTOM_KEY, before));
+  }
+
+  private static List<String> without(final Collection<String> names, final String name) {
+    return names.stream().filter(each -> !each.equals(name)).toList();
+  }
+
+  private static List<String> renamed(final Collection<String> names, final String from, final String to) {
+    return names.stream().map(each -> each.equals(from) ? to : each).toList();
+  }
+
+  private static Table.Key renamed(final Table.Key key, final String from, final String to) {
+    return new Table.Key(key.name(), renamed(key.columns(), from, to));
   }
 
   // ------------------------------------------------------------------------------------------------ constraints
@@ -657,6 +966,8 @@ public final class AlterTablePlan {
   private void setCustomValue(final String typeName, final String key, final Object value) {
     final DocumentType type = database.getSchema().getType(typeName);
     final Object before = type.getCustomValue(key);
+    if (before == null && value == null)
+      return;
     type.setCustomValue(key, value);
     undo.push(() -> database.getSchema().getType(typeName).setCustomValue(key, before));
   }
@@ -768,7 +1079,11 @@ public final class AlterTablePlan {
   /** A type that another language made has no definition to change: the statement of {@code sql} that does the same. */
   private PostgreSQLFeatureNotSupportedException madeAnotherWay(final Table table) {
     String hint = "Change the type in the sql language, with CREATE PROPERTY or ALTER PROPERTY";
-    if (statement.actions().get(0) instanceof AlterTableStatement.AddColumn add) {
+    if (statement.actions().get(0) instanceof AlterTableStatement.DropColumn drop) {
+      final Column column = table.findColumn(CreateTablePlan.identifier(drop.column()));
+      hint = "Drop the column in the sql language, where FORCE also drops its indexes: {sql}DROP PROPERTY `"
+          + table.documentType().getName() + "`.`" + (column == null ? drop.column().value() : column.name()) + "` FORCE";
+    } else if (statement.actions().get(0) instanceof AlterTableStatement.AddColumn add) {
       final CreateTablePlan.Mapped mapped = CreateTablePlan.type(add.column().type());
       hint = "Add the column in the sql language: {sql}CREATE PROPERTY `" + table.documentType().getName() + "`.`"
           + add.column().name().value() + "` " + mapped.engine().name() + (mapped.ofType() == null ? "" : " OF " + mapped.ofType());

@@ -251,6 +251,8 @@ unsupportedConstraintOption
 
 alterTableStmt
   : ALTER TABLE unsupportedAlterTarget skipRest
+  // a rename of a column is a statement of its own
+  | ALTER TABLE (IF EXISTS)? ONLY? table=qualifiedName RENAME COLUMN? from=colId TO to=colId
   | ALTER TABLE (IF EXISTS)? ONLY? table=qualifiedName actions+=alterTableAction (COMMA actions+=alterTableAction)*
   ;
 
@@ -262,6 +264,7 @@ unsupportedAlterTarget
 alterTableAction
   : ADD COLUMN? (IF NOT EXISTS)? column=colId typename constraints+=columnOption*   # addColumnAction
   | ADD tableConstraint                                                             # addConstraintAction
+  | DROP COLUMN? (IF EXISTS)? column=colId behavior=(CASCADE | RESTRICT)?           # dropColumnAction
   | ALTER COLUMN? column=colId SET DEFAULT bExpr                                    # setColumnDefaultAction
   | ALTER COLUMN? column=colId DROP DEFAULT                                         # dropColumnDefaultAction
   | ALTER COLUMN? column=colId SET NOT NULL                                         # setColumnNotNullAction
@@ -270,7 +273,8 @@ alterTableAction
   ;
 
 unsupportedAlterAction
-  : DROP | RENAME | SET | RESET | OWNER | VALIDATE | ENABLE | DISABLE | ATTACH | DETACH | INHERIT | NO | CLUSTER | REPLICA
+  : DROP CONSTRAINT | RENAME (TO | CONSTRAINT) | SET | RESET | OWNER | VALIDATE | ENABLE | DISABLE | ATTACH | DETACH | INHERIT
+  | NO | CLUSTER | REPLICA
   | FORCE | OF | NOT OF
   | ALTER CONSTRAINT
   | ALTER COLUMN? colId (TYPE | SET ~(NOT | DEFAULT) | RESET | ADD | DROP (IDENTITY | EXPRESSION) | RESTART | OPTIONS)

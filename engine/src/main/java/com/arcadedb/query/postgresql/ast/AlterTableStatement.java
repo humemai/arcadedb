@@ -34,7 +34,15 @@ public record AlterTableStatement(SourcePosition position, List<Name> table, boo
     implements Statement {
 
   /** One change of a table. */
-  public sealed interface Action permits AddColumn, AddConstraint, SetDefault, SetNotNull {
+  public sealed interface Action permits AddColumn, AddConstraint, DropColumn, RenameColumn, SetDefault, SetNotNull {
+  }
+
+  /** {@code DROP [COLUMN] [IF EXISTS] c [CASCADE | RESTRICT]}. */
+  public record DropColumn(Name column, boolean ifExists, boolean cascade) implements Action {
+  }
+
+  /** {@code RENAME [COLUMN] a TO b}, which is a statement of its own: the only action of one. */
+  public record RenameColumn(Name from, Name to) implements Action {
   }
 
   /** {@code ADD [CONSTRAINT name]} a table constraint: {@code UNIQUE}, {@code PRIMARY KEY}, {@code FOREIGN KEY} or {@code CHECK}. */

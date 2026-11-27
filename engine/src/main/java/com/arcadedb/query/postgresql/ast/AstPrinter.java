@@ -87,6 +87,9 @@ public final class AstPrinter {
         yield text.toString();
       }
       case AlterTableStatement.AddConstraint add -> "ADD " + print(add.constraint());
+      case AlterTableStatement.DropColumn drop -> "DROP COLUMN " + (drop.ifExists() ? "IF EXISTS " : "") + print(drop.column())
+          + (drop.cascade() ? " CASCADE" : "");
+      case AlterTableStatement.RenameColumn rename -> "RENAME COLUMN " + print(rename.from()) + " TO " + print(rename.to());
       case AlterTableStatement.SetDefault set -> "ALTER COLUMN " + print(set.column())
           + (set.value() == null ? " DROP DEFAULT" : " SET DEFAULT (" + print(set.value()) + ")");
       case AlterTableStatement.SetNotNull set -> "ALTER COLUMN " + print(set.column())
