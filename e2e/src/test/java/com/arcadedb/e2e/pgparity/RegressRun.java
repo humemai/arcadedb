@@ -67,6 +67,8 @@ final class RegressRun {
     long   expectedErrors = -1;
     /** Why the run of the file did not finish, {@code null} when it did. */
     String failure;
+    /** Whether the open transaction block of the file holds a write that was not judged. */
+    private boolean blockedWrite;
 
     FileResult(final String file) {
       this.file = file;
@@ -268,28 +270,40 @@ final class RegressRun {
     final String sql = send.sql();
     final List<RegressSql.Token> tokens = RegressSql.tokens(sql);
     final Map<String, RegressDatabase.Table> before = database.tables();
+    final Map<String, RegressDatabase.OtherRelation> others = database.others();
     RegressOutOfScope.Entry entry = outOfScope.match(sql, catalogRelations, serverFunctions);
+    final String word = RegressSql.firstWord(tokens);
 
-    // the tables the statement reads and writes: as the plan of PostgreSQL names them, else as its words do
-    final RegressDatabase.Relations relations = entry == null ? database.relations(sql) : null;
+    // the relations the statement reads and writes: as the plan of PostgreSQL names them, and as its words do
     final Set<String> uses = new LinkedHashSet<>();
     final Set<String> writes = new LinkedHashSet<>();
-    if (relations != null) {
-      relations.all().stream().filter(before::containsKey).forEach(uses::add);
-      relations.written().stream().filter(before::containsKey).forEach(writes::add);
-      // the planner leaves out a table that it does not have to read
-      uses.addAll(resolve(RegressSql.tablePositions(tokens), before));
-    } else {
-      uses.addAll(RegressSql.createsTable(tokens) ? resolve(RegressSql.sourcesOfCreateTable(tokens), before) : named(tokens, before));
-      writes.addAll(resolve(RegressSql.writeTargets(tokens), before));
+    if (entry == null) {
+      final RegressDatabase.Relations relations = database.relations(sql);
+      // a query of the harness between BEGIN and SET TRANSACTION would make the server refuse the latter
+      final boolean mayRead = !RegressDatabase.changesNothing(word);
+      if (relations != null) {
+        relations.all().stream().filter(before::containsKey).forEach(uses::add);
+        relations.written().stream().filter(before::containsKey).forEach(writes::add);
+        // the planner leaves out a table that it does not have to read, and names the tables of a view, not the view
+        uses.addAll(database.resolve(RegressSql.tablePositions(tokens), mayRead));
+      } else {
+        uses.addAll(database.resolve(
+            RegressSql.createsTable(tokens) ? RegressSql.sourcesOfCreateTable(tokens) : RegressSql.names(tokens), mayRead));
+      }
+      // from the words too: a rule can rewrite a write, so that the plan no longer names its target
+      writes.addAll(database.resolve(RegressSql.writeTargets(tokens), mayRead));
     }
     String blocked = null;
-    for (final String table : uses)
-      if (blocked == null && subject.blocked(table, false) != null)
-        blocked = "uses " + table + ": " + subject.blocked(table, false);
-    for (final String table : writes)
-      if (blocked == null && subject.blocked(table, true) != null)
-        blocked = "writes " + table + ": " + subject.blocked(table, true);
+    for (final String key : uses)
+      if (blocked == null && why(subject, before, others, key, false) != null)
+        blocked = "uses " + key + ": " + why(subject, before, others, key, false);
+    for (final String key : writes)
+      if (blocked == null && why(subject, before, others, key, true) != null)
+        blocked = "writes " + key + ": " + why(subject, before, others, key, true);
+    // what a blocked write would have changed is checked at the end of its transaction (fork issue #179)
+    if (entry == null && blocked == null && result.blockedWrite && (word.equals("commit") || word.equals("end"))
+        && database.transactionState() == 'T')
+      blocked = "ends a transaction that holds a blocked write";
     final boolean onCopy = uses.stream().anyMatch(subject::copied) || writes.stream().anyMatch(subject::copied);
 
     final String[] data = new String[1];
@@ -311,6 +325,16 @@ final class RegressRun {
 
     if (entry == null && differs(recorded.get(send.key()), sql, expected, keys, contents(database, changed)))
       entry = outOfScope.entry(RegressOutOfScope.TWO_RUNS);
+    // not after a write: the query would run on other contents the second time
+    if (entry == null && changed.isEmpty() && numbersTiedRows(database, sql, tokens, expected))
+      entry = outOfScope.entry(RegressOutOfScope.TIED_ROWS);
+    if (entry == null && blocked == null)
+      blocked = misplaced(database, subject, tokens, before, changed);
+    if (entry == null && blocked == null && RegressSql.queriesInformationSchema(tokens)) {
+      final String name = about(tokens, expected, subject.differing(database));
+      if (name != null)
+        blocked = "a query of information_schema about an object that differs between the sides: " + name;
+    }
 
     final String serverState = expected.failed() ? expected.sqlState() : "00000";
     if (entry != null) {
@@ -323,7 +347,7 @@ final class RegressRun {
           new Line(file, send.line(), RegressJudge.Verdict.BLOCKED, serverState, "-", blocked, "", false, sql));
     } else {
       final RegressSubject.Answer actual = subject.execute(send, sameData);
-      final boolean transaction = TRANSACTION.contains(RegressSql.firstWord(tokens));
+      final boolean transaction = TRANSACTION.contains(word);
       // a statement that turns out to write a table which cannot be held is not judged either
       String late = null;
       if (!transaction)
@@ -351,7 +375,78 @@ final class RegressRun {
       }
     }
     subject.sync(database, changed);
+    if (result.lines.get(result.lines.size() - 1).verdict() == RegressJudge.Verdict.BLOCKED
+        && (!writes.isEmpty() || !changed.isEmpty()))
+      result.blockedWrite = true;
+    // the transaction block has ended, or the statement was in none
+    if (database.transactionState() == 'I')
+      result.blockedWrite = false;
     return executed;
+  }
+
+  /** @return why a statement cannot read (or write) the relation of the reference that {@code key} names, else {@code null} */
+  private static String why(final RegressSubject subject, final Map<String, RegressDatabase.Table> tables,
+      final Map<String, RegressDatabase.OtherRelation> others, final String key, final boolean write) {
+    if (tables.containsKey(key))
+      return subject.blocked(key, write);
+    final RegressDatabase.OtherRelation relation = others.get(key);
+    return relation == null ? null : subject.blocked(relation);
+  }
+
+  /** Whether the query numbers rows that tie in the order of a window: PostgreSQL answers other rows with {@code rank()}. */
+  private static boolean numbersTiedRows(final RegressDatabase database, final String sql, final List<RegressSql.Token> tokens,
+      final RegressSubject.Answer expected) {
+    if (expected.failed() || expected.columns() == null)
+      return false;
+    final String ranked = RegressSql.rankForRowNumber(sql, tokens);
+    if (ranked == null)
+      return false;
+    final RegressSubject.Answer other = database.peek(ranked);
+    return other != null && RegressJudge.rows(expected.rows(), other.rows()) != null;
+  }
+
+  /**
+   * @return why the statement is not judged when it made a table outside of {@code public} without naming the schema, as after a
+   *         {@code SET search_path} that the other side refused (fork issue #181), else {@code null}
+   */
+  private static String misplaced(final RegressDatabase database, final RegressSubject subject,
+      final List<RegressSql.Token> tokens, final Map<String, RegressDatabase.Table> before, final Set<String> changed) {
+    for (final String key : changed) {
+      final RegressDatabase.Table table = database.tables().get(key);
+      if (table == null || before.containsKey(key) || table.schema().equals("public") || table.schema().startsWith("pg_temp")
+          || RegressSql.writesWithSchema(tokens, table.schema(), table.name())
+          || !table.schema().equals(database.currentSchema()))
+        continue;
+      final String why = subject.misplaced(table);
+      if (why != null)
+        return "writes " + key + ": " + why;
+    }
+    return null;
+  }
+
+  private static final Set<String> NAMES_AN_OBJECT = Set.of("table_name", "table_schema", "view_name", "view_schema",
+      "schema_name", "sequence_name", "sequence_schema", "foreign_table_name", "foreign_table_schema");
+
+  /**
+   * @return the object of {@code differing} that a query of {@code information_schema} is about: one that it writes as a string,
+   *         or one that the answer of PostgreSQL names; {@code null} when there is none (fork issues #183 and #184)
+   */
+  private static String about(final List<RegressSql.Token> tokens, final RegressSubject.Answer expected,
+      final Set<String> differing) {
+    for (final RegressSql.Token token : tokens) {
+      if (token.type() != RegressSql.Type.STRING || !token.text().startsWith("'") || token.text().length() < 2)
+        continue;
+      final String text = token.text().substring(1, token.text().length() - 1);
+      if (differing.contains(text))
+        return text;
+    }
+    if (expected.columns() != null)
+      for (int i = 0; i < expected.columns().size(); i++)
+        if (NAMES_AN_OBJECT.contains(expected.columns().get(i)))
+          for (final List<Object> row : expected.rows())
+            if (row.get(i) != null && differing.contains(String.valueOf(row.get(i))))
+              return String.valueOf(row.get(i));
+    return null;
   }
 
   /** How a table of the side under test differs from the reference after a statement, {@code null} when it does not. */
@@ -393,33 +488,6 @@ final class RegressRun {
       contents.put(key, table == null ? "dropped" : table.fingerprint());
     }
     return contents;
-  }
-
-  /** The tables that written names mean: a bare name, or one with its schema. */
-  private static Set<String> resolve(final Set<String> names, final Map<String, RegressDatabase.Table> tables) {
-    final Set<String> resolved = new LinkedHashSet<>();
-    for (final String name : names) {
-      final int dot = name.indexOf('.');
-      for (final RegressDatabase.Table table : tables.values())
-        if (table.key().equals(name) || dot > 0 && table.isCalled(name.substring(0, dot), name.substring(dot + 1)))
-          resolved.add(table.key());
-    }
-    return resolved;
-  }
-
-  /** The tables that the words of a statement name. */
-  private static Set<String> named(final List<RegressSql.Token> tokens, final Map<String, RegressDatabase.Table> tables) {
-    final Set<String> named = new LinkedHashSet<>();
-    for (int i = 0; i < tokens.size(); i++) {
-      final String name = tokens.get(i).name();
-      if (name == null)
-        continue;
-      final String qualifier = i >= 2 && tokens.get(i - 1).isSymbol(".") ? tokens.get(i - 2).name() : null;
-      for (final RegressDatabase.Table table : tables.values())
-        if (qualifier == null ? table.key().equals(name) : table.isCalled(qualifier, name))
-          named.add(table.key());
-    }
-    return named;
   }
 
   private void drive(final RegressPsql psql, final RegressDatabase database, final Handler handler) {

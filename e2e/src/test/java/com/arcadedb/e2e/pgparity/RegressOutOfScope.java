@@ -30,15 +30,17 @@ import java.util.regex.Pattern;
 
 /**
  * The closed list of what is out of scope (fork issue #119), read from {@code pgregress/out-of-scope.tsv}: the only place that
- * says so. The first entry that matches a statement counts. One reason is measured, not matched: PostgreSQL answers
- * differently in two runs ({@link #TWO_RUNS}).
+ * says so. The first entry that matches a statement counts. Two entries are measured, not matched: PostgreSQL answers
+ * differently in two runs ({@link #TWO_RUNS}), or the statement numbers rows that tie ({@link #TIED_ROWS}).
  */
 final class RegressOutOfScope {
-  static final String TWO_RUNS = "two-runs";
+  static final String TWO_RUNS  = "two-runs";
+  static final String TIED_ROWS = "tied-rows";
 
   private static final String CATALOG_RELATION = "@catalog-relation";
   private static final String SERVER_FUNCTION  = "@server-function";
   private static final String MEASURED         = "@two-runs";
+  private static final String MEASURED_TIES    = "@tied-rows";
 
   private static final Pattern DEFINES_SERVER_CODE = Pattern.compile(
       "^create (?:or replace )?(?:function|procedure) (?:[^ (]+ \\. )?\"?([^ \"(]+)\"? \\(.* language (?:c|internal)\\b");
@@ -102,7 +104,7 @@ final class RegressOutOfScope {
         case CATALOG_RELATION -> tokens.stream().anyMatch(token -> token.name() != null
             && catalogRelations.contains(token.name()));
         case SERVER_FUNCTION -> calls(tokens, serverFunctions);
-        case MEASURED -> false;
+        case MEASURED, MEASURED_TIES -> false;
         default -> patterns.get(i).matcher(normalized).find();
       };
       if (matches)
