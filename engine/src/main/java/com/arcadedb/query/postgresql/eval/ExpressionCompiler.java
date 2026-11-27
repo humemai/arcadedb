@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql.eval;
 
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
+import com.arcadedb.query.postgresql.SessionTimeZone;
 import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.SelectItem;
@@ -35,6 +36,7 @@ import java.math.BigInteger;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -1481,13 +1483,16 @@ public final class ExpressionCompiler {
         return best;
       }, coerced);
     }
-    case CURRENT_DATE:
-      return new Evaluable.Node(PgType.DATE, row -> LocalDate.now());
+    case CURRENT_DATE: {
+      final ZoneId zone = SessionTimeZone.zoneOf("CURRENT_DATE");
+      return new Evaluable.Node(PgType.DATE, row -> LocalDate.now(zone));
+    }
     case LOCALTIMESTAMP: {
       final int precision = call.args().isEmpty() ? Casts.MAX_TIMESTAMP_PRECISION
           : Math.min(integerModifier(call.args().get(0)), Casts.MAX_TIMESTAMP_PRECISION);
+      final ZoneId zone = SessionTimeZone.zoneOf("LOCALTIMESTAMP");
       return new Evaluable.Node(PgType.TIMESTAMP,
-          row -> Casts.roundTimestamp(LocalDateTime.now().truncatedTo(ChronoUnit.MICROS), precision));
+          row -> Casts.roundTimestamp(LocalDateTime.now(zone).truncatedTo(ChronoUnit.MICROS), precision));
     }
     default:
       throw PostgreSQLEvaluationException.unsupported(call.kind().name() + " is not supported by the postgresql language yet");

@@ -532,9 +532,10 @@ final class PostgresSessionSettings {
           throw new SettingException("parameter \"" + key + "\" cannot be changed", SQLSTATE_CANT_CHANGE_RUNTIME);
       // Accepted, as drivers send them routinely, but not stored: show() answers what the server really does.
       case "client_encoding" -> false;
-      // Accepted, as drivers and ORMs send it on connect, but not stored: this server has one namespace per database and
-      // resolves names in it whatever the client names, so SHOW answers that one, as current_schema() does (issue #9329)
-      case SEARCH_PATH -> false;
+      // Accepted, as drivers and ORMs send it on connect: this server has one namespace per database and sql resolves names
+      // in it whatever the client names, so SHOW answers that one, as current_schema() does (issue #9329). The value is kept
+      // for the postgresql language, which refuses its statements when the path leaves its schema out (fork issue #237)
+      case SEARCH_PATH -> true;
       case "role" -> {
         if (value != null && !"none".equalsIgnoreCase(value.trim()))
           throw new SettingException("SET ROLE is not supported by this server: the session keeps the privileges of the user it "
@@ -748,6 +749,27 @@ final class PostgresSessionSettings {
    */
   boolean standardConformingStrings() {
     return !"off".equals(current(STANDARD_CONFORMING_STRINGS));
+  }
+
+  /** The {@code search_path} the session asked for, or null when it asked for none; {@code SHOW} does not answer it. */
+  String requestedSearchPath() {
+    return current(SEARCH_PATH);
+  }
+
+  /**
+   * True when the session asked for a {@code search_path} that names neither {@code schema} nor the schema {@code SHOW}
+   * answers. Quotes are taken off each entry, and case is ignored.
+   */
+  boolean searchPathLeavesOut(final String schema) {
+    final String path = requestedSearchPath();
+    if (path == null)
+      return false;
+    for (final String entry : path.split(",")) {
+      final String name = entry.replace("\"", "").replace("'", "").trim();
+      if (name.equalsIgnoreCase(schema) || name.equalsIgnoreCase(currentSchema))
+        return false;
+    }
+    return true;
   }
 
   private String current(final String key) {
