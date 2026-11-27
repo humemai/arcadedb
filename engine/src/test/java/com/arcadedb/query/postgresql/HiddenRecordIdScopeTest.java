@@ -92,6 +92,29 @@ class HiddenRecordIdScopeTest extends TestHelper {
     assertThat(lines("SELECT name FROM person WHERE rid = (SELECT rid FROM badge) ORDER BY name")).containsExactly("Ada", "Bob");
   }
 
+  /**
+   * Within one {@code FROM} too, a record id that the catalog lists is a column of its table (fork issue #163): a name that two
+   * tables have in PostgreSQL is ambiguous, and a record id that the catalog does not list gives way to the listed one.
+   */
+  @Test
+  void aListedRecordIdTakesPartInTheNamesOfOneFrom() {
+    // no foreign key refers to person yet: PostgreSQL has no column rid there, so the name is the one of ticket
+    assertThat(lines("SELECT rid FROM person, ticket")).containsExactly("7", "7");
+
+    run("CREATE TABLE likes (source_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE,"
+        + " target_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE)");
+
+    for (final String statement : List.of("SELECT rid FROM person, ticket", "SELECT rid FROM ticket, person",
+        "SELECT 1 FROM person JOIN ticket ON rid = 7", "SELECT name FROM person, ticket WHERE rid = 7",
+        "SELECT rid FROM person a, person b"))
+      assertState(statement, "42702");
+    // badge hides a record id that the catalog does not list: PostgreSQL has no such column there
+    assertThat(lines("SELECT name FROM person, badge WHERE rid = person.rid ORDER BY name")).containsExactly("Ada", "Bob");
+    assertThat(lines("SELECT name FROM badge JOIN person ON rid = person.rid ORDER BY name")).containsExactly("Ada", "Bob");
+    // two record ids that the catalog does not list stay ambiguous
+    assertState("SELECT id FROM tag a, tag b", "42702");
+  }
+
   /** Places of an {@code EXISTS} subquery that cannot read the query around it: refused, and not answered with a record id. */
   @ParameterizedTest
   @ValueSource(strings = {

@@ -49,7 +49,9 @@ import java.util.stream.Collectors;
  *
  * <ul>
  * <li>No such column: {@code 42703}. A relation that is not in the {@code FROM} clause: {@code 42P01}.</li>
- * <li>A name that two columns carry ({@code name} when two tables have it, two columns that differ only in case): {@code 42702}.</li>
+ * <li>A name that two columns carry ({@code name} when two tables have it, two columns that differ only in case): {@code 42702}. A
+ * column that the catalog does not list, a hidden record id, is not counted beside one that it lists (fork issues #151 and
+ * #163).</li>
  * <li>A schema that is not {@code public} or the name of the database: {@code 3F000}.</li>
  * </ul>
  *
@@ -109,10 +111,10 @@ public final class RelationScope implements ExpressionCompiler.Scope {
         if (same(column, output.name(), pass))
           matches.add(output);
       if (matches.size() > 1) {
-        // a hidden column gives way to a column that its table shows
-        final List<RelationSource.Output> shown = matches.stream().filter(match -> !fields.get(match.index()).hidden()).toList();
-        if (shown.size() == 1)
-          return shown.get(0);
+        // a column that the catalog does not list gives way to a column that it lists
+        final List<RelationSource.Output> listed = matches.stream().filter(match -> fields.get(match.index()).listed()).toList();
+        if (listed.size() == 1)
+          return listed.get(0);
       }
       if (matches.size() == 1)
         return matches.get(0);
@@ -272,10 +274,10 @@ public final class RelationScope implements ExpressionCompiler.Scope {
       }
       if (more != null) {
         more.add(0, first);
-        // a hidden column gives way to a column that its table shows
-        final List<Integer> shown = more.stream().filter(match -> !fields.get(match).hidden()).toList();
-        if (shown.size() == 1)
-          return shown.get(0);
+        // a column that the catalog does not list gives way to a column that it lists
+        final List<Integer> listed = more.stream().filter(match -> fields.get(match).listed()).toList();
+        if (listed.size() == 1)
+          return listed.get(0);
         final List<String> names = new ArrayList<>();
         for (final int match : more)
           names.add(fields.get(match).relation().isEmpty() ? fields.get(match).name()

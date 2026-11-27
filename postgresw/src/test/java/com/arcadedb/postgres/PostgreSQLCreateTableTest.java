@@ -219,6 +219,19 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
             "SELECT (SELECT rid <> '7' FROM person WHERE id = 1) AS other FROM ticket",
             "SELECT name FROM person WHERE rid = (SELECT rid FROM t2 LIMIT 1) ORDER BY name"))
           same(postgres, arcade, query);
+        // within one FROM too a listed record id is a column of its table, and one that the catalog does not list gives way to it
+        // (fork issue #163)
+        for (final String query : List.of("SELECT name FROM person, memo WHERE rid = person.rid ORDER BY name",
+            "SELECT name FROM memo JOIN person ON rid = person.rid ORDER BY name",
+            "SELECT count(*) FROM person p, ticket t WHERE p.rid <> 'x' AND t.rid = 7"))
+          same(postgres, arcade, query);
+        for (final String ambiguous : List.of("SELECT rid FROM person, ticket", "SELECT rid FROM ticket, person",
+            "SELECT 1 FROM person JOIN ticket ON rid = 7", "SELECT name FROM person, ticket WHERE rid = 7")) {
+          final String expected = state(postgres, ambiguous);
+          final String actual = state(arcade, ambiguous);
+          if (!"42702".equals(expected) || !expected.equals(actual))
+            failures.add(ambiguous + "\n  PostgreSQL: " + expected + "\n  ArcadeDB:   " + actual);
+        }
         final String ungrouped = "SELECT name, count(*), (SELECT id FROM memo) FROM person GROUP BY name";
         assertThat(state(arcade, ungrouped)).isEqualTo(state(postgres, ungrouped)).isEqualTo("42803");
 
