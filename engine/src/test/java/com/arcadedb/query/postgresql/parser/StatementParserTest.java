@@ -298,8 +298,8 @@ class StatementParserTest {
 
   @Test
   void anOperatorTheSubsetDoesNotNameIsRefusedWithItsPosition() {
-    assertThatThrownBy(() -> StatementParser.parse("SELECT a @> b")).isInstanceOf(PostgreSQLFeatureNotSupportedException.class)
-        .hasMessageContaining("The operator @> is not supported by the postgresql language (line 1, column 10)");
+    assertThatThrownBy(() -> StatementParser.parse("SELECT a @@ b")).isInstanceOf(PostgreSQLFeatureNotSupportedException.class)
+        .hasMessageContaining("The operator @@ is not supported by the postgresql language (line 1, column 10)");
   }
 
   @Test

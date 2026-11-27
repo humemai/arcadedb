@@ -513,6 +513,10 @@ public final class ExpressionCompiler {
       return comparison(operator, compile(e.left()), compile(e.right()));
     case CONCAT:
       return concat(compile(e.left()), compile(e.right()));
+    case CONTAINS:
+    case CONTAINED_BY:
+    case OVERLAPS:
+      return arrayContainment(operator, compile(e.left()), compile(e.right()));
     case L2_DISTANCE:
     case COSINE_DISTANCE:
     case NEGATIVE_INNER_PRODUCT:
@@ -560,6 +564,8 @@ public final class ExpressionCompiler {
 
   /** The comparison of two expressions, {@code operator} one of the six comparison operators. */
   public Evaluable comparison(final Expression.BinaryOperator operator, final Evaluable left, final Evaluable right) {
+    if (left.type() == PgType.ARRAY || right.type() == PgType.ARRAY)
+      return arrayEquality(operator, left, right);
     final Unified unified = unify(operator.symbol(), left, right);
     final PgType type = unified.type();
     final Evaluable l = unified.left();
@@ -591,6 +597,109 @@ public final class ExpressionCompiler {
         default -> order >= 0;
       };
     }, l, r);
+  }
+
+  // ---- arrays ----
+
+  /** Two array operands and the one element type that they have. */
+  private record ArrayPair(PgType element, Evaluable left, Evaluable right) {
+  }
+
+  /**
+   * The operands of an operator that PostgreSQL defines for two arrays of one element type ({@code anyarray}): an operand of no type
+   * (a literal, a parameter with no declared type) is an array of the type of the other one.
+   */
+  private static ArrayPair arrayPair(final String operator, final Evaluable left, final Evaluable right) {
+    final PgType a = left.type();
+    final PgType b = right.type();
+    if (a != PgType.ARRAY && a != PgType.UNKNOWN || b != PgType.ARRAY && b != PgType.UNKNOWN)
+      throw PostgreSQLEvaluationException.noOperator(operator, a, b);
+    final PgType first = declaredElement(left);
+    final PgType second = declaredElement(right);
+    if (first != null && second != null && textual(first) != textual(second))
+      throw PostgreSQLEvaluationException.noOperator(operator, a, b);
+    PgType element = first != null ? textual(first) : second != null ? textual(second) : null;
+    if (element == null) {
+      if (a == PgType.UNKNOWN && b == PgType.UNKNOWN)
+        throw new PostgreSQLEvaluationException("42725", "operator is not unique: unknown " + operator + " unknown");
+      element = PgType.TEXT;
+    }
+    if (!ValueInput.isElementType(element) || !Comparison.isComparable(element))
+      throw PostgreSQLEvaluationException.unsupported(
+          "The operator " + operator + " on arrays of " + element.displayName() + " is not supported");
+    return new ArrayPair(element, a == PgType.UNKNOWN ? arrayOfUntyped(left, element) : left,
+        b == PgType.UNKNOWN ? arrayOfUntyped(right, element) : right);
+  }
+
+  /** The element type that an array says it has, {@code null} for an operand of no type or an empty bound array. */
+  private static PgType declaredElement(final Evaluable array) {
+    if (array.type() != PgType.ARRAY)
+      return null;
+    final PgType named = ValueInput.elementType(array.typeName());
+    if (named != null)
+      return named;
+    if (array instanceof Evaluable.Constant constant)
+      return elementTypeOfValues(constant.value());
+    throw PostgreSQLEvaluationException.unsupported(
+        "The element type of this array is not known to the language: cast it, as in x::text[]");
+  }
+
+  /**
+   * {@code =}, {@code <>} and {@code IS [NOT] DISTINCT FROM} of two arrays: the same length and equal elements, where, as
+   * in PostgreSQL, a {@code NULL} element is equal to a {@code NULL} element only. The order of arrays is refused.
+   */
+  private static Evaluable arrayEquality(final Expression.BinaryOperator operator, final Evaluable left, final Evaluable right) {
+    final boolean distinctness = operator == Expression.BinaryOperator.IS_DISTINCT_FROM
+        || operator == Expression.BinaryOperator.IS_NOT_DISTINCT_FROM;
+    final ArrayPair pair = arrayPair(operator.symbol(), left, right);
+    if (!distinctness && operator != Expression.BinaryOperator.EQUAL && operator != Expression.BinaryOperator.NOT_EQUAL)
+      throw PostgreSQLEvaluationException.unsupported("The operator " + operator.symbol() + " is not supported for arrays");
+    final boolean whenSame = operator == Expression.BinaryOperator.EQUAL || operator == Expression.BinaryOperator.IS_NOT_DISTINCT_FROM;
+    return new Evaluable.Node(PgType.BOOL, row -> {
+      final List<Object> x = elements(pair.left().eval(row), pair.element());
+      final List<Object> y = elements(pair.right().eval(row), pair.element());
+      if (x == null || y == null)
+        return distinctness ? (Object) ((x == null && y == null) == whenSame) : null;
+      boolean same = x.size() == y.size();
+      for (int i = 0; same && i < x.size(); i++) {
+        final Object p = x.get(i);
+        final Object q = y.get(i);
+        same = p == null || q == null ? p == null && q == null : Comparison.compare(pair.element(), p, q) == 0;
+      }
+      return same == whenSame;
+    }, pair.left(), pair.right());
+  }
+
+  /**
+   * {@code @>}, {@code <@} and {@code &&} of two arrays: {@code NULL} when an array is {@code NULL}. A {@code NULL} element is
+   * equal to nothing, so an array that has one is contained in no array.
+   */
+  private static Evaluable arrayContainment(final Expression.BinaryOperator operator, final Evaluable left, final Evaluable right) {
+    final ArrayPair pair = arrayPair(operator.symbol(), left, right);
+    return new Evaluable.Node(PgType.BOOL, row -> {
+      final List<Object> x = elements(pair.left().eval(row), pair.element());
+      final List<Object> y = elements(pair.right().eval(row), pair.element());
+      if (x == null || y == null)
+        return null;
+      final boolean reversed = operator == Expression.BinaryOperator.CONTAINED_BY;
+      final List<Object> holder = reversed ? y : x;
+      final List<Object> wanted = reversed ? x : y;
+      final boolean overlap = operator == Expression.BinaryOperator.OVERLAPS;
+      for (final Object item : wanted)
+        // one element that is held decides &&, one that is not decides @> and <@
+        if (holds(holder, item, pair.element()) == overlap)
+          return overlap;
+      return !overlap;
+    }, pair.left(), pair.right());
+  }
+
+  private static boolean holds(final List<Object> array, final Object value, final PgType element) {
+    if (value == null)
+      return false;
+    for (final Object item : array)
+      if (item != null && Comparison.compare(element, item, value) == 0)
+        return true;
+    return false;
   }
 
   private Evaluable concat(final Evaluable left, final Evaluable right) {
