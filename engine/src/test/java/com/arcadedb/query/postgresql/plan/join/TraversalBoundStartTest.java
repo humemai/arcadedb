@@ -47,8 +47,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class TraversalBoundStartTest extends TestHelper {
 
-  private static final String HOP = "SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id"
-      + " JOIN company c ON w.target_id = c.id";
+  private static final String HOP = "SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.rid"
+      + " JOIN company c ON w.target_id = c.rid";
 
   @Override
   protected void beginTest() {
@@ -175,15 +175,15 @@ class TraversalBoundStartTest extends TestHelper {
 
   @Test
   void theIdOfTheTableIsAKey() {
-    final String rid = (String) rows("SELECT id FROM person WHERE pid = 3").get(0).get(0);
-    final String sql = HOP + " WHERE p.id = '" + rid + "'";
-    assertAWalk(sql, "p.id = '" + rid + "'");
+    final String rid = (String) rows("SELECT rid FROM person WHERE pid = 3").get(0).get(0);
+    final String sql = HOP + " WHERE p.rid = '" + rid + "'";
+    assertAWalk(sql, "p.rid = '" + rid + "'");
     assertThat(rows(sql)).containsExactly(row("Cy", "Birch", 2021));
   }
 
   @Test
   void theKeyOfTheStartCanBeTheEdgeEndOfAnIncomingWalk() {
-    final String sql = "SELECT c.name, p.name FROM company c JOIN works_at w ON w.target_id = c.id JOIN person p ON w.source_id = p.id"
+    final String sql = "SELECT c.name, p.name FROM company c JOIN works_at w ON w.target_id = c.rid JOIN person p ON w.source_id = p.rid"
         + " WHERE c.cid = 20";
     assertAWalk(sql, "c.cid = 20");
     assertThat(plan(sql)).contains("(in works_at AS w FROM c)");
@@ -191,8 +191,8 @@ class TraversalBoundStartTest extends TestHelper {
 
   @Test
   void aLeftJoinFromABoundStartWalksAndKeepsTheRowWithoutAnEdge() {
-    final String sql = "SELECT p.name, c.name, w.since FROM person p LEFT JOIN works_at w ON w.source_id = p.id"
-        + " LEFT JOIN company c ON w.target_id = c.id WHERE p.pid IN (4, 5)";
+    final String sql = "SELECT p.name, c.name, w.since FROM person p LEFT JOIN works_at w ON w.source_id = p.rid"
+        + " LEFT JOIN company c ON w.target_id = c.rid WHERE p.pid IN (4, 5)";
     assertThat(plan(sql)).contains("TRAVERSE LEFT").contains("[traversal: start bound by p.pid IN (4, 5)]").doesNotContain("HASH JOIN");
     assertThat(multiset(rows(sql))).containsExactlyElementsOf(multiset(List.of(row("Di", "Birch", 2023), row("Ed", null, null))));
     assertThat(multiset(rows(sql))).isEqualTo(rowsWithTheRuleOff(sql));
@@ -200,8 +200,8 @@ class TraversalBoundStartTest extends TestHelper {
 
   @Test
   void everyHopOfAChainStartsFromTheBoundStart() {
-    final String sql = "SELECT p.name, c2.name FROM company c JOIN works_at w ON w.target_id = c.id JOIN person p ON w.source_id = p.id"
-        + " JOIN works_at w2 ON w2.source_id = p.id JOIN company c2 ON w2.target_id = c2.id WHERE c.cid = 20";
+    final String sql = "SELECT p.name, c2.name FROM company c JOIN works_at w ON w.target_id = c.rid JOIN person p ON w.source_id = p.rid"
+        + " JOIN works_at w2 ON w2.source_id = p.rid JOIN company c2 ON w2.target_id = c2.rid WHERE c.cid = 20";
     final String plan = plan(sql);
     assertThat(plan).doesNotContain("HASH JOIN").doesNotContain("no bound start");
     assertThat(occurrences(plan, "[traversal: start bound by c.cid = 20]")).as("four joins, four walk steps").isEqualTo(4);
@@ -215,10 +215,10 @@ class TraversalBoundStartTest extends TestHelper {
   void aJoinOfAllVerticesKeepsTheHashJoinAndSaysWhy() {
     // the shapes of the timed run: one hop from all vertices, an aggregate over it, and the same with LEFT joins
     for (final String sql : List.of(HOP,
-        "SELECT count(*) AS n, sum(c.cid) AS cid_sum FROM person p JOIN works_at w ON w.source_id = p.id"
-            + " JOIN company c ON w.target_id = c.id",
-        "SELECT count(*) AS rows_n, count(w.id) AS edges_n, sum(c.cid) AS cid_sum FROM person p LEFT JOIN works_at w ON w.source_id = p.id"
-            + " LEFT JOIN company c ON w.target_id = c.id")) {
+        "SELECT count(*) AS n, sum(c.cid) AS cid_sum FROM person p JOIN works_at w ON w.source_id = p.rid"
+            + " JOIN company c ON w.target_id = c.rid",
+        "SELECT count(*) AS rows_n, count(w.rid) AS edges_n, sum(c.cid) AS cid_sum FROM person p LEFT JOIN works_at w ON w.source_id = p.rid"
+            + " LEFT JOIN company c ON w.target_id = c.rid")) {
       final String plan = plan(sql);
       assertThat(plan).as(sql).doesNotContain("TRAVERSE").contains("HASH JOIN").contains("[hash join: no bound start]");
       // the plan is the plan of the rule off, and the reason
@@ -254,7 +254,7 @@ class TraversalBoundStartTest extends TestHelper {
   @Test
   void aStartThatIsBoundByAJoinWithAnotherTableIsAHashJoin() {
     // the left input of the join through works_at is the join of orders and person, not a table and not a walk
-    final String sql = "SELECT p.name, w.since FROM orders o JOIN person p ON o.buyer = p.id JOIN works_at w ON w.source_id = p.id"
+    final String sql = "SELECT p.name, w.since FROM orders o JOIN person p ON o.buyer = p.rid JOIN works_at w ON w.source_id = p.rid"
         + " WHERE o.oid = 100 ORDER BY w.since";
     final String plan = plan(sql);
     assertThat(plan).doesNotContain("TRAVERSE").contains("HASH JOIN").contains("[hash join: no bound start]");
@@ -264,7 +264,7 @@ class TraversalBoundStartTest extends TestHelper {
 
   @Test
   void aTableOfAllVerticesHasNoWalkEvenWhenTheEdgesAreFiltered() {
-    final String sql = "SELECT p.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id WHERE w.since >= 2020";
+    final String sql = "SELECT p.name, w.since FROM person p JOIN works_at w ON w.source_id = p.rid WHERE w.since >= 2020";
     assertNotAWalk(sql);
   }
 

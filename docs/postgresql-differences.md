@@ -10,14 +10,14 @@ The tested [examples page](postgresql-examples.md) runs the same query text on b
 
 ```sql
 CREATE TABLE person (rid bigint GENERATED ALWAYS AS IDENTITY UNIQUE, id bigint PRIMARY KEY, name text, age int, city text, created bigint);
-CREATE TABLE knows (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, source_id bigint NOT NULL REFERENCES person (rid) ON DELETE CASCADE, target_id bigint NOT NULL REFERENCES person (rid) ON DELETE CASCADE, since int);
+CREATE TABLE knows (rid bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, source_id bigint NOT NULL REFERENCES person (rid) ON DELETE CASCADE, target_id bigint NOT NULL REFERENCES person (rid) ON DELETE CASCADE, since int);
 ```
 
 ```sql
 SELECT q.id AS qid, q.name AS name, k.since AS since FROM person p JOIN knows k ON k.source_id = p.rid JOIN person q ON k.target_id = q.rid WHERE p.id = 1 ORDER BY since;
 ```
 
-A PostgreSQL schema would usually point `knows.source_id` at `person (id)` and join on `p.id`. In `postgresql` the two ends of an edge hold record ids, so the join is on `rid`, or on `id` when the type has no `id` property of its own (a table that `CREATE TABLE` made answers to both names).
+A PostgreSQL schema would usually point `knows.source_id` at `person (id)` and join on `p.id`. In `postgresql` the two ends of an edge hold record ids, so the join is on `rid`, the record id of every table.
 
 ## From the engine
 
@@ -25,7 +25,7 @@ Changing these means changing the ArcadeDB engine.
 
 | area | PostgreSQL | `postgresql` |
 | --- | --- | --- |
-| Record ids | none | every record has one, given by the engine; a statement cannot set it (`428C9`) |
+| Record ids | none | every record has one, given by the engine and read as the column `rid`; a statement cannot set it (`428C9`) |
 | Deleting a vertex | follows the `ON DELETE` rule of each foreign key | its edges are always deleted, so the foreign keys of an edge table are listed as `ON DELETE CASCADE`, and no other rule can be chosen |
 | Two writers on one row | by default the second waits, then writes | neither waits; the commit that comes last fails with `40001` and has to be retried. Over the PostgreSQL protocol a single autocommit write is retried by the server, see [write conflicts](#write-conflicts) |
 | `SERIALIZABLE` | supported | not available. Over the wire, `BEGIN ISOLATION LEVEL SERIALIZABLE` is `0A000` and leaves a failed block, so every statement is `25P02` until `ROLLBACK` and none is committed on its own; write `BEGIN ISOLATION LEVEL REPEATABLE READ`. Through the engine API a refused `BEGIN` opens no block (fork issue [#236](https://github.com/humemai/arcadedb/issues/236)) |
@@ -72,8 +72,8 @@ CREATE TABLE knows (
 | area | PostgreSQL | `postgresql` |
 | --- | --- | --- |
 | Foreign keys | any columns | checked, see [Foreign keys](#foreign-keys). A table with `REFERENCES` on both `source_id` and `target_id` has to be a link table, written as above; any other form of the two is refused |
-| A table that an edge table refers to | declares a column `rid` itself | declares nothing when `CREATE TABLE` made it: its record id answers to `rid`, a `text`. A table that declares its own column `rid` cannot be referred to (`0A000`). A type that ArcadeDB `sql` made needs a property `id` of its own (`42703` without one) |
-| The record id | none | readable by name, as `rid`, and also as `id` in a table with no column `id` (PostgreSQL raises `42703` for a name that the table does not declare). In a table that declares a column `rid` and no column `id`, it is `id` only. Left out of `*` and of an `INSERT` without a column list. Once a foreign key refers to the table, the catalog lists it, under `rid` when that name reads it. An unqualified name in one `FROM` reads a column that the catalog lists before a record id that it does not list, so a listed record id and a declared column of the same name are `42702`, as in PostgreSQL (fork issue [#163](https://github.com/humemai/arcadedb/issues/163)) |
+| A table that an edge table refers to | declares a column `rid` itself | declares nothing when `CREATE TABLE` made it: its record id answers to `rid`, a `text`. A table that declares its own column `rid` cannot be referred to (`0A000`). A type that ArcadeDB `sql` made can be referred to in the same way |
+| The record id | none | readable by name, as `rid`, and never as `id`: in a table that declares no column `id`, `id` is `42703` as in PostgreSQL, with the hint `no column id: read rid, or declare id bigserial PRIMARY KEY` (fork issue [#240](https://github.com/humemai/arcadedb/issues/240)). A table that declares a column `rid` has no record id column. Left out of `*` and of an `INSERT` without a column list. Once a foreign key refers to the table, the catalog lists it. An unqualified name in one `FROM` reads a column that the catalog lists before a record id that it does not list, so a listed record id and a declared column of the same name are `42702`, as in PostgreSQL (fork issue [#163](https://github.com/humemai/arcadedb/issues/163)) |
 | An end of an edge | any row of the referenced table | checked by writes of this language only: `sql` and openCypher do not read the declaration |
 | Keys over an end of an edge | any | only `(source_id, target_id)`, together |
 | Transactions | nobody else sees a new table before the commit, and a rollback takes it back | the engine's schema is not transactional: `CREATE TABLE` runs at once, in a transaction block too, and **other sessions see the table before the commit** and can write to it. When the block rolls back, the table is dropped if it is still empty; a table that another session has written stays. A transaction that ends without the language or the PostgreSQL protocol, a `rollback()` of the Java API for example, leaves the drop to the next statement of the language. A server that stops inside a block leaves the table |
@@ -229,7 +229,7 @@ Limits:
 
 | # | choice | the main alternative |
 | ---: | --- | --- |
-| 1 | A type's own `id` property is the column `id` (the primary key when a unique index covers it), and the record id is `rid`. Without one, `id` is the record id, and a table that `CREATE TABLE` made reads it as `rid` too | the record id always under one name |
+| 1 | The record id is the column `rid` of every table, and `id` is only a column that the type declares (the primary key when a unique index covers it). The record id of a type without a declared `id` is its primary key, and a type that `sql` or openCypher made lists it in `*` and in the catalog | the record id as `id` in a table that declares no `id` |
 | 2 | A record id is `text`, such as `#12:3` | a number |
 | 3 | `source_id` and `target_id` hold record ids | the key of the vertex they point at, which reads the vertex for each edge row |
 | 4 | Edge ends are declared on the edge type: `CREATE EDGE TYPE knows CUSTOM source_table = 'person', target_table = 'person'`. Foreign keys come only from this and from link properties | a schema feature of the engine, or ends inferred from the data |
@@ -273,4 +273,4 @@ These should match PostgreSQL and do not yet.
 | --- | --- |
 | `ILIKE` on non-ASCII letters | folds them, while PostgreSQL with the `C` collation does not |
 
-More detail: [supported syntax](postgresql-supported-syntax.md), the [decisions](postgresql-decisions.md), and the design issues [#1](https://github.com/humemai/arcadedb/issues/1), [#38](https://github.com/humemai/arcadedb/issues/38), [#29](https://github.com/humemai/arcadedb/issues/29), and [#10](https://github.com/humemai/arcadedb/issues/10).
+More detail: [supported syntax](postgresql-supported-syntax.md), the [decisions](postgresql-decisions.md), and the design issues [#1](https://github.com/humemai/arcadedb/issues/1), [#240](https://github.com/humemai/arcadedb/issues/240), [#29](https://github.com/humemai/arcadedb/issues/29), and [#10](https://github.com/humemai/arcadedb/issues/10).

@@ -130,8 +130,8 @@ class PgParityIT {
     final String[][] keys = { { "person", "pid" }, { "company", "cid" }, { "orders", "oid" }, { "works_at", "since" } };
     final Map<String, String> aliases = new HashMap<>();
     for (final String[] key : keys) {
-      final Outcome server = pg.run("SELECT id FROM " + key[0] + " ORDER BY " + key[1]);
-      final Outcome engine = arcade.run("sql", "SELECT @rid AS id FROM " + key[0] + " ORDER BY " + key[1]);
+      final Outcome server = pg.run("SELECT rid FROM " + key[0] + " ORDER BY " + key[1]);
+      final Outcome engine = arcade.run("sql", "SELECT @rid AS rid FROM " + key[0] + " ORDER BY " + key[1]);
       assertTrue(!server.isRefusal() && !engine.isRefusal(), "record ids of " + key[0] + ": " + server.describe() + " / "
           + engine.describe());
       assertEquals(server.table.rows.size(), engine.table.rows.size(), "rows of " + key[0] + " on the two sides");
@@ -220,7 +220,7 @@ class PgParityIT {
 
   /**
    * The two builds of the fixture hold the same data: row counts and sums per table through the {@code sql} language of the
-   * engine, and the record ids that the server's {@code id} and {@code buyer} columns must carry.
+   * engine, and the record ids that the server's {@code rid} and {@code buyer} columns must carry.
    */
   @Test
   @Order(3)
@@ -231,8 +231,8 @@ class PgParityIT {
         { "SELECT count(*), sum(since) FROM works_at", "SELECT count(*), sum(since) FROM works_at" },
         { "SELECT count(*), sum(oid), sum(total) FROM orders", "SELECT count(*), sum(oid), sum(total) FROM orders" },
         { "SELECT buyer FROM orders ORDER BY oid", "SELECT buyer FROM orders ORDER BY oid" },
-        { "SELECT id, source_id, target_id FROM works_at ORDER BY since",
-            "SELECT @rid AS id, @out AS source_id, @in AS target_id FROM works_at ORDER BY since" },
+        { "SELECT rid, source_id, target_id FROM works_at ORDER BY since",
+            "SELECT @rid AS rid, @out AS source_id, @in AS target_id FROM works_at ORDER BY since" },
     };
     final List<String> failures = new ArrayList<>();
     for (final String[] pair : pairs) {

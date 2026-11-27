@@ -134,14 +134,14 @@ class WritePlanTest extends TestHelper {
     assertThat(command("UPDATE person SET age = 0 WHERE city IN (SELECT city FROM person WHERE pid = 1)")).isGreaterThan(0);
     assertThat(command("DELETE FROM person WHERE pid NOT IN (SELECT min(pid) FROM person GROUP BY city)")).isGreaterThan(0);
     assertThat(command("UPDATE company SET name = 'x' WHERE cid = (SELECT max(cid) FROM company)")).isEqualTo(1);
-    assertThat(command("DELETE FROM company WHERE EXISTS (SELECT 1 FROM works_at w WHERE w.target_id = company.id)")).isGreaterThan(0);
+    assertThat(command("DELETE FROM company WHERE EXISTS (SELECT 1 FROM works_at w WHERE w.target_id = company.rid)")).isGreaterThan(0);
     assertThat(command("UPDATE person SET age = (SELECT max(age) FROM person) WHERE pid = 1")).isEqualTo(1);
   }
 
   @Test
   void aScalarSubqueryInValuesGivesTheEndsOfAnEdge() {
-    assertThat(command("INSERT INTO works_at (source_id, target_id, since) VALUES ((SELECT id FROM person WHERE pid = 5),"
-        + " (SELECT id FROM company WHERE cid = 30), 2024)")).isEqualTo(1);
+    assertThat(command("INSERT INTO works_at (source_id, target_id, since) VALUES ((SELECT rid FROM person WHERE pid = 5),"
+        + " (SELECT rid FROM company WHERE cid = 30), 2024)")).isEqualTo(1);
     assertThat(value("SELECT count(*) FROM works_at WHERE since = 2024")).isEqualTo(1L);
   }
 
@@ -153,8 +153,8 @@ class WritePlanTest extends TestHelper {
     assertThat(command("DELETE FROM person p WHERE EXISTS (SELECT 1 FROM person q WHERE q.city = p.city AND (q.age > p.age OR"
         + " (q.age = p.age AND q.pid > p.pid)))")).isGreaterThan(0);
     // no equality at all, a term of the outer query alone, an OR of two columns
-    assertThat(command("UPDATE company c SET name = 'k' WHERE EXISTS (SELECT 1 FROM works_at w WHERE w.target_id = c.id OR"
-        + " w.source_id = c.id)")).isGreaterThanOrEqualTo(0);
+    assertThat(command("UPDATE company c SET name = 'k' WHERE EXISTS (SELECT 1 FROM works_at w WHERE w.target_id = c.rid OR"
+        + " w.source_id = c.rid)")).isGreaterThanOrEqualTo(0);
     assertThat(value("SELECT count(*) FROM company c WHERE EXISTS (SELECT 1 FROM person q WHERE c.cid > 10 AND q.pid = 1)"))
         .isInstanceOf(Long.class);
     // a term that mixes both sides inside a function is refused, not answered wrongly
@@ -180,18 +180,18 @@ class WritePlanTest extends TestHelper {
   void updateFromRefusesWhatItDoesNotDo() {
     assertState(() -> command("UPDATE person p SET age = 1 FROM company c WHERE p.pid = c.cid RETURNING p.pid"), "0A000");
     assertState(() -> command("UPDATE works_at SET since = 1 FROM person p WHERE p.pid = 1"), "0A000");
-    assertState(() -> command("UPDATE person p SET id = '#1:1' FROM company c WHERE p.pid = c.cid"), "428C9");
+    assertState(() -> command("UPDATE person p SET rid = '#1:1' FROM company c WHERE p.pid = c.cid"), "428C9");
   }
 
   @Test
   void aValueForTheGeneratedRecordIdIsRefusedWithTheDetailAndTheHintOfPostgreSql() {
-    assertThatThrownBy(() -> command("INSERT INTO person (id, pid, name) VALUES ('#9:9', 20, 'X')"))
-        .hasMessageContaining("cannot insert a non-DEFAULT value into column \"id\"")
+    assertThatThrownBy(() -> command("INSERT INTO person (rid, pid, name) VALUES ('#9:9', 20, 'X')"))
+        .hasMessageContaining("cannot insert a non-DEFAULT value into column \"rid\"")
         .hasMessageContaining("is an identity column defined as GENERATED ALWAYS").hasMessageContaining("leave the column out");
     // the way that works: leave it out, or DEFAULT
     assertThat(command("INSERT INTO person (pid, name) VALUES (20, 'X')")).isEqualTo(1);
-    assertThat(command("INSERT INTO person (id, pid, name) VALUES (DEFAULT, 21, 'Y')")).isEqualTo(1);
-    assertThat((String) value("SELECT id FROM person WHERE pid = 21")).startsWith("#");
+    assertThat(command("INSERT INTO person (rid, pid, name) VALUES (DEFAULT, 21, 'Y')")).isEqualTo(1);
+    assertThat((String) value("SELECT rid FROM person WHERE pid = 21")).startsWith("#");
   }
 
   @Test
@@ -209,7 +209,7 @@ class WritePlanTest extends TestHelper {
   void insertDefaultValuesAndTheWholeRowWithoutAColumnList() {
     assertThat(command("INSERT INTO company DEFAULT VALUES")).isEqualTo(1);
     assertThat(value("SELECT count(*) FROM company WHERE cid IS NULL")).isEqualTo(1L);
-    // no column list: the first columns in the order of the table, and id is the first of them: DEFAULT is the only value it takes
+    // no column list: the first columns in the order of the table, and rid is the first of them: DEFAULT is the only value it takes
     assertThat(command("INSERT INTO company VALUES (DEFAULT, 60, 'Fir')")).isEqualTo(1);
     assertThat(value("SELECT name FROM company WHERE cid = 60")).isEqualTo("Fir");
     assertState(() -> command("INSERT INTO company VALUES ('#9:9', 61, 'Gum')"), "428C9");
@@ -224,7 +224,7 @@ class WritePlanTest extends TestHelper {
 
   @Test
   void insertRefusesWithThePostgreSQLStates() {
-    assertState(() -> command("INSERT INTO person (id, pid, name) VALUES ('#9:9', 20, 'X')"), "428C9");
+    assertState(() -> command("INSERT INTO person (rid, pid, name) VALUES ('#9:9', 20, 'X')"), "428C9");
     assertState(() -> command("INSERT INTO person (pid, nope) VALUES (21, 1)"), "42703");
     assertState(() -> command("INSERT INTO person (pid) VALUES (22, 'x')"), "42601");
     assertState(() -> command("INSERT INTO person (pid, name) VALUES (23)"), "42601");
@@ -250,14 +250,14 @@ class WritePlanTest extends TestHelper {
 
   @Test
   void aLinkTakesTheRecordIdOfAnExistingRecordOfItsType() {
-    final String ada = (String) value("SELECT id FROM person WHERE pid = 1");
+    final String ada = (String) value("SELECT rid FROM person WHERE pid = 1");
     assertThat(command("INSERT INTO orders (oid, buyer) VALUES (200, $1)", ada)).isEqualTo(1);
     assertThat(value("SELECT buyer FROM orders WHERE oid = 200")).isEqualTo(ada);
-    assertThat(command("INSERT INTO orders (oid, buyer) SELECT 201, id FROM person WHERE pid = 2")).isEqualTo(1);
+    assertThat(command("INSERT INTO orders (oid, buyer) SELECT 201, rid FROM person WHERE pid = 2")).isEqualTo(1);
     assertThat(command("INSERT INTO orders (oid, buyer) VALUES (202, NULL)")).isEqualTo(1);
     // a record that does not exist, and a record of another type
     assertState(() -> command("INSERT INTO orders (oid, buyer) VALUES (203, '#99:99')"), "23503");
-    final String acme = (String) value("SELECT id FROM company WHERE cid = 10");
+    final String acme = (String) value("SELECT rid FROM company WHERE cid = 10");
     assertState(() -> command("INSERT INTO orders (oid, buyer) VALUES (204, $1)", acme), "23503");
     assertState(() -> command("INSERT INTO orders (oid, buyer) VALUES (205, 'not a record id')"), "23503");
   }
@@ -320,7 +320,7 @@ class WritePlanTest extends TestHelper {
 
   @Test
   void updateRefusesWithThePostgreSQLStatesAndLeavesTheTableAsItWas() {
-    assertState(() -> command("UPDATE person SET id = '#9:9' WHERE pid = 1"), "428C9");
+    assertState(() -> command("UPDATE person SET rid = '#9:9' WHERE pid = 1"), "428C9");
     assertState(() -> command("UPDATE person SET nope = 1"), "42703");
     assertState(() -> command("UPDATE person SET age = 1, age = 2"), "42601");
     assertState(() -> command("UPDATE person SET age = 'x' WHERE pid = 1"), "22P02");
@@ -366,11 +366,11 @@ class WritePlanTest extends TestHelper {
 
   @Test
   void updateAndDeleteUseTheAccessPathOfTheReadSide() {
-    final String ada = (String) value("SELECT id FROM person WHERE pid = 1");
+    final String ada = (String) value("SELECT rid FROM person WHERE pid = 1");
     assertThat(plan("EXPLAIN UPDATE person SET age = 1 WHERE pid = 1")).anyMatch(line -> line.contains("FETCH FROM INDEX person[pid]"));
     assertThat(plan("EXPLAIN DELETE FROM person WHERE pid = 1 AND age > 1")).anyMatch(line -> line.contains("FETCH FROM INDEX person[pid]"))
         .anyMatch(line -> line.contains("FILTER WHERE"));
-    assertThat(plan("EXPLAIN DELETE FROM person WHERE id = '" + ada + "'")).anyMatch(line -> line.contains("READ RECORD BY ID person"));
+    assertThat(plan("EXPLAIN DELETE FROM person WHERE rid = '" + ada + "'")).anyMatch(line -> line.contains("READ RECORD BY ID person"));
     assertThat(plan("EXPLAIN UPDATE person SET age = 1 WHERE age > 1")).anyMatch(line -> line.contains("SCAN TYPE person (polymorphic)"));
     assertThat(plan("EXPLAIN UPDATE ONLY person SET age = 1")).anyMatch(line -> line.contains("SCAN TYPE person ONLY"));
     assertThat(plan("EXPLAIN INSERT INTO person (pid) VALUES (1), (2)")).anyMatch(line -> line.contains("2 row(s) of VALUES"));
@@ -422,14 +422,14 @@ class WritePlanTest extends TestHelper {
   // ---- edge tables ----
 
   private long outgoing(final int pid, final String edgeType) {
-    final Vertex vertex = (Vertex) database.lookupByRID(new com.arcadedb.database.RID((String) value("SELECT id FROM person WHERE pid = " + pid)), true);
+    final Vertex vertex = (Vertex) database.lookupByRID(new com.arcadedb.database.RID((String) value("SELECT rid FROM person WHERE pid = " + pid)), true);
     return vertex.countEdges(Vertex.DIRECTION.OUT, edgeType);
   }
 
   @Test
   void insertCreatesTheEdgeBetweenTheNamedVertices() {
-    final String ed = (String) value("SELECT id FROM person WHERE pid = 5");
-    final String cedar = (String) value("SELECT id FROM company WHERE cid = 30");
+    final String ed = (String) value("SELECT rid FROM person WHERE pid = 5");
+    final String cedar = (String) value("SELECT rid FROM company WHERE cid = 30");
     assertThat(outgoing(5, "works_at")).isEqualTo(0);
     assertThat(command("INSERT INTO works_at (source_id, target_id, since) VALUES ($1, $2, 2024)", ed, cedar)).isEqualTo(1);
     // the edge is the same record that Cypher and sql walk: the engine sees it from the vertex
@@ -446,10 +446,10 @@ class WritePlanTest extends TestHelper {
   @Test
   void insertEdgeReturnsTheEdgeAndAParallelEdgeIsAllowed() {
     try (final ResultSet resultSet = database.command("postgresql",
-        "INSERT INTO works_at (source_id, target_id, since) SELECT p.id, c.id, 1 FROM person p, company c WHERE p.pid = 1 AND c.cid = 10 "
-            + "RETURNING id, since")) {
+        "INSERT INTO works_at (source_id, target_id, since) SELECT p.rid, c.rid, 1 FROM person p, company c WHERE p.pid = 1 AND c.cid = 10 "
+            + "RETURNING rid, since")) {
       final Result row = resultSet.next();
-      assertThat(row.<String>getProperty("id")).startsWith("#");
+      assertThat(row.<String>getProperty("rid")).startsWith("#");
       assertThat(row.<Integer>getProperty("since")).isEqualTo(1);
     }
     assertThat(outgoing(1, "works_at")).isEqualTo(3);
@@ -457,8 +457,8 @@ class WritePlanTest extends TestHelper {
 
   @Test
   void insertEdgeRefusesWithThePostgreSQLStates() {
-    final String ada = (String) value("SELECT id FROM person WHERE pid = 1");
-    final String acme = (String) value("SELECT id FROM company WHERE cid = 10");
+    final String ada = (String) value("SELECT rid FROM person WHERE pid = 1");
+    final String acme = (String) value("SELECT rid FROM company WHERE cid = 10");
     assertState(() -> command("INSERT INTO works_at (target_id) VALUES ($1)", acme), "23502");
     assertState(() -> command("INSERT INTO works_at (source_id) VALUES ($1)", ada), "23502");
     assertState(() -> command("INSERT INTO works_at (source_id, target_id) VALUES (NULL, $1)", acme), "23502");
@@ -467,15 +467,15 @@ class WritePlanTest extends TestHelper {
     // the declared endpoint tables of works_at are person and company
     assertState(() -> command("INSERT INTO works_at (source_id, target_id) VALUES ($1, $1)", acme), "23503");
     assertState(() -> command("INSERT INTO works_at (source_id, target_id) VALUES ($1, $1)", ada), "23503");
-    assertState(() -> command("INSERT INTO works_at (id, source_id, target_id) VALUES ('#9:9', $1, $2)", ada, acme), "428C9");
+    assertState(() -> command("INSERT INTO works_at (rid, source_id, target_id) VALUES ('#9:9', $1, $2)", ada, acme), "428C9");
     assertThat(value("SELECT count(*) FROM works_at")).isEqualTo(5L);
   }
 
   @Test
   void anEdgeTypeWithNoDeclaredEndpointsTakesAnyTwoVertices() {
     database.getSchema().createEdgeType("related");
-    final String ada = (String) value("SELECT id FROM person WHERE pid = 1");
-    final String acme = (String) value("SELECT id FROM company WHERE cid = 10");
+    final String ada = (String) value("SELECT rid FROM person WHERE pid = 1");
+    final String acme = (String) value("SELECT rid FROM company WHERE cid = 10");
     assertThat(command("INSERT INTO related (source_id, target_id) VALUES ($1, $2)", ada, acme)).isEqualTo(1);
     assertThat(command("INSERT INTO related (source_id, target_id) VALUES ($2, $1)", ada, acme)).isEqualTo(1);
     assertThat(value("SELECT count(*) FROM related")).isEqualTo(2L);
@@ -485,8 +485,8 @@ class WritePlanTest extends TestHelper {
   void aLightweightEdgeIsWrittenAndDeletedLikeAnyOtherAndKeepsNoRecord() {
     final EdgeType knows = database.getSchema().buildEdgeType().withName("knows").withLightweight(true).create();
     assertThat(knows.isLightweight()).isTrue();
-    final String ada = (String) value("SELECT id FROM person WHERE pid = 1");
-    final String bo = (String) value("SELECT id FROM person WHERE pid = 2");
+    final String ada = (String) value("SELECT rid FROM person WHERE pid = 1");
+    final String bo = (String) value("SELECT rid FROM person WHERE pid = 2");
     assertThat(command("INSERT INTO knows (source_id, target_id) VALUES ($1, $2)", ada, bo)).isEqualTo(1);
     assertThat(outgoing(1, "knows")).isEqualTo(1);
     assertThat(value("SELECT count(*) FROM knows")).isEqualTo(1L);
@@ -501,7 +501,7 @@ class WritePlanTest extends TestHelper {
     assertThat(value("SELECT count(*) FROM works_at WHERE since = 2021")).isEqualTo(2L);
     assertState(() -> command("UPDATE works_at SET source_id = target_id"), "0A000");
     assertState(() -> command("UPDATE works_at SET target_id = source_id"), "0A000");
-    assertState(() -> command("UPDATE works_at SET id = '#9:9'"), "428C9");
+    assertState(() -> command("UPDATE works_at SET rid = '#9:9'"), "428C9");
     assertThatThrownBy(() -> command("UPDATE works_at SET source_id = target_id")).hasMessageContaining("delete the edge and insert it again");
   }
 
@@ -519,8 +519,8 @@ class WritePlanTest extends TestHelper {
 
   @Test
   void anEdgeRecordIsWrittenInTheTransactionOfTheCaller() {
-    final String ed = (String) value("SELECT id FROM person WHERE pid = 5");
-    final String cedar = (String) value("SELECT id FROM company WHERE cid = 30");
+    final String ed = (String) value("SELECT rid FROM person WHERE pid = 5");
+    final String cedar = (String) value("SELECT rid FROM company WHERE cid = 30");
     database.begin();
     command("INSERT INTO works_at (source_id, target_id) VALUES ($1, $2)", ed, cedar);
     database.rollback();
@@ -684,7 +684,7 @@ class WritePlanTest extends TestHelper {
     assertState(() -> command("INSERT INTO person (pid, name, age) VALUES (1, 'x', 1) ON CONFLICT (pid) DO UPDATE SET age = age + 1"),
         "42702");
     assertState(() -> command("INSERT INTO person (pid, name) VALUES (1, 'x') ON CONFLICT (pid) DO UPDATE SET nope = 1"), "42703");
-    assertState(() -> command("INSERT INTO person (pid, name) VALUES (1, 'x') ON CONFLICT (pid) DO UPDATE SET id = 'a'"), "428C9");
+    assertState(() -> command("INSERT INTO person (pid, name) VALUES (1, 'x') ON CONFLICT (pid) DO UPDATE SET rid = 'a'"), "428C9");
     // a row that would change what the same statement inserted or changed
     assertState(() -> command("INSERT INTO person (pid, name) VALUES (1, 'a'), (1, 'b') ON CONFLICT (pid) DO UPDATE "
         + "SET name = EXCLUDED.name"), "21000");

@@ -160,10 +160,10 @@ class AnswerCorpusTest extends TestHelper {
     final String[][] tables = { { "company", "cid", "1" }, { "person", "pid", "2" }, { "orders", "oid", "3" } };
     final Map<String, String> aliases = new HashMap<>();
     for (final String[] table : tables) {
-      try (final ResultSet resultSet = database.query("postgresql", "SELECT id FROM " + table[0] + " ORDER BY " + table[1])) {
+      try (final ResultSet resultSet = database.query("postgresql", "SELECT rid FROM " + table[0] + " ORDER BY " + table[1])) {
         int row = 0;
         while (resultSet.hasNext())
-          aliases.put(resultSet.next().getProperty("id"), "#" + table[2] + ":" + row++);
+          aliases.put(resultSet.next().getProperty("rid"), "#" + table[2] + ":" + row++);
       }
     }
     return aliases;

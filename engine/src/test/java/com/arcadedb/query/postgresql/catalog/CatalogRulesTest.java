@@ -77,14 +77,16 @@ class CatalogRulesTest extends TestHelper {
   }
 
   @Test
-  void aTypeWithoutAPropertyIdKeepsTheRecordIdAsIdAndOffersNoRid() {
+  void aTypeWithoutAPropertyIdHasNoColumnIdAndItsRecordIdIsRid() {
     schema().createDocumentType("thing").createProperty("name", Type.STRING);
 
     final Table table = table("thing");
-    assertThat(names(table)).containsExactly("id", "name");
-    assertThat(table.identityColumn().name()).isEqualTo("id");
-    assertThat(table.findColumn(Identifier.unquoted("rid"))).isNull();
-    assertThat(table.primaryKey().columns()).containsExactly("id");
+    assertThat(names(table)).containsExactly("rid", "name");
+    assertThat(table.identityColumn().name()).isEqualTo("rid");
+    assertThat(table.findColumn(Identifier.unquoted("id"))).isNull();
+    assertThatThrownBy(() -> table.column("ID")).isInstanceOfSatisfying(PostgreSQLUndefinedColumnException.class, e -> assertThat(
+        e.getHint()).isEqualTo(com.arcadedb.query.postgresql.PostgreSQLCatalogException.NO_ID_HINT));
+    assertThat(table.primaryKey().columns()).containsExactly("rid");
     assertThat(table.uniqueKeys()).isEmpty();
   }
 
@@ -125,16 +127,16 @@ class CatalogRulesTest extends TestHelper {
   }
 
   @Test
-  void aPropertyRidWinsItsNameAndTheRecordIdStaysIdWhenThereIsNoPropertyId() {
+  void aPropertyRidWinsItsNameAndTheRecordIdHasNoColumn() {
     final DocumentType badge = schema().createDocumentType("badge");
     badge.createProperty("rid", Type.STRING);
     badge.createProperty("color", Type.STRING);
 
     final Table table = table("badge");
-    assertThat(names(table)).containsExactly("id", "color", "rid");
-    assertThat(table.column("id").kind()).isEqualTo(Column.Kind.IDENTITY);
+    assertThat(names(table)).containsExactly("color", "rid");
+    assertThat(table.identityColumn()).isNull();
     assertThat(table.column("rid").kind()).isEqualTo(Column.Kind.PROPERTY);
-    assertThat(table.primaryKey().columns()).containsExactly("id");
+    assertThat(table.primaryKey()).isNull();
   }
 
   @Test
@@ -157,7 +159,7 @@ class CatalogRulesTest extends TestHelper {
     assertThat(table.primaryKey().columns()).containsExactly("id");
     assertThat(table.uniqueKeys()).isEmpty();
     // the edge columns still hold record ids, and nothing declares what they refer to
-    assertThat(names(table("link"))).containsExactly("id", "source_id", "target_id");
+    assertThat(names(table("link"))).containsExactly("rid", "source_id", "target_id");
     assertThat(table("link").foreignKeys()).isEmpty();
     assertThat(table("link").sourceTable()).isNull();
     assertThat(table("note").foreignKeys()).isEmpty();
@@ -178,8 +180,8 @@ class CatalogRulesTest extends TestHelper {
     post.createProperty("topic", Type.LINK, "tag");
 
     final Table likesTable = table("likes");
-    assertThat(references(likesTable)).containsExactly("likes_source_id_fkey -> person.rid", "likes_target_id_fkey -> tag.id");
-    assertThat(references(table("post"))).containsExactly("post_author_fkey -> person.rid", "post_topic_fkey -> tag.id");
+    assertThat(references(likesTable)).containsExactly("likes_source_id_fkey -> person.rid", "likes_target_id_fkey -> tag.rid");
+    assertThat(references(table("post"))).containsExactly("post_author_fkey -> person.rid", "post_topic_fkey -> tag.rid");
 
     // the values of source_id and target_id are record ids, whatever the endpoint types call their key
     final String[] ids = new String[2];
@@ -225,7 +227,7 @@ class CatalogRulesTest extends TestHelper {
     links.createProperty("source_id_", Type.INTEGER);
 
     final Table table = table("links");
-    assertThat(names(table)).containsExactly("id", "source_id", "target_id", "source_id__", "source_id_");
+    assertThat(names(table)).containsExactly("rid", "source_id", "target_id", "source_id__", "source_id_");
     assertThat(table.column("source_id__").property()).isEqualTo("source_id");
     assertThat(table.column("source_id_").property()).isEqualTo("source_id_");
     assertThat(table.column("source_id_").type()).isEqualTo(ColumnType.INT4);
@@ -237,7 +239,7 @@ class CatalogRulesTest extends TestHelper {
     links.createProperty("source_id", Type.STRING);
 
     final Table table = table("links");
-    assertThat(names(table)).containsExactly("id", "source_id", "target_id", "source_id_");
+    assertThat(names(table)).containsExactly("rid", "source_id", "target_id", "source_id_");
     assertThat(table.column("source_id").kind()).isEqualTo(Column.Kind.SOURCE);
     assertThat(table.column("source_id_").property()).isEqualTo("source_id");
   }
@@ -251,13 +253,13 @@ class CatalogRulesTest extends TestHelper {
     });
 
     final Table person = table("person");
-    assertThat(names(person)).containsExactly("id", "name");
+    assertThat(names(person)).containsExactly("rid", "name");
     assertThat(person.findColumn(Identifier.unquoted("nickname"))).isNull();
     assertThatThrownBy(() -> person.column("nickname"))
         .isInstanceOfSatisfying(PostgreSQLUndefinedColumnException.class, e -> {
           assertThat(e.getSqlState()).isEqualTo("42703");
           // no column is close to the name, and the hint does not say to add one (fork issue #220)
-          assertThat(e.getHint()).isEqualTo("the columns of person are id, name");
+          assertThat(e.getHint()).isEqualTo("the columns of person are rid, name");
         })
         .hasMessageContaining("column \"nickname\" of relation \"person\" does not exist")
         .hasMessageContaining("Hint: ");
@@ -288,8 +290,8 @@ class CatalogRulesTest extends TestHelper {
     final Table table = table("person");
     assertThat(table.column("name").nullable()).isFalse();
     assertThat(table.column("age").nullable()).isTrue();
-    assertThat(table.column("id").nullable()).isFalse();
-    assertThat(table.column("id").isSynthetic()).isTrue();
+    assertThat(table.column("rid").nullable()).isFalse();
+    assertThat(table.column("rid").isSynthetic()).isTrue();
     assertThat(table.column("age").isSynthetic()).isFalse();
   }
 
@@ -309,7 +311,7 @@ class CatalogRulesTest extends TestHelper {
     assertThat(table.uniqueKeys()).extracting(Table.Key::name).containsExactly("person_name_city_key", "person_pid_key");
     assertThat(table.uniqueKeys().get(0).columns()).containsExactly("name", "city");
     assertThat(table.uniqueKeys().get(1).columns()).containsExactly("pid");
-    assertThat(table.primaryKey().columns()).containsExactly("id");
+    assertThat(table.primaryKey().columns()).containsExactly("rid");
   }
 
   @Test
@@ -318,8 +320,8 @@ class CatalogRulesTest extends TestHelper {
     schema().buildEdgeType().withName("follows").withUnique(true).create();
 
     final Table table = table("follows");
-    assertThat(names(table)).containsExactly("id", "source_id", "target_id");
-    assertThat(table.primaryKey().columns()).containsExactly("id");
+    assertThat(names(table)).containsExactly("rid", "source_id", "target_id");
+    assertThat(table.primaryKey().columns()).containsExactly("rid");
     assertThat(table.uniqueKeys()).extracting(Table.Key::columns).containsExactly(List.of("source_id", "target_id"));
     assertThat(table.uniqueKeys().get(0).name()).isEqualTo("follows_source_id_target_id_key");
   }
@@ -337,7 +339,7 @@ class CatalogRulesTest extends TestHelper {
     assertThat(foreignKey.name()).isEqualTo("line_product_fkey");
     assertThat(foreignKey.columns()).containsExactly("product");
     assertThat(foreignKey.referencedTable()).isEqualTo("product");
-    assertThat(foreignKey.referencedColumns()).containsExactly("id");
+    assertThat(foreignKey.referencedColumns()).containsExactly("rid");
     assertThat(table.column("loose").type()).isEqualTo(ColumnType.TEXT);
     assertThat(table.column("loose").isLink()).isTrue();
 
@@ -445,9 +447,9 @@ class CatalogRulesTest extends TestHelper {
     assertThat(puppy.subTables()).isEmpty();
 
     // a subtype has the columns of its supertypes first, a supertype only its own
-    assertThat(names(animal)).containsExactly("id", "name");
-    assertThat(names(dog)).containsExactly("id", "name", "breed");
-    assertThat(names(puppy)).containsExactly("id", "name", "breed", "toy");
+    assertThat(names(animal)).containsExactly("rid", "name");
+    assertThat(names(dog)).containsExactly("rid", "name", "breed");
+    assertThat(names(puppy)).containsExactly("rid", "name", "breed", "toy");
 
     // the premise of the rule: a polymorphic read of the type is the table, FROM ONLY is the type's own buckets
     assertThat(database.countType("animal", true)).isEqualTo(3);
@@ -466,7 +468,7 @@ class CatalogRulesTest extends TestHelper {
     schema().createEdgeType("likes");
 
     final Table likes = table("likes");
-    assertThat(names(likes)).containsExactly("id", "source_id", "target_id");
+    assertThat(names(likes)).containsExactly("rid", "source_id", "target_id");
     assertThat(likes.foreignKeys()).isEmpty();
     assertThat(likes.sourceTable()).isNull();
     assertThat(likes.targetTable()).isNull();
@@ -543,7 +545,7 @@ class CatalogRulesTest extends TestHelper {
         final Document edge = iterator.next();
         assertThat(table.column("source_id").read(edge)).as(type).isEqualTo(ends[0]);
         assertThat(table.column("target_id").read(edge)).as(type).isEqualTo(ends[1]);
-        assertThat(table.column("id").read(edge)).isEqualTo(edge.getIdentity().toString());
+        assertThat(table.column("rid").read(edge)).isEqualTo(edge.getIdentity().toString());
         ++rows;
       }
       assertThat(rows).as("one row per edge record of " + type).isEqualTo(1);
@@ -572,7 +574,7 @@ class CatalogRulesTest extends TestHelper {
 
     final Table table = table("knows");
     assertThat(names(table)).containsExactly("source_id", "target_id");
-    assertThat(table.findColumn(Identifier.unquoted("id"))).isNull();
+    assertThat(table.findColumn(Identifier.unquoted("rid"))).isNull();
     assertThat(table.primaryKey().name()).isEqualTo("knows_pkey");
     assertThat(table.primaryKey().columns()).containsExactly("source_id", "target_id");
     assertThat(table.uniqueKeys()).isEmpty();
@@ -613,8 +615,8 @@ class CatalogRulesTest extends TestHelper {
     final RelationalCatalog catalog = RelationalCatalog.of(database);
     final Table base = catalog.table("base_e");
     assertThat(base.edgeStorage()).isEqualTo(Table.EdgeStorage.MIXED);
-    assertThat(names(base)).containsExactly("id", "source_id", "target_id");
-    assertThat(base.column("id").nullable()).isTrue();
+    assertThat(names(base)).containsExactly("rid", "source_id", "target_id");
+    assertThat(base.column("rid").nullable()).isTrue();
     assertThat(base.primaryKey()).isNull();
     assertThat(base.edgeScan()).isEqualTo(Table.EdgeScan.VERTEX_WALK);
     assertThat(base.subTables()).containsExactly("sub_e");
@@ -628,7 +630,7 @@ class CatalogRulesTest extends TestHelper {
     final Vertex a = database.<Vertex>iterateType("person", false).next();
     final List<Object> ids = new ArrayList<>();
     for (final Edge edge : a.getEdges(Vertex.DIRECTION.OUT))
-      ids.add(base.column("id").read(edge));
+      ids.add(base.column("rid").read(edge));
     assertThat(ids).hasSize(2);
     assertThat(ids).containsNull();
     assertThat(ids).filteredOn(id -> id != null).hasSize(1);

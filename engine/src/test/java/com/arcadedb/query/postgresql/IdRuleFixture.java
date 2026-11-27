@@ -28,19 +28,21 @@ import com.arcadedb.schema.Type;
 import com.arcadedb.schema.VertexType;
 
 /**
- * The {@code idrule} fixture of fork issue #38: one type for each case of the rule that says what the column {@code id} is.
+ * The {@code idrule} fixture of fork issues #38 and #240: one type for each case of the rule that says what the columns
+ * {@code id} and {@code rid} are.
  * <ul>
  * <li>{@code account} (vertex) declares its own {@code id} with a unique index: {@code id} is the primary key, the record id is
  * {@code rid}, a unique key.</li>
  * <li>{@code post} (document) declares its own {@code id} too, and two {@code LINK} properties, {@code author} to {@code account}
  * and {@code topic} to a type that has no {@code id} of its own.</li>
- * <li>{@code topic} (vertex) has no property {@code id}: its record id is the column {@code id}, as before the rule.</li>
+ * <li>{@code topic} (vertex) has no property {@code id}: it has no column {@code id}, and its record id {@code rid} is the primary
+ * key.</li>
  * <li>{@code follows} (edge, account to account) and {@code interested} (edge, account to topic) have no property {@code id}; their
- * {@code source_id} and {@code target_id} hold record ids and refer to {@code account.rid} and to {@code topic.id}.</li>
+ * {@code source_id} and {@code target_id} hold record ids and refer to {@code account.rid} and to {@code topic.rid}.</li>
  * <li>{@code memo} (document) declares {@code id} and nothing keeps it unique, so the record id {@code rid} is the primary
  * key and two rows share an {@code id}.</li>
- * <li>{@code badge} (document) declares a property {@code rid} and no {@code id}: the property keeps its name and the record id is
- * {@code id}.</li>
+ * <li>{@code badge} (document) declares a property {@code rid} and no {@code id}: the property keeps its name and the record id has
+ * no column.</li>
  * <li>{@code twin} (document) declares both {@code id} and {@code rid}: both names are the user's and the record id has no column.</li>
  * </ul>
  * The PostgreSQL side of the parity harness is generated from the relational view of this database ({@code SmallSchemaSql}), so

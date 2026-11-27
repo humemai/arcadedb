@@ -220,7 +220,7 @@ class PostgreSQLTransactionTest extends TestHelper {
   @Test
   void anEdgeWrittenInABlockIsGoneAfterRollback() {
     command("BEGIN");
-    command("INSERT INTO works_at (source_id, target_id, since) SELECT p.id, c.id, 2030 FROM person p, company c "
+    command("INSERT INTO works_at (source_id, target_id, since) SELECT p.rid, c.rid, 2030 FROM person p, company c "
         + "WHERE p.pid = 5 AND c.cid = 30");
     assertThat(count("works_at")).isEqualTo(6L);
     command("ROLLBACK");

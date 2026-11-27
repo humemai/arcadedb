@@ -64,7 +64,7 @@ class NestedQueryPlanTest extends TestHelper {
   void theSymmetricListOfAnEdgeTypeRunsUnderTheDefaultCapAndStopsUnderASmallOne() {
     // fork issue #50: the shape that the correctness arm wrote over the friendship list, here over works_at
     final String sql = "WITH sym AS (SELECT source_id AS a, target_id AS b FROM works_at UNION ALL SELECT target_id, source_id FROM works_at) "
-        + "SELECT count(*) FROM sym s JOIN person p ON p.id = s.a";
+        + "SELECT count(*) FROM sym s JOIN person p ON p.rid = s.a";
     assertCapStops(sql, "holds more than");
     assertThat(planned(sql, BuildMemory.configuredCapBytes()).execute(database).next().<Long>getProperty("count")).isEqualTo(5L);
   }

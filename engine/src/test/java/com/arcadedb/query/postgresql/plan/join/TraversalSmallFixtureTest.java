@@ -42,12 +42,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class TraversalSmallFixtureTest extends TestHelper {
 
-  private static final String FIRST = "SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id"
-      + " JOIN company c ON w.target_id = c.id";
-  private static final String LEFT = "SELECT p.name, c.name, w.since FROM person p LEFT JOIN works_at w ON w.source_id = p.id"
-      + " LEFT JOIN company c ON w.target_id = c.id";
-  private static final String INCOMING = "SELECT c.name, p.name FROM company c LEFT JOIN works_at w ON w.target_id = c.id"
-      + " LEFT JOIN person p ON w.source_id = p.id";
+  private static final String FIRST = "SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.rid"
+      + " JOIN company c ON w.target_id = c.rid";
+  private static final String LEFT = "SELECT p.name, c.name, w.since FROM person p LEFT JOIN works_at w ON w.source_id = p.rid"
+      + " LEFT JOIN company c ON w.target_id = c.rid";
+  private static final String INCOMING = "SELECT c.name, p.name FROM company c LEFT JOIN works_at w ON w.target_id = c.rid"
+      + " LEFT JOIN person p ON w.source_id = p.rid";
   /** The statements of one person and of one company: the start is bound by the key. */
   private static final String FIRST_ONE = FIRST + " WHERE p.pid = 1";
   private static final String LEFT_TWO = LEFT + " WHERE p.pid IN (1, 5)";
@@ -217,7 +217,7 @@ class TraversalSmallFixtureTest extends TestHelper {
     assertSameRowsAsCypher(FIRST + " WHERE p.pid = 1 AND c.cid = 10", both);
     // both ends before the edge in the FROM order: the left input is a join of two tables, so the join is not a walk
     final String endsFirst = "SELECT p.name, c.name, w.since FROM person p CROSS JOIN company c JOIN works_at w "
-        + "ON w.source_id = p.id AND w.target_id = c.id WHERE p.pid = 1 AND c.cid = 10";
+        + "ON w.source_id = p.rid AND w.target_id = c.rid WHERE p.pid = 1 AND c.cid = 10";
     assertSameRowsAsCypher(endsFirst, both);
     assertThat(lines(endsFirst)).noneMatch(line -> line.trim().startsWith("TRAVERSE"));
   }

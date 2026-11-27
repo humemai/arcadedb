@@ -93,8 +93,8 @@ class TraversalDegreeTest extends TestHelper {
 
   @Test
   void aStatementForOnePersonReadsOnlyTheEdgesOfThatVertex() {
-    final SelectPlan plan = planned("SELECT p.pid, c.cid, w.since FROM person p JOIN works_at w ON w.source_id = p.id"
-        + " JOIN company c ON w.target_id = c.id WHERE p.pid = 1");
+    final SelectPlan plan = planned("SELECT p.pid, c.cid, w.since FROM person p JOIN works_at w ON w.source_id = p.rid"
+        + " JOIN company c ON w.target_id = c.rid WHERE p.pid = 1");
     assertThat(plan.steps()).anyMatch(line -> line.contains("FETCH FROM INDEX person[pid]")).anyMatch(line -> line.startsWith("TRAVERSE"));
     final JoinSource walk = walkOf(plan.source());
     final List<List<Object>> rows = drain(plan);
@@ -104,7 +104,7 @@ class TraversalDegreeTest extends TestHelper {
 
   @Test
   void aStatementForAllPeopleIsAHashJoinAndTheRuleOffGivesTheSameCount() {
-    final String sql = "SELECT count(*) FROM person p JOIN works_at w ON w.source_id = p.id";
+    final String sql = "SELECT count(*) FROM person p JOIN works_at w ON w.source_id = p.rid";
     final SelectPlan plan = planned(sql);
     assertThat(plan.steps()).noneMatch(line -> line.contains("TRAVERSE")).anyMatch(line -> line.contains("HASH JOIN"))
         .anyMatch(line -> line.contains("[hash join: no bound start]"));
@@ -118,7 +118,7 @@ class TraversalDegreeTest extends TestHelper {
 
   @Test
   void aListOfThreePeopleReadsTheEdgesOfThoseThreeVerticesOnly() {
-    final SelectPlan plan = planned("SELECT count(*) FROM person p JOIN works_at w ON w.source_id = p.id WHERE p.pid IN (1, 2, 3)");
+    final SelectPlan plan = planned("SELECT count(*) FROM person p JOIN works_at w ON w.source_id = p.rid WHERE p.pid IN (1, 2, 3)");
     final JoinSource walk = walkOf(plan.source());
     assertThat(drain(plan)).containsExactly(List.of(6L));
     assertThat(walk.edgesRead()).as("the six edges of three vertices, of 20,000 in the type").isEqualTo(6L);
@@ -126,7 +126,7 @@ class TraversalDegreeTest extends TestHelper {
 
   @Test
   void aLeftJoinFromOnePersonAlsoReadsOnlyThatVerticesEdges() {
-    final SelectPlan plan = planned("SELECT p.pid, w.since FROM person p LEFT JOIN works_at w ON w.source_id = p.id WHERE p.pid = 7");
+    final SelectPlan plan = planned("SELECT p.pid, w.since FROM person p LEFT JOIN works_at w ON w.source_id = p.rid WHERE p.pid = 7");
     final JoinSource walk = walkOf(plan.source());
     assertThat(drain(plan)).hasSize(2);
     assertThat(walk.edgesRead()).isEqualTo(2L);

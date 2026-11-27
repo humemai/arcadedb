@@ -54,7 +54,8 @@ public interface RelationSource {
    * @param listed   whether the catalog views show the column, that is, whether the table has it in PostgreSQL's terms: an
    *                 unqualified name stands for a listed column before one that is not listed, among the columns of one
    *                 {@code FROM} clause (fork issue #163) and of a query around a subquery (fork issue #157)
-   * @param recordIds whose record ids the column holds, for the hint of a comparison with a number (fork issue #241)
+   * @param recordIds whose record ids the column holds, for the hint of a comparison with a number (fork issue #241) and of an
+   *                  unknown column {@code id} (fork issue #240)
    */
   record Field(String relation, String name, PgType type, String typeName, boolean hidden, boolean listed, RecordIds recordIds) {
     public Field(final String relation, final String name, final PgType type, final String typeName) {

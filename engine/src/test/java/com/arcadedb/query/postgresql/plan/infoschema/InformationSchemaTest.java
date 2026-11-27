@@ -124,9 +124,9 @@ class InformationSchemaTest extends TestHelper {
     assertThat(rows("SELECT table_name, column_name, is_nullable, column_default, is_identity, identity_generation, identity_start,"
         + " is_generated FROM information_schema.columns WHERE table_schema = 'public' AND is_identity = 'YES'"
         + " ORDER BY table_name")).containsExactly(
-        row("company", "id", "NO", null, "YES", "ALWAYS", null, "NEVER"), row("orders", "id", "NO", null, "YES", "ALWAYS", null, "NEVER"),
-        row("person", "id", "NO", null, "YES", "ALWAYS", null, "NEVER"),
-        row("works_at", "id", "NO", null, "YES", "ALWAYS", null, "NEVER"));
+        row("company", "rid", "NO", null, "YES", "ALWAYS", null, "NEVER"), row("orders", "rid", "NO", null, "YES", "ALWAYS", null, "NEVER"),
+        row("person", "rid", "NO", null, "YES", "ALWAYS", null, "NEVER"),
+        row("works_at", "rid", "NO", null, "YES", "ALWAYS", null, "NEVER"));
     // the ends of an edge and the properties are ordinary columns, and so are the columns of the views themselves
     assertThat(rows("SELECT count(*) FROM information_schema.columns WHERE is_identity = 'NO' AND identity_generation IS NULL"
         + " AND table_name = 'works_at' AND column_name IN ('source_id', 'target_id', 'since')")).containsExactly(row(3L));
@@ -138,7 +138,7 @@ class InformationSchemaTest extends TestHelper {
   void aTypeCreatedLaterIsInTheNextStatement() {
     database.getSchema().createDocumentType("fresh");
     assertThat(rows("SELECT table_name FROM information_schema.tables WHERE table_name = 'fresh'")).containsExactly(row("fresh"));
-    assertThat(rows("SELECT column_name FROM information_schema.columns WHERE table_name = 'fresh'")).containsExactly(row("id"));
+    assertThat(rows("SELECT column_name FROM information_schema.columns WHERE table_name = 'fresh'")).containsExactly(row("rid"));
   }
 
   // ---- columns ----
@@ -147,23 +147,23 @@ class InformationSchemaTest extends TestHelper {
   void columnsOfTheFourTablesInTheOrderOfTheCatalog() {
     assertThat(rows("SELECT table_name, column_name, ordinal_position, is_nullable, data_type, udt_name FROM information_schema.columns"
         + " WHERE table_schema = 'public' ORDER BY table_name, ordinal_position")).containsExactly(
-        row("company", "id", 1, "NO", "text", "text"), row("company", "cid", 2, "YES", "integer", "int4"),
+        row("company", "rid", 1, "NO", "text", "text"), row("company", "cid", 2, "YES", "integer", "int4"),
         row("company", "name", 3, "YES", "character varying", "varchar"),
-        row("orders", "id", 1, "NO", "text", "text"), row("orders", "address", 2, "YES", "jsonb", "jsonb"),
+        row("orders", "rid", 1, "NO", "text", "text"), row("orders", "address", 2, "YES", "jsonb", "jsonb"),
         row("orders", "buyer", 3, "YES", "text", "text"), row("orders", "oid", 4, "YES", "integer", "int4"),
         row("orders", "pid", 5, "YES", "integer", "int4"), row("orders", "placed", 6, "YES", "date", "date"),
         row("orders", "tags", 7, "YES", "ARRAY", "_text"), row("orders", "total", 8, "YES", "numeric", "numeric"),
-        row("person", "id", 1, "NO", "text", "text"), row("person", "age", 2, "YES", "integer", "int4"),
+        row("person", "rid", 1, "NO", "text", "text"), row("person", "age", 2, "YES", "integer", "int4"),
         row("person", "city", 3, "YES", "character varying", "varchar"), row("person", "name", 4, "YES", "character varying", "varchar"),
         row("person", "pid", 5, "YES", "integer", "int4"),
-        row("works_at", "id", 1, "NO", "text", "text"), row("works_at", "source_id", 2, "NO", "text", "text"),
+        row("works_at", "rid", 1, "NO", "text", "text"), row("works_at", "source_id", 2, "NO", "text", "text"),
         row("works_at", "target_id", 3, "NO", "text", "text"), row("works_at", "since", 4, "YES", "integer", "int4"));
   }
 
   @Test
   void theIssueQueryForTheColumnsOfAnEdgeTable() {
     assertThat(rows("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'works_at'"
-        + " ORDER BY ordinal_position")).containsExactly(row("id", "text"), row("source_id", "text"), row("target_id", "text"),
+        + " ORDER BY ordinal_position")).containsExactly(row("rid", "text"), row("source_id", "text"), row("target_id", "text"),
         row("since", "integer"));
   }
 
@@ -243,13 +243,13 @@ class InformationSchemaTest extends TestHelper {
     final String db = database.getName();
     assertThat(rows("SELECT * FROM information_schema.key_column_usage ORDER BY constraint_name, ordinal_position")).containsExactly(
         row(db, "public", "company_cid_key", db, "public", "company", "cid", 1, null),
-        row(db, "public", "company_pkey", db, "public", "company", "id", 1, null),
+        row(db, "public", "company_pkey", db, "public", "company", "rid", 1, null),
         row(db, "public", "orders_buyer_fkey", db, "public", "orders", "buyer", 1, 1),
         row(db, "public", "orders_oid_key", db, "public", "orders", "oid", 1, null),
-        row(db, "public", "orders_pkey", db, "public", "orders", "id", 1, null),
+        row(db, "public", "orders_pkey", db, "public", "orders", "rid", 1, null),
         row(db, "public", "person_pid_key", db, "public", "person", "pid", 1, null),
-        row(db, "public", "person_pkey", db, "public", "person", "id", 1, null),
-        row(db, "public", "works_at_pkey", db, "public", "works_at", "id", 1, null),
+        row(db, "public", "person_pkey", db, "public", "person", "rid", 1, null),
+        row(db, "public", "works_at_pkey", db, "public", "works_at", "rid", 1, null),
         row(db, "public", "works_at_source_id_fkey", db, "public", "works_at", "source_id", 1, 1),
         row(db, "public", "works_at_target_id_fkey", db, "public", "works_at", "target_id", 1, 1));
   }
@@ -268,15 +268,15 @@ class InformationSchemaTest extends TestHelper {
     final String db = database.getName();
     assertThat(rows("SELECT * FROM information_schema.constraint_column_usage ORDER BY constraint_name, table_name, column_name"))
         .containsExactly(row(db, "public", "company", "cid", db, "public", "company_cid_key"),
-            row(db, "public", "company", "id", db, "public", "company_pkey"),
-            row(db, "public", "person", "id", db, "public", "orders_buyer_fkey"),
+            row(db, "public", "company", "rid", db, "public", "company_pkey"),
+            row(db, "public", "person", "rid", db, "public", "orders_buyer_fkey"),
             row(db, "public", "orders", "oid", db, "public", "orders_oid_key"),
-            row(db, "public", "orders", "id", db, "public", "orders_pkey"),
+            row(db, "public", "orders", "rid", db, "public", "orders_pkey"),
             row(db, "public", "person", "pid", db, "public", "person_pid_key"),
-            row(db, "public", "person", "id", db, "public", "person_pkey"),
-            row(db, "public", "works_at", "id", db, "public", "works_at_pkey"),
-            row(db, "public", "person", "id", db, "public", "works_at_source_id_fkey"),
-            row(db, "public", "company", "id", db, "public", "works_at_target_id_fkey"));
+            row(db, "public", "person", "rid", db, "public", "person_pkey"),
+            row(db, "public", "works_at", "rid", db, "public", "works_at_pkey"),
+            row(db, "public", "person", "rid", db, "public", "works_at_source_id_fkey"),
+            row(db, "public", "company", "rid", db, "public", "works_at_target_id_fkey"));
   }
 
   @Test
@@ -332,12 +332,12 @@ class InformationSchemaTest extends TestHelper {
     }
   }
 
-  // ---- the id rule of fork issue #38 ----
+  // ---- the id rule of fork issues #38 and #240 ----
 
   /**
    * {@code account} declares its own {@code id} with a unique index, {@code topic} does not, and {@code follows} and {@code post}
-   * refer to both. The views must show {@code rid} where a type has its own {@code id}, the foreign keys pointing at the record
-   * id column, and {@code id} where it has none.
+   * refer to both. The views must show the record id as {@code rid} in every table, the foreign keys pointing at it, and a column
+   * {@code id} only where a type declares one.
    */
   private void declareTypesWithTheirOwnId() {
     final Schema schema = database.getSchema();
@@ -355,15 +355,15 @@ class InformationSchemaTest extends TestHelper {
   }
 
   @Test
-  void aTypeWithItsOwnIdShowsTheRecordIdAsRidAndATypeWithoutOneKeepsId() {
+  void everyTypeShowsTheRecordIdAsRidAndIdOnlyWhenItDeclaresOne() {
     declareTypesWithTheirOwnId();
     assertThat(rows("SELECT table_name, column_name, ordinal_position, is_nullable, data_type FROM information_schema.columns"
         + " WHERE table_name IN ('account', 'topic', 'follows', 'post') ORDER BY table_name, ordinal_position")).containsExactly(
         row("account", "rid", 1, "NO", "text"), row("account", "id", 2, "NO", "bigint"),
         row("account", "name", 3, "YES", "character varying"),
-        row("follows", "id", 1, "NO", "text"), row("follows", "source_id", 2, "NO", "text"), row("follows", "target_id", 3, "NO", "text"),
-        row("post", "id", 1, "NO", "text"), row("post", "about", 2, "YES", "text"), row("post", "author", 3, "YES", "text"),
-        row("topic", "id", 1, "NO", "text"), row("topic", "label", 2, "YES", "character varying"));
+        row("follows", "rid", 1, "NO", "text"), row("follows", "source_id", 2, "NO", "text"), row("follows", "target_id", 3, "NO", "text"),
+        row("post", "rid", 1, "NO", "text"), row("post", "about", 2, "YES", "text"), row("post", "author", 3, "YES", "text"),
+        row("topic", "rid", 1, "NO", "text"), row("topic", "label", 2, "YES", "character varying"));
   }
 
   @Test
@@ -378,7 +378,7 @@ class InformationSchemaTest extends TestHelper {
         row("topic_pkey", "topic", "PRIMARY KEY"));
     assertThat(rows("SELECT constraint_name, column_name FROM information_schema.key_column_usage"
         + " WHERE table_name IN ('account', 'topic') ORDER BY constraint_name")).containsExactly(
-        row("account_pkey", "id"), row("account_rid_key", "rid"), row("topic_pkey", "id"));
+        row("account_pkey", "id"), row("account_rid_key", "rid"), row("topic_pkey", "rid"));
 
     // the foreign keys refer to the record id column of the other table, and name the key that holds it
     assertThat(rows("SELECT constraint_name, unique_constraint_name FROM information_schema.referential_constraints"
@@ -388,8 +388,8 @@ class InformationSchemaTest extends TestHelper {
     assertThat(rows("SELECT constraint_name, table_name, column_name FROM information_schema.constraint_column_usage"
         + " WHERE constraint_name IN ('follows_source_id_fkey', 'follows_target_id_fkey', 'post_about_fkey', 'post_author_fkey')"
         + " ORDER BY constraint_name")).containsExactly(
-        row("follows_source_id_fkey", "account", "rid"), row("follows_target_id_fkey", "topic", "id"),
-        row("post_about_fkey", "topic", "id"), row("post_author_fkey", "account", "rid"));
+        row("follows_source_id_fkey", "account", "rid"), row("follows_target_id_fkey", "topic", "rid"),
+        row("post_about_fkey", "topic", "rid"), row("post_author_fkey", "account", "rid"));
   }
 
   // ---- resolution ----

@@ -67,15 +67,15 @@ class PostgreSQLCypherDifferentialTest {
 
     @Test
     void aVertexTableHasTheNodesOfItsLabel() {
-      assertSameRows(database, 5, "SELECT id, pid, name, age, city FROM person",
+      assertSameRows(database, 5, "SELECT rid AS id, pid, name, age, city FROM person",
           "MATCH (n:person) RETURN elementId(n) AS id, n.pid AS pid, n.name AS name, n.age AS age, n.city AS city");
-      assertSameRows(database, 3, "SELECT id, cid, name FROM company",
+      assertSameRows(database, 3, "SELECT rid AS id, cid, name FROM company",
           "MATCH (n:company) RETURN elementId(n) AS id, n.cid AS cid, n.name AS name");
     }
 
     @Test
     void anEdgeTableHasTheRelationshipsOfItsType() {
-      assertSameRows(database, 5, "SELECT id, source_id, target_id, since FROM works_at",
+      assertSameRows(database, 5, "SELECT rid AS id, source_id, target_id, since FROM works_at",
           "MATCH (a)-[e:works_at]->(b) RETURN elementId(e) AS id, elementId(a) AS source_id, elementId(b) AS target_id, "
               + "e.since AS since");
     }
@@ -83,18 +83,18 @@ class PostgreSQLCypherDifferentialTest {
     @Test
     void aJoinThroughTheEdgeTableIsTheMatch() {
       assertSameRows(database, 5, "SELECT p.name AS person, c.name AS company, w.since AS since FROM person p "
-              + "JOIN works_at w ON w.source_id = p.id JOIN company c ON w.target_id = c.id",
+              + "JOIN works_at w ON w.source_id = p.rid JOIN company c ON w.target_id = c.rid",
           "MATCH (p:person)-[w:works_at]->(c:company) RETURN p.name AS person, c.name AS company, w.since AS since");
     }
 
     @Test
     void aLeftJoinThroughTheEdgeTableIsTheOptionalMatch() {
       assertSameRows(database, 6, "SELECT p.name AS person, c.name AS company, w.since AS since FROM person p "
-              + "LEFT JOIN works_at w ON w.source_id = p.id LEFT JOIN company c ON w.target_id = c.id",
+              + "LEFT JOIN works_at w ON w.source_id = p.rid LEFT JOIN company c ON w.target_id = c.rid",
           "MATCH (p:person) OPTIONAL MATCH (p)-[w:works_at]->(c:company) "
               + "RETURN p.name AS person, c.name AS company, w.since AS since");
       assertSameRows(database, 6, "SELECT c.name AS company, p.name AS person FROM company c "
-              + "LEFT JOIN works_at w ON w.target_id = c.id LEFT JOIN person p ON w.source_id = p.id",
+              + "LEFT JOIN works_at w ON w.target_id = c.rid LEFT JOIN person p ON w.source_id = p.rid",
           "MATCH (c:company) OPTIONAL MATCH (c)<-[w:works_at]-(p:person) RETURN c.name AS company, p.name AS person");
     }
 
@@ -115,29 +115,29 @@ class PostgreSQLCypherDifferentialTest {
 
     @Test
     void aTableOfASupertypeHasTheNodesOfItsSubtypes() {
-      assertSameRows(database, 5, "SELECT id, pid, name FROM person",
+      assertSameRows(database, 5, "SELECT rid AS id, pid, name FROM person",
           "MATCH (n:person) RETURN elementId(n) AS id, n.pid AS pid, n.name AS name");
-      assertSameRows(database, 4, "SELECT id, pid, name FROM ONLY person",
+      assertSameRows(database, 4, "SELECT rid AS id, pid, name FROM ONLY person",
           "MATCH (n:person) WHERE NOT n:employee RETURN elementId(n) AS id, n.pid AS pid, n.name AS name");
-      assertSameRows(database, 1, "SELECT id, pid, name, grade FROM employee",
+      assertSameRows(database, 1, "SELECT rid AS id, pid, name, grade FROM employee",
           "MATCH (n:employee) RETURN elementId(n) AS id, n.pid AS pid, n.name AS name, n.grade AS grade");
     }
 
     @Test
     void anEdgeTableOfASupertypeHasTheRelationshipsOfItsSubtypes() {
       final String returned = " RETURN elementId(e) AS id, elementId(a) AS source_id, elementId(b) AS target_id, e.since AS since";
-      assertSameRows(database, 4, "SELECT id, source_id, target_id, since FROM works_at",
+      assertSameRows(database, 4, "SELECT rid AS id, source_id, target_id, since FROM works_at",
           "MATCH (a)-[e:works_at]->(b)" + returned);
-      assertSameRows(database, 3, "SELECT id, source_id, target_id, since FROM ONLY works_at",
+      assertSameRows(database, 3, "SELECT rid AS id, source_id, target_id, since FROM ONLY works_at",
           "MATCH (a)-[e:works_at]->(b) WHERE type(e) = 'works_at'" + returned);
-      assertSameRows(database, 1, "SELECT id, source_id, target_id, since FROM works_at_remote",
+      assertSameRows(database, 1, "SELECT rid AS id, source_id, target_id, since FROM works_at_remote",
           "MATCH (a)-[e:works_at_remote]->(b)" + returned);
     }
 
     @Test
     void aJoinThroughAnEdgeTableReadsTheSubtypesOfBothEnds() {
       assertSameRows(database, 6, "SELECT p.name AS person, c.name AS company, w.since AS since FROM person p "
-              + "LEFT JOIN works_at w ON w.source_id = p.id LEFT JOIN company c ON w.target_id = c.id",
+              + "LEFT JOIN works_at w ON w.source_id = p.rid LEFT JOIN company c ON w.target_id = c.rid",
           "MATCH (p:person) OPTIONAL MATCH (p)-[w:works_at]->(c:company) "
               + "RETURN p.name AS person, c.name AS company, w.since AS since");
     }
@@ -147,20 +147,20 @@ class PostgreSQLCypherDifferentialTest {
       assertSameRows(database, 4, "SELECT source_id, target_id FROM knows",
           "MATCH (a)-[:knows]->(b) RETURN elementId(a) AS source_id, elementId(b) AS target_id");
       assertSameRows(database, 4, "SELECT p.name AS person, f.name AS friend FROM person p "
-              + "JOIN knows k ON k.source_id = p.id JOIN person f ON k.target_id = f.id",
+              + "JOIN knows k ON k.source_id = p.rid JOIN person f ON k.target_id = f.rid",
           "MATCH (p:person)-[:knows]->(f:person) RETURN p.name AS person, f.name AS friend");
       assertSameRows(database, 4, "SELECT p.name AS person, f.name AS friend FROM person p "
-              + "JOIN knows k ON k.target_id = p.id JOIN person f ON k.source_id = f.id",
+              + "JOIN knows k ON k.target_id = p.rid JOIN person f ON k.source_id = f.rid",
           "MATCH (p:person)<-[:knows]-(f:person) RETURN p.name AS person, f.name AS friend");
     }
 
     @Test
     void aUnidirectionalEdgeTableIsReadFromBothEnds() {
-      assertSameRows(database, 3, "SELECT id, source_id, target_id, weight FROM follows",
+      assertSameRows(database, 3, "SELECT rid AS id, source_id, target_id, weight FROM follows",
           "MATCH (a)-[e:follows]->(b) RETURN elementId(e) AS id, elementId(a) AS source_id, elementId(b) AS target_id, "
               + "e.weight AS weight");
       assertSameRows(database, 3, "SELECT p.name AS person, f.name AS follower, e.weight AS weight FROM person p "
-              + "JOIN follows e ON e.target_id = p.id JOIN person f ON e.source_id = f.id",
+              + "JOIN follows e ON e.target_id = p.rid JOIN person f ON e.source_id = f.rid",
           "MATCH (p:person)<-[e:follows]-(f:person) RETURN p.name AS person, f.name AS follower, e.weight AS weight");
     }
   }
@@ -191,7 +191,7 @@ class PostgreSQLCypherDifferentialTest {
       assertSameRows(database, 3, "SELECT source_id, target_id, stars FROM rated",
           "MATCH (a)-[e:rated]->(b) RETURN elementId(a) AS source_id, elementId(b) AS target_id, e.stars AS stars");
       // the lightweight edge has no id in the table
-      assertSameRows(database, 3, "SELECT id, source_id, target_id FROM rated",
+      assertSameRows(database, 3, "SELECT rid AS id, source_id, target_id FROM rated",
           "MATCH (a)-[e:rated]->(b) RETURN CASE WHEN type(e) = 'liked' THEN null ELSE elementId(e) END AS id, "
               + "elementId(a) AS source_id, elementId(b) AS target_id");
     }

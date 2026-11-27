@@ -36,8 +36,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class PlanLinesTest extends TestHelper {
 
-  private static final String HOP = "SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id"
-      + " JOIN company c ON w.target_id = c.id";
+  private static final String HOP = "SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.rid"
+      + " JOIN company c ON w.target_id = c.rid";
 
   @Override
   protected void beginTest() {
@@ -62,16 +62,16 @@ class PlanLinesTest extends TestHelper {
   @Test
   void theLinesOfAHopFromABoundStart() {
     assertThat(explain(HOP + " WHERE p.pid = 1")).containsExactly(
-        "TRAVERSE TO c INNER ON (w.target_id = c.id) (read c by id from the edge) = MATCH (p:person)-[w:works_at]->(c:company)"
-            + " [supported by edge: works_at.target_id = company.id joins an edge endpoint to an id]"
+        "TRAVERSE TO c INNER ON (w.target_id = c.rid) (read c by rid from the edge) = MATCH (p:person)-[w:works_at]->(c:company)"
+            + " [supported by edge: works_at.target_id = company.rid joins an edge endpoint to an id]"
             + " [traversal: start bound by p.pid = 1]",
-        "  TRAVERSE INNER ON (w.source_id = p.id) (out works_at AS w FROM p) = MATCH (p:person)-[w:works_at]->()"
-            + " [supported by edge: person.id = works_at.source_id joins an edge endpoint to an id]"
+        "  TRAVERSE INNER ON (w.source_id = p.rid) (out works_at AS w FROM p) = MATCH (p:person)-[w:works_at]->()"
+            + " [supported by edge: person.rid = works_at.source_id joins an edge endpoint to an id]"
             + " [traversal: start bound by p.pid = 1]",
         "    FETCH FROM INDEX person[pid] (pid = key)",
         "    FILTER pushed to p: (p.pid = 1)",
         "    WALK out EDGES works_at AS w of each left row",
-        "  READ RECORD BY ID company AS c (id = key) for each left row",
+        "  READ RECORD BY ID company AS c (rid = key) for each left row",
         "PROJECT 3 column(s)");
   }
 

@@ -70,10 +70,10 @@ class CreatedTableCatalogTest extends TestHelper {
     assertThat(columnsOf("SELECT * FROM person")).containsExactly("name", "id", "city");
     assertThat(columnsOf("SELECT * FROM tag")).containsExactly("label", "code");
     assertThat(columnsOf("SELECT * FROM knows")).containsExactly("since", "source_id", "target_id");
-    // the record id stays readable by name: rid beside an id of its own, id without one
+    // the record id stays readable by its name rid, with or without a declared id
     assertThat(rows("SELECT rid FROM person").get(0).<String>getProperty("rid")).startsWith("#");
-    assertThat(rows("SELECT id FROM tag").get(0).<String>getProperty("id")).startsWith("#");
-    // an unqualified name stands for a column that a table shows before a record id that it hides
+    assertThat(rows("SELECT rid FROM tag").get(0).<String>getProperty("rid")).startsWith("#");
+    // id is the column of the table that declares it
     assertThat(rows("SELECT id FROM person, tag").get(0).<Object>getProperty("id")).isEqualTo(1L);
 
     final String person = rows("SELECT rid FROM person").get(0).getProperty("rid");

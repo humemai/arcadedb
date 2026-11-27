@@ -1,6 +1,6 @@
 -- The PostgreSQL side of the write corpus (writes.tsv, fork issue #29), run once on top of small-schema.sql: what makes the tables of
 -- the small fixture behave like the table view of ArcadeDB when they are written.
---  * id is the record id: it is never given a value of its own (SQLSTATE 428C9, as for a GENERATED ALWAYS column), and a new row gets
+--  * rid is the record id: it is never given a value of its own (SQLSTATE 428C9, as for a GENERATED ALWAYS column), and a new row gets
 --    one from a sequence. A trigger does it, so that the plain text column of small-schema.sql keeps the type the view shows.
 --  * a link is checked when it is written (SQLSTATE 23503). small-schema.sql declares its key NOT ENFORCED, because the engine
 --    lets the record a link points at be deleted, so a trigger does this check.
@@ -11,12 +11,12 @@ CREATE SEQUENCE write_rid_seq;
 CREATE FUNCTION write_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    IF NEW.id IS NOT NULL THEN
-      RAISE EXCEPTION 'cannot insert a non-DEFAULT value into column "id"' USING ERRCODE = '428C9';
+    IF NEW.rid IS NOT NULL THEN
+      RAISE EXCEPTION 'cannot insert a non-DEFAULT value into column "rid"' USING ERRCODE = '428C9';
     END IF;
-    NEW.id := '#9:' || nextval('write_rid_seq');
-  ELSIF NEW.id IS DISTINCT FROM OLD.id THEN
-    RAISE EXCEPTION 'column "id" can only be updated to DEFAULT' USING ERRCODE = '428C9';
+    NEW.rid := '#9:' || nextval('write_rid_seq');
+  ELSIF NEW.rid IS DISTINCT FROM OLD.rid THEN
+    RAISE EXCEPTION 'column "rid" can only be updated to DEFAULT' USING ERRCODE = '428C9';
   END IF;
   RETURN NEW;
 END
@@ -29,7 +29,7 @@ CREATE TRIGGER works_at_write_guard BEFORE INSERT OR UPDATE ON works_at FOR EACH
 
 CREATE FUNCTION buyer_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF NEW.buyer IS NOT NULL AND NOT EXISTS (SELECT 1 FROM person WHERE id = NEW.buyer) THEN
+  IF NEW.buyer IS NOT NULL AND NOT EXISTS (SELECT 1 FROM person WHERE rid = NEW.buyer) THEN
     RAISE EXCEPTION 'orders.buyer names no person' USING ERRCODE = '23503';
   END IF;
   RETURN NULL;

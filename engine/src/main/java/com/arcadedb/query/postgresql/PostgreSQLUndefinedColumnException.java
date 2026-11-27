@@ -29,8 +29,13 @@ public class PostgreSQLUndefinedColumnException extends PostgreSQLCatalogExcepti
   /** undefined_column */
   public static final String SQLSTATE = "42703";
 
-  public PostgreSQLUndefinedColumnException(final String column, final String table, final List<String> columns) {
+  /**
+   * @param noId whether the name is {@code id} and the table has a record id and no column {@code id}: the hint is then
+   *             {@link #NO_ID_HINT}
+   */
+  public PostgreSQLUndefinedColumnException(final String column, final String table, final List<String> columns,
+      final boolean noId) {
     super(SQLSTATE, "column " + quote(column) + " of relation " + quote(table) + " does not exist",
-        unknownColumnHint(column, Map.of(table, columns), columnList(table, columns)));
+        noId ? NO_ID_HINT : unknownColumnHint(column, Map.of(table, columns), columnList(table, columns)));
   }
 }

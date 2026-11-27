@@ -1386,22 +1386,22 @@ st-orders-no-buyer	ok	inside	-	SELECT oid FROM orders WHERE pid IS NULL ORDER BY
 st-orders-array	ok	inside	-	SELECT oid, tags FROM orders ORDER BY oid	s3	-
 st-orders-jsonb	ok	inside	-	SELECT oid, address FROM orders ORDER BY oid	s3	-
 st-orders-link	ok	inside	-	SELECT oid, buyer FROM orders ORDER BY oid	s3	-
-st-person-id	ok	inside	-	SELECT id, pid FROM person ORDER BY pid	s3	-
+st-person-id	ok	inside	-	SELECT rid, pid FROM person ORDER BY pid	s3	-
 st-works-at	ok	inside	-	SELECT source_id, target_id, since FROM works_at ORDER BY since	s3	-
 join-inner	ok	inside	-	SELECT p.name, o.oid FROM orders o JOIN person p ON o.pid = p.pid ORDER BY o.oid	s3	-
 join-implicit	ok	inside	-	SELECT p.name, o.oid FROM orders o, person p WHERE o.pid = p.pid ORDER BY o.oid	s3	-
-join-edge	ok	inside	-	SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id JOIN company c ON w.target_id = c.id ORDER BY p.name, w.since	s3	-
-join-link	ok	inside	-	SELECT p.name FROM orders o JOIN person p ON o.buyer = p.id WHERE o.oid = 102	s3	-
+join-edge	ok	inside	-	SELECT p.name, c.name, w.since FROM person p JOIN works_at w ON w.source_id = p.rid JOIN company c ON w.target_id = c.rid ORDER BY p.name, w.since	s3	-
+join-link	ok	inside	-	SELECT p.name FROM orders o JOIN person p ON o.buyer = p.rid WHERE o.oid = 102	s3	-
 join-or-branches	ok	inside	-	SELECT o.oid FROM orders o, person p WHERE (o.pid = p.pid AND p.city = 'Delft') OR (o.pid = p.pid AND o.total < 6) ORDER BY o.oid	s3	-
 join-left-aggregate	ok	inside	-	SELECT p.name, count(o.oid) AS orders, coalesce(sum(o.total), 0) AS spent FROM person p LEFT JOIN orders o ON o.pid = p.pid GROUP BY p.name ORDER BY p.name	s3	-
-join-group-by-edge	ok	inside	-	SELECT p.city, count(*) AS jobs FROM person p JOIN works_at w ON w.source_id = p.id GROUP BY p.city ORDER BY p.city	s3	-
-join-left-count-star	ok	inside	-	SELECT c.name, count(*) AS n, count(w.since) AS jobs FROM company c LEFT JOIN works_at w ON w.target_id = c.id GROUP BY c.name ORDER BY c.name	s3	-
+join-group-by-edge	ok	inside	-	SELECT p.city, count(*) AS jobs FROM person p JOIN works_at w ON w.source_id = p.rid GROUP BY p.city ORDER BY p.city	s3	-
+join-left-count-star	ok	inside	-	SELECT c.name, count(*) AS n, count(w.since) AS jobs FROM company c LEFT JOIN works_at w ON w.target_id = c.rid GROUP BY c.name ORDER BY c.name	s3	-
 join-null-key	ok	inside	-	SELECT count(*) AS n FROM orders o JOIN person p ON o.pid = p.pid	s3	-
 join-empty-result	ok	inside	-	SELECT o.oid FROM orders o JOIN person p ON o.pid = p.pid AND p.city = 'Utrecht'	s3	-
 join-star	ok	inside	-	SELECT * FROM person p LEFT JOIN orders o ON o.pid = p.pid ORDER BY p.pid, o.oid	s3	-
 join-non-equality	ok	inside	-	SELECT a.name AS a, b.name AS b FROM person a JOIN person b ON a.city = b.city AND a.pid < b.pid ORDER BY a.pid, b.pid	s3	-
 join-extra-condition	ok	inside	-	SELECT p.name, o.oid FROM person p JOIN orders o ON o.pid = p.pid AND o.total > 9 ORDER BY o.oid	s3	-
-join-three-tables	ok	inside	-	SELECT count(*) AS n FROM person p, company c, works_at w WHERE w.source_id = p.id AND w.target_id = c.id	s3	-
+join-three-tables	ok	inside	-	SELECT count(*) AS n FROM person p, company c, works_at w WHERE w.source_id = p.rid AND w.target_id = c.rid	s3	-
 join-expression-key	ok	inside	-	SELECT p.name, c.name FROM person p, company c WHERE p.pid = c.cid / 10 ORDER BY p.pid	s3	-
 err-unknown-column	ok	inside	-	SELECT nosuch FROM person	s3	42703
 err-unknown-table	ok	inside	-	SELECT * FROM nosuch	s3	42P01
