@@ -40,7 +40,7 @@ In every run, passed + refused + wrong + blocked + out of scope equals the numbe
 2. The statement shows PostgreSQL internals that the language does not model: `EXPLAIN` plan text, `pg_catalog`, and system columns such as `ctid`.
 3. The statement administers the PostgreSQL server: tablespaces, replication, and server-side C code.
 
-The entries are in [`e2e/src/test/resources/pgregress/out-of-scope.tsv`](../e2e/src/test/resources/pgregress/out-of-scope.tsv), each with its reason, and each has its own count. Everything else that the language cannot do is refused. A function of `pg_catalog` that is called without the schema name is not in the list.
+The entries are in [`e2e/src/test/resources/pgregress/out-of-scope.tsv`](../e2e/src/test/resources/pgregress/out-of-scope.tsv), each with its reason, and each has its own count. Everything else that the language cannot do is refused. A function of `pg_catalog` that is called without the schema name is not in the list. The library of the C code of the suite is not built: a statement that defines such a function, and a later call of it, are out of scope.
 
 ## How the rules are applied
 
@@ -67,7 +67,7 @@ Each file starts on a fresh database on both sides. The files listed in [`setup.
 - A copy is checked: its `information_schema` and its rows must equal PostgreSQL's. Otherwise the table is blocked, with the reason.
 - These tables are not copied, so they are blocked: a column type that ArcadeDB cannot hold, a foreign key of its own (the copy would differ in its keys), inheritance or partitions, a schema other than `public` (temporary tables excepted), and more than 200,000 rows.
 - A table that has something the copy does not carry, and that decides what a write does, is blocked for writes only: a check constraint, a foreign key that refers to it, an exclusion constraint, a deferrable key, a unique index that is no constraint, a default, an identity or generated column, a trigger, a rule, or row security. A statement that only reads it is judged.
-- The tables a statement uses are those of the plan that PostgreSQL makes for it, and those its text names after `FROM`, `JOIN`, `INTO`, `UPDATE`, `ONLY`, `TABLE`, or a comma of a `FROM` list, because a plan leaves out a table that it does not have to read. A statement without a plan (DDL, utility statements, statements that PostgreSQL refuses before planning) uses the tables whose names are among its words.
+- The tables a statement uses are those of the plan that PostgreSQL makes for it, and those its text names after `FROM`, `JOIN`, `INTO`, `UPDATE`, `ONLY`, `TABLE`, or a comma of a `FROM` list, because a plan leaves out a table that it does not have to read. A statement without a plan (DDL, utility statements, statements that PostgreSQL refuses before planning) uses the tables whose names are among its words, except a `CREATE TABLE`, which uses those it names after `FROM`, `JOIN`, `REFERENCES`, `LIKE`, `PARTITION OF`, and in `INHERITS`.
 - The transaction block of ArcadeDB follows the one of PostgreSQL, so that a refused statement inside a block does not turn every later statement of the block into an error.
 - The summary counts the judged statements that used a copied table.
 

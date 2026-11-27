@@ -80,18 +80,20 @@ final class RegressReport {
     out.append("\n| file |");
     COUNTS.forEach(count -> out.append(' ').append(count.title()).append(" |"));
     out.append("\n| --- |").append(" ---: |".repeat(COUNTS.size())).append('\n');
-    for (final RegressRun.FileResult result : results) {
+    // a file whose run did not finish has no counts: its verdicts do not add up to its statements
+    final List<RegressRun.FileResult> finished = results.stream().filter(result -> result.failure == null).toList();
+    for (final RegressRun.FileResult result : finished) {
       out.append("| `").append(result.file).append("` |");
       COUNTS.forEach(count -> out.append(' ').append(count.of().applyAsLong(result)).append(" |"));
       out.append('\n');
     }
     out.append("| all |");
-    COUNTS.forEach(count -> out.append(' ').append(results.stream().mapToLong(count.of()).sum()).append(" |"));
+    COUNTS.forEach(count -> out.append(' ').append(finished.stream().mapToLong(count.of()).sum()).append(" |"));
     out.append('\n');
 
     out.append("\n| out of scope, entry | reason | statements |\n| --- | ---: | ---: |\n");
     for (final RegressOutOfScope.Entry entry : outOfScope.entries()) {
-      final long count = results.stream().flatMap(result -> result.lines.stream())
+      final long count = finished.stream().flatMap(result -> result.lines.stream())
           .filter(line -> line.entry().equals(entry.id())).count();
       if (count > 0)
         out.append("| `").append(entry.id()).append("` | ").append(entry.reason()).append(" | ").append(count).append(" |\n");

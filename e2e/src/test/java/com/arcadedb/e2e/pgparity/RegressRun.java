@@ -279,7 +279,7 @@ final class RegressRun {
       // the planner leaves out a table that it does not have to read
       uses.addAll(resolve(RegressSql.tablePositions(tokens), before));
     } else {
-      uses.addAll(named(tokens, before));
+      uses.addAll(RegressSql.createsTable(tokens) ? resolve(RegressSql.sourcesOfCreateTable(tokens), before) : named(tokens, before));
       writes.addAll(resolve(RegressSql.writeTargets(tokens), before));
     }
     String blocked = null;
@@ -301,11 +301,10 @@ final class RegressRun {
     final RegressSubject.Answer expected = executed.answer();
     if (expected.failed())
       result.serverErrors++;
-    else {
-      final String function = RegressOutOfScope.serverFunction(sql);
-      if (function != null)
-        serverFunctions.add(function);
-    }
+    // whether the server could define it or not: the library of the suite's C code is not in the image
+    final String function = RegressOutOfScope.serverFunction(sql);
+    if (function != null)
+      serverFunctions.add(function);
     final RegressOrder order = expected.columns() == null ? null : RegressOrder.of(sql);
     final List<List<Object>> keys = order == null ? null : order.keys(expected.columns(), expected.rows(), database::peek);
 

@@ -166,6 +166,10 @@ class RegressScriptTest {
         .containsExactly("t1", "pg_temp.t2", "t3");
     assertThat(RegressSql.tablePositions(RegressSql.tokens("UPDATE ONLY t SET a = 1, b = 2;"))).containsExactly("only", "t");
     assertThat(RegressSql.writeTargets(RegressSql.tokens("INSERT INTO s.t (a) VALUES (1);"))).containsExactly("s.t");
+    assertThat(RegressSql.createsTable(RegressSql.tokens("CREATE TEMP TABLE b (a int);"))).isTrue();
+    assertThat(RegressSql.createsTable(RegressSql.tokens("CREATE INDEX i ON table_a (a);"))).isFalse();
+    assertThat(RegressSql.sourcesOfCreateTable(RegressSql.tokens(
+        "CREATE TABLE c (a int REFERENCES p (id), LIKE q) INHERITS (r, s.t);"))).contains("p", "q", "r", "s.t").doesNotContain("a");
   }
 
   @Test
