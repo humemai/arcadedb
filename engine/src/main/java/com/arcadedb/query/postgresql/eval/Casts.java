@@ -117,6 +117,8 @@ public final class Casts {
       return formatTimestamp(((OffsetDateTime) value).toLocalDateTime()) + "+00";
     case VECTOR:
       return VectorDistance.toText((float[]) value);
+    case JSONB:
+      return Jsonb.write(value);
     default:
       throw PostgreSQLEvaluationException.unsupported("The text form of a value of type " + type.displayName()
           + " is not supported");
@@ -195,7 +197,7 @@ public final class Casts {
     case VECTOR:
       return VectorDistance.parse(text);
     case JSONB:
-      return ValueInput.toJson(text);
+      return ValueInput.parseJson(text);
     case BYTEA:
       return ValueInput.parseBytea(text);
     default:
@@ -425,6 +427,8 @@ public final class Casts {
       return applyModifier(from.isString() || from == PgType.UNKNOWN ? value : toText(value, from), to, typmod);
     if (from.isString() || from == PgType.UNKNOWN)
       return applyModifier(parse((String) value, to), to, typmod);
+    if (from == PgType.JSONB && (to == PgType.BOOL || to.isNumber()))
+      return Jsonb.cast(value, to, typmod);
 
     switch (to) {
     case BOOL:
@@ -587,7 +591,7 @@ public final class Casts {
 
   /**
    * A value of a record, a parameter or an aggregate in the canonical class of {@code type}. A type that no operator takes
-   * ({@code jsonb}, {@code bytea}, arrays) keeps the value as the engine holds it.
+   * ({@code bytea}, arrays) keeps the value as the engine holds it, and so does a {@code jsonb} object or array ({@link Jsonb}).
    */
   public static Object fromEngine(final Object raw, final PgType type) {
     if (raw == null)
@@ -626,7 +630,13 @@ public final class Casts {
     case VECTOR:
       return VectorDistance.fromEngine(raw);
     case JSONB:
-      return raw instanceof com.arcadedb.serializer.json.JSONObject object ? object.toMap() : raw;
+      if (raw instanceof JsonbText sent)
+        return ValueInput.parseJson(sent.text());
+      if (raw instanceof com.arcadedb.serializer.json.JSONObject object)
+        return object.toMap();
+      if (raw instanceof com.arcadedb.serializer.json.JSONArray array)
+        return array.toList();
+      return raw instanceof String || raw instanceof Number || raw instanceof Boolean ? Jsonb.wrap(raw) : raw;
     case ARRAY:
       return raw instanceof com.arcadedb.serializer.json.JSONArray array ? array.toList() : raw;
     default:

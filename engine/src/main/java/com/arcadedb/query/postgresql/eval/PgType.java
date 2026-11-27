@@ -51,9 +51,9 @@ import java.util.Locale;
  * </table>
  *
  * SQL {@code NULL} is the Java {@code null} for every type. {@link #UNKNOWN} is the type of a string literal and of a bare
- * {@code NULL} before the context decides (PostgreSQL's {@code unknown}); {@link #JSONB}, {@link #BYTEA} and {@link #ARRAY} are
- * read from a record and handed to the client unchanged: no operator takes them, and {@link ValueInput} reads the values a
- * statement writes. {@link #VECTOR} is the pgvector type of a
+ * {@code NULL} before the context decides (PostgreSQL's {@code unknown}). A value of {@link #JSONB} is described by
+ * {@link Jsonb}, which has its operators. {@link #BYTEA} and {@link #ARRAY} are read from a record and handed to the client
+ * unchanged, and {@link ValueInput} reads the values a statement writes. {@link #VECTOR} is the pgvector type of a
  * {@code float[]} (an {@code ARRAY_OF_FLOATS} property): only the distance operators ({@link VectorDistance}) take it.
  */
 public enum PgType {
@@ -115,7 +115,7 @@ public enum PgType {
     return left == TIMESTAMPTZ || right == TIMESTAMPTZ ? TIMESTAMPTZ : TIMESTAMP;
   }
 
-  /** A type that no operator takes: it is only read and handed on. */
+  /** A type with no order and no cast from a value of another type but text: the operators it has are its own. */
   public boolean isOpaque() {
     return this == JSONB || this == BYTEA || this == ARRAY;
   }
@@ -150,6 +150,8 @@ public enum PgType {
   public static PgType ofJavaValue(final Object value) {
     if (value == null)
       return UNKNOWN;
+    if (value instanceof Jsonb.Scalar || value instanceof JsonbText)
+      return JSONB;
     if (value instanceof Boolean)
       return BOOL;
     if (value instanceof Byte || value instanceof Short)

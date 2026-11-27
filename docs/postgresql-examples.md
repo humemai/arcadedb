@@ -55,7 +55,7 @@ The page starts from the nine tasks of the timed study on fork issue #13, with s
 | A moving window frame | no `sql` query | `postgresql` | `sql` |
 | Reading an array and a jsonb value | same | none | none |
 | Filtering on an element of an array | different | none | none |
-| Filtering on a field of a jsonb value | different | `postgresql` | none |
+| Filtering on a field of a jsonb value | different | none | none |
 | Vector search for the two nearest rows | different | none | none |
 | Inserting one record and returning it | same | none | none |
 | Batch insert in one statement | same | none | none |
@@ -1091,7 +1091,7 @@ Result:
 
 ### Filtering on a field of a jsonb value
 
-The prototype writes and reads `jsonb` but refuses `->>`.
+ArcadeDB `sql` and openCypher read a field with a dot. `postgresql` uses the operators of PostgreSQL, such as `->>` and `@>`.
 
 ArcadeDB `postgresql`, PostgreSQL 18:
 
@@ -1117,12 +1117,6 @@ Result:
 | --- |
 | 1 |
 | 3 |
-
-Result, ArcadeDB `postgresql` (differs):
-
-| SQLSTATE |
-| --- |
-| 0A000 |
 
 ### Vector search for the two nearest rows
 

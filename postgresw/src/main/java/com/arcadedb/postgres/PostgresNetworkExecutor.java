@@ -56,6 +56,7 @@ import com.arcadedb.query.postgresql.PostgreSQLErrors;
 import com.arcadedb.query.postgresql.PostgreSQLQueryEngine;
 import com.arcadedb.query.postgresql.SessionTimeZone;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
+import com.arcadedb.query.postgresql.eval.JsonbText;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.TransactionClock;
 import com.arcadedb.query.postgresql.eval.UnknownText;
@@ -3846,8 +3847,16 @@ public class PostgresNetworkExecutor extends Thread {
           // context, so '{}' for a jsonb column is not first read as an empty array literal, as it is for sql (issue #2559)
           final boolean textForTheLanguage = typeCode == 0L && formatCode == 0 && !portal.catalogQuery
               && PostgresQueryLanguages.POSTGRESQL.equals(portal.language);
+          // so does the text of a jsonb value, which the language reads itself: a JSON string, number or null stays a jsonb value.
+          // The binary format has the version byte 1 ahead of the text
+          final boolean jsonbForTheLanguage = typeCode == PostgresType.JSONB.code && !portal.catalogQuery
+              && PostgresQueryLanguages.POSTGRESQL.equals(portal.language)
+              && (formatCode == 0 || paramValue.length > 0 && paramValue[0] == 1);
+          final int skipped = formatCode == 0 ? 0 : 1;
           portal.parameterValues.add(textForTheLanguage ? new String(paramValue, DatabaseFactory.getDefaultCharset())
-              : PostgresType.deserialize(typeCode, formatCode, paramValue));
+              : jsonbForTheLanguage
+                  ? new JsonbText(new String(paramValue, skipped, paramValue.length - skipped, DatabaseFactory.getDefaultCharset()))
+                  : PostgresType.deserialize(typeCode, formatCode, paramValue));
           if (DEBUG)
             LogManager.instance().log(this, Level.INFO, "PSQL: bind param %d deserialized (thread=%s)", i, Thread.currentThread().threadId());
         }

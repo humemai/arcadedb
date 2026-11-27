@@ -850,6 +850,8 @@ public final class JoinPlanner {
       return a == b ? a : PgType.commonDateTime(a, b);
     if (a == PgType.BOOL && b == PgType.BOOL)
       return PgType.BOOL;
+    if (a == PgType.JSONB && b == PgType.JSONB)
+      return PgType.JSONB;
     return null;
   }
 

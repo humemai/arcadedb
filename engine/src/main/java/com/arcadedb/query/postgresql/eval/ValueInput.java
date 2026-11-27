@@ -38,9 +38,9 @@ import java.util.Map;
  * literal, a cast from text, a parameter of no declared type) and the conversion of a Java value (a parameter, a value read from
  * a record). The canonical classes are:
  * <ul>
- * <li>{@code jsonb}: a {@link Map} (a JSON object) or a {@link List} (a JSON array). A scalar at the top, JSON {@code null}
- * included, is refused with {@code 0A000}: a record holds no such value, and a JSON {@code null} would read as SQL
- * {@code NULL}.</li>
+ * <li>{@code jsonb}: a {@link Map} (a JSON object), a {@link List} (a JSON array) or a {@link Jsonb.Scalar}. A scalar at the
+ * top, JSON {@code null} included, is refused with {@code 0A000} when it is to be written to a record ({@link #toJson}): a
+ * record holds no such value, and a JSON {@code null} would read as SQL {@code NULL}.</li>
  * <li>{@code bytea}: a {@code byte[]}.</li>
  * <li>an array: a {@link List} of the canonical class of the element type, one dimension.</li>
  * <li>{@code vector}: a {@code float[]}.</li>
@@ -71,19 +71,29 @@ public final class ValueInput {
 
   // ---- jsonb ----
 
-  /** A text or a Java value as a {@code jsonb} value, {@code null} for {@code null}. */
+  /**
+   * A text or a Java value as a {@code jsonb} value that a record can hold, an object or an array, {@code null} for {@code null}.
+   */
   public static Object toJson(final Object value) {
     if (value == null)
       return null;
-    final Object json = value instanceof String text ? new JsonText(text).read() : jsonValue(value, 0);
+    final Object json = value instanceof String text ? new JsonText(text).read()
+        : value instanceof JsonbText sent ? new JsonText(sent.text()).read() : jsonValue(value, 0);
     if (!(json instanceof Map<?, ?>) && !(json instanceof List<?>))
       throw PostgreSQLEvaluationException.unsupported("A JSON scalar is not supported as a jsonb value: give an object or an array");
     return json;
   }
 
+  /** The input function of {@code jsonb} for an expression, where every JSON value is one ({@link Jsonb}). */
+  static Object parseJson(final String text) {
+    return Jsonb.wrap(new JsonText(text).read());
+  }
+
   private static Object jsonValue(final Object value, final int depth) {
     if (depth > MAX_JSON_DEPTH)
       throw tooDeep();
+    if (value instanceof Jsonb.Scalar scalar)
+      return jsonValue(scalar.value(), depth);
     if (value == null || value == JSONObject.NULL || value instanceof Boolean || value instanceof String)
       return value == JSONObject.NULL ? null : value;
     if (value instanceof Double d && (d.isNaN() || d.isInfinite()) || value instanceof Float f && (f.isNaN() || f.isInfinite()))

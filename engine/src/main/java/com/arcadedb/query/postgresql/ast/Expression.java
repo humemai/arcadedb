@@ -160,12 +160,20 @@ public sealed interface Expression extends Node {
     COSINE_DISTANCE("<=>"),
     /** pgvector {@code <#>}, the negative inner product. */
     NEGATIVE_INNER_PRODUCT("<#>"),
-    /** {@code a @> b}: the left array has every element of the right one. */
+    /** {@code a @> b}: the left array or {@code jsonb} value holds the right one. */
     CONTAINS("@>"),
-    /** {@code a <@ b}: the right array has every element of the left one. */
+    /** {@code a <@ b}: the right array or {@code jsonb} value holds the left one. */
     CONTAINED_BY("<@"),
     /** {@code a && b}: the arrays have an element in common. */
-    OVERLAPS("&&");
+    OVERLAPS("&&"),
+    /** {@code jsonb -> key}: the member of an object, or the element of an array. */
+    JSON_FIELD("->"),
+    /** {@code jsonb ->> key}: the same as text. */
+    JSON_FIELD_TEXT("->>"),
+    /** {@code jsonb #> path}: the value at a path. */
+    JSON_PATH("#>"),
+    /** {@code jsonb #>> path}: the same as text. */
+    JSON_PATH_TEXT("#>>");
 
     private final String symbol;
 

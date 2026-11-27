@@ -828,6 +828,10 @@ final class AstBuilder {
       case "@>" -> BinaryOperator.CONTAINS;
       case "<@" -> BinaryOperator.CONTAINED_BY;
       case "&&" -> BinaryOperator.OVERLAPS;
+      case "->" -> BinaryOperator.JSON_FIELD;
+      case "->>" -> BinaryOperator.JSON_FIELD_TEXT;
+      case "#>" -> BinaryOperator.JSON_PATH;
+      case "#>>" -> BinaryOperator.JSON_PATH_TEXT;
       default -> throw Diagnostics.notSupported("The operator " + token.getText(), token);
     };
   }

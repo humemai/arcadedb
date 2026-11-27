@@ -1474,7 +1474,7 @@ out-rollup	ok	outside	-	SELECT city, count(*) FROM person GROUP BY ROLLUP (city)
 out-similar-to	ok	outside	-	SELECT name FROM person WHERE name SIMILAR TO 'A%'	s3	-
 out-is-true	ok	outside	-	SELECT true IS TRUE	s3	-
 out-array-constructor	ok	inside	-	SELECT ARRAY[1, 2]	s3	-
-out-json-arrow	ok	outside	-	SELECT '{"a": 1}'::jsonb -> 'a'	s3	-
+out-json-arrow	ok	inside	-	SELECT '{"a": 1}'::jsonb -> 'a'	s3	-
 out-function-in-from	ok	outside	-	SELECT a.x FROM generate_series(1, 3) AS a(x)	s3	-
 out-copy	ok	outside	-	COPY person TO STDOUT	s3	-
 bad-select-form	syntax-error	error	-	SELECT * FORM person	s3	42601
@@ -1640,7 +1640,7 @@ values-table-form-stays-out	ok	outside	-	TABLE person	written for the parser	-
 json-cast	ok	inside	-	SELECT '"abc'::json	fork issue #202	22P02
 json-cast-function-form	ok	inside	-	SELECT CAST(NULL AS json)	fork issue #202	-
 json-constant	ok	inside	-	SELECT json_build_object(json '{"a": 1}', 3)	fork issue #202	-
-json-constant-operator	ok	outside	-	SELECT json '{"a": "b"}' -> 'a'	fork issue #202	-
+json-constant-operator	ok	inside	-	SELECT json '{"a": "b"}' -> 'a'	fork issue #202	-
 json-column-name-stays	ok	inside	-	SELECT json FROM (SELECT 1 AS json) t	fork issue #202	-
 whole-row-in-parentheses	ok	outside	-	SELECT (p.*) IS NULL FROM person p	fork issue #202	-
 whole-row-as-a-new-value	ok	outside	-	UPDATE person SET age = c.* FROM company AS c	fork issue #202	42804
