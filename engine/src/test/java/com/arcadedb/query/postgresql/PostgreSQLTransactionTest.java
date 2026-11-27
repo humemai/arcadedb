@@ -140,7 +140,8 @@ class PostgreSQLTransactionTest extends TestHelper {
     assertState(() -> command("SELECT 1"), "25P02");
     command("ROLLBACK");
     command("BEGIN");
-    assertState(() -> command("CREATE TABLE t (a int)"), "0A000");
+    // CREATE TABLE runs in a block (fork issue #229); an index does not
+    assertState(() -> command("CREATE INDEX ON person (name)"), "0A000");
     assertState(() -> command("SELECT 1"), "25P02");
     command("ROLLBACK");
     assertThat(count("person")).isEqualTo(5L);
