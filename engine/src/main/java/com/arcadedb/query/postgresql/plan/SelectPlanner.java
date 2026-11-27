@@ -94,7 +94,7 @@ public class SelectPlanner {
   private       int                unnamedSubqueries;
 
   /** A common table expression of a {@code WITH}: its kept rows, and the names and types its readers see. */
-  private record Cte(Name name, MaterializedSource.Materialization rows, List<String> names, List<PgType> types,
+  private record Cte(Name name, QueryPlan plan, MaterializedSource.Materialization rows, List<String> names, List<PgType> types,
                      List<String> typeNames) {
   }
 
@@ -446,8 +446,11 @@ public class SelectPlanner {
       group = groupingScope.stage(joinMemoryCap);
 
     final List<PostgreSQLResultSet.Column> columns = new ArrayList<>();
-    for (int i = 0; i < outputs.size(); i++)
+    final BitSet recordIds = new BitSet();
+    for (int i = 0; i < outputs.size(); i++) {
       columns.add(new PostgreSQLResultSet.Column(names.get(i), outputs.get(i).typeName()));
+      recordIds.set(i, compiler.recordIdColumn(asts.get(i)) != null);
+    }
 
     // a join that no edge, link or index supports: the plan says so, and the engine writes the log line once per statement
     final List<String> warnings = JoinWarnings.of(source);
@@ -471,7 +474,7 @@ public class SelectPlanner {
     }
 
     return new SelectPlan(source, filter, group, having, outputs.toArray(new Evaluable[0]), extras.toArray(new Evaluable[0]), columns,
-        select.distinct(), sortKeys, limit, offset, steps, warnings, windows);
+        select.distinct(), sortKeys, limit, offset, steps, warnings, windows, recordIds);
   }
 
   /** Whether an expression of this planner's query can read a column of a query around it. */
@@ -966,6 +969,12 @@ public class SelectPlanner {
     }
 
     @Override
+    public String recordIdColumn(final Expression expression) {
+      final String own = inner.recordIdColumn(expression);
+      return own != null ? own : outer.recordIdColumn(expression);
+    }
+
+    @Override
     public Evaluable column(final Expression.ColumnRef reference) {
       // a column that the subquery only hides gives way to one that the query around shows (fork issue #157)
       if (inner.givesWay(reference, outer))
@@ -1011,7 +1020,7 @@ public class SelectPlanner {
       final List<String> typeNames = new ArrayList<>();
       for (final PostgreSQLResultSet.Column column : plan.columns())
         typeNames.add(column.typeName());
-      scope.put(name, new Cte(definition.name(), new MaterializedSource.Materialization(plan, joinMemoryCap,
+      scope.put(name, new Cte(definition.name(), plan, new MaterializedSource.Materialization(plan, joinMemoryCap,
           "a common table expression"), names, plan.outputTypes(), typeNames));
     }
     return scoped.planQuery(with.body(), operand);
@@ -1029,10 +1038,17 @@ public class SelectPlanner {
     return names;
   }
 
+  /** A column of a derived table or of a {@code WITH} query, which holds record ids when the column it reads does. */
+  private static RelationSource.Field passedOn(final String relation, final String name, final PgType type, final String typeName,
+      final QueryPlan plan, final int index) {
+    return new RelationSource.Field(relation, name, type, typeName, false, true,
+        plan.holdsRecordIds(index) ? RelationSource.RecordIds.PASSED_ON : RelationSource.RecordIds.NONE);
+  }
+
   private static MaterializedSource cteSource(final Cte cte, final String relation) {
     final List<RelationSource.Field> fields = new ArrayList<>();
     for (int i = 0; i < cte.names().size(); i++)
-      fields.add(new RelationSource.Field(relation, cte.names().get(i), cte.types().get(i), cte.typeNames().get(i)));
+      fields.add(passedOn(relation, cte.names().get(i), cte.types().get(i), cte.typeNames().get(i), cte.plan(), i));
     final String name = cte.name().value();
     return new MaterializedSource(cte.rows(), fields, "SCAN CTE " + name + (relation.equals(name) ? "" : " AS " + relation));
   }
@@ -1049,7 +1065,7 @@ public class SelectPlanner {
     final List<String> names = columnNames(plan, reference.columns(), "table \"" + relation + "\"");
     final List<RelationSource.Field> fields = new ArrayList<>();
     for (int i = 0; i < names.size(); i++)
-      fields.add(new RelationSource.Field(relation, names.get(i), plan.outputTypes().get(i), plan.columns().get(i).typeName()));
+      fields.add(passedOn(relation, names.get(i), plan.outputTypes().get(i), plan.columns().get(i).typeName(), plan, i));
     return new MaterializedSource(new MaterializedSource.Materialization(plan, joinMemoryCap, "a derived table"), fields,
         "SCAN SUBQUERY " + relation);
   }
@@ -1249,6 +1265,11 @@ public class SelectPlanner {
     }
 
     @Override
+    public String recordIdColumn(final Expression expression) {
+      return inputCompiler.recordIdColumn(expression);
+    }
+
+    @Override
     public Evaluable column(final Expression.ColumnRef reference) {
       // a column of the query around a correlated subquery is a constant for it, grouped or not
       try {
@@ -1338,6 +1359,15 @@ public class SelectPlanner {
       default:
         if (!Comparison.isComparable(argumentType))
           throw PostgreSQLEvaluationException.noFunction(name, argumentType);
+        // the largest record id is not the newest row, which is what max of a key means (fork issue #240)
+        final String ids = inputCompiler.recordIdColumn(call.args().get(0));
+        if (ids != null)
+          throw new PostgreSQLFeatureNotSupportedException(
+              name + " of " + ids + ", which holds record ids, is not supported by the postgresql language: record ids have no"
+                  + " creation order",
+              "For the newest or the oldest row, order by a column that grows with each row, such as an id bigserial PRIMARY KEY"
+                  + " or a creation time. To pick one row of each group, number the rows with row_number() OVER (PARTITION BY"
+                  + " ... ORDER BY ...)");
         result = argumentType.isString() ? PgType.TEXT : argumentType;
         break;
       }
@@ -1402,6 +1432,11 @@ public class SelectPlanner {
     @Override
     public boolean showsHere(final Name column) {
       return base.showsHere(column);
+    }
+
+    @Override
+    public String recordIdColumn(final Expression expression) {
+      return base.recordIdColumn(expression);
     }
 
     @Override

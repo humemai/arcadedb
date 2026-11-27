@@ -113,6 +113,11 @@ final class SetOperationPlan implements QueryPlan {
   }
 
   @Override
+  public boolean holdsRecordIds(final int index) {
+    return left.holdsRecordIds(index) || right.holdsRecordIds(index);
+  }
+
+  @Override
   public void inferParameter(final int index, final PgType type) {
     left.inferParameter(index, type);
     right.inferParameter(index, type);

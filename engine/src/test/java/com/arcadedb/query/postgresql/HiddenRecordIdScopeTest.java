@@ -90,7 +90,7 @@ class HiddenRecordIdScopeTest extends TestHelper {
         + " target_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE)");
 
     // of a table of the subquery: it wins over the column of the query around
-    assertThat(lines("SELECT (SELECT rid <> '7' FROM person WHERE id = 1) AS other FROM ticket")).containsExactly("true");
+    assertThat(lines("SELECT (SELECT rid <> '#999:7' FROM person WHERE id = 1) AS other FROM ticket")).containsExactly("true");
     // of the query around: the hidden record id of the subquery gives way to it
     assertThat(lines("SELECT name FROM person WHERE rid = (SELECT rid FROM badge) ORDER BY name")).containsExactly("Ada", "Bob");
   }

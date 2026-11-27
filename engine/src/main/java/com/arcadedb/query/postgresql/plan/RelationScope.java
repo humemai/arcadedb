@@ -258,20 +258,30 @@ public final class RelationScope implements ExpressionCompiler.Scope {
     return holds + ", not numbers: compare it with such a text, or name the row by another column. A cast will not match them";
   }
 
+  @Override
+  public String recordIdColumn(final Expression expression) {
+    final RelationSource.Field field = fieldOf(expression);
+    // a name that this query does not have, or has only as a hidden column that gives way, is the one of the query around
+    if (outer != null && (field == null || expression instanceof Expression.ColumnRef reference && reference.qualifier().isEmpty()
+        && find(reference.column()) == Found.UNLISTED && outer.shows(reference.column())))
+      return outer.recordIdColumn(expression);
+    return field == null || field.recordIds() == RelationSource.RecordIds.NONE ? null : qualified(field);
+  }
+
   /** The column of this query that a reference reads, {@code null} when it is not one or several could be meant. */
   private RelationSource.Field fieldOf(final Expression expression) {
     if (!(expression instanceof Expression.ColumnRef reference) || reference.qualifier().size() > 2)
       return null;
     final Name relation = reference.qualifier().isEmpty() ? null : reference.qualifier().get(reference.qualifier().size() - 1);
-    RelationSource.Field found = null;
+    final List<RelationSource.Field> found = new ArrayList<>(1);
     for (final RelationSource.Field field : fields)
       if ((same(reference.column(), field.name(), 0) || same(reference.column(), field.name(), 1))
-          && (relation == null || sameRelation(relation, field.relation()))) {
-        if (found != null)
-          return null;
-        found = field;
-      }
-    return found;
+          && (relation == null || sameRelation(relation, field.relation())))
+        found.add(field);
+    if (found.size() > 1)
+      // a column that the catalog does not list gives way to a column that it lists
+      found.removeIf(field -> !field.listed());
+    return found.size() == 1 ? found.get(0) : null;
   }
 
   private static String qualified(final RelationSource.Field field) {

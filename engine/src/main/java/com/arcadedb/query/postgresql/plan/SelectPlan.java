@@ -33,6 +33,7 @@ import com.arcadedb.query.sql.executor.ResultInternal;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -84,12 +85,15 @@ public final class SelectPlan implements QueryPlan {
   private final Supplier<List<String>> steps;
   private final List<String>   warnings;
   private final WindowStage    windows;
+  /** The output columns that are columns of record ids. */
+  private final BitSet         recordIds;
 
   SelectPlan(final RelationSource source, final Evaluable where, final GroupStage group, final Evaluable having,
       final Evaluable[] outputs, final Evaluable[] extras, final List<PostgreSQLResultSet.Column> columns, final boolean distinct,
       final List<SortKey> sortKeys, final Evaluable limit, final Evaluable offset, final Supplier<List<String>> steps,
-      final List<String> warnings, final WindowStage windows) {
+      final List<String> warnings, final WindowStage windows, final BitSet recordIds) {
     this.windows = windows;
+    this.recordIds = recordIds;
     this.source = source;
     this.where = where;
     this.group = group;
@@ -146,6 +150,11 @@ public final class SelectPlan implements QueryPlan {
   @Override
   public void inferParameter(final int index, final PgType type) {
     ExpressionCompiler.inferParameter(outputs[index], type);
+  }
+
+  @Override
+  public boolean holdsRecordIds(final int index) {
+    return recordIds.get(index);
   }
 
   @Override

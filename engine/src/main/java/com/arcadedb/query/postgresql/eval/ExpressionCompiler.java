@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
+import com.arcadedb.database.RID;
 import com.arcadedb.query.postgresql.PostgreSQLError;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.SessionTimeZone;
@@ -114,10 +115,20 @@ public final class ExpressionCompiler {
     default String recordIdHint(final Expression ids, final Expression number) {
       return null;
     }
+
+    /**
+     * The name, with its relation, of the column of record ids that the expression reads (fork issue #240), {@code null} for any
+     * other expression.
+     */
+    default String recordIdColumn(final Expression expression) {
+      return null;
+    }
   }
 
   private record Unified(PgType type, Evaluable left, Evaluable right) {
   }
+
+  private static final Object[] NO_ROW = new Object[0];
 
   private final Scope      scope;
   private final Parameters parameters;
@@ -601,12 +612,16 @@ public final class ExpressionCompiler {
 
   /**
    * {@link #comparison(Expression.BinaryOperator, Evaluable, Evaluable)} of two expressions as written: when a column of record
-   * ids is compared with a number, which no operator does, the hint says what to compare instead (fork issue #241).
+   * ids is compared with a number, which no operator does, the hint says what to compare instead (fork issue #241), and a text
+   * that is no record id is an error (fork issue #240).
    */
   public Evaluable comparison(final Expression.BinaryOperator operator, final Expression leftExpression, final Evaluable left,
       final Expression rightExpression, final Evaluable right) {
     try {
-      return comparison(operator, left, right);
+      final Evaluable compared = comparison(operator, left, right);
+      requireRecordId(leftExpression, rightExpression, right);
+      requireRecordId(rightExpression, leftExpression, left);
+      return compared;
     } catch (final PostgreSQLEvaluationException e) {
       String hint = null;
       if ("42883".equals(e.getSqlState())) {
@@ -619,6 +634,53 @@ public final class ExpressionCompiler {
         throw e;
       throw PostgreSQLEvaluationException.withHint("42883", PostgreSQLError.Text.of(e.getMessage()).message(), hint);
     }
+  }
+
+  // ---- record ids ----
+
+  /** {@link Scope#recordIdColumn} of an expression, or of what it casts to a text. */
+  public String recordIdColumn(final Expression expression) {
+    Expression read = expression;
+    while (read instanceof Expression.Cast cast && cast.type().arrayDimensions() == 0) {
+      final PgType target = PgType.byName(cast.type().name());
+      if (target == null || !target.isString())
+        break;
+      read = cast.operand();
+    }
+    return scope.recordIdColumn(read);
+  }
+
+  /**
+   * A text that the statement writes or binds and that a column of record ids is compared with has to be a record id: any other
+   * text would match no row and say nothing (fork issue #240). A value that is read from a row is compared as it is.
+   *
+   * @param ids      the expression that can be a column of record ids
+   * @param written  the expression it is compared with
+   * @param compiled that expression, compiled
+   */
+  private void requireRecordId(final Expression ids, final Expression written, final Evaluable compiled) {
+    if (!isWritten(written) || !compiled.isConstant())
+      return;
+    final String column = recordIdColumn(ids);
+    if (column != null && compiled.eval(NO_ROW) instanceof String text && !RID.is(text))
+      throw notARecordId(column, text);
+  }
+
+  /** Whether the value of the expression is in the statement or in its parameters: a literal, a parameter, or a cast of one. */
+  private static boolean isWritten(final Expression expression) {
+    return switch (expression) {
+      case Expression.StringLiteral e -> true;
+      case Expression.ParameterRef e -> true;
+      case Expression.Cast e -> isWritten(e.operand());
+      case Expression.ArrayConstructor e -> e.elements().stream().allMatch(ExpressionCompiler::isWritten);
+      default -> false;
+    };
+  }
+
+  private static PostgreSQLEvaluationException notARecordId(final String column, final String text) {
+    return PostgreSQLEvaluationException.withHint("22P02", "invalid input syntax for type record id: \"" + text + "\"",
+        column + " holds record ids, which look like '#12:3' (bucket and position): compare it with a record id that a query"
+            + " returned, or name the row by another column of its table");
   }
 
   /** The comparison of two expressions, {@code operator} one of the six comparison operators. */
@@ -1363,7 +1425,7 @@ public final class ExpressionCompiler {
     final Evaluable operand = compile(e.operand());
     final List<Evaluable> comparisons = new ArrayList<>();
     for (final Expression value : e.values())
-      comparisons.add(comparison(Expression.BinaryOperator.EQUAL, operand, compile(value)));
+      comparisons.add(comparison(Expression.BinaryOperator.EQUAL, e.operand(), operand, value, compile(value)));
     final Evaluable any = orChain(comparisons);
     return e.negated() ? negate(any) : any;
   }
@@ -1405,6 +1467,15 @@ public final class ExpressionCompiler {
     // the comparison of the operand with an element, typed as PostgreSQL types "operand op element"
     final Evaluable compare = comparison(e.operator(), new Evaluable.Slot(operand.type(), operand.typeName(), 0),
         new Evaluable.Slot(element, 1));
+    // as for one value: a text of a written or bound array that a column of record ids is compared with is a record id
+    if (isWritten(e.array()) && array.isConstant()) {
+      final String ids = recordIdColumn(e.operand());
+      final List<Object> items = ids == null ? null : elements(array.eval(NO_ROW), element);
+      if (items != null)
+        for (final Object item : items)
+          if (item instanceof String text && !RID.is(text))
+            throw notARecordId(ids, text);
+    }
 
     final PgType elementType = element;
     final boolean all = e.all();
@@ -1534,8 +1605,8 @@ public final class ExpressionCompiler {
   /** {@code x BETWEEN a AND b} is {@code x >= a AND x <= b}. */
   private Evaluable between(final Expression.Between e) {
     final Evaluable operand = compile(e.operand());
-    final Evaluable low = comparison(Expression.BinaryOperator.GREATER_OR_EQUAL, operand, compile(e.low()));
-    final Evaluable high = comparison(Expression.BinaryOperator.LESS_OR_EQUAL, operand, compile(e.high()));
+    final Evaluable low = comparison(Expression.BinaryOperator.GREATER_OR_EQUAL, e.operand(), operand, e.low(), compile(e.low()));
+    final Evaluable high = comparison(Expression.BinaryOperator.LESS_OR_EQUAL, e.operand(), operand, e.high(), compile(e.high()));
     final Evaluable inside = new Evaluable.Node(PgType.BOOL,
         row -> Logic.and((Boolean) low.eval(row), (Boolean) high.eval(row)), low, high);
     return e.negated() ? negate(inside) : inside;
@@ -1590,7 +1661,7 @@ public final class ExpressionCompiler {
       if (operand == null)
         conditions.add(booleanOperandOf(condition, "CASE/WHEN"));
       else
-        conditions.add(comparison(Expression.BinaryOperator.EQUAL, operand, condition));
+        conditions.add(comparison(Expression.BinaryOperator.EQUAL, e.operand(), operand, when.condition(), condition));
       results.add(compile(when.result()));
     }
     results.add(e.otherwise() == null ? new Evaluable.Constant(PgType.UNKNOWN, null) : compile(e.otherwise()));
