@@ -158,9 +158,10 @@ The engine applies the length of a `varchar(n)` and the precision and scale of a
 | A table | any table | one that `CREATE TABLE` of this language made; for another type the hint names the `sql` statement |
 | An added column with a default | the rows are usually not rewritten | each row is written, in one transaction, so a very large table needs the memory for it |
 | A record that already has an undeclared property of the new name, written by `sql` or openCypher | not applicable | `0A000`: remove the property first |
-| A constraint on an added column, a serial or identity column | allowed | `0A000`. For a unique column, add it and then `CREATE UNIQUE INDEX` |
+| An added serial or identity column | allowed | `0A000` |
 | `SET DEFAULT` on a column that the same statement adds | allowed | `0A000` |
-| `ADD CONSTRAINT`, `DROP`, `RENAME`, `ALTER COLUMN ... TYPE`, and the other actions | allowed | `0A000`; the hint names the `sql` statement where there is one |
+| `ADD CONSTRAINT` | the table is locked while the rows are read | the constraint is registered first and the rows are then read, with nothing locked, so other sessions meet it before the statement has finished. A key over columns that have an index that is not unique replaces that index with a unique one. `NOT VALID`, `DEFERRABLE`, `USING INDEX`, `EXCLUDE`, and a key or check over an end of a link table are `0A000`. The detail of an error names no row |
+| `DROP`, `RENAME`, `ALTER COLUMN ... TYPE`, and the other actions | allowed | `0A000`; the hint names the `sql` statement where there is one |
 
 ### DROP TABLE and DROP INDEX
 
@@ -208,7 +209,7 @@ INSERT INTO orders VALUES (1, 99);  -- 23503
 | Referenced columns | a primary key, a unique constraint, or a unique index | the same (`42830`). A record id (`rid`) can be referred to only by the two ends of a link table (`0A000`). The ends of a link table have rules of their own, [above](#ends-that-refer-to-a-key) |
 | Column types | any pair that compares | the same type, or both of `smallint`, `integer`, and `bigint`, or both of `text` and `varchar`. Other pairs that PostgreSQL accepts are `0A000`, the rest `42804` |
 | Indexes | none over the referring columns | `CREATE TABLE` adds one unless a key covers exactly those columns. `CREATE UNIQUE INDEX` over those columns is then `0A000`: declare `UNIQUE` in `CREATE TABLE` |
-| `ALTER TABLE ... ADD CONSTRAINT` | supported | `0A000` |
+| `ALTER TABLE ... ADD CONSTRAINT` | the key is checked while the table is locked | supported, the rows are read after the key is registered, see [`ALTER TABLE`](#alter-table) |
 | Writes of `sql`, openCypher, and the Java API | | the engine checks the same keys at commit and runs the same actions then, so rows that a cascade will remove are visible until the commit. A violation refuses the commit |
 | `sql` schema changes | | `ALTER TYPE orders CUSTOM foreignKeys = null` removes the keys of a table, and a key declared through that custom value does not check the rows that exist. Dropping or renaming a referenced type is refused. When an index that a key needs is dropped, writes to both tables are `55000` until it is created again |
 | `LOCK TYPE` in `sql` | | the lock list must include the referenced type, or the commit is refused |

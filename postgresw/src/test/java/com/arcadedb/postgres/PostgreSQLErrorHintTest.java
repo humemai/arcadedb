@@ -55,8 +55,7 @@ class PostgreSQLErrorHintTest extends PostgreSQLSessionAgainstPostgresTestBase {
       List.of("SELECT s.x FROM acc, LATERAL (SELECT acc.id AS x) s", "LATERAL"),
       List.of("SELECT '{\"a\": 1}'::jsonb AS v ORDER BY v", "->>"),
       List.of("TRUNCATE acc", "DELETE FROM acc"),
-      List.of("CREATE EXTENSION IF NOT EXISTS plpgsql", "Leave the statement out"),
-      List.of("ALTER TABLE acc ADD CONSTRAINT u UNIQUE (v)", "CREATE UNIQUE INDEX ON acc (v)"));
+      List.of("CREATE EXTENSION IF NOT EXISTS plpgsql", "Leave the statement out"));
 
   /** What the hints of this language say to write, run in the order given. */
   private static final List<String> WAYS_OUT = List.of(

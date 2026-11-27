@@ -100,7 +100,7 @@ final class Diagnostics {
       Map.entry("unsupportedConcurrently", "CREATE INDEX CONCURRENTLY"),
       Map.entry("unsupportedDropConcurrently", "DROP INDEX CONCURRENTLY"),
       Map.entry("unsupportedAlterAction",
-          "This action of ALTER TABLE (DROP, RENAME, ADD of a constraint, a change of a type and the like)"),
+          "This action of ALTER TABLE (DROP, RENAME, a change of a type and the like)"),
       Map.entry("unsupportedAlterTarget", "ALTER TABLE ALL IN TABLESPACE"),
       Map.entry("unsupportedIndexExpression", "An index on an expression"),
       Map.entry("unsupportedIndexElementOption",

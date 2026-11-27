@@ -130,12 +130,11 @@ public final class StatementHints {
       at++;
     if (".".equals(word(at + 1)))
       at += 2;
-    final String written = raw(at);
     final String table = names.table(name(at));
     final int next = at + 2;
     final String otherwise = NO_WAY + ": make a new table or column, copy the values, and drop the old one";
     return switch (word(at + 1)) {
-      case "ADD" -> add(written, table, next);
+      case "ADD" -> add(table, next);
       case "DROP" -> {
         if ("CONSTRAINT".equals(word(next)))
           yield "Drop its index in the sql language with DROP INDEX `name`, one of the names listed by " + LIST_INDEXES;
@@ -155,21 +154,8 @@ public final class StatementHints {
     };
   }
 
-  private String add(final String written, final String table, final int from) {
-    int at = from;
-    final boolean column = "COLUMN".equals(word(at));
-    if (column)
-      at++;
-    else if (Set.of("CONSTRAINT", "UNIQUE", "PRIMARY", "FOREIGN", "CHECK", "EXCLUDE").contains(word(at))) {
-      if ("CONSTRAINT".equals(word(at)))
-        at += 2;
-      final int open = words.subList(Math.min(at, words.size()), words.size()).indexOf("(") + at;
-      final int close = words.indexOf(")");
-      if (("UNIQUE".equals(word(at)) || "PRIMARY".equals(word(at))) && open >= at && close > open)
-        return "Write CREATE UNIQUE INDEX ON " + written + " (" + String.join(" ", words.subList(open + 1, close))
-            .replace(" ,", ",") + ")";
-      return NO_WAY + ": a check or a foreign key cannot be added to a table";
-    }
+  private String add(final String table, final int from) {
+    int at = "COLUMN".equals(word(from)) ? from + 1 : from;
     if ("IF".equals(word(at)))
       at += 3;
     final String name = name(at);

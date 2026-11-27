@@ -22,8 +22,8 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * {@code ALTER TABLE} ({@code AlterTableStmt} of {@code gram.y}), fork issue #230: adding columns, and changing the default and
- * the {@code NOT NULL} of a column.
+ * {@code ALTER TABLE} ({@code AlterTableStmt} of {@code gram.y}), fork issue #230: adding columns and constraints, and changing
+ * the default and the {@code NOT NULL} of a column.
  *
  * @param position where the statement starts
  * @param table    the name of the table, one or two parts
@@ -34,7 +34,11 @@ public record AlterTableStatement(SourcePosition position, List<Name> table, boo
     implements Statement {
 
   /** One change of a table. */
-  public sealed interface Action permits AddColumn, SetDefault, SetNotNull {
+  public sealed interface Action permits AddColumn, AddConstraint, SetDefault, SetNotNull {
+  }
+
+  /** {@code ADD [CONSTRAINT name]} a table constraint: {@code UNIQUE}, {@code PRIMARY KEY}, {@code FOREIGN KEY} or {@code CHECK}. */
+  public record AddConstraint(CreateTableStatement.Constraint constraint) implements Action {
   }
 
   /** {@code ADD [COLUMN] [IF NOT EXISTS]} a column definition. */

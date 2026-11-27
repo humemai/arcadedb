@@ -159,11 +159,11 @@ public final class CreateTablePlan {
   }
 
   /** A {@code UNIQUE} or {@code PRIMARY KEY}, with the name the statement gave it, {@code null} when it gave none. */
-  private record Key(boolean primary, String name, List<String> columns, SourcePosition position) {
+  record Key(boolean primary, String name, List<String> columns, SourcePosition position) {
   }
 
   /** A foreign key as written: of one column, or of several for a table constraint. */
-  private record ForeignKey(List<String> columns, String name, CreateTableStatement.Reference reference) {
+  record ForeignKey(List<String> columns, String name, CreateTableStatement.Reference reference) {
   }
 
   /** What one end of a link table refers to: the vertex table, the column of its key ({@code null} for the record id), the rules. */
@@ -294,7 +294,7 @@ public final class CreateTablePlan {
    * A foreign key between columns, which the engine checks (fork issue #228): it refers to the columns of a primary key or a unique
    * index, of the table itself or of another one, with types that compare as the referring ones do.
    */
-  private com.arcadedb.schema.ForeignKey checkedKey(final String table, final Map<String, Spec> columns, final List<Key> unique,
+  com.arcadedb.schema.ForeignKey checkedKey(final String table, final Map<String, Spec> columns, final List<Key> unique,
       final ForeignKey key, final String name) {
     final CreateTableStatement.Reference reference = key.reference();
     final com.arcadedb.schema.ForeignKey.Action onDelete = action(reference.onDelete(), reference.position());
@@ -302,7 +302,8 @@ public final class CreateTablePlan {
     String target = tableName(reference.table(), reference.position());
     final List<String> properties = new ArrayList<>();
     final List<ColumnType> types = new ArrayList<>();
-    if (target.equals(table)) {
+    // a table that refers to itself is read from the statement while it is not there yet, and as any other afterwards
+    if (target.equals(table) && !database.getSchema().existsType(table)) {
       final List<String> written = new ArrayList<>(reference.columns().stream().map(Name::value).toList());
       if (written.isEmpty())
         written.addAll(unique.stream().filter(Key::primary).findFirst().orElseThrow(() -> noPrimaryKey(table)).columns());
@@ -387,8 +388,8 @@ public final class CreateTablePlan {
         "there is no unique constraint matching given keys for referenced table \"" + table + "\"");
   }
 
-  /** Adds the index over the referring columns of each key, unless one is there, and declares the keys. */
-  private void createForeignKeys(final DocumentType type, final List<com.arcadedb.schema.ForeignKey> checked) {
+  /** Adds the index over the referring columns of each key, unless one is there, and declares the keys with those there are. */
+  void createForeignKeys(final DocumentType type, final List<com.arcadedb.schema.ForeignKey> checked) {
     if (checked.isEmpty())
       return;
     for (final com.arcadedb.schema.ForeignKey key : checked) {
@@ -399,7 +400,11 @@ public final class CreateTablePlan {
       if (type.getAllIndexes(false).stream().noneMatch(index -> index.getPropertyNames().equals(properties)))
         type.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, false, properties.toArray(new String[0]));
     }
-    type.setCustomValue(com.arcadedb.schema.ForeignKey.CUSTOM_KEY, com.arcadedb.schema.ForeignKey.toJson(checked));
+    final Object declared = type.getCustomValue(com.arcadedb.schema.ForeignKey.CUSTOM_KEY);
+    final List<com.arcadedb.schema.ForeignKey> all = new ArrayList<>(
+        declared == null ? List.of() : com.arcadedb.schema.ForeignKey.fromJson(declared.toString()));
+    all.addAll(checked);
+    type.setCustomValue(com.arcadedb.schema.ForeignKey.CUSTOM_KEY, com.arcadedb.schema.ForeignKey.toJson(all));
   }
 
   private static PostgreSQLResultSet answer(final String step) {

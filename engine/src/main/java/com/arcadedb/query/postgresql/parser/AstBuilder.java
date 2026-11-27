@@ -142,7 +142,9 @@ final class AstBuilder {
           own.add(columnConstraint(option));
         actions.add(new AlterTableStatement.AddColumn(add.EXISTS() != null,
             new CreateTableStatement.Column(position(add.column.getStart()), name(add.column), typeName(add.typename()), own)));
-      } else if (action instanceof SetColumnDefaultActionContext set)
+      } else if (action instanceof AddConstraintActionContext add)
+        actions.add(new AlterTableStatement.AddConstraint(tableConstraint(add.tableConstraint())));
+      else if (action instanceof SetColumnDefaultActionContext set)
         actions.add(new AlterTableStatement.SetDefault(name(set.column), bExpression(set.bExpr())));
       else if (action instanceof DropColumnDefaultActionContext drop)
         actions.add(new AlterTableStatement.SetDefault(name(drop.column), null));

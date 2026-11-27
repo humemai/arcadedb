@@ -86,6 +86,7 @@ public final class AstPrinter {
           text.append(' ').append(print(constraint));
         yield text.toString();
       }
+      case AlterTableStatement.AddConstraint add -> "ADD " + print(add.constraint());
       case AlterTableStatement.SetDefault set -> "ALTER COLUMN " + print(set.column())
           + (set.value() == null ? " DROP DEFAULT" : " SET DEFAULT (" + print(set.value()) + ")");
       case AlterTableStatement.SetNotNull set -> "ALTER COLUMN " + print(set.column())

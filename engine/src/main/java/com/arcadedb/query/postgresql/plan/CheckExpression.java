@@ -112,8 +112,13 @@ public final class CheckExpression {
     if (!(StatementParser.parse("SELECT " + text) instanceof SelectStatement select) || select.items().size() != 1
         || !(select.items().get(0) instanceof SelectItem.Projection projection))
       throw new IllegalArgumentException("not an expression: " + text);
+    return compile(declaring.getName(), projection.expression(), declared(declaring, type));
+  }
+
+  /** The columns that a check of the type {@code declaring} reads in the records of {@code type}, by name. */
+  static Function<String, Column> declared(final DocumentType declaring, final DocumentType type) {
     final TableDefinition definition = TableDefinition.of(declaring);
-    return compile(declaring.getName(), projection.expression(), name -> {
+    return name -> {
       final Property property = type.getPolymorphicPropertyIfExists(name);
       if (property == null)
         return null;
@@ -127,7 +132,7 @@ public final class CheckExpression {
           columnType = ColumnType.TIMESTAMPTZ;
       }
       return Column.declaration(name, columnType);
-    });
+    };
   }
 
   /**
