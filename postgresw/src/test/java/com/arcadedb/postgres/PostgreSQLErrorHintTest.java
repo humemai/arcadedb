@@ -50,7 +50,7 @@ class PostgreSQLErrorHintTest extends PostgreSQLSessionAgainstPostgresTestBase {
       List.of("CREATE VIEW v AS SELECT id FROM acc", "WITH clause"),
       List.of("WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM t WHERE x < 3) SELECT x FROM t", "{opencypher}"),
       List.of("SELECT v FROM acc WHERE id = 1 FOR UPDATE", "40001"),
-      List.of("CREATE TABLE gen (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, v text)", "GENERATED"),
+      List.of("CREATE TABLE gen (id bigint PRIMARY KEY, twice bigint GENERATED ALWAYS AS (id * 2) STORED)", "GENERATED"),
       List.of("SELECT make_interval(days => 3)", "interval '3 days'"),
       List.of("SELECT s.x FROM acc, LATERAL (SELECT acc.id AS x) s", "LATERAL"),
       List.of("SELECT '{\"a\": 1}'::jsonb ->> 'a'", "jsonb"),

@@ -154,6 +154,12 @@ final class AstBuilder {
     if (element instanceof DefaultConstraintContext value)
       return new CreateTableStatement.Constraint(position, CreateTableStatement.Kind.DEFAULT, name, List.of(),
           bExpression(value.bExpr()), null);
+    if (element instanceof IdentityColumnConstraintContext identity) {
+      identity.identityOptions.forEach(AstBuilder::requireDefaultOption);
+      return new CreateTableStatement.Constraint(position,
+          identity.generatedWhen() instanceof GeneratedAlwaysContext ? CreateTableStatement.Kind.IDENTITY_ALWAYS
+              : CreateTableStatement.Kind.IDENTITY_BY_DEFAULT, name, List.of(), null, null);
+    }
     final CreateTableStatement.Kind kind;
     if (element instanceof NotNullConstraintContext)
       kind = CreateTableStatement.Kind.NOT_NULL;
@@ -166,6 +172,21 @@ final class AstBuilder {
     else
       throw new IllegalStateException("A constraint the parser did not refuse has no tree: " + element.getText());
     return new CreateTableStatement.Constraint(position, kind, name, List.of(), null, null);
+  }
+
+  /**
+   * An identity column counts from 1 in steps of 1 and does not start over (fork issue #221): an option of its sequence is taken
+   * when it says that, and refused otherwise.
+   */
+  private static void requireDefaultOption(final IdentityOptionContext option) {
+    final SignedIntegerContext value = option instanceof StartOptionContext start ? start.signedInteger()
+        : option instanceof IncrementOptionContext increment ? increment.signedInteger()
+        : option instanceof MinValueOptionContext minimum ? minimum.signedInteger()
+        : option instanceof CacheOptionContext cache ? cache.signedInteger() : null;
+    if (value != null && !"1".equals(value.getText()))
+      throw new PostgreSQLFeatureNotSupportedException("An identity option other than the defaults is not supported by the"
+          + " postgresql language (" + position(option.getStart()) + ")",
+          "Leave the options out: the values start at 1 and increase by 1");
   }
 
   private CreateTableStatement.Constraint tableConstraint(final TableConstraintContext context) {

@@ -23,6 +23,7 @@ import com.arcadedb.query.postgresql.PostgreSQLUndefinedTableException;
 import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.TableReference;
 import com.arcadedb.query.postgresql.catalog.Column;
+import com.arcadedb.query.postgresql.catalog.ColumnType;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.catalog.Table;
 import com.arcadedb.query.postgresql.plan.RelationSource;
@@ -56,8 +57,9 @@ import static com.arcadedb.query.postgresql.plan.infoschema.InfoType.YES_OR_NO;
  * <p><b>What is NULL because the engine has no such information:</b> {@code schemata.schema_owner} and the default character set
  * columns, {@code columns.column_default} (a default of the engine is not part of the relational view, except that a table made by
  * {@code CREATE TABLE} shows the defaults it declared), the collation,
- * character set, domain, scope and interval columns of a column of a table, the start, increment, maximum and minimum of an identity
- * column, {@code columns.maximum_cardinality}, and
+ * character set, domain, scope and interval columns of a column of a table, the start, increment, maximum and minimum of a record
+ * id (a column that {@code CREATE TABLE} declared {@code GENERATED ... AS IDENTITY} has them), {@code columns.maximum_cardinality},
+ * and
  * {@code tables.self_referencing_column_name}, {@code reference_generation}, the user-defined type columns and
  * {@code commit_action}. What is a constant: {@code is_deferrable} and {@code initially_deferred} are {@code NO} (the keys are
  * declared, nothing checks them and nothing defers them), {@code match_option} is {@code NONE} and the update rule is
@@ -214,13 +216,15 @@ public final class InformationSchema {
         ++position;
         final ColumnAttributes a = ColumnAttributes.of(column.type());
         // the record id and the id of an edge are given by the engine and cannot be chosen: GENERATED ALWAYS AS IDENTITY, as
-        // PostgreSQL reports a column of that kind (the start, increment, maximum and minimum of a sequence do not apply)
-        final boolean generated = column.isGeneratedAlways();
+        // PostgreSQL reports a column of that kind (the start, increment, maximum and minimum of a sequence do not apply to
+        // them, and are those of PostgreSQL for a declared identity column, fork issue #221)
+        final String generation = column.identityGeneration();
+        final boolean counted = generation != null && column.kind() == Column.Kind.PROPERTY;
         rows.add(row(view, db, RelationalCatalog.SCHEMA, table.name(), column.name(), position, column.defaultText(),
             yesNo(column.nullable()), a.dataType(), null, a.characterOctetLength(), a.numericPrecision(), a.numericPrecisionRadix(), a.numericScale(),
             a.datetimePrecision(), null, null, null, null, null, null, null, null, null, null, null, db, PG_CATALOG, a.udtName(), null,
-            null, null, null, Integer.toString(position), "NO", yesNo(generated), generated ? "ALWAYS" : null, null, null, null, null,
-            "NO", "NEVER", null, "YES"));
+            null, null, null, Integer.toString(position), "NO", yesNo(generation != null), generation, counted ? "1" : null,
+            counted ? "1" : null, counted ? largest(column.type()) : null, counted ? "1" : null, "NO", "NEVER", null, "YES"));
       }
     }
     for (final View own : VIEWS) {
@@ -236,6 +240,11 @@ public final class InformationSchema {
       }
     }
     return rows;
+  }
+
+  /** {@code identity_maximum} of an identity column of an integer type. */
+  private static String largest(final ColumnType type) {
+    return Long.toString(type == ColumnType.INT2 ? Short.MAX_VALUE : type == ColumnType.INT4 ? Integer.MAX_VALUE : Long.MAX_VALUE);
   }
 
   private static List<Object[]> tableConstraintsRows(final RelationalCatalog catalog) {
