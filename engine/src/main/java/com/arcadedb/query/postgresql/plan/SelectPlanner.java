@@ -56,6 +56,7 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -625,7 +626,12 @@ public class SelectPlanner {
 
   /** Which query a column reference belongs to, for the references of a term of the {@code WHERE} clause of a subquery. */
   private enum Side {
-    NONE, INNER, OUTER, MIXED
+    NONE, INNER, OUTER, MIXED;
+
+    /** The side of what reads this side and {@code other}. */
+    Side and(final Side other) {
+      return other == NONE || other == this ? this : this == NONE ? other : MIXED;
+    }
   }
 
   /**
@@ -680,6 +686,7 @@ public class SelectPlanner {
         ? new JoinPlanner(database, catalog, parameters, joinTables(), joinMemoryCap).plan(select.from(), null).source()
         : planFrom(select.from());
     final RelationScope innerScope = new RelationScope(innerSource.columns(), catalog, subqueryPlanner(), innerSource.outputs());
+    final Sides sides = new Sides(innerScope, outer);
 
     final List<Expression> local = new ArrayList<>();
     final List<Expression> innerKeys = new ArrayList<>();
@@ -690,14 +697,14 @@ public class SelectPlanner {
         local.add(term);
         continue;
       }
-      final Side whole = sideOf(term, innerScope, outer);
+      final Side whole = sides.of(term);
       if (whole == Side.NONE || whole == Side.INNER) {
         local.add(term);
         continue;
       }
       if (term instanceof Expression.BinaryOp equality && equality.operator() == Expression.BinaryOperator.EQUAL) {
-        final Side left = sideOf(equality.left(), innerScope, outer);
-        final Side right = sideOf(equality.right(), innerScope, outer);
+        final Side left = sides.of(equality.left());
+        final Side right = sides.of(equality.right());
         if (left == Side.INNER && right == Side.OUTER) {
           innerKeys.add(equality.left());
           outerKeys.add(equality.right());
@@ -728,7 +735,7 @@ public class SelectPlanner {
     final List<Expression> outerLeaves = new ArrayList<>();
     final List<Expression> tests = new ArrayList<>();
     for (final Expression term : residual)
-      tests.add(splitResidual(term, innerScope, outer, innerLeaves, outerLeaves));
+      tests.add(splitResidual(term, sides, innerLeaves, outerLeaves));
 
     // the subquery that gives the keys and the columns that the residual terms read: its own terms
     final List<SelectItem> items = new ArrayList<>();
@@ -813,13 +820,14 @@ public class SelectPlanner {
    * A term of the {@code WHERE} clause of an {@code EXISTS} subquery that reads the outer query and is no key equality, rewritten
    * so that it reads columns of a combined row: each maximal expression that reads only the subquery's columns becomes {@code __i<k>}
    * (collected in {@code innerLeaves}), each that reads only the outer query's becomes {@code __o<j>} ({@code outerLeaves}), and the
-   * operators between them stay: comparisons, {@code AND}, {@code OR}, {@code NOT}, {@code IS NULL}.
+   * operators between them stay: comparisons, {@code AND}, {@code OR}, {@code NOT}, {@code IS NULL}. A scalar or {@code IN}
+   * subquery is part of one such expression, with every column that it reads ({@link Sides}).
    *
    * @throws PostgreSQLFeatureNotSupportedException for a term that mixes both sides inside any other expression
    */
-  private Expression splitResidual(final Expression term, final RelationScope inner, final ExpressionCompiler outer,
-      final List<Expression> innerLeaves, final List<Expression> outerLeaves) {
-    final Side side = sideOf(term, inner, outer);
+  private Expression splitResidual(final Expression term, final Sides sides, final List<Expression> innerLeaves,
+      final List<Expression> outerLeaves) {
+    final Side side = sides.of(term);
     final var position = term.position();
     if (side == Side.NONE)
       return term;
@@ -830,12 +838,12 @@ public class SelectPlanner {
           + (leaves.size() - 1), true));
     }
     if (term instanceof Expression.BinaryOp binary)
-      return new Expression.BinaryOp(position, binary.operator(), splitResidual(binary.left(), inner, outer, innerLeaves, outerLeaves),
-          splitResidual(binary.right(), inner, outer, innerLeaves, outerLeaves));
+      return new Expression.BinaryOp(position, binary.operator(), splitResidual(binary.left(), sides, innerLeaves, outerLeaves),
+          splitResidual(binary.right(), sides, innerLeaves, outerLeaves));
     if (term instanceof Expression.UnaryOp unary)
-      return new Expression.UnaryOp(position, unary.operator(), splitResidual(unary.operand(), inner, outer, innerLeaves, outerLeaves));
+      return new Expression.UnaryOp(position, unary.operator(), splitResidual(unary.operand(), sides, innerLeaves, outerLeaves));
     if (term instanceof Expression.IsNull isNull)
-      return new Expression.IsNull(position, splitResidual(isNull.operand(), inner, outer, innerLeaves, outerLeaves), isNull.negated());
+      return new Expression.IsNull(position, splitResidual(isNull.operand(), sides, innerLeaves, outerLeaves), isNull.negated());
     throw new PostgreSQLFeatureNotSupportedException("A correlated subquery is supported in EXISTS and NOT EXISTS when a term of its "
         + "WHERE clause that reads a column of the outer query is a comparison, AND, OR or NOT of expressions that each read the "
         + "subquery or the outer query, not both");
@@ -894,32 +902,92 @@ public class SelectPlanner {
         referencesIn(child, out);
   }
 
-  /** Whether the columns an expression reads are all the subquery's, all the outer query's, both, or none. */
-  private static Side sideOf(final Expression expression, final RelationScope inner, final ExpressionCompiler outer) {
-    final List<Expression.ColumnRef> references = new ArrayList<>();
-    referencesIn(expression, references);
-    boolean hasInner = false;
-    boolean hasOuter = false;
-    for (final Expression.ColumnRef reference : references) {
-      // a column that the subquery only hides gives way to one that the query around shows (fork issue #157)
-      if (inner.givesWay(reference, outer)) {
-        outer.compile(reference);
-        hasOuter = true;
-        continue;
+  /**
+   * Says which query the columns that an expression of an {@code EXISTS} subquery reads belong to: the subquery, the query
+   * around it, both, or neither. The columns that a scalar or {@code IN} subquery of the expression reads of either query count
+   * too (fork issue #164): such a subquery is planned with placeholders, and each name that neither it nor a query inside it has
+   * is resolved for the two queries, so it is never looked up in the query around alone.
+   */
+  private final class Sides {
+    private final RelationScope        inner;
+    private final ExpressionCompiler   outer;
+    /** What each subquery reads, found once: a term is asked about again for each of its parts. */
+    private final Map<Statement, Side> subqueries = new IdentityHashMap<>();
+
+    Sides(final RelationScope inner, final ExpressionCompiler outer) {
+      this.inner = inner;
+      this.outer = outer;
+    }
+
+    Side of(final Expression expression) {
+      final SideScope scope = new SideScope(inner, outer);
+      read(expression, scope);
+      return scope.side;
+    }
+
+    private void read(final Expression expression, final SideScope scope) {
+      if (expression instanceof Expression.ColumnRef reference) {
+        scope.column(reference);
+        return;
       }
+      final Statement subquery = switch (expression) {
+        case Expression.ScalarSubquery scalar -> scalar.query();
+        case Expression.InSubquery in -> in.query();
+        default -> null;
+      };
+      if (subquery != null)
+        scope.side = scope.side.and(subqueries.computeIfAbsent(subquery, this::ofSubquery));
+      // of an IN subquery this is its operand
+      for (final Expression child : ExpressionCompiler.children(expression))
+        read(child, scope);
+    }
+
+    private Side ofSubquery(final Statement subquery) {
+      final SideScope scope = new SideScope(inner, outer);
+      inside(OuterBindings.discovering(new ExpressionCompiler(scope, parameters))).planQuery(subquery, false);
+      return scope.side;
+    }
+  }
+
+  /** The two queries as one scope, which remembers in {@link #side} whose columns it was asked for. */
+  private static final class SideScope implements ExpressionCompiler.Scope {
+    private final RelationScope      inner;
+    private final ExpressionCompiler outer;
+    private       Side               side = Side.NONE;
+
+    SideScope(final RelationScope inner, final ExpressionCompiler outer) {
+      this.inner = inner;
+      this.outer = outer;
+    }
+
+    @Override
+    public boolean shows(final Name column) {
+      return inner.shows(column) || outer.shows(column);
+    }
+
+    @Override
+    public Evaluable column(final Expression.ColumnRef reference) {
+      // a column that the subquery only hides gives way to one that the query around shows (fork issue #157)
+      if (inner.givesWay(reference, outer))
+        return around(reference);
       try {
-        inner.column(reference);
-        hasInner = true;
+        final Evaluable own = inner.column(reference);
+        side = side.and(Side.INNER);
+        return own;
       } catch (final PostgreSQLReferenceException notTheSubquerys) {
         try {
-          outer.compile(reference);
+          return around(reference);
         } catch (final PostgreSQLReferenceException neither) {
           throw notTheSubquerys;
         }
-        hasOuter = true;
       }
     }
-    return hasInner && hasOuter ? Side.MIXED : hasOuter ? Side.OUTER : hasInner ? Side.INNER : Side.NONE;
+
+    private Evaluable around(final Expression.ColumnRef reference) {
+      final Evaluable column = outer.compile(reference);
+      side = side.and(Side.OUTER);
+      return column;
+    }
   }
 
   /** The constants of {@code LIMIT} and {@code OFFSET}: no column is in scope. */
