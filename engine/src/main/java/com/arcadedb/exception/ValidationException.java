@@ -53,7 +53,9 @@ public class ValidationException extends ArcadeDBException {
     /** A string holding a character the storage charset cannot encode. */
     ENCODING,
     /** A foreign key, see {@link ForeignKeyException}. */
-    FOREIGN_KEY;
+    FOREIGN_KEY,
+    /** A number with more digits than the precision and scale of its property allow, see {@code TypeModifier}. */
+    OUT_OF_RANGE;
 
     /**
      * Whether the refusal is a rule the schema declares on the property, which a protocol with a code for a violated constraint

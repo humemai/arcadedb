@@ -214,7 +214,8 @@ class PostgresErrorClassificationTest {
       Map.entry(ValidationException.Kind.TYPE, "42804"), //
       Map.entry(ValidationException.Kind.ENCODING, "22021"), //
       Map.entry(ValidationException.Kind.FOREIGN_KEY, "23503"), //
-      Map.entry(ValidationException.Kind.CHECK, "23514")));
+      Map.entry(ValidationException.Kind.CHECK, "23514"), //
+      Map.entry(ValidationException.Kind.OUT_OF_RANGE, "22003")));
 
   // Regression: #11314
   @Test

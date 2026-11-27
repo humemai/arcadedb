@@ -28,6 +28,7 @@ import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.Property;
 import com.arcadedb.schema.Schema;
 import com.arcadedb.schema.Type;
+import com.arcadedb.schema.TypeModifier;
 import com.arcadedb.serializer.BinarySerializer;
 import com.arcadedb.utility.RegexOverAlphabet;
 import com.arcadedb.utility.TimeBoundRegex;
@@ -242,6 +243,10 @@ public class DocumentValidator {
         regexDeadlineComputed = true;
       }
       deferred |= validateFieldInternal(document, entry, regexDeadline);
+      // fork issue #226: the length of a varchar(n) and the scale of a numeric(p,s), for every language that writes, before
+      // the check constraints read the value
+      if (entry.getCustomValue(TypeModifier.CUSTOM_KEY) != null)
+        TypeModifier.apply(document, entry);
     }
 
     // fork issue #227: the check constraints of the type and of its super types, for every language that writes

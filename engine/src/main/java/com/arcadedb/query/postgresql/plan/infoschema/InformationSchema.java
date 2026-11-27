@@ -215,14 +215,15 @@ public final class InformationSchema {
       int position = 0;
       for (final Column column : table.listedColumns()) {
         ++position;
-        final ColumnAttributes a = ColumnAttributes.of(column.type());
+        final ColumnAttributes a = ColumnAttributes.of(column);
         // the record id and the id of an edge are given by the engine and cannot be chosen: GENERATED ALWAYS AS IDENTITY, as
         // PostgreSQL reports a column of that kind (the start, increment, maximum and minimum of a sequence do not apply to
         // them, and are those of PostgreSQL for a declared identity column, fork issue #221)
         final String generation = column.identityGeneration();
         final boolean counted = generation != null && column.kind() == Column.Kind.PROPERTY;
         rows.add(row(view, db, RelationalCatalog.SCHEMA, table.name(), column.name(), position, column.defaultText(),
-            yesNo(column.nullable()), a.dataType(), null, a.characterOctetLength(), a.numericPrecision(), a.numericPrecisionRadix(), a.numericScale(),
+            yesNo(column.nullable()), a.dataType(), ColumnAttributes.characterMaximumLength(column), a.characterOctetLength(),
+            a.numericPrecision(), a.numericPrecisionRadix(), a.numericScale(),
             a.datetimePrecision(), null, null, null, null, null, null, null, null, null, null, null, db, PG_CATALOG, a.udtName(), null,
             null, null, null, Integer.toString(position), "NO", yesNo(generation != null), generation, counted ? "1" : null,
             counted ? "1" : null, counted ? largest(column.type()) : null, counted ? "1" : null, "NO", "NEVER", null, "YES"));

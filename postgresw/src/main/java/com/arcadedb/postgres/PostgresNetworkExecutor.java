@@ -5145,6 +5145,7 @@ public class PostgresNetworkExecutor extends Thread {
         case MANDATORY, NOT_NULL -> "23502";       // not_null_violation
         case MIN, MAX, REGEXP, READONLY, CHECK -> "23514"; // check_violation
         case MAX_LENGTH -> "22001";                // string_data_right_truncation
+        case OUT_OF_RANGE -> "22003";              // numeric_value_out_of_range
         case TYPE -> "42804";                      // datatype_mismatch
         case ENCODING -> "22021";                  // character_not_in_repertoire
         case FOREIGN_KEY -> "23503";               // foreign_key_violation

@@ -36,6 +36,7 @@ import com.arcadedb.schema.MaterializedView;
 import com.arcadedb.schema.MaterializedViewStatus;
 import com.arcadedb.schema.Property;
 import com.arcadedb.schema.Schema;
+import com.arcadedb.schema.TypeModifier;
 import com.arcadedb.security.SecurityHelper;
 
 import java.util.AbstractMap;
@@ -160,10 +161,26 @@ public class PostgresCatalog {
    * A column of a relation: a {@code pg_attribute} row, numbered by its position in the list {@link Context#columnsOf} answers - a
    * declared property of a table, or what the query of a materialized view projects (issue #10799).
    */
-  private record Column(String name, PostgresType type, boolean notNull, Object defaultValue, Identity identity) {
+  private record Column(String name, PostgresType type, boolean notNull, Object defaultValue, Identity identity,
+      TypeModifier modifier) {
     Column(final String name, final PostgresType type, final boolean notNull, final Object defaultValue) {
-      this(name, type, notNull, defaultValue, Identity.NONE);
+      this(name, type, notNull, defaultValue, Identity.NONE, null);
     }
+  }
+
+  /** What PostgreSQL adds to a length, or to a precision and a scale, to make a type modifier. */
+  private static final int TYPMOD_HEADER = 4;
+
+  /** {@code pg_attribute.atttypmod}: -1 for none, else as PostgreSQL encodes a length or a precision and a scale (fork #226). */
+  private static int typeModifierOf(final TypeModifier modifier) {
+    if (modifier == null)
+      return -1;
+    return TYPMOD_HEADER + (modifier.isNumeric() ? modifier.size() << 16 | modifier.scale() & 0x7ff : modifier.size());
+  }
+
+  /** {@code information_schema.columns.character_maximum_length}: the length of a {@code varchar(n)}, else NULL. */
+  private static Integer maximumLength(final TypeModifier modifier) {
+    return modifier == null || modifier.isNumeric() ? null : modifier.size();
   }
 
   /**
@@ -2696,7 +2713,7 @@ public class PostgresCatalog {
 
         final Row row = relationRow(context, type)//
             .with("pg_attribute", attributeValues(oidOf(type.getName()), column.name(), ordinal, pgType, notNull,
-                attributeDefault != null, local, inheritedCount, identity));
+                attributeDefault != null, local, inheritedCount, identity, typeModifierOf(column.modifier())));
         if (table)
           row.with("information_schema.columns", "table_catalog", schema, "table_schema", schema, "table_name",
                 type.getName(), "column_name", column.name(), "ordinal_position", ordinal,//
@@ -2708,10 +2725,16 @@ public class PostgresCatalog {
                 // the record id of the language is GENERATED ALWAYS AS IDENTITY: the engine gives it and a statement cannot
                 "is_identity", identity == Identity.NONE ? "NO" : "YES", "identity_generation",
                 identity.generation(), "is_generated", "NEVER", "is_updatable", "YES",//
-                // no column here declares a length, a precision or a scale, which is PostgreSQL's typmod -1: the figures below
-                // are the ones it answers for a built-in type declared bare
-                "character_octet_length", characterOctetLength(pgType), "numeric_precision", numericPrecision(pgType),
-                "numeric_precision_radix", numericPrecisionRadix(pgType), "numeric_scale", numericScale(pgType),
+                // a column without a length, a precision or a scale has PostgreSQL's typmod -1, and the figures below are the
+                // ones it answers for a built-in type declared bare; a varchar(n) and a numeric(p,s) have their own (fork issue #226)
+                "character_maximum_length", maximumLength(column.modifier()), "character_octet_length",
+                column.modifier() != null && !column.modifier().isNumeric() ? Integer.valueOf(column.modifier().size() * 4)
+                    : characterOctetLength(pgType),
+                "numeric_precision", column.modifier() != null && column.modifier().isNumeric()
+                    ? Integer.valueOf(column.modifier().size()) : numericPrecision(pgType),
+                "numeric_precision_radix", numericPrecisionRadix(pgType), "numeric_scale",
+                column.modifier() != null && column.modifier().isNumeric()
+                    ? Integer.valueOf(column.modifier().scale() & 0x7ff) : numericScale(pgType),
                 "datetime_precision", datetimePrecision(pgType));
 
         if (attributeDefault != null)
@@ -2736,9 +2759,10 @@ public class PostgresCatalog {
    * column itself, and from how many of its direct parents it inherits it (issue #10594).
    */
   private static Object[] attributeValues(final int relationOid, final String name, final int ordinal, final PostgresType pgType,
-      final boolean notNull, final boolean hasDefault, final boolean local, final int inheritedCount, final Identity identity) {
+      final boolean notNull, final boolean hasDefault, final boolean local, final int inheritedCount, final Identity identity,
+      final int typmod) {
     return new Object[] { "attrelid", relationOid, "attname", name, "attnum", ordinal, "atttypid", pgType.code, "attlen",
-        pgType.size, "atttypmod", -1, "attnotnull", notNull, "atthasdef", hasDefault, "attisdropped", Boolean.FALSE, "attislocal",
+        pgType.size, "atttypmod", typmod, "attnotnull", notNull, "atthasdef", hasDefault, "attisdropped", Boolean.FALSE, "attislocal",
         local, "attinhcount", inheritedCount, "attndims", pgType.isArrayType() ? 1 : 0,
         // the collation of the column's type, as PostgreSQL stores it, so a join to pg_type reads one answer (issue #10873)
         "attcollation", PostgresTypeCatalog.collation(pgType), "attstattarget", -1,
@@ -2863,7 +2887,7 @@ public class PostgresCatalog {
         rows.add(describeType(indexRow(context, index)//
             // an index's key columns are its own, as in PostgreSQL: an index inherits nothing
             .with("pg_attribute", attributeValues(index.oid(), index.attributeNames()[k], k + 1, pgType, false, false, true, 0,
-                Identity.NONE)),
+                Identity.NONE, -1)),
                 pgType)
             .complete());
       }
@@ -3133,7 +3157,7 @@ public class PostgresCatalog {
     for (final com.arcadedb.query.postgresql.catalog.Column column : table.listedColumns())
       // the default of a serial column is reported, so that a client knows the key is given (fork issue #221)
       columns.add(new Column(column.name(), PostgresLanguageAnswer.wireType(column.type().typeName()), !column.nullable(),
-          column.isSerial() ? column.defaultText() : null, Identity.of(column)));
+          column.isSerial() ? column.defaultText() : null, Identity.of(column), column.modifier()));
     return columns;
   }
 
@@ -3143,7 +3167,8 @@ public class PostgresCatalog {
     final List<Column> columns = new ArrayList<>(properties.size());
     for (final Property property : properties)
       columns.add(new Column(property.getName(), PostgresType.getTypeFromArcade(property.getType(), property.getOfType()),
-          property.isNotNull() || property.isMandatory(), property.getDefaultValueDefinition()));
+          property.isNotNull() || property.isMandatory(), property.getDefaultValueDefinition(), Identity.NONE,
+          TypeModifier.of(property)));
     return columns;
   }
 
@@ -4358,6 +4383,14 @@ public class PostgresCatalog {
       if (type == PostgresType.BPCHAR && (arguments.size() < 2 || !(arguments.get(1) instanceof Number typmod)
           || typmod.intValue() < 0))
         return type.typeName;
+      // the length of a varchar(n), and the precision and scale of a numeric(p,s), are in the type modifier (fork issue #226)
+      if (arguments.size() > 1 && arguments.get(1) instanceof Number modifier && modifier.intValue() >= TYPMOD_HEADER) {
+        final int value = modifier.intValue() - TYPMOD_HEADER;
+        if (type == PostgresType.VARCHAR)
+          return type.sqlName() + "(" + value + ")";
+        if (type == PostgresType.NUMERIC)
+          return type.sqlName() + "(" + (value >> 16) + "," + (((value & 0x7ff) ^ 1024) - 1024) + ")";
+      }
       return type.sqlName();
     }
 

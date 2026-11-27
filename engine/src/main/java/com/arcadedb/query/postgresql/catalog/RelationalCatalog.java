@@ -30,6 +30,7 @@ import com.arcadedb.schema.Property;
 import com.arcadedb.schema.Schema;
 import com.arcadedb.schema.TimeSeriesType;
 import com.arcadedb.schema.Type;
+import com.arcadedb.schema.TypeModifier;
 import com.arcadedb.schema.VertexType;
 import com.arcadedb.security.SecurityDatabaseUser;
 import com.arcadedb.security.SecurityHelper;
@@ -287,7 +288,9 @@ public final class RelationalCatalog {
       ColumnType type = end.column().type();
       if ((type == ColumnType.TEXT || type == ColumnType.VARCHAR) && draft.definition != null)
         type = draft.definition.textColumns().contains(column.name()) ? ColumnType.TEXT : ColumnType.VARCHAR;
-      draft.columns.set(i, column.referringTo(end.key(), type));
+      // an end that has the type of its key has its length or precision too (fork issue #226)
+      draft.columns.set(i, column.referringTo(end.key(), type)
+          .withModifier(type == end.column().type() ? end.column().modifier() : null));
     }
   }
 
@@ -460,6 +463,9 @@ public final class RelationalCatalog {
       if (columnType == ColumnType.TIMESTAMP && definition != null && definition.timestamptzColumns().contains(property.getName()))
         columnType = ColumnType.TIMESTAMPTZ;
       Column column = new Column(shown, columnType, !property.isNotNull(), Column.Kind.PROPERTY, property.getName(), link);
+      // fork issue #226: the length of a varchar(n), the precision and scale of a numeric(p,s)
+      if (columnType == ColumnType.VARCHAR || columnType == ColumnType.NUMERIC)
+        column = column.withModifier(TypeModifier.of(property));
       if (definition != null) {
         // a default that a later statement dropped is not shown. The definition is asked, because reading the default of a
         // serial or identity column takes its next value (fork issue #221)

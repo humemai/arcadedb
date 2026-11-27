@@ -20,6 +20,7 @@ package com.arcadedb.query.postgresql.plan;
 
 import com.arcadedb.database.Database;
 import com.arcadedb.exception.AlreadyExistsException;
+import com.arcadedb.exception.ValidationException;
 import com.arcadedb.query.postgresql.PostgreSQLAmbiguousIdentifierException;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.PostgreSQLUndefinedColumnException;
@@ -48,6 +49,7 @@ import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.Property;
 import com.arcadedb.schema.Schema;
 import com.arcadedb.schema.Type;
+import com.arcadedb.schema.TypeModifier;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -115,8 +117,14 @@ public final class CreateTablePlan {
   private static final Set<ColumnType> NUMBERS  = Set.of(ColumnType.NUMERIC, ColumnType.FLOAT4, ColumnType.FLOAT8);
   private static final Set<ColumnType> TIMES    = Set.of(ColumnType.DATE, ColumnType.TIMESTAMP, ColumnType.TIMESTAMPTZ);
 
-  /** The type of a column, in the engine and in the view; {@code dimensions} is 0 unless the column is a {@code vector(n)}. */
-  private record Mapped(ColumnType type, Type engine, String ofType, int dimensions) {
+  /**
+   * The type of a column, in the engine and in the view; {@code dimensions} is 0 unless the column is a {@code vector(n)}, and
+   * {@code modifier} is {@code null} unless it is a {@code varchar(n)} or a {@code numeric(p,s)}.
+   */
+  private record Mapped(ColumnType type, Type engine, String ofType, int dimensions, TypeModifier modifier) {
+    Mapped(final ColumnType type, final Type engine, final String ofType, final int dimensions) {
+      this(type, engine, ofType, dimensions, null);
+    }
   }
 
   /** How a column that the engine counts was declared. */
@@ -619,6 +627,9 @@ public final class CreateTablePlan {
             + typeName(column.type()));
       throw unsupportedEnd("An end of another type than its key", spec, referenced, column, reference);
     }
+    // an end has the type of its key, its length or precision too: a text end takes any of them
+    if (own != ColumnType.TEXT && !Objects.equals(spec.mapped.modifier(), column.modifier()))
+      throw unsupportedEnd("An end of another length or precision than its key", spec, referenced, column, reference);
     if (!spec.notNull)
       throw unsupportedEnd("A nullable end of a link table", spec, referenced, column, reference);
     if (spec.literal != null || spec.counted != null)
@@ -686,7 +697,7 @@ public final class CreateTablePlan {
   private static PostgreSQLFeatureNotSupportedException unsupportedEnd(final String what, final Spec spec, final Table referenced,
       final Column column, final CreateTableStatement.Reference reference) {
     final StringBuilder definition = new StringBuilder(Identifier.written(spec.name)).append(' ').append(typeName(column.type()))
-        .append(" NOT NULL REFERENCES ").append(Identifier.written(referenced.name())).append(" (")
+        .append(column.modifier() == null ? "" : "(" + column.modifier().declaration() + ")").append(" NOT NULL REFERENCES ").append(Identifier.written(referenced.name())).append(" (")
         .append(Identifier.written(column.name())).append(')');
     if (reference.onDelete() == CreateTableStatement.Action.CASCADE)
       definition.append(" ON DELETE CASCADE");
@@ -744,10 +755,22 @@ public final class CreateTablePlan {
       throw unsupportedType(type);
     final boolean array = type.arrayDimensions() == 1;
     if (!type.modifiers().isEmpty()) {
-      // the only modifier that writes keep: the dimensions of a vector
+      // fork issue #226: the length of a varchar and the precision and scale of a numeric, which every write keeps
+      if (!array && ("varchar".equals(name) || "numeric".equals(name))) {
+        final PgType base = "numeric".equals(name) ? PgType.NUMERIC : PgType.VARCHAR;
+        final int[] values = ExpressionCompiler.typeModifiers(type, base);
+        final TypeModifier modifier = base == PgType.VARCHAR ? TypeModifier.length(values[0])
+            : TypeModifier.numeric(values[0], values.length > 1 ? values[1] : 0);
+        final Mapped plain = scalarType(name);
+        return new Mapped(plain.type(), plain.engine(), null, 0, modifier);
+      }
+      if (!array && "bpchar".equals(name))
+        throw new PostgreSQLFeatureNotSupportedException("A column of type char(n), which pads its values with spaces, is not"
+            + " supported by the postgresql language (" + type.position() + ")", "Write varchar(n), which keeps the same limit");
+      // the other modifier that writes keep: the dimensions of a vector
       if (array || !"vector".equals(name) || type.modifiers().size() != 1
           || !(type.modifiers().get(0) instanceof Expression.IntegerLiteral size))
-        throw unsupported("A type modifier on a column of type " + name, type.position());
+        throw unsupported("A type modifier on a column of type " + name + (array ? "[]" : ""), type.position());
       if (size.value().signum() <= 0 || size.value().bitLength() > 31 || size.value().intValue() > MAX_DIMENSIONS)
         throw new PostgreSQLEvaluationException("22023", "the dimensions of a vector are between 1 and " + MAX_DIMENSIONS);
       return new Mapped(ColumnType.VECTOR, Type.ARRAY_OF_FLOATS, null, size.value().intValue());
@@ -871,12 +894,31 @@ public final class CreateTablePlan {
     }
     if (value instanceof Double number && !Double.isFinite(number) || value instanceof Float real && !Float.isFinite(real))
       throw unsupported("A DEFAULT that is not a finite number", literal.position());
+    final Object stored = fitted(spec, value, literal.position());
     // the schema keeps a number as a double when it is read back
-    if (value instanceof BigDecimal decimal && BigDecimal.valueOf(decimal.doubleValue()).compareTo(decimal) != 0)
+    if (stored instanceof BigDecimal decimal && BigDecimal.valueOf(decimal.doubleValue()).compareTo(decimal) != 0)
       throw unsupported("A numeric DEFAULT with more digits than a double keeps", literal.position());
     spec.hasDefault = true;
-    spec.defaultValue = value;
+    spec.defaultValue = stored;
+    // as PostgreSQL shows it: the constant as written, before the column rounds or cuts it
     spec.defaultText = defaultText(literal, type, value);
+  }
+
+  /**
+   * A constant default as a column with a length, or a precision and a scale, takes it. PostgreSQL makes the table with a
+   * default that does not fit and refuses each row that takes it, which the language says at {@code CREATE TABLE} instead.
+   */
+  private static Object fitted(final Spec spec, final Object value, final SourcePosition position) {
+    final TypeModifier modifier = spec.mapped.modifier();
+    if (modifier == null || value == null)
+      return value;
+    try {
+      return modifier.assign(value);
+    } catch (final ValidationException e) {
+      throw new PostgreSQLFeatureNotSupportedException("A DEFAULT that does not fit its column is not supported by the"
+          + " postgresql language (" + position + "): " + e.getMessage(),
+          "Write a DEFAULT that fits " + PgType.of(spec.mapped.type()).displayName() + "(" + modifier.declaration() + ")");
+    }
   }
 
   /** A compiler of expressions that read no column. */
@@ -1116,6 +1158,9 @@ public final class CreateTablePlan {
     }
     if (mapped.type() == ColumnType.UUID)
       property.setRegexp(UUID_PATTERN);
+    if (mapped.modifier() != null)
+      // fork issue #226: the engine applies it to the writes of every language
+      property.setCustomValue(TypeModifier.CUSTOM_KEY, mapped.modifier().declaration());
     if (spec.clock)
       // an expression of the sql language, which reads the clock for each record that another language creates
       property.setDefaultValue(ClockDefault.SCHEMA_DEFAULT);

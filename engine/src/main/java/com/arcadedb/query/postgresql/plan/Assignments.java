@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.plan;
 
+import com.arcadedb.exception.ValidationException;
 import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.ColumnType;
 import com.arcadedb.query.postgresql.eval.Casts;
@@ -107,9 +108,22 @@ final class Assignments {
 
   /**
    * The value in the class of the type of the column; {@code from} is {@link PgType#UNKNOWN} for a string literal and for a
-   * parameter whose Java value the column types.
+   * parameter whose Java value the column types. A column with a length, or a precision and a scale, then takes it as the engine
+   * does for every language (fork issue #226): a number rounded to the scale ({@code 22003} when it does not fit), a string of at
+   * most that many characters, spaces over the limit cut off ({@code 22001} otherwise).
    */
   static Object convert(final Object value, final PgType from, final Column column) {
+    final Object converted = converted(value, from, column);
+    if (converted == null || column.modifier() == null)
+      return converted;
+    try {
+      return column.modifier().assign(converted);
+    } catch (final ValidationException e) {
+      throw new PostgreSQLEvaluationException(WriteErrors.validationState(e.getKind()), e.getMessage(), e);
+    }
+  }
+
+  private static Object converted(final Object value, final PgType from, final Column column) {
     if (value == null)
       return null;
     final PgType to = typeOf(column);

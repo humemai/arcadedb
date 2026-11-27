@@ -37,6 +37,7 @@ import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
  * <tr><td>{@code ValidationException} MANDATORY, NOT_NULL</td><td>{@code 23502} not_null_violation</td></tr>
  * <tr><td>{@code ValidationException} MIN, MAX, REGEXP, READONLY</td><td>{@code 23514} check_violation</td></tr>
  * <tr><td>{@code ValidationException} MAX_LENGTH</td><td>{@code 22001} string_data_right_truncation</td></tr>
+ * <tr><td>{@code ValidationException} OUT_OF_RANGE</td><td>{@code 22003} numeric_value_out_of_range</td></tr>
  * <tr><td>{@code ValidationException} TYPE</td><td>{@code 42804} datatype_mismatch</td></tr>
  * <tr><td>{@code ValidationException} ENCODING</td><td>{@code 22021} character_not_in_repertoire</td></tr>
  * </table>
@@ -74,6 +75,7 @@ public final class WriteErrors {
       case MANDATORY, NOT_NULL -> "23502";
       case MIN, MAX, REGEXP, READONLY, CHECK -> "23514";
       case MAX_LENGTH -> "22001";
+      case OUT_OF_RANGE -> "22003";
       case TYPE -> "42804";
       case ENCODING -> "22021";
       case FOREIGN_KEY -> "23503";
