@@ -1,0 +1,107 @@
+#
+# Copyright © 2021-present Arcade Data Ltd (info@arcadedata.com)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
+# SPDX-License-Identifier: Apache-2.0
+#
+
+# Fork only (humemai/arcadedb, PostgreSQL-style SQL prototype): the agent measure (fork issue #265). The statements that an
+# LLM wrote (postgresw/src/test/resources/agentmeasure/corpus.sql) run on PostgreSQL 18, started through Testcontainers, and on
+# the postgresql language of an in-process server, both over JDBC (PostgreSQLAgentMeasureTest). The job summary has the numbers
+# of the run and the statements whose verdict differs from the committed page, and the artifact has what each side answered.
+#
+# The job fails when the measure cannot run to its end, or when docs/postgresql-agent-measure.md is not the page that its
+# committed result gives. It never fails because of an answer of the language. Drop this file when anything goes upstream.
+name: PostgreSQL prototype - agent measure
+
+on:
+  pull_request:
+    branches:
+      - feat/postgresql-prototype
+  push:
+    branches:
+      # the run after a merge: the numbers of the branch, and the Maven cache that the runs of pull requests restore
+      - feat/postgresql-prototype
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    name: Agent statements against PostgreSQL 18
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # pgjdbc sends the zone of its Java process as the zone of the session, on both sides
+      TZ: UTC
+      PGAGENT_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      PGAGENT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      PGAGENT_UV_VERSION: "0.13.4"
+    steps:
+      # the head of a pull request itself, not its merge with the base: the page names the commit that was measured
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up JDK 21 and Maven
+        uses: ./.github/actions/pg-maven-setup
+
+      - name: Install uv
+        run: curl -LsSf "https://astral.sh/uv/${PGAGENT_UV_VERSION}/install.sh" | sh && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # A package-phase build: the in-process server discovers the Gremlin plugin on its class path, which needs the shaded
+      # gremlin jar (see pg-prototype-engine-tests.yml).
+      - name: Run the statements on PostgreSQL 18 and on the postgresql language
+        id: run
+        run: ./mvnw package --batch-mode --errors --show-version -pl postgresw -am "-Dsurefire.includes=**/postgres/PostgreSQLAgentMeasureTest.java" -Dpgagent.measure=true
+
+      - name: Numbers of this run
+        if: ${{ !cancelled() && steps.run.outcome == 'success' }}
+        run: |
+          uv run --no-project --python 3.12 python .github/scripts/pg_agent_measure.py summary postgresw/target/pg-agent-measure > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          sed -n '1,12p' summary.md
+
+      - name: Upload what both sides answered
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pg-agent-measure
+          path: postgresw/target/pg-agent-measure/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # No build and no PostgreSQL file: the script writes the page from the committed result and compares.
+      - name: Check the measure page against its result
+        if: ${{ !cancelled() }}
+        run: uv run --no-project --python 3.12 python .github/scripts/pg_agent_measure.py check
+
+      - name: Upload the test reports of a red run
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pg-agent-measure-test-reports
+          path: postgresw/target/surefire-reports/*
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Where the Maven files came from
+        if: always()
+        run: bash .github/scripts/pg_maven_report.sh
