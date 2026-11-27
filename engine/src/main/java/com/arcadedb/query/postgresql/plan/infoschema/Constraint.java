@@ -20,11 +20,16 @@ package com.arcadedb.query.postgresql.plan.infoschema;
 
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.catalog.Table;
+import com.arcadedb.query.postgresql.plan.CheckExpression;
+import com.arcadedb.schema.CheckConstraint;
+import com.arcadedb.schema.DocumentType;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * A constraint of the relational view, as the four constraint views of {@code information_schema} list it. The catalog already
@@ -57,6 +62,11 @@ record Constraint(String name, String table, String type, List<String> columns, 
   static final String PRIMARY_KEY = "PRIMARY KEY";
   static final String UNIQUE      = "UNIQUE";
   static final String FOREIGN_KEY = "FOREIGN KEY";
+  static final String CHECK       = "CHECK";
+
+  boolean isCheck() {
+    return CHECK.equals(type);
+  }
 
   boolean isForeignKey() {
     return FOREIGN_KEY.equals(type);
@@ -86,6 +96,30 @@ record Constraint(String name, String table, String type, List<String> columns, 
     return key.columns().size() == columns.size() && key.columns().containsAll(columns);
   }
 
+  /** The check constraints of a table, its own and those it inherits (fork issue #227), each with the columns it reads. */
+  private static void checks(final String table, final DocumentType type, final DocumentType declaring,
+      final Set<String> seen, final List<Constraint> out) {
+    if (!seen.add(declaring.getName()))
+      return;
+    final Object value = declaring.getCustomValue(CheckConstraint.CUSTOM_KEY);
+    if (value != null)
+      try {
+        for (final CheckConstraint check : CheckConstraint.fromJson(value.toString())) {
+          List<String> columns = List.of();
+          try {
+            columns = CheckExpression.of(declaring, type, check.expression()).columnNames();
+          } catch (final RuntimeException broken) {
+            // a constraint that cannot be checked is listed without its columns: the writes of its type say why
+          }
+          out.add(new Constraint(check.name(), table, CHECK, columns, null, List.of(), null, null, null, true));
+        }
+      } catch (final RuntimeException unreadable) {
+        // someone changed the value by hand: the writes of the type say so
+      }
+    for (final DocumentType superType : declaring.getSuperTypes())
+      checks(table, type, superType, seen, out);
+  }
+
   /**
    * Every constraint of the catalog: the tables in the order of the catalog (by name), and for each table its primary key, its
    * unique keys and its foreign keys, in the order the catalog gives them.
@@ -106,6 +140,7 @@ record Constraint(String name, String table, String type, List<String> columns, 
             foreignKey.referencedColumns(), keyName(referenced, foreignKey.referencedColumns()), foreignKey.updateRule(),
             foreignKey.deleteRule(), foreignKey.enforced()));
       }
+      checks(table.name(), table.documentType(), table.documentType(), new HashSet<>(), out);
     }
     return out;
   }

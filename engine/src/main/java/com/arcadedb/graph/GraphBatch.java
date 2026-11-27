@@ -40,6 +40,7 @@ import com.arcadedb.index.IndexInternal;
 import com.arcadedb.index.IndexMaintenanceSuspension;
 import com.arcadedb.log.LogManager;
 import com.arcadedb.query.sql.executor.Result;
+import com.arcadedb.schema.CheckConstraint;
 import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.EdgeType;
 import com.arcadedb.schema.Property;
@@ -949,7 +950,9 @@ public class GraphBatch implements AutoCloseable {
   }
 
   private boolean typeAppliesSchemaToEmptyEdge(final String edgeTypeName) {
-    return emptyEdgeSchemaCache.computeIfAbsent(edgeTypeName, name -> edgeType(name).findPropertyAppliedToEmptyRecord() != null);
+    return emptyEdgeSchemaCache.computeIfAbsent(edgeTypeName, name -> edgeType(name).findPropertyAppliedToEmptyRecord() != null
+        // fork issue #227: an edge with no record would escape the check constraints of its type
+        || CheckConstraint.declaredOn(edgeType(name)));
   }
 
   /** The edge type {@code name}, or a clear refusal for a name that is missing or not an edge type. */

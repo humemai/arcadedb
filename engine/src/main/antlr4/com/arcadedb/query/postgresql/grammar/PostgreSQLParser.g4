@@ -159,6 +159,8 @@ columnConstraintElem
   | PRIMARY KEY                             # primaryKeyColumnConstraint
   | DEFAULT bExpr                           # defaultConstraint
   | REFERENCES references                   # referencesColumnConstraint
+  // a check constraint, fork issue #227
+  | CHECK LPAREN aExpr RPAREN               # checkColumnConstraint
   // an identity column, fork issue #221
   | GENERATED generatedWhen AS IDENTITY (LPAREN identityOptions+=identityOption+ RPAREN)?   # identityColumnConstraint
   | unsupportedColumnConstraint skipRest    # otherColumnConstraint
@@ -166,7 +168,7 @@ columnConstraintElem
 
 // GENERATED ALWAYS AS (expression) is a generated column, which the language does not run
 unsupportedColumnConstraint
-  : CHECK | GENERATED ALWAYS AS LPAREN | COLLATE | STORAGE | COMPRESSION | OPTIONS | DEFERRABLE | INITIALLY | ENFORCED | NO
+  : GENERATED ALWAYS AS LPAREN | COLLATE | STORAGE | COMPRESSION | OPTIONS | DEFERRABLE | INITIALLY | ENFORCED | NO
   | NULLS | WITH | USING | NOT DEFERRABLE | NOT ENFORCED
   ;
 
@@ -223,11 +225,12 @@ tableConstraintElem
   : UNIQUE (NULLS DISTINCT)? LPAREN columns+=colId (COMMA columns+=colId)* unsupportedWithoutOverlaps? RPAREN   # uniqueTableConstraint
   | PRIMARY KEY LPAREN columns+=colId (COMMA columns+=colId)* unsupportedWithoutOverlaps? RPAREN                # primaryKeyTableConstraint
   | FOREIGN KEY LPAREN columns+=colId (COMMA columns+=colId)* RPAREN REFERENCES references              # foreignKeyTableConstraint
+  | CHECK LPAREN aExpr RPAREN                                                                           # checkTableConstraint
   | unsupportedTableConstraint skipRest                                                                 # otherTableConstraint
   ;
 
 unsupportedTableConstraint
-  : CHECK | EXCLUDE | NOT NULL | UNIQUE NULLS NOT | UNIQUE USING | PRIMARY KEY USING
+  : EXCLUDE | NOT NULL | UNIQUE NULLS NOT | UNIQUE USING | PRIMARY KEY USING
   ;
 
 unsupportedWithoutOverlaps

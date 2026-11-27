@@ -30,6 +30,7 @@ import com.arcadedb.database.Document;
 import com.arcadedb.database.ProtocolContext;
 import com.arcadedb.database.QueryMetricsRecorder;
 import com.arcadedb.database.TransactionContext;
+import com.arcadedb.exception.CheckConstraintException;
 import com.arcadedb.exception.AlreadyExistsException;
 import com.arcadedb.exception.ArithmeticErrorException;
 import com.arcadedb.exception.CauseChain;
@@ -5133,12 +5134,16 @@ public class PostgresNetworkExecutor extends Thread {
     final ForeignKeyException foreignKey = CauseChain.find(error, ForeignKeyException.class);
     if (foreignKey != null)
       return foreignKey.getSqlState();
+    // fork issue #227: so does a check constraint
+    final CheckConstraintException check = CauseChain.find(error, CheckConstraintException.class);
+    if (check != null)
+      return check.getSqlState();
     final ValidationException refused = CauseChain.find(error, ValidationException.class);
     final ValidationException.Kind kind = refused != null ? refused.getKind() : null;
     if (kind != null)
       return switch (kind) {
         case MANDATORY, NOT_NULL -> "23502";       // not_null_violation
-        case MIN, MAX, REGEXP, READONLY -> "23514"; // check_violation
+        case MIN, MAX, REGEXP, READONLY, CHECK -> "23514"; // check_violation
         case MAX_LENGTH -> "22001";                // string_data_right_truncation
         case TYPE -> "42804";                      // datatype_mismatch
         case ENCODING -> "22021";                  // character_not_in_repertoire

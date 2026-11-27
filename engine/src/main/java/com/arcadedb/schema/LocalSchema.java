@@ -559,6 +559,8 @@ public class LocalSchema implements Schema {
   private final       AtomicLong                             versionSerial                 = new AtomicLong();
   /** The foreign keys as the types last declared them, see {@link #getForeignKeys()}. */
   private volatile    ForeignKeys                            foreignKeys;
+  /** The check constraints as the types last declared them, see {@link #getCheckConstraints()}. */
+  private volatile    CheckConstraints                       checkConstraints;
   private volatile    UnidirectionalFlag                     unidirectionalFlag;
   private final       AtomicLong                             typesChangeSerial             = new AtomicLong();
   private final       Map<String, FunctionLibraryDefinition> functionLibraries             = new ConcurrentHashMap<>();
@@ -7526,6 +7528,17 @@ public class LocalSchema implements Schema {
     // (LocalBucket.fireBeforeReadEvents). A REGISTRY OF ITS OWN WOULD COUNT ITS LISTENERS WHERE NO READ LOOKS, AND THE
     // READS WOULD SKIP THEM
     return ((RecordEventsRegistry) database.getEmbedded().getEvents()).newTypeRegistry();
+  }
+
+  /** The check constraints of the schema (fork issue #227), read again after a change of the types. */
+  public CheckConstraints getCheckConstraints() {
+    final long serial = typesChangeSerial.get();
+    CheckConstraints current = checkConstraints;
+    if (current == null || current.serial() != serial) {
+      current = CheckConstraints.of(serial, this);
+      checkConstraints = current;
+    }
+    return current;
   }
 
   /** The foreign keys of the schema (fork issue #228), resolved again after a change of the types. */

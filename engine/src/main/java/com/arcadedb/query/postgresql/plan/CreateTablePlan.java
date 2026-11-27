@@ -43,6 +43,7 @@ import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
+import com.arcadedb.schema.CheckConstraint;
 import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.Property;
 import com.arcadedb.schema.Schema;
@@ -50,6 +51,7 @@ import com.arcadedb.schema.Type;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -65,7 +67,8 @@ import java.util.Set;
  * RESTRICT or CASCADE, {@code ON UPDATE} NO ACTION or CASCADE), or to the record id, as
  * {@code text NOT NULL REFERENCES a_table (rid) ON DELETE CASCADE}. Every other {@code REFERENCES} is a foreign key between
  * columns, which the engine checks for every language (fork issue #228): it needs a primary key or a unique index over the
- * referenced columns, and the table gets an index over the referring ones.
+ * referenced columns, and the table gets an index over the referring ones. A {@code CHECK} is checked by the engine for every
+ * language too (fork issue #227, {@link CheckExpression}).
  * <p>
  * What a write has to keep goes into the schema, so it holds for every language: the property types, mandatory and not-null for
  * {@code NOT NULL}, a unique index for each {@code UNIQUE} and {@code PRIMARY KEY} (a unique edge type for a key over the two
@@ -192,10 +195,16 @@ public final class CreateTablePlan {
     final Map<String, Spec> columns = new LinkedHashMap<>();
     final List<Key> keys = new ArrayList<>();
     final List<ForeignKey> foreignKeys = new ArrayList<>();
-    for (final CreateTableStatement.Column column : statement.columns())
+    final List<CreateTableStatement.Constraint> written = new ArrayList<>();
+    for (final CreateTableStatement.Column column : statement.columns()) {
       readColumn(table, column, columns, keys, foreignKeys);
+      column.constraints().stream().filter(each -> each.kind() == CreateTableStatement.Kind.CHECK).forEach(written::add);
+    }
     for (final CreateTableStatement.Constraint constraint : statement.constraints())
-      readTableConstraint(constraint, columns, keys, foreignKeys);
+      if (constraint.kind() == CreateTableStatement.Kind.CHECK)
+        written.add(constraint);
+      else
+        readTableConstraint(constraint, columns, keys, foreignKeys);
 
     final Key primary = primaryKey(table, keys);
     if (primary != null)
@@ -247,8 +256,13 @@ public final class CreateTablePlan {
       if (!endKeys.contains(key))
         checked.add(checkedKey(table, columns, unique, key, keyName(table, key, keyNames)));
 
+    final List<CheckConstraint> checks = checks(table, columns, endTables.keySet(), written, keyNames);
     final TableDefinition definition = definition(table, columns, unique, ends, keyNames);
-    create(table, columns, unique, endTables, uniqueEnds, definition, checked);
+    for (final CheckConstraint check : checks)
+      if (definition.primaryKey() != null && definition.primaryKey().name().equals(check.name())
+          || definition.uniqueKeys().stream().anyMatch(key -> key.name().equals(check.name())))
+        throw unsupported("A CHECK with the name " + check.name() + " of a key", statement.position());
+    create(table, columns, unique, endTables, uniqueEnds, definition, checked, checks);
     return answer("CREATE TABLE " + table);
   }
 
@@ -384,6 +398,43 @@ public final class CreateTablePlan {
     return new PostgreSQLResultSet(List.of(), new PostgreSQLResultSet.Plan(List.of(step))).rowless().withAffectedRows(0);
   }
 
+  // ------------------------------------------------------------------------------------------------ check constraints
+
+  /**
+   * The check constraints (fork issue #227), each compiled over the columns of the table, in the order they are written. A name is
+   * the one the statement gives, else the one PostgreSQL would give: {@code table_column_check} for an expression that reads one
+   * column, else {@code table_check}, with a number when it is taken.
+   */
+  private static List<CheckConstraint> checks(final String table, final Map<String, Spec> columns, final Set<String> ends,
+      final List<CreateTableStatement.Constraint> written, final Set<String> foreignKeyNames) {
+    final List<CreateTableStatement.Constraint> inOrder = new ArrayList<>(written);
+    inOrder.sort(Comparator.<CreateTableStatement.Constraint>comparingInt(each -> each.position().line())
+        .thenComparingInt(each -> each.position().column()));
+    final Set<String> taken = new LinkedHashSet<>(foreignKeyNames);
+    final List<CheckConstraint> checks = new ArrayList<>(inOrder.size());
+    for (final CreateTableStatement.Constraint constraint : inOrder) {
+      final CheckExpression compiled = CheckExpression.compile(table, constraint.value(), column -> {
+        if (ends.contains(column))
+          throw unsupported("A CHECK that reads an end of a link table", constraint.position());
+        final Spec spec = columns.get(column);
+        return spec == null ? null : Column.declaration(column, spec.mapped.type());
+      });
+      String name = constraint.name() == null ? null : constraint.name().value();
+      if (name != null) {
+        if (!taken.add(name))
+          throw new PostgreSQLEvaluationException("42710", "check constraint \"" + name + "\" already exists");
+      } else {
+        final String base =
+            table + (compiled.columnNames().size() == 1 ? "_" + compiled.columnNames().get(0) : "") + "_check";
+        name = base;
+        for (int next = 1; !taken.add(name); next++)
+          name = base + next;
+      }
+      checks.add(new CheckConstraint(name, constraint.text()));
+    }
+    return checks;
+  }
+
   // ------------------------------------------------------------------------------------------------ names
 
   private static Identifier identifier(final Name name) {
@@ -467,6 +518,9 @@ public final class CreateTablePlan {
       case UNIQUE -> keys.add(new Key(false, given, List.of(name), constraint.position()));
       case PRIMARY_KEY -> keys.add(new Key(true, given, List.of(name), constraint.position()));
       case FOREIGN_KEY -> foreignKeys.add(new ForeignKey(List.of(name), given, constraint.reference()));
+      case CHECK -> {
+        // read with the table's own checks, once every column is known
+      }
       }
     }
   }
@@ -991,7 +1045,7 @@ public final class CreateTablePlan {
 
   private void create(final String table, final Map<String, Spec> columns, final List<Key> keys,
       final Map<String, End> endTables, final boolean uniqueEnds, final TableDefinition definition,
-      final List<com.arcadedb.schema.ForeignKey> checked) {
+      final List<com.arcadedb.schema.ForeignKey> checked, final List<CheckConstraint> checks) {
     final Schema schema = database.getSchema();
     final boolean edge = !endTables.isEmpty();
     final DocumentType type = edge ? schema.buildEdgeType().withName(table).withUnique(uniqueEnds).create()
@@ -1019,6 +1073,8 @@ public final class CreateTablePlan {
       }
       type.setCustomValue(TableDefinition.CUSTOM_KEY, definition.toJson());
       createForeignKeys(type, checked);
+      if (!checks.isEmpty())
+        type.setCustomValue(CheckConstraint.CUSTOM_KEY, CheckConstraint.toJson(checks));
       made = true;
       created = type;
     } finally {

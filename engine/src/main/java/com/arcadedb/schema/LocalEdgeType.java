@@ -121,6 +121,11 @@ public class LocalEdgeType extends LocalDocumentType implements EdgeType {
    * @param type         the type whose polymorphic properties it would carry: itself, or the super type it is about to extend
    */
   public static void checkCanBeLightweight(final String edgeTypeName, final DocumentType type) {
+    // fork issue #227
+    if (CheckConstraint.declaredOn(type))
+      throw new SchemaException("Edge type '" + edgeTypeName + "' cannot be LIGHTWEIGHT because it declares or inherits a check"
+          + " constraint: a lightweight edge has no record, so the constraint would never be applied to it. Declare the type"
+          + " without LIGHTWEIGHT");
     final Property constraint = type.findPropertyAppliedToEmptyRecord();
     if (constraint == null)
       return;

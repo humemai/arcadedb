@@ -23,6 +23,7 @@ import com.arcadedb.exception.CommandExecutionException;
 import com.arcadedb.exception.ValidationException;
 import com.arcadedb.log.LogManager;
 import com.arcadedb.query.sql.parser.Identifier;
+import com.arcadedb.schema.CheckConstraints;
 import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.Property;
 import com.arcadedb.schema.Schema;
@@ -242,6 +243,11 @@ public class DocumentValidator {
       }
       deferred |= validateFieldInternal(document, entry, regexDeadline);
     }
+
+    // fork issue #227: the check constraints of the type and of its super types, for every language that writes
+    final CheckConstraints checks = document.getDatabase().getSchema().getEmbedded().getCheckConstraints();
+    if (!checks.isEmpty())
+      checks.check(document);
 
     // The document satisfies every existence constraint it has: if it was provisional - created moments ago by this
     // same statement, missing a property a later clause was going to supply (issue #7945) - this is the write that
