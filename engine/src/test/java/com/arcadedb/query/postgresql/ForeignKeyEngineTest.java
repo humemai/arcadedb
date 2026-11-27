@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql;
 
 import com.arcadedb.TestHelper;
+import com.arcadedb.database.DatabaseInternal;
 import com.arcadedb.exception.ConcurrentModificationException;
 import com.arcadedb.exception.ForeignKeyException;
 import com.arcadedb.query.sql.executor.ResultSet;
@@ -65,6 +66,11 @@ class ForeignKeyEngineTest extends TestHelper {
     try (final ResultSet result = database.query("sql", "SELECT count(*) AS c FROM " + from)) {
       return ((Number) result.next().getProperty("c")).longValue();
     }
+  }
+
+  /** The check a statement of the postgresql language runs at its end. */
+  private void checkNow() {
+    ((DatabaseInternal) database).getTransaction().checkForeignKeys();
   }
 
   private void refused(final String language, final String statement) {
@@ -149,7 +155,7 @@ class ForeignKeyEngineTest extends TestHelper {
       // the delete commits first
       database.begin();
       database.command("sql", "INSERT INTO child SET id = 20, pid = 2").close();
-      database.getTransaction().checkForeignKeys();
+      checkNow();
       other.submit(() -> write("sql", "DELETE FROM parent WHERE id = 2")).get(60, TimeUnit.SECONDS);
       assertThatThrownBy(() -> database.commit()).isInstanceOf(ConcurrentModificationException.class);
       assertThat(count("child WHERE pid = 2")).isZero();
@@ -158,7 +164,7 @@ class ForeignKeyEngineTest extends TestHelper {
       write("sql", "INSERT INTO parent SET id = 3");
       database.begin();
       database.command("sql", "DELETE FROM parent WHERE id = 3").close();
-      database.getTransaction().checkForeignKeys();
+      checkNow();
       other.submit(() -> write("sql", "INSERT INTO child SET id = 21, pid = 3")).get(60, TimeUnit.SECONDS);
       assertThatThrownBy(() -> database.commit()).isInstanceOf(ConcurrentModificationException.class);
       assertThat(count("parent WHERE id = 3")).isEqualTo(1);
@@ -166,7 +172,7 @@ class ForeignKeyEngineTest extends TestHelper {
       // two transactions that add records referring to one record do not conflict
       database.begin();
       database.command("sql", "INSERT INTO child SET id = 22, pid = 3").close();
-      database.getTransaction().checkForeignKeys();
+      checkNow();
       other.submit(() -> write("sql", "INSERT INTO child SET id = 23, pid = 3")).get(60, TimeUnit.SECONDS);
       database.commit();
       assertThat(count("child WHERE pid = 3")).isEqualTo(3);
