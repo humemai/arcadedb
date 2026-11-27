@@ -529,6 +529,12 @@ public final class Numbers {
     return new PostgreSQLEvaluationException("22003", "value out of range: " + what);
   }
 
+  /** {@code 22003} for a {@code numeric} with more digits before the point than the type holds. */
+  static void checkIntegerDigits(final BigDecimal value) {
+    if (value.signum() != 0 && (long) value.precision() - value.scale() > MAX_INTEGER_DIGITS)
+      throw numericOverflow();
+  }
+
   private static PostgreSQLEvaluationException numericOverflow() {
     return new PostgreSQLEvaluationException("22003", "value overflows numeric format");
   }

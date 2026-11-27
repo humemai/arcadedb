@@ -39,7 +39,10 @@ public final class Functions {
    * {@code round(numeric [, digits])}: half away from zero, a negative number of digits rounds to tens, hundreds and so on.
    */
   public static BigDecimal round(final BigDecimal value, final int digits) {
-    return Numbers.normalizeScale(value.setScale(digits, RoundingMode.HALF_UP));
+    final BigDecimal rounded = value.setScale(digits, RoundingMode.HALF_UP);
+    // rounding up left of the point can give one digit more than numeric holds
+    Numbers.checkIntegerDigits(rounded);
+    return Numbers.normalizeScale(rounded);
   }
 
   /** {@code round(float8)}: half to even, as the C function {@code rint} that PostgreSQL calls. */
