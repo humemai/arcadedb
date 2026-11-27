@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
+import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.SessionTimeZone;
 import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.TypeName;
@@ -33,6 +34,7 @@ import java.util.List;
 
 import static com.arcadedb.query.postgresql.eval.EvalSupport.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The SQLSTATE of a date, a timestamp, or an interval text that the language does not take (fork issue #200): the code of
@@ -99,7 +101,8 @@ class DateTimeTextTest {
   void aSessionInAnotherZoneIsRefusedWhereAnInstantIsMade() {
     try {
       SessionTimeZone.set("Asia/Seoul");
-      assertThat(sqlState(cast(s("2020-01-08 04:05:06Z"), "timestamptz"))).isEqualTo("0A000");
+      assertThatThrownBy(() -> value(cast(s("2020-01-08 04:05:06Z"), "timestamptz")))
+          .isInstanceOf(PostgreSQLFeatureNotSupportedException.class).hasMessageContaining("SET TIME ZONE 'UTC'");
       assertThat(timestamp("2020-01-08 04:05:06Z")).isNull();
       SessionTimeZone.set("Etc/UTC");
       assertThat(sqlState(cast(s("2020-01-08 04:05:06Z"), "timestamptz"))).isNull();
