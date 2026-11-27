@@ -25,13 +25,17 @@ import com.arcadedb.query.QueryEngine;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
+import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.EdgeType;
+import com.arcadedb.schema.Type;
 import com.arcadedb.schema.VertexType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -148,6 +152,30 @@ class CreateTableTest extends TestHelper {
         "embedding");
   }
 
+  /** {@code date[]} and {@code timestamp[]} are the lists that {@code sql} declares for them (fork issue #155). */
+  @Test
+  void aListOfDatesOrOfTimestampsIsAColumn() {
+    run("CREATE TABLE calendar (cid int PRIMARY KEY, days date[], moments timestamp[] NOT NULL)");
+
+    final DocumentType calendar = database.getSchema().getType("calendar");
+    assertThat(calendar.getProperty("days").getType()).isEqualTo(Type.LIST);
+    assertThat(calendar.getProperty("days").getOfType()).isEqualTo("DATE");
+    assertThat(calendar.getProperty("moments").getType()).isEqualTo(Type.LIST);
+    assertThat(calendar.getProperty("moments").getOfType()).isEqualTo("DATETIME_MICROS");
+    assertThat(lines("SELECT column_name, udt_name, is_nullable FROM information_schema.columns"
+        + " WHERE table_name = 'calendar' ORDER BY ordinal_position"))
+        .containsExactly("cid|int4|NO", "days|_date|YES", "moments|_timestamp|NO");
+
+    run("INSERT INTO calendar VALUES (1, '{2026-01-05,2026-02-01}', ARRAY['2026-01-05 10:20:30.123456'::timestamp])");
+    final Result row = rows("SELECT days, moments FROM calendar").get(0);
+    assertThat(row.<List<Object>>getProperty("days")).containsExactly(LocalDate.of(2026, 1, 5), LocalDate.of(2026, 2, 1));
+    // the record keeps the microsecond
+    assertThat(row.<List<Object>>getProperty("moments"))
+        .containsExactly(LocalDateTime.of(2026, 1, 5, 10, 20, 30, 123_456_000));
+    assertState("INSERT INTO calendar (cid, moments) VALUES (2, NULL)", "23502");
+    assertState("INSERT INTO calendar (cid) VALUES (2)", "23502");
+  }
+
   @Test
   void anEdgeTableNeedsTablesWithAColumnId() {
     run("CREATE TABLE tag (name text)");
@@ -195,6 +223,8 @@ class CreateTableTest extends TestHelper {
   @ValueSource(strings = { "CREATE TEMP TABLE t (a int)", "CREATE UNLOGGED TABLE t (a int)", "CREATE TABLE t ()",
       "CREATE TABLE t (a serial)", "CREATE TABLE t (a uuid)", "CREATE TABLE t (a timestamptz)", "CREATE TABLE t (a char(3))",
       "CREATE TABLE t (a varchar(5))", "CREATE TABLE t (a numeric(10, 2))", "CREATE TABLE t (a int[][])",
+      "CREATE TABLE t (a timestamptz[])", "CREATE TABLE t (a date[][])", "CREATE TABLE t (a date[] UNIQUE)",
+      "CREATE TABLE t (a timestamp[] DEFAULT '{}')",
       "CREATE TABLE t (a int CHECK (a > 0))", "CREATE TABLE t (a int, CHECK (a > 0))",
       "CREATE TABLE t (a int GENERATED ALWAYS AS IDENTITY)", "CREATE TABLE t (a int COLLATE \"C\")",
       "CREATE TABLE t (a int UNIQUE DEFERRABLE)", "CREATE TABLE t (a int, UNIQUE (a) DEFERRABLE)",
