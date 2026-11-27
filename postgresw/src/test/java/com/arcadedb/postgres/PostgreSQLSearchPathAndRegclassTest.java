@@ -65,17 +65,19 @@ class PostgreSQLSearchPathAndRegclassTest extends PostgreSQLSideBySideTestBase {
     try (final GenericContainer<?> container = startPostgres();
         final Connection postgres = postgres(container, "");
         final Connection arcade = arcade("")) {
-      same(postgres, arcade, "SHOW search_path");
+      // by value: SHOW sends varchar here and text on PostgreSQL
+      final String show = "SHOW search_path";
+      sameValues(postgres, arcade, show);
       for (final String path : PATHS) {
         both(postgres, arcade, path);
-        same(postgres, arcade, "SHOW search_path");
+        sameValues(postgres, arcade, show);
       }
       // SET LOCAL lasts until the transaction ends
       for (final String statement : List.of("BEGIN", "SET LOCAL search_path TO app, public"))
         both(postgres, arcade, statement);
-      same(postgres, arcade, "SHOW search_path");
+      sameValues(postgres, arcade, show);
       both(postgres, arcade, "ROLLBACK");
-      same(postgres, arcade, "SHOW search_path");
+      sameValues(postgres, arcade, show);
 
       both(postgres, arcade, "CREATE TABLE person (id bigint PRIMARY KEY, name text)");
       for (final String query : FOUND)
