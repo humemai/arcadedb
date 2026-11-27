@@ -49,7 +49,9 @@ public class ValidationException extends ArcadeDBException {
     /** A value of a type the property does not take: another type, a link to another type, an embedded document of another type. */
     TYPE,
     /** A string holding a character the storage charset cannot encode. */
-    ENCODING;
+    ENCODING,
+    /** A foreign key, see {@link ForeignKeyException}. */
+    FOREIGN_KEY;
 
     /**
      * Whether the refusal is a rule the schema declares on the property, which a protocol with a code for a violated constraint

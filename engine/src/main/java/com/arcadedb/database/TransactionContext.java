@@ -4544,6 +4544,23 @@ public class TransactionContext implements Transaction {
     // Issue #12483: the values of the relationships this transaction created are final now, the SET that followed a CREATE included
     markRelationshipsOfIndexedTypes();
 
+    // Fork issue #228: the referential actions and the checks of the foreign keys, while the transaction can still write and read
+    // its own view. The files of the referenced records are locked with the others
+    final ForeignKeyChecks foreignKeys = indexChanges.getForeignKeyChecks();
+    IntHashSet referencedFiles = null;
+    if (foreignKeys != null)
+      try {
+        if (!isLeader)
+          // the second check is only safe where the commits are ordered
+          throw new TransactionException("A commit that starts on a replica cannot write what a foreign key has to check:"
+              + " run the transaction on the leader");
+        foreignKeys.checkStatement();
+        referencedFiles = foreignKeys.referencedFiles();
+      } catch (final RuntimeException e) {
+        rollback();
+        throw e;
+      }
+
     // Acquire file locks BEFORE processing updatedRecords so that updateRecordNoLock
     // (which loads pages and follows multi-page record chunk chains) is serialized.
     // Without this, concurrent updateRecordNoLock calls could both load the same page
@@ -4576,6 +4593,8 @@ public class TransactionContext implements Transaction {
       // re-applied the second onto it through the equal-version repair path (#4926), splicing two partial
       // page images together and dropping the records the first delta carried.
       final IntHashSet modifiedFiles = lockFilesFromChanges();
+      if (referencedFiles != null)
+        referencedFiles.forEach(modifiedFiles::add);
 
       // checkExplicitLocks nulls explicitLockedFiles on success, so remember the mode now for the
       // late-joiner check further down (#4937): otherwise that check always sees null and would
@@ -4653,6 +4672,10 @@ public class TransactionContext implements Transaction {
       // no version check backs is repeated under the new set.
       if (relockForLateJoiningFiles(explicitLockMode))
         checkUnidirectionalEdgesAgainstConcurrentDeletes();
+
+      // Fork issue #228: under the locks this commit keeps to its end, and before its own index changes reach the pages
+      if (foreignKeys != null)
+        foreignKeys.checkCommitted();
 
       // COMMIT INDEX CHANGES: always, on whichever node originates this commit (#6964) - see the note on
       // indexChangesReplayed above.
@@ -5721,6 +5744,18 @@ public class TransactionContext implements Transaction {
     final PaginatedComponent component = (PaginatedComponent) database.getSchema().getFileByIdIfExists(fileId);
     if (component instanceof LSMTreeIndexAbstract)
       indexChanges.removeIndex(component.getName());
+  }
+
+  /**
+   * Runs the referential actions of the foreign keys for what was written since the last call, and checks it, as PostgreSQL does at
+   * the end of a statement (fork issue #228). The commit does the same for what no call has checked.
+   *
+   * @throws com.arcadedb.exception.ForeignKeyException when a key does not hold
+   */
+  public void checkForeignKeys() {
+    final ForeignKeyChecks checks = indexChanges.getForeignKeyChecks();
+    if (checks != null && status == STATUS.BEGUN)
+      checks.checkStatement();
   }
 
   public TransactionIndexContext getIndexChanges() {

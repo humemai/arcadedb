@@ -42,6 +42,7 @@ import com.arcadedb.exception.TypeMismatchException;
 import com.arcadedb.exception.ImplicitTransactionRequiredException;
 import com.arcadedb.exception.ObjectInUseException;
 import com.arcadedb.exception.UnknownFunctionException;
+import com.arcadedb.exception.ForeignKeyException;
 import com.arcadedb.exception.ValidationException;
 import com.arcadedb.exception.ValueOutOfRangeException;
 import com.arcadedb.graph.Edge;
@@ -4982,6 +4983,10 @@ public class PostgresNetworkExecutor extends Thread {
    * sit anywhere below a refusal that says more.
    */
   private static String validationSqlState(final Throwable error) {
+    // fork issue #228: a foreign key says which SQLSTATE PostgreSQL answers with
+    final ForeignKeyException foreignKey = CauseChain.find(error, ForeignKeyException.class);
+    if (foreignKey != null)
+      return foreignKey.getSqlState();
     final ValidationException refused = CauseChain.find(error, ValidationException.class);
     final ValidationException.Kind kind = refused != null ? refused.getKind() : null;
     if (kind != null)
@@ -4991,6 +4996,7 @@ public class PostgresNetworkExecutor extends Thread {
         case MAX_LENGTH -> "22001";                // string_data_right_truncation
         case TYPE -> "42804";                      // datatype_mismatch
         case ENCODING -> "22021";                  // character_not_in_repertoire
+        case FOREIGN_KEY -> "23503";               // foreign_key_violation
       };
     if (CauseChain.contains(error, ValueOutOfRangeException.class))
       return "22003";                              // numeric_value_out_of_range
