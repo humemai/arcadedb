@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql.plan;
 
 import com.arcadedb.database.Database;
+import com.arcadedb.exception.AlreadyExistsException;
 import com.arcadedb.query.postgresql.PostgreSQLAmbiguousIdentifierException;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.ast.CreateTableStatement;
@@ -130,7 +131,7 @@ public final class CreateTablePlan {
     if (exists(statement.table().get(statement.table().size() - 1))) {
       if (statement.ifNotExists())
         return answer("CREATE TABLE " + table + ": the table exists, nothing to do");
-      throw duplicateRelation(table);
+      throw PostgreSQLEvaluationException.duplicateRelation(AlreadyExistsException.Kind.TYPE, table);
     }
     if (statement.columns().isEmpty())
       throw unsupported("A table with no column", statement.position());
@@ -507,8 +508,10 @@ public final class CreateTablePlan {
       final String name = key.name() != null ? key.name()
           : key.primary() ? table + "_pkey" : table + "_" + String.join("_", key.columns()) + "_key";
       // a key is an index, and an index is a relation of its own in PostgreSQL
-      if (key.name() != null && (name.equals(table) || database.getSchema().existsType(name)) || !names.add(name))
-        throw duplicateRelation(name);
+      final boolean typeName = key.name() != null && (name.equals(table) || database.getSchema().existsType(name));
+      if (typeName || !names.add(name))
+        throw PostgreSQLEvaluationException.duplicateRelation(
+            typeName ? AlreadyExistsException.Kind.TYPE : AlreadyExistsException.Kind.INDEX, name);
       if (key.primary())
         primary = new Table.Key(name, key.columns());
       else
@@ -518,8 +521,7 @@ public final class CreateTablePlan {
     for (final Map.Entry<String, ForeignKey> end : ends.entrySet()) {
       final String name = end.getValue().name() != null ? end.getValue().name() : table + "_" + end.getKey() + "_fkey";
       if (!names.add(name))
-        throw new PostgreSQLEvaluationException("42710",
-            "constraint \"" + name + "\" for relation \"" + table + "\" already exists");
+        throw PostgreSQLEvaluationException.duplicateConstraint(name, table);
       foreignKeys.put(end.getKey(), name);
     }
     final Map<String, String> defaults = new LinkedHashMap<>();
@@ -582,10 +584,6 @@ public final class CreateTablePlan {
   }
 
   // ------------------------------------------------------------------------------------------------ errors
-
-  private static PostgreSQLEvaluationException duplicateRelation(final String name) {
-    return new PostgreSQLEvaluationException("42P07", "relation \"" + name + "\" already exists");
-  }
 
   private static PostgreSQLEvaluationException conflictingNull(final String table, final String column) {
     return new PostgreSQLEvaluationException("42601",

@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
+import com.arcadedb.exception.AlreadyExistsException;
 import com.arcadedb.exception.CommandExecutionException;
 
 /**
@@ -28,7 +29,8 @@ import com.arcadedb.exception.CommandExecutionException;
  * <p>
  * An error of this class is the statement's, a client error on every protocol ({@link com.arcadedb.exception.ErrorCategory}),
  * except a refusal for resources, see {@link #isStatementError()}. One that stands for an exception of the engine (a duplicate
- * key, a concurrent update, a violated constraint) keeps it as its cause, so it is classified as that exception is.
+ * key, a concurrent update, a violated constraint, a taken name) keeps it as its cause, so it is classified as that exception
+ * is.
  *
  * <table>
  * <caption>The SQLSTATEs of this class</caption>
@@ -45,6 +47,8 @@ import com.arcadedb.exception.CommandExecutionException;
  * <tr><td>{@code 42725}</td><td>ambiguous_function: {@code unknown + unknown}</td></tr>
  * <tr><td>{@code 42803}</td><td>grouping_error</td></tr>
  * <tr><td>{@code 42P02}</td><td>undefined_parameter: {@code $2} with one value bound</td></tr>
+ * <tr><td>{@code 42P07}, {@code 42710}</td><td>duplicate_table, duplicate_object: a relation or a constraint under a taken
+ * name</td></tr>
  * <tr><td>{@code 0A000}</td><td>feature_not_supported: a type or function outside the subset</td></tr>
  * </table>
  */
@@ -113,6 +117,26 @@ public class PostgreSQLEvaluationException extends CommandExecutionException {
       out.append(i > 0 ? ", " : "").append(arguments[i].displayName());
     return new PostgreSQLEvaluationException("42883", out.append(") does not exist. Hint: No function matches the given name "
         + "and argument types. You might need to add explicit type casts.").toString());
+  }
+
+  /**
+   * {@code 42P07}: {@code relation "x" already exists}.
+   *
+   * @param holder the kind of object that holds the name
+   */
+  public static PostgreSQLEvaluationException duplicateRelation(final AlreadyExistsException.Kind holder, final String name) {
+    return taken("42P07", new AlreadyExistsException(holder, "relation \"" + name + "\" already exists"));
+  }
+
+  /** {@code 42710}: {@code constraint "x" for relation "y" already exists}. */
+  public static PostgreSQLEvaluationException duplicateConstraint(final String name, final String table) {
+    return taken("42710", new AlreadyExistsException(AlreadyExistsException.Kind.CONSTRAINT,
+        "constraint \"" + name + "\" for relation \"" + table + "\" already exists"));
+  }
+
+  /** A taken name keeps the engine's exception for it as its cause: every protocol answers that one as a conflict. */
+  private static PostgreSQLEvaluationException taken(final String sqlState, final AlreadyExistsException cause) {
+    return new PostgreSQLEvaluationException(sqlState, cause.getMessage(), cause);
   }
 
   /** {@code 42804}. */

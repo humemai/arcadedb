@@ -20,9 +20,10 @@
 # Fork only (humemai/arcadedb, PostgreSQL-style SQL prototype): the fast loop. mvn-test.yml builds a Docker image and runs the
 # whole suite, which takes the better part of an hour; this runs only the tests of the postgresql packages: the engine tests (a
 # build of the engine module and a few seconds of tests) and the tests of the same packages in postgresw, which compare the engine
-# with the wire module (a build of the modules postgresw needs). Two jobs, side by side, on every push to a feat/pg-* branch
-# and to the prototype branch, and on every pull request into the prototype branch. The full suite is started by hand
-# (mvn-test.yml, whose modules shard of unit-tests runs the postgresw tests too). Drop this file when anything goes upstream.
+# with the wire module (a build of the modules postgresw needs); and the census module, whose checks read the classes of every
+# module (a build of all of them). Three jobs, side by side, on every push to a feat/pg-* branch and to the prototype branch,
+# and on every pull request into the prototype branch. The full suite is started by hand (mvn-test.yml, whose modules shard of
+# unit-tests runs the postgresw tests and the censuses too). Drop this file when anything goes upstream.
 name: PostgreSQL prototype - engine tests
 
 on:
@@ -120,6 +121,27 @@ jobs:
           path: postgresw/target/pgwire/
           if-no-files-found: ignore
           retention-days: 30
+
+      - name: Where the Maven files came from
+        if: always()
+        run: bash .github/scripts/pg_maven_report.sh
+
+  # The censuses range over the compiled classes of every module, the postgresql packages among them, and the two jobs above run
+  # none of them: a pull request with refusals or a schema walk that a census rejects was green (fork issue #160). A census fails
+  # when a module is missing from its class path, so -am builds them all from this tree; the includes pattern selects the tests of
+  # the census module.
+  census-tests:
+    name: Censuses over every module
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK 21 and Maven
+        uses: ./.github/actions/pg-maven-setup
+
+      - name: Run the census module
+        run: ./mvnw package --batch-mode --errors --show-version -pl census -am "-Dsurefire.includes=**/census/**/*Test.java"
 
       - name: Where the Maven files came from
         if: always()

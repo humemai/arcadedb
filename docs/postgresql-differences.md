@@ -53,6 +53,7 @@ CREATE TABLE knows (
 | Keys over an end of an edge | any | only `(source_id, target_id)`, together |
 | Transactions | a rollback takes a new table back | the engine's schema is not transactional, so `CREATE TABLE` is refused in a transaction block, also one that a message of several statements opens on the wire |
 | Names | `person` and `"Person"` are two tables | an unquoted name that finds a table in another case counts as taken (`42P07`) |
+| A taken name | `42P07`, or `42710` for a constraint | the same SQLSTATE, also from `CREATE INDEX`. As for a taken name in `sql`, every protocol of ArcadeDB answers it as a conflict: HTTP with 409 and `AlreadyExistsException` |
 | Column types | all, with modifiers | `bool`, `int2`, `int4`, `int8`, `float4`, `float8`, `numeric`, `text`, `varchar`, `bytea`, `date`, `timestamp`, `jsonb`, `vector` and `vector(n)`, and arrays of `bool`, `int4`, `int8`, `float4`, `float8`, `numeric`, `bytea`, `text`, `date`, and `timestamp`. No other type modifier |
 | A `jsonb` column | any JSON | a JSON object; an array or a scalar is refused when it is written |
 | Constraints | all | `NULL`, `NOT NULL`, `UNIQUE`, `PRIMARY KEY`, `DEFAULT`. No `CHECK`, `EXCLUDE`, `serial`, identity or generated columns, deferrable constraints, `NULLS NOT DISTINCT`, or table options (`TEMP`, `INHERITS`, `PARTITION BY`, `LIKE`, `AS`, `WITH`) |
