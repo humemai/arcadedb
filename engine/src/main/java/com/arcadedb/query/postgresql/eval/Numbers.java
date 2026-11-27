@@ -20,6 +20,7 @@ package com.arcadedb.query.postgresql.eval;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.MathContext;
 import java.math.RoundingMode;
 
 /**
@@ -35,15 +36,24 @@ import java.math.RoundingMode;
  * the dividend, as in Java.</li>
  * <li>{@code numeric} is a {@link BigDecimal}: sums keep the larger scale, products the sum of the scales, and a quotient has the
  * scale of {@code select_div_scale} in {@code numeric.c}: at least 16 significant digits, rounded half away from zero.</li>
+ * <li>A {@code numeric} power has the scale, the overflow and the underflow of {@code power_var_int} in {@code numeric.c}.</li>
  * <li>Floating point follows IEEE except where PostgreSQL raises {@code 22003} for an overflow or an underflow of finite
  * operands and {@code 22012} for a division by zero. {@code NaN} equals {@code NaN} and is greater than every other value.</li>
  * </ul>
  */
 public final class Numbers {
   /** {@code NUMERIC_MIN_SIG_DIGITS} of {@code numeric.c}. */
-  private static final int MIN_SIGNIFICANT_DIGITS = 16;
+  private static final int        MIN_SIGNIFICANT_DIGITS = 16;
   /** {@code NUMERIC_MAX_DISPLAY_SCALE}. */
-  private static final int MAX_DISPLAY_SCALE      = 1000;
+  private static final int        MAX_DISPLAY_SCALE      = 1000;
+  /** {@code (NUMERIC_WEIGHT_MAX + 1) * DEC_DIGITS}: the most digits that a {@code numeric} has before its decimal point. */
+  private static final int        MAX_INTEGER_DIGITS     = 32_768 * 4;
+  /** {@code NUMERIC_MAX_RESULT_SCALE * 3}: the largest natural logarithm of a power whose exponent is not an {@code int4}. */
+  private static final int        MAX_LONG_POWER_LOG     = 6_000;
+  private static final double     LN_10                  = Math.log(10.0);
+  private static final BigDecimal HALF                   = new BigDecimal("0.5");
+  private static final BigDecimal TWO                    = BigDecimal.valueOf(2);
+  private static final BigDecimal MAX_INT_EXPONENT       = BigDecimal.valueOf(Integer.MAX_VALUE);
 
   private Numbers() {
   }
@@ -291,22 +301,11 @@ public final class Numbers {
 
   /**
    * {@code ^}: {@code float8} for two numbers that are not both {@code numeric}, which the compiler converts first. For
-   * {@code numeric} the exponent has to be a non-negative integer, other exponents are outside the subset.
+   * {@code numeric} see {@link #powerNumeric}.
    */
   public static Object power(final PgType type, final Object a, final Object b) {
-    if (type == PgType.NUMERIC) {
-      final BigDecimal base = (BigDecimal) a;
-      final BigDecimal exponent = (BigDecimal) b;
-      final int power;
-      try {
-        power = exponent.intValueExact();
-      } catch (final ArithmeticException e) {
-        throw PostgreSQLEvaluationException.unsupported("numeric ^ numeric is supported for an integer exponent only");
-      }
-      if (power < 0)
-        throw PostgreSQLEvaluationException.unsupported("numeric ^ numeric is supported for a non-negative exponent only");
-      return base.pow(power);
-    }
+    if (type == PgType.NUMERIC)
+      return powerNumeric((BigDecimal) a, (BigDecimal) b);
     final double x = d(a);
     final double y = d(b);
     if (x == 0.0 && y < 0.0)
@@ -318,6 +317,77 @@ public final class Numbers {
     if (result == 0.0 && x != 0.0 && !Double.isInfinite(y))
       throw floatRange("underflow");
     return result;
+  }
+
+  /**
+   * {@code numeric ^ numeric} for an integer exponent, as {@code power_var_int} of {@code numeric.c} answers it: at least 16
+   * significant digits and at least the scale of either operand, rounded half away from zero, SQLSTATE {@code 22003} for a result
+   * that {@code numeric} cannot hold, and zero for one below its smallest scale. Both limits are read from the logarithm of the
+   * result before anything is computed, and every step of the computation keeps only the digits that the result needs, so a large
+   * exponent costs little. The bases {@code 1}, {@code -1} and {@code 0} take every integer exponent.
+   *
+   * @throws PostgreSQLEvaluationException {@code 0A000} outside the subset: an exponent that is not an integer, a negative exponent
+   *                                       of any other base, and an exponent above {@code int4} whose result {@code numeric} holds
+   */
+  private static BigDecimal powerNumeric(final BigDecimal base, final BigDecimal exponent) {
+    if (exponent.stripTrailingZeros().scale() > 0)
+      throw PostgreSQLEvaluationException.unsupported("numeric ^ numeric is supported for an integer exponent only");
+    final int sign = base.signum();
+    if (sign == 0 && exponent.signum() < 0)
+      throw new PostgreSQLEvaluationException("2201F", "zero raised to a negative power is undefined");
+    final BigDecimal magnitude = base.abs();
+    final boolean one = magnitude.compareTo(BigDecimal.ONE) == 0;
+    if (sign != 0 && !one && exponent.signum() < 0)
+      throw PostgreSQLEvaluationException.unsupported(
+          "numeric ^ numeric is supported for a negative exponent only when the base is 1, -1 or 0");
+    // the decimal logarithm of the result; 0 stands for it where the result is 0 or has the magnitude 1
+    final double weight = sign == 0 || one ? 0.0 : exponent.doubleValue() * log10(magnitude);
+    final boolean aboveInt = exponent.compareTo(MAX_INT_EXPONENT) > 0;
+    if (weight > (aboveInt ? MAX_LONG_POWER_LOG / LN_10 : MAX_INTEGER_DIGITS))
+      throw numericOverflow();
+    if (weight + 1 < -MAX_DISPLAY_SCALE)
+      return BigDecimal.ZERO.setScale(MAX_DISPLAY_SCALE);
+    final int operandScale = Math.max(Math.max(base.scale(), exponent.scale()), 0);
+    final int scale = Math.min(Math.max(MIN_SIGNIFICANT_DIGITS - (int) weight, operandScale), MAX_DISPLAY_SCALE);
+
+    final BigDecimal result;
+    if (exponent.signum() == 0 || one)
+      result = BigDecimal.ONE;
+    else if (sign == 0)
+      result = BigDecimal.ZERO;
+    else if (aboveInt)
+      throw PostgreSQLEvaluationException.unsupported("numeric ^ numeric with an exponent above 2147483647 is supported only when"
+          + " the base is 1, -1 or 0, or the result is too large or too small for numeric");
+    else {
+      final int n = exponent.intValueExact();
+      // the digits of the result, and as many more as the rounding of the steps can disturb
+      final int digits = Math.max(scale + (int) weight + 1, 1) + (int) Math.log(n) + 8;
+      result = raise(magnitude, n, new MathContext(digits, RoundingMode.HALF_UP));
+    }
+    final BigDecimal rounded = result.setScale(scale, RoundingMode.HALF_UP);
+    if (rounded.precision() - rounded.scale() > MAX_INTEGER_DIGITS)
+      throw numericOverflow();
+    return sign < 0 && exponent.remainder(TWO).signum() != 0 ? rounded.negate() : rounded;
+  }
+
+  /** {@code base} to the power {@code n >= 1} by repeated squaring, every product rounded to the context. */
+  private static BigDecimal raise(final BigDecimal base, final int n, final MathContext context) {
+    BigDecimal square = base.round(context);
+    BigDecimal result = (n & 1) != 0 ? square : BigDecimal.ONE;
+    for (int bits = n >>> 1; bits != 0; bits >>>= 1) {
+      square = square.multiply(square, context);
+      if ((bits & 1) != 0)
+        result = result.multiply(square, context);
+    }
+    return result;
+  }
+
+  /** The decimal logarithm of a positive number, near 1 taken from the distance to 1, which a {@code double} of it loses. */
+  private static double log10(final BigDecimal value) {
+    if (value.compareTo(HALF) > 0 && value.compareTo(TWO) < 0)
+      return Math.log1p(value.subtract(BigDecimal.ONE).doubleValue()) / LN_10;
+    final int exponent = value.precision() - value.scale() - 1;
+    return Math.log10(value.movePointLeft(exponent).doubleValue()) + exponent;
   }
 
   public static Object negate(final PgType type, final Object a) {
@@ -457,5 +527,9 @@ public final class Numbers {
 
   private static PostgreSQLEvaluationException floatRange(final String what) {
     return new PostgreSQLEvaluationException("22003", "value out of range: " + what);
+  }
+
+  private static PostgreSQLEvaluationException numericOverflow() {
+    return new PostgreSQLEvaluationException("22003", "value overflows numeric format");
   }
 }
