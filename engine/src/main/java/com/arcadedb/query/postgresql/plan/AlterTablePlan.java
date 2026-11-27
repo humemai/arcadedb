@@ -179,8 +179,7 @@ public final class AlterTablePlan {
         || existing != null && existing.kind() != Column.Kind.IDENTITY) {
       if (add.ifNotExists())
         return;
-      throw new PostgreSQLEvaluationException("42701",
-          "column \"" + name + "\" of relation \"" + table.name() + "\" already exists");
+      throw PostgreSQLEvaluationException.duplicateColumn(name, table.name());
     }
     if (CreateTablePlan.serialType(column.type()) != null)
       throw refused("ADD COLUMN of a serial column", column.position(), "Declare the serial column in CREATE TABLE");
