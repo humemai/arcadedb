@@ -113,12 +113,6 @@ public final class StatementHints {
       case "VIEW", "RECURSIVE" ->
           "Write the query of the view in a WITH clause of each statement that reads it: WITH v AS (SELECT ...) SELECT ... FROM v";
       case "MATERIALIZED" -> NO_WAY + ": the sql language has CREATE MATERIALIZED VIEW for a query that it reads";
-      case "EXTENSION" -> {
-        final int name = "IF".equals(word(at + 1)) ? at + 4 : at + 1;
-        yield "vector".equalsIgnoreCase(name(name).replace("'", "")) ?
-            "Leave the statement out: vector columns, the distance operators and vector indexes are built in" :
-            "Leave the statement out: there are no extensions, only what is built in";
-      }
       case "SCHEMA" -> "Leave the statement out and write table names without a schema: there is one schema, public";
       case "TYPE", "DOMAIN" -> NO_WAY + ": declare the column text or jsonb and check the values in your program";
       case "SEQUENCE" -> NO_WAY + ": make the keys in your program, or declare no id column and read the record id with"

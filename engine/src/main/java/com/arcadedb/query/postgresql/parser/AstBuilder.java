@@ -18,7 +18,9 @@
  */
 package com.arcadedb.query.postgresql.parser;
 
+import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.PostgreSQLInvalidEscapeException;
+import com.arcadedb.query.postgresql.ast.CreateExtensionStatement;
 import com.arcadedb.query.postgresql.ast.CreateIndexStatement;
 import com.arcadedb.query.postgresql.ast.CreateTableStatement;
 import com.arcadedb.query.postgresql.ast.DeleteStatement;
@@ -56,6 +58,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Builds the syntax tree from the parse tree. It runs only on a parse tree that has no construct outside the subset (the
@@ -88,9 +91,37 @@ final class AstBuilder {
       return createTable(command.createTableStmt());
     if (stmt instanceof CreateIndexCommandContext command)
       return createIndex(command.createIndexStmt());
+    if (stmt instanceof CreateExtensionCommandContext command)
+      return createExtension(command.createExtensionStmt());
     if (stmt instanceof EmptyCommandContext)
       return new EmptyStatement(position(stmt.getStart()));
     throw new IllegalStateException("A statement the parser did not refuse has no tree: " + stmt.getText());
+  }
+
+  // ------------------------------------------------------------------------------------------------ CREATE EXTENSION
+
+  /** The extensions of which the language has what a schema script asks for: the vector type and operators, and uuids. */
+  private static final Set<String> BUILT_IN_EXTENSIONS = Set.of("vector", "pgcrypto");
+
+  /**
+   * {@code CREATE EXTENSION IF NOT EXISTS vector} or {@code pgcrypto}, in the schema {@code public} when one is written. Without
+   * {@code IF NOT EXISTS} PostgreSQL fails for an extension that is there, and what is built in is there, so that form is refused.
+   */
+  private CreateExtensionStatement createExtension(final CreateExtensionStmtContext context) {
+    final Name extension = name(context.name);
+    final SourcePosition position = position(context.getStart());
+    if (!BUILT_IN_EXTENSIONS.contains(extension.value()))
+      throw new PostgreSQLFeatureNotSupportedException("CREATE EXTENSION " + extension.value()
+          + " is not supported by the postgresql language (" + position + ")",
+          "Leave the statement out: there are no extensions, only what is built in");
+    if (context.EXISTS() == null)
+      throw new PostgreSQLFeatureNotSupportedException("CREATE EXTENSION without IF NOT EXISTS is not supported by the"
+          + " postgresql language (" + position + ")",
+          "Write CREATE EXTENSION IF NOT EXISTS " + extension.value() + ": what it names is built in");
+    if (context.schema != null && !"public".equals(name(context.schema).value()))
+      throw new PostgreSQLFeatureNotSupportedException("CREATE EXTENSION in a schema other than public is not supported by the"
+          + " postgresql language (" + position + ")", "Leave SCHEMA out: there is one schema, public");
+    return new CreateExtensionStatement(position, extension);
   }
 
   // ------------------------------------------------------------------------------------------------ CREATE TABLE

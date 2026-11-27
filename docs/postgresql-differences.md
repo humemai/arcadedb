@@ -108,6 +108,23 @@ Every refusal below is `0A000`.
 | Keys | any type with an operator class | tree indexes over `bool`, the number types, `text`, `varchar`, `date`, and `timestamp` |
 | Transactions | a rollback takes the index back | refused in a transaction block, as `CREATE TABLE` is |
 
+## `CREATE EXTENSION`
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+```
+
+What these two bring is built in (the `vector` type, its distance operators and indexes, and `gen_random_uuid()`), so the statement runs and changes nothing. It runs in a transaction block too.
+
+| area | PostgreSQL | `postgresql` |
+| --- | --- | --- |
+| Extensions | any installed one | `vector` and `pgcrypto`; every other name is `0A000`. No other function of `pgcrypto` runs |
+| Without `IF NOT EXISTS` | installs the extension, `42710` when it is there | `0A000`: write `IF NOT EXISTS` |
+| Options | `SCHEMA`, `VERSION`, `CASCADE` | `SCHEMA public` only; the rest is `0A000` |
+| The notice for an extension that is there | `NOTICE: extension "vector" already exists, skipping` | no notice |
+| `pg_extension` | lists the installed extensions | not changed by the statement |
+
 ## Errors
 
 Read the hint. It is sent in the protocol's hint field, which `psql` and drivers show on its own line, and over other protocols it ends the message after `. Hint: `. Every `0A000` has one: what to write instead, or a text that starts with "There is no way to write this in the postgresql language yet". A hint that names a statement of another language ends with it, from `{sql}` or `{opencypher}` on, so that the statement can be sent as it is.
@@ -159,7 +176,7 @@ Limits:
 
 | area | state |
 | --- | --- |
-| `ALTER`, `DROP`, and every `CREATE` but `CREATE TABLE` and `CREATE INDEX` | refused; use ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
+| `ALTER`, `DROP`, and every `CREATE` but `CREATE TABLE`, `CREATE INDEX`, and `CREATE EXTENSION IF NOT EXISTS` of [what is built in](#create-extension) | refused; use ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
 | Types | no `json` (there is `jsonb`), `uuid`, `time`, `timetz`, `timestamptz[]` columns, or `char(n)` |
 | Syntax | a whole-row value such as `(t.*)`, `WITHOUT OVERLAPS`, `COALESCE`, `GREATEST`, `LEAST`, and `NULLIF` as functions in `FROM`, and an index parameter with a namespace are read and refused (`0A000`; fork issue [#202](https://github.com/humemai/arcadedb/issues/202)) |
 | Queries | refused: `array_agg`, the JSON aggregates, most window frames, `ntile`, named windows, `WITH RECURSIVE`, `ANY` and `ALL` with an operator that is not a comparison, the order of arrays (`<`, `>`), `unnest`, `->>`, `LATERAL`, `NATURAL` joins, `SIMILAR TO` |
