@@ -22,6 +22,7 @@ import com.arcadedb.database.Database;
 import com.arcadedb.exception.AlreadyExistsException;
 import com.arcadedb.query.postgresql.PostgreSQLAmbiguousIdentifierException;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
+import com.arcadedb.query.postgresql.PostgreSQLUndefinedColumnException;
 import com.arcadedb.query.postgresql.PostgreSQLUndefinedTableException;
 import com.arcadedb.query.postgresql.ast.CreateTableStatement;
 import com.arcadedb.query.postgresql.ast.Expression;
@@ -259,7 +260,7 @@ public final class CreateTablePlan {
         written.addAll(unique.stream().filter(Key::primary).findFirst().orElseThrow(() -> noPrimaryKey(table)).columns());
       for (final String column : written) {
         if (!columns.containsKey(column))
-          throw undefinedReferenced(column);
+          throw new PostgreSQLUndefinedColumnException(column, table, List.copyOf(columns.keySet()));
         properties.add(column);
         types.add(columns.get(column).mapped.type());
       }
@@ -276,9 +277,7 @@ public final class CreateTablePlan {
           referenced.primaryKey().columns().stream().map(column -> new Identifier(column, true)).toList() :
           reference.columns().stream().map(CreateTablePlan::identifier).toList();
       for (final Identifier each : named) {
-        final Column column = referenced.findColumn(each);
-        if (column == null)
-          throw undefinedReferenced(each.text());
+        final Column column = referenced.column(each);
         if (column.kind() != Column.Kind.PROPERTY)
           // the record id: only the two ends of a link table refer to it
           throw refusedReference(reference.position());
@@ -338,11 +337,6 @@ public final class CreateTablePlan {
   private static PostgreSQLEvaluationException noUniqueKey(final String table) {
     return new PostgreSQLEvaluationException("42830",
         "there is no unique constraint matching given keys for referenced table \"" + table + "\"");
-  }
-
-  private static PostgreSQLEvaluationException undefinedReferenced(final String column) {
-    return new PostgreSQLEvaluationException("42703",
-        "column \"" + column + "\" referenced in foreign key constraint does not exist");
   }
 
   /** Adds the index over the referring columns of each key, unless one is there, and declares the keys. */
