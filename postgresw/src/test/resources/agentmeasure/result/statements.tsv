@@ -78,37 +78,37 @@ memory	M76	agent	write	no	follows	23503	00000	-	-	DELETE FROM entities WHERE nam
 memory	M77	agent	write	no	follows	00000	42P01	no	no	DELETE FROM relations WHERE source_id = 2 OR target_id = 2	-	-	relation "relations" does not exist
 memory	M78	agent	write	no	same	00000	00000	-	-	DELETE FROM entities WHERE name = 'Bob' RETURNING id, name	-	-	-
 memory	M79	agent	read	no	follows	00000	00000	-	-	SELECT count(*) AS facts_left FROM facts	-	-	-
-memory	M80	agent	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE facts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ	-	-	ALTER is not supported by the postgresql language
-memory	M81	agent	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE entities ADD COLUMN importance INTEGER NOT NULL DEFAULT 0	-	-	ALTER is not supported by the postgresql language
-memory	M82	agent	write	no	follows	00000	42703	yes	yes	UPDATE entities SET importance = 5 WHERE name = 'Alice' RETURNING name, importance	-	-	column "importance" of relation "entities" does not exist
-memory	M83	agent	read	no	follows	00000	42703	yes	yes	SELECT name, importance FROM entities ORDER BY importance DESC, name	-	-	column "importance" does not exist
+memory	M80	agent	schema	no	same	00000	00000	-	-	ALTER TABLE facts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ	-	-	-
+memory	M81	agent	schema	no	same	00000	00000	-	-	ALTER TABLE entities ADD COLUMN importance INTEGER NOT NULL DEFAULT 0	-	-	-
+memory	M82	agent	write	no	same	00000	00000	-	-	UPDATE entities SET importance = 5 WHERE name = 'Alice' RETURNING name, importance	-	-	-
+memory	M83	agent	read	no	same	00000	00000	-	-	SELECT name, importance FROM entities ORDER BY importance DESC, name	-	-	-
 memory	M84	agent	write	no	same	00000	00000	-	-	INSERT INTO facts (entity_id, content, embedding) VALUES ((SELECT id FROM entities WHERE name = 'Acme'), 'Acme ships a CLI', '[0.3,0.3,0.4]') RETURNING entity_id, content	-	-	-
-web	W01	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE users (     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),     email text NOT NULL UNIQUE,     full_name varchar(100),     is_active boolean NOT NULL DEFAULT true,     created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP )	-	-	A type modifier on a column of type varchar is not supported by the postgresql language
-web	W02	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE products (     id serial PRIMARY KEY,     sku varchar(32) NOT NULL UNIQUE,     name text NOT NULL,     price numeric(10,2) NOT NULL CHECK (price >= 0),     stock integer NOT NULL DEFAULT 0 )	-	-	A type modifier on a column of type varchar is not supported by the postgresql language
+web	W01	agent	schema	no	same	00000	00000	-	-	CREATE TABLE users (     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),     email text NOT NULL UNIQUE,     full_name varchar(100),     is_active boolean NOT NULL DEFAULT true,     created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP )	-	-	-
+web	W02	agent	schema	no	same	00000	00000	-	-	CREATE TABLE products (     id serial PRIMARY KEY,     sku varchar(32) NOT NULL UNIQUE,     name text NOT NULL,     price numeric(10,2) NOT NULL CHECK (price >= 0),     stock integer NOT NULL DEFAULT 0 )	-	-	-
 web	W03	agent	schema	no	refused	00000	0A000	yes	no way	CREATE TYPE order_status AS ENUM ('pending', 'paid', 'shipped', 'cancelled')	-	-	CREATE TYPE is not supported by the postgresql language
 web	W04	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE orders (     id bigserial PRIMARY KEY,     user_id uuid NOT NULL REFERENCES users(id),     status order_status NOT NULL DEFAULT 'pending',     total numeric(12,2) NOT NULL DEFAULT 0,     created_at timestamptz NOT NULL DEFAULT now() )	-	-	A column of type order_status is not supported by the postgresql language
-web	W05	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE order_items (     order_id bigint NOT NULL REFERENCES orders(id) ON DELETE CASCADE,     product_id integer NOT NULL REFERENCES products(id),     quantity integer NOT NULL CHECK (quantity > 0),     unit_price numeric(10,2) NOT NULL,     PRIMARY KEY (order_id, product_id) )	-	-	A type modifier on a column of type numeric is not supported by the postgresql language
+web	W05	agent	schema	no	follows	00000	42P01	no	no	CREATE TABLE order_items (     order_id bigint NOT NULL REFERENCES orders(id) ON DELETE CASCADE,     product_id integer NOT NULL REFERENCES products(id),     quantity integer NOT NULL CHECK (quantity > 0),     unit_price numeric(10,2) NOT NULL,     PRIMARY KEY (order_id, product_id) )	-	-	relation "orders" does not exist
 web	W06	agent	schema	no	follows	00000	42P01	no	no	CREATE INDEX idx_orders_user_id ON orders(user_id)	-	-	relation "orders" does not exist
 web	W07	agent	schema	no	refused	00000	0A000	yes	yes	CREATE UNIQUE INDEX users_email_lower_idx ON users (lower(email))	-	-	An index on an expression is not supported by the postgresql language
 web	W08	agent	schema	no	refused	00000	0A000	yes	yes	CREATE VIEW active_users AS SELECT id, email, full_name FROM users WHERE is_active	-	-	CREATE VIEW is not supported by the postgresql language
-web	W09	agent	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login timestamptz	-	-	ALTER is not supported by the postgresql language
-web	W10	agent	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE products ADD COLUMN description text	-	-	ALTER is not supported by the postgresql language
-web	W11	agent	schema	no	refused	00000	0A000	yes	no way	ALTER TABLE products ALTER COLUMN price TYPE numeric(12,2)	-	-	ALTER is not supported by the postgresql language
-web	W12	agent	schema	no	refused	00000	0A000	yes	no way	ALTER TABLE products ALTER COLUMN stock SET DEFAULT 0	-	-	ALTER is not supported by the postgresql language
-web	W13	agent	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE users ADD COLUMN nickname text	-	-	ALTER is not supported by the postgresql language
-web	W14	agent	schema	no	refused	00000	0A000	yes	no way	ALTER TABLE users RENAME COLUMN nickname TO handle	-	-	ALTER is not supported by the postgresql language
-web	W15	agent	schema	no	refused	00000	0A000	no	no way	ALTER TABLE orders ADD CONSTRAINT orders_total_positive CHECK (total >= 0)	-	-	ALTER is not supported by the postgresql language
+web	W09	agent	schema	no	same	00000	00000	-	-	ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login timestamptz	-	-	-
+web	W10	agent	schema	no	same	00000	00000	-	-	ALTER TABLE products ADD COLUMN description text	-	-	-
+web	W11	agent	schema	no	refused	00000	0A000	yes	no way	ALTER TABLE products ALTER COLUMN price TYPE numeric(12,2)	-	-	This action of ALTER TABLE (DROP CONSTRAINT, a rename of the table, a change of a type and the like) is not supported by the postgresql language
+web	W12	agent	schema	no	same	00000	00000	-	-	ALTER TABLE products ALTER COLUMN stock SET DEFAULT 0	-	-	-
+web	W13	agent	schema	no	same	00000	00000	-	-	ALTER TABLE users ADD COLUMN nickname text	-	-	-
+web	W14	agent	schema	no	same	00000	00000	-	-	ALTER TABLE users RENAME COLUMN nickname TO handle	-	-	-
+web	W15	agent	schema	no	follows	00000	42P01	no	no	ALTER TABLE orders ADD CONSTRAINT orders_total_positive CHECK (total >= 0)	-	-	relation "orders" does not exist
 web	W16	agent	schema	no	same	00000	00000	-	-	CREATE TABLE audit_log (     id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,     user_id uuid,     action text NOT NULL,     payload jsonb,     at timestamp NOT NULL DEFAULT now() )	-	-	-
-web	W17	agent	schema	no	refused	00000	0A000	no	no way	ALTER TABLE audit_log ADD CONSTRAINT audit_log_user_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL	-	-	ALTER is not supported by the postgresql language
+web	W17	agent	schema	no	same	00000	00000	-	-	ALTER TABLE audit_log ADD CONSTRAINT audit_log_user_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL	-	-	-
 web	W18	agent	schema	no	same	00000	00000	-	-	CREATE TABLE IF NOT EXISTS audit_log (id bigint)	-	-	-
 web	W19	agent	schema	no	refused	00000	0A000	no	no way	COMMENT ON TABLE users IS 'Application users'	-	-	COMMENT is not supported by the postgresql language
 web	W20	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TEMP TABLE tmp_import (sku text, qty int)	-	-	A temporary or unlogged table is not supported by the postgresql language
-web	W21	agent	schema	no	refused	00000	0A000	yes	yes	DROP TABLE IF EXISTS tmp_import	-	-	DROP is not supported by the postgresql language
+web	W21	agent	schema	no	same	00000	00000	-	-	DROP TABLE IF EXISTS tmp_import	-	-	-
 web	W22	agent	schema	no	refused	00000	0A000	yes	no way	CREATE OR REPLACE FUNCTION set_last_login() RETURNS trigger AS $$ BEGIN NEW.last_login = now(); RETURN NEW; END; $$ LANGUAGE plpgsql	-	-	CREATE OR is not supported by the postgresql language
-web	W23	agent	write	no	follows	00000	42P01	no	no	INSERT INTO users (id, email, full_name) VALUES ('11111111-1111-1111-1111-111111111111', 'ann@example.com', 'Ann Lee') RETURNING id, email, is_active	-	-	relation "users" does not exist
-web	W24	agent	write	yes	follows	00000	42P01	no	no	INSERT INTO users (email, full_name) VALUES ('ben@example.com', 'Ben Ode') RETURNING id	-	-	relation "users" does not exist
-web	W25	agent	write	no	follows	00000	42P01	no	no	INSERT INTO users (id, email, full_name, is_active) VALUES ('33333333-3333-3333-3333-333333333333', 'cy@example.org', NULL, false)	-	-	relation "users" does not exist
-web	W26	agent	write	no	follows	00000	42P01	no	no	INSERT INTO products (sku, name, price, stock) VALUES ('A-1', 'Keyboard', 49.90, 10), ('B-2', 'Mouse', 19.50, 25), ('C-3', 'Monitor', 229.00, 5) RETURNING id, sku	-	-	relation "products" does not exist
+web	W23	agent	write	no	same	00000	00000	-	-	INSERT INTO users (id, email, full_name) VALUES ('11111111-1111-1111-1111-111111111111', 'ann@example.com', 'Ann Lee') RETURNING id, email, is_active	-	-	-
+web	W24	agent	write	yes	same	00000	00000	-	-	INSERT INTO users (email, full_name) VALUES ('ben@example.com', 'Ben Ode') RETURNING id	-	-	-
+web	W25	agent	write	no	same	00000	00000	-	-	INSERT INTO users (id, email, full_name, is_active) VALUES ('33333333-3333-3333-3333-333333333333', 'cy@example.org', NULL, false)	-	-	-
+web	W26	agent	write	no	same	00000	00000	-	-	INSERT INTO products (sku, name, price, stock) VALUES ('A-1', 'Keyboard', 49.90, 10), ('B-2', 'Mouse', 19.50, 25), ('C-3', 'Monitor', 229.00, 5) RETURNING id, sku	-	-	-
 web	W27	agent	write	no	follows	00000	42P01	no	no	INSERT INTO orders (user_id) VALUES ('11111111-1111-1111-1111-111111111111') RETURNING id, status, total	-	-	relation "orders" does not exist
 web	W28	agent	write	no	follows	00000	42P01	no	no	INSERT INTO order_items (order_id, product_id, quantity, unit_price) SELECT 1, id, 2, price FROM products WHERE sku = 'A-1'	-	-	relation "order_items" does not exist
 web	W29	agent	write	no	follows	00000	42P01	no	no	INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (1, 2, 1, 19.50) RETURNING *	-	-	relation "order_items" does not exist
@@ -116,44 +116,44 @@ web	W30	agent	write	no	follows	00000	42P01	no	no	INSERT INTO orders (user_id, st
 web	W31	agent	write	no	follows	00000	42P01	no	no	INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (2, 3, 1, 229.00), (2, 2, 3, 18.00)	-	-	relation "order_items" does not exist
 web	W32	agent	write	no	follows	00000	42P01	no	no	UPDATE orders o SET total = (SELECT coalesce(sum(i.quantity * i.unit_price), 0) FROM order_items i WHERE i.order_id = o.id) WHERE o.id = 1 RETURNING total	-	-	relation "orders" does not exist
 web	W33	agent	write	no	follows	00000	42P01	no	no	UPDATE orders SET total = s.total FROM (SELECT order_id, sum(quantity * unit_price) AS total FROM order_items GROUP BY order_id) s WHERE orders.id = s.order_id RETURNING orders.id, orders.total	-	-	relation "orders" does not exist
-web	W34	agent	write	no	follows	00000	42P01	no	no	UPDATE products p SET stock = p.stock - i.quantity FROM order_items i WHERE i.product_id = p.id AND i.order_id = 1	-	-	relation "products" does not exist
+web	W34	agent	write	no	follows	00000	42P01	no	no	UPDATE products p SET stock = p.stock - i.quantity FROM order_items i WHERE i.product_id = p.id AND i.order_id = 1	-	-	relation "order_items" does not exist
 web	W35	agent	write	no	follows	00000	42P01	no	no	UPDATE orders SET status = 'shipped' WHERE id = 2 AND status = 'paid' RETURNING id, status	-	-	relation "orders" does not exist
-web	W36	agent	write	no	follows	00000	42P01	no	no	UPDATE users SET last_login = now() WHERE email = 'ann@example.com'	-	-	relation "users" does not exist
-web	W37	agent	read	no	follows	00000	42P01	no	no	SELECT u.email, count(o.id) AS orders, coalesce(sum(o.total), 0) AS revenue FROM users u LEFT JOIN orders o ON o.user_id = u.id GROUP BY u.email ORDER BY revenue DESC, u.email	-	-	relation "users" does not exist
+web	W36	agent	write	no	same	00000	00000	-	-	UPDATE users SET last_login = now() WHERE email = 'ann@example.com'	-	-	-
+web	W37	agent	read	no	follows	00000	42P01	no	no	SELECT u.email, count(o.id) AS orders, coalesce(sum(o.total), 0) AS revenue FROM users u LEFT JOIN orders o ON o.user_id = u.id GROUP BY u.email ORDER BY revenue DESC, u.email	-	-	relation "orders" does not exist
 web	W38	agent	read	no	follows	00000	42P01	no	no	SELECT p.name, sum(i.quantity) AS sold FROM order_items i JOIN products p ON p.id = i.product_id GROUP BY p.id, p.name ORDER BY sold DESC, p.name LIMIT 5	-	-	relation "order_items" does not exist
 web	W39	agent	read	no	follows	00000	42P01	no	no	SELECT o.id AS order_id, u.email, p.name, i.quantity, i.quantity * i.unit_price AS line_total FROM orders o JOIN users u ON u.id = o.user_id JOIN order_items i ON i.order_id = o.id JOIN products p ON p.id = i.product_id ORDER BY o.id, p.name	-	-	relation "orders" does not exist
 web	W40	agent	read	yes	follows	00000	42P01	no	no	SELECT to_char(created_at, 'YYYY-MM') AS month, sum(total) FROM orders GROUP BY month ORDER BY month	-	-	relation "orders" does not exist
 web	W41	agent	read	yes	follows	00000	42P01	no	no	SELECT date_trunc('month', created_at)::date AS month, count(*) FROM orders GROUP BY 1 ORDER BY 1	-	-	relation "orders" does not exist
 web	W42	agent	read	yes	follows	00000	42P01	no	no	SELECT EXTRACT(YEAR FROM created_at) AS y, count(*) FROM orders GROUP BY y	-	-	relation "orders" does not exist
-web	W43	agent	read	no	follows	00000	42P01	no	no	SELECT name FROM products p WHERE NOT EXISTS (SELECT 1 FROM order_items i WHERE i.product_id = p.id) ORDER BY name	-	-	relation "products" does not exist
-web	W44	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM users WHERE id NOT IN (SELECT user_id FROM orders) ORDER BY email	-	-	relation "users" does not exist
-web	W45	agent	read	no	follows	00000	42P01	no	no	SELECT name, price, price * 1.19 AS gross, round(price * 1.19, 2) AS gross_rounded FROM products ORDER BY price DESC	-	-	relation "products" does not exist
-web	W46	agent	read	no	follows	00000	42P01	no	no	SELECT name, CASE WHEN stock = 0 THEN 'out' WHEN stock < 10 THEN 'low' ELSE 'ok' END AS level FROM products ORDER BY name	-	-	relation "products" does not exist
-web	W47	agent	read	no	follows	00000	42P01	no	no	SELECT avg(price)::numeric(10,2) AS avg_price, min(price), max(price), count(*) FROM products	-	-	relation "products" does not exist
-web	W48	agent	read	no	follows	00000	42P01	no	no	SELECT sku, price FROM products WHERE price BETWEEN 10 AND 100 ORDER BY price	-	-	relation "products" does not exist
-web	W49	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM users WHERE email ILIKE '%@EXAMPLE.COM' ORDER BY email	-	-	relation "users" does not exist
-web	W50	agent	read	no	follows	00000	42P01	no	no	SELECT lower(email), upper(full_name), length(full_name), split_part(email, '@', 2) AS domain FROM users ORDER BY 1	-	-	relation "users" does not exist
-web	W51	agent	read	no	follows	00000	42P01	no	no	SELECT concat(coalesce(full_name, 'unknown'), ' <', email, '>') AS label FROM users ORDER BY 1	-	-	relation "users" does not exist
-web	W52	agent	read	no	follows	00000	42P01	no	no	SELECT full_name || ' (' || id || ')' AS label FROM users WHERE email = 'ann@example.com'	-	-	relation "users" does not exist
+web	W43	agent	read	no	follows	00000	42P01	no	no	SELECT name FROM products p WHERE NOT EXISTS (SELECT 1 FROM order_items i WHERE i.product_id = p.id) ORDER BY name	-	-	relation "order_items" does not exist
+web	W44	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM users WHERE id NOT IN (SELECT user_id FROM orders) ORDER BY email	-	-	relation "orders" does not exist
+web	W45	agent	read	no	same	00000	00000	-	-	SELECT name, price, price * 1.19 AS gross, round(price * 1.19, 2) AS gross_rounded FROM products ORDER BY price DESC	-	-	-
+web	W46	agent	read	no	follows	00000	00000	-	-	SELECT name, CASE WHEN stock = 0 THEN 'out' WHEN stock < 10 THEN 'low' ELSE 'ok' END AS level FROM products ORDER BY name	-	-	-
+web	W47	agent	read	no	same	00000	00000	-	-	SELECT avg(price)::numeric(10,2) AS avg_price, min(price), max(price), count(*) FROM products	-	-	-
+web	W48	agent	read	no	same	00000	00000	-	-	SELECT sku, price FROM products WHERE price BETWEEN 10 AND 100 ORDER BY price	-	-	-
+web	W49	agent	read	no	same	00000	00000	-	-	SELECT email FROM users WHERE email ILIKE '%@EXAMPLE.COM' ORDER BY email	-	-	-
+web	W50	agent	read	no	refused	00000	0A000	yes	no way	SELECT lower(email), upper(full_name), length(full_name), split_part(email, '@', 2) AS domain FROM users ORDER BY 1	-	-	The function split_part(text, unknown, integer) is not supported by the postgresql language
+web	W51	agent	read	no	same	00000	00000	-	-	SELECT concat(coalesce(full_name, 'unknown'), ' <', email, '>') AS label FROM users ORDER BY 1	-	-	-
+web	W52	agent	read	no	same	00000	00000	-	-	SELECT full_name || ' (' || id || ')' AS label FROM users WHERE email = 'ann@example.com'	-	-	-
 web	W53	agent	read	yes	refused	00000	0A000	yes	yes	SELECT d::date AS day, count(o.id) FROM generate_series(current_date - 6, current_date, interval '1 day') AS d LEFT JOIN orders o ON o.created_at::date = d::date GROUP BY 1 ORDER BY 1	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
 web	W54	agent	read	no	refused	00000	0A000	yes	yes	SELECT * FROM generate_series(1, 5) AS n	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
 web	W55	agent	read	no	follows	00000	42P01	no	no	SELECT count(*) AS total, count(*) FILTER (WHERE status = 'paid') AS paid, count(*) FILTER (WHERE status = 'shipped') AS shipped FROM orders	-	-	relation "orders" does not exist
 web	W56	agent	read	no	follows	00000	42P01	no	no	SELECT status, count(*) FROM orders GROUP BY status ORDER BY status	-	-	relation "orders" does not exist
-web	W57	agent	read	no	follows	00000	42P01	no	no	SELECT rank() OVER (ORDER BY price DESC) AS rank, name FROM products ORDER BY rank	-	-	relation "products" does not exist
-web	W58	agent	read	no	follows	00000	42P01	no	no	SELECT name, price, sum(price) OVER (ORDER BY price) AS running_total FROM products ORDER BY price	-	-	relation "products" does not exist
+web	W57	agent	read	no	same	00000	00000	-	-	SELECT rank() OVER (ORDER BY price DESC) AS rank, name FROM products ORDER BY rank	-	-	-
+web	W58	agent	read	no	same	00000	00000	-	-	SELECT name, price, sum(price) OVER (ORDER BY price) AS running_total FROM products ORDER BY price	-	-	-
 web	W59	agent	read	no	follows	00000	42P01	no	no	SELECT id, total, lag(total) OVER (PARTITION BY user_id ORDER BY id) AS previous_total FROM orders ORDER BY id	-	-	relation "orders" does not exist
 web	W60	agent	read	no	follows	00000	42P01	no	no	SELECT user_id, json_agg(json_build_object('id', id, 'total', total) ORDER BY id) AS orders FROM orders GROUP BY user_id ORDER BY user_id	-	-	relation "orders" does not exist
-web	W61	agent	read	no	follows	00000	42P01	no	no	SELECT u.email, coalesce(json_agg(o.id ORDER BY o.id) FILTER (WHERE o.id IS NOT NULL), '[]') AS order_ids FROM users u LEFT JOIN orders o ON o.user_id = u.id GROUP BY u.email ORDER BY u.email	-	-	relation "users" does not exist
-web	W62	agent	read	no	follows	00000	42P01	no	no	SELECT u.email, array_agg(DISTINCT p.sku) AS skus FROM users u JOIN orders o ON o.user_id = u.id JOIN order_items i ON i.order_id = o.id JOIN products p ON p.id = i.product_id GROUP BY u.email ORDER BY u.email	-	-	relation "users" does not exist
+web	W61	agent	read	no	follows	00000	42P01	no	no	SELECT u.email, coalesce(json_agg(o.id ORDER BY o.id) FILTER (WHERE o.id IS NOT NULL), '[]') AS order_ids FROM users u LEFT JOIN orders o ON o.user_id = u.id GROUP BY u.email ORDER BY u.email	-	-	relation "orders" does not exist
+web	W62	agent	read	no	follows	00000	42P01	no	no	SELECT u.email, array_agg(DISTINCT p.sku) AS skus FROM users u JOIN orders o ON o.user_id = u.id JOIN order_items i ON i.order_id = o.id JOIN products p ON p.id = i.product_id GROUP BY u.email ORDER BY u.email	-	-	relation "orders" does not exist
 web	W63	agent	read	no	follows	00000	42P01	no	no	WITH spend AS (SELECT user_id, sum(total) AS spent FROM orders GROUP BY user_id) SELECT u.email, s.spent FROM spend s JOIN users u ON u.id = s.user_id ORDER BY s.spent DESC	-	-	relation "orders" does not exist
 web	W64	agent	read	yes	follows	00000	42P01	no	no	SELECT * FROM orders ORDER BY created_at DESC LIMIT 10 OFFSET 0	-	-	relation "orders" does not exist
-web	W65	agent	read	no	follows	00000	42P01	no	no	SELECT count(*) OVER () AS full_count, id, sku FROM products ORDER BY id LIMIT 2 OFFSET 2	-	-	relation "products" does not exist
-web	W66	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM users WHERE id = '11111111-1111-1111-1111-111111111111'::uuid	-	-	relation "users" does not exist
-web	W67	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM users WHERE id::text LIKE '3333%'	-	-	relation "users" does not exist
-web	W68	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM users WHERE id = ANY(ARRAY['11111111-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333']::uuid[]) ORDER BY email	-	-	relation "users" does not exist
-web	W69	agent	write	no	follows	00000	42P01	no	no	INSERT INTO users (email, full_name) VALUES ('ann@example.com', 'Ann B. Lee') ON CONFLICT (email) DO UPDATE SET full_name = EXCLUDED.full_name RETURNING email, full_name, (xmax = 0) AS inserted	-	-	relation "users" does not exist
+web	W65	agent	read	no	same	00000	00000	-	-	SELECT count(*) OVER () AS full_count, id, sku FROM products ORDER BY id LIMIT 2 OFFSET 2	-	-	-
+web	W66	agent	read	no	same	00000	00000	-	-	SELECT email FROM users WHERE id = '11111111-1111-1111-1111-111111111111'::uuid	-	-	-
+web	W67	agent	read	no	same	00000	00000	-	-	SELECT email FROM users WHERE id::text LIKE '3333%'	-	-	-
+web	W68	agent	read	no	refused	00000	0A000	yes	yes	SELECT email FROM users WHERE id = ANY(ARRAY['11111111-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333']::uuid[]) ORDER BY email	-	-	The type uuid[] is not supported by the postgresql language
+web	W69	agent	write	no	refused	00000	42703	yes	yes	INSERT INTO users (email, full_name) VALUES ('ann@example.com', 'Ann B. Lee') ON CONFLICT (email) DO UPDATE SET full_name = EXCLUDED.full_name RETURNING email, full_name, (xmax = 0) AS inserted	-	-	column "xmax" does not exist
 web	W70	agent	write	no	refused	00000	0A000	yes	yes	INSERT INTO products (sku, name, price) VALUES ('A-1', 'Keyboard', 59.90) ON CONFLICT ON CONSTRAINT products_sku_key DO UPDATE SET price = EXCLUDED.price RETURNING sku, price	-	-	ON CONFLICT ON CONSTRAINT is not supported by the postgresql language
-web	W71	agent	write	no	follows	00000	42P01	no	no	INSERT INTO products AS p (sku, name, price, stock) VALUES ('B-2', 'Mouse', 19.50, 5) ON CONFLICT (sku) DO UPDATE SET stock = p.stock + EXCLUDED.stock RETURNING sku, stock	-	-	relation "products" does not exist
+web	W71	agent	write	no	follows	00000	00000	-	-	INSERT INTO products AS p (sku, name, price, stock) VALUES ('B-2', 'Mouse', 19.50, 5) ON CONFLICT (sku) DO UPDATE SET stock = p.stock + EXCLUDED.stock RETURNING sku, stock	-	-	-
 web	W72	agent	write	no	follows	00000	42P01	no	no	DELETE FROM orders WHERE id = 999 RETURNING *	-	-	relation "orders" does not exist
 web	W73	agent	write	no	refused	00000	0A000	yes	yes	DELETE FROM order_items USING orders o WHERE order_items.order_id = o.id AND o.status = 'cancelled'	-	-	DELETE with USING is not supported by the postgresql language
 web	W74	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM active_users ORDER BY email	-	-	relation "active_users" does not exist
@@ -161,19 +161,19 @@ web	W75	agent	read	no	refused	00000	0A000	yes	yes	SELECT u.email, latest.id AS l
 web	W76	agent	read	no	follows	00000	42P01	no	no	SELECT user_id, count(*) AS n FROM orders GROUP BY user_id HAVING count(*) >= 1 ORDER BY n DESC, user_id	-	-	relation "orders" does not exist
 web	W77	agent	read	no	follows	00000	42P01	no	no	SELECT DISTINCT status FROM orders ORDER BY status	-	-	relation "orders" does not exist
 web	W78	agent	read	no	refused	00000	0A000	no	no way	SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY price) AS median_price FROM products	-	-	WITHIN GROUP is not supported by the postgresql language
-web	W79	agent	read	no	follows	00000	42P01	no	no	SELECT name, greatest(stock, 10) AS restock_to, least(price, 100) AS capped FROM products ORDER BY name	-	-	relation "products" does not exist
+web	W79	agent	read	no	follows	00000	00000	-	-	SELECT name, greatest(stock, 10) AS restock_to, least(price, 100) AS capped FROM products ORDER BY name	-	-	-
 web	W80	agent	read	no	follows	00000	42P01	no	no	SELECT count(*) FROM orders WHERE created_at + interval '30 days' > now()	-	-	relation "orders" does not exist
-web	W81	agent	read	yes	follows	00000	42P01	no	no	SELECT email, age(now(), created_at) AS account_age FROM users ORDER BY email	-	-	relation "users" does not exist
-web	W82	agent	read	no	follows	00000	42P01	no	no	SELECT email, coalesce(nullif(trim(full_name), ''), split_part(email, '@', 1)) AS display FROM users ORDER BY email	-	-	relation "users" does not exist
-web	W83	agent	read	no	follows	00000	42P01	no	no	SELECT 'user' AS kind, email AS label FROM users UNION ALL SELECT 'product', sku FROM products ORDER BY kind, label	-	-	relation "users" does not exist
-web	W84	agent	read	no	follows	00000	42P01	no	no	SELECT t.sku, t.sold FROM (SELECT p.sku, coalesce(sum(i.quantity), 0) AS sold FROM products p LEFT JOIN order_items i ON i.product_id = p.id GROUP BY p.sku) t WHERE t.sold > 0 ORDER BY t.sold DESC, t.sku	-	-	relation "products" does not exist
-web	W85	agent	write	no	follows	00000	42P01	no	no	INSERT INTO products (sku, name, price) SELECT 'D-4', 'Cable', 5.00 WHERE NOT EXISTS (SELECT 1 FROM products WHERE sku = 'D-4') RETURNING id, sku, stock	-	-	relation "products" does not exist
+web	W81	agent	read	yes	refused	00000	0A000	yes	no way	SELECT email, age(now(), created_at) AS account_age FROM users ORDER BY email	-	-	The function age(timestamp with time zone, timestamp with time zone) is not supported by the postgresql language
+web	W82	agent	read	no	refused	00000	0A000	yes	no way	SELECT email, coalesce(nullif(trim(full_name), ''), split_part(email, '@', 1)) AS display FROM users ORDER BY email	-	-	The function split_part(text, unknown, integer) is not supported by the postgresql language
+web	W83	agent	read	no	same	00000	00000	-	-	SELECT 'user' AS kind, email AS label FROM users UNION ALL SELECT 'product', sku FROM products ORDER BY kind, label	-	-	-
+web	W84	agent	read	no	follows	00000	42P01	no	no	SELECT t.sku, t.sold FROM (SELECT p.sku, coalesce(sum(i.quantity), 0) AS sold FROM products p LEFT JOIN order_items i ON i.product_id = p.id GROUP BY p.sku) t WHERE t.sold > 0 ORDER BY t.sold DESC, t.sku	-	-	relation "order_items" does not exist
+web	W85	agent	write	no	follows	00000	00000	-	-	INSERT INTO products (sku, name, price) SELECT 'D-4', 'Cable', 5.00 WHERE NOT EXISTS (SELECT 1 FROM products WHERE sku = 'D-4') RETURNING id, sku, stock	-	-	-
 web	W86	agent	write	no	same	00000	00000	-	-	INSERT INTO audit_log (user_id, action, payload) VALUES ('11111111-1111-1111-1111-111111111111', 'login', jsonb_build_object('ip', '10.0.0.1', 'ok', true))	-	-	-
 web	W87	agent	read	no	same	00000	00000	-	-	SELECT action, payload->>'ip' AS ip, (payload->>'ok')::boolean AS ok FROM audit_log ORDER BY id	-	-	-
 web	W88	agent	read	yes	silent	00000	00000	-	-	SELECT version()	1 row: (PostgreSQL 18.7 (Debian 18.7-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit)	1 row: (PostgreSQL 12.0 (ArcadeDB 26.12.1-SNAPSHOT))	-
 web	W89	agent	read	yes	refused	00000	0A000	no	no way	SELECT current_user, current_database(), current_schema()	-	-	CURRENT_USER is not supported by the postgresql language
 web	W90	agent	read	no	same	00000	00000	-	-	SELECT now()::date = current_date AS same_day	-	-	-
-web	W91	agent	read	no	follows	00000	42P01	no	no	SELECT p.sku, (SELECT count(*) FROM order_items i WHERE i.product_id = p.id) AS times_ordered FROM products p ORDER BY p.sku	-	-	relation "products" does not exist
+web	W91	agent	read	no	follows	00000	42P01	no	no	SELECT p.sku, (SELECT count(*) FROM order_items i WHERE i.product_id = p.id) AS times_ordered FROM products p ORDER BY p.sku	-	-	relation "order_items" does not exist
 web	W92	agent	read	no	follows	00000	42P01	no	no	SELECT a.sku AS a, b.sku AS b FROM order_items x JOIN order_items y ON x.order_id = y.order_id AND x.product_id < y.product_id JOIN products a ON a.id = x.product_id JOIN products b ON b.id = y.product_id ORDER BY 1, 2	-	-	relation "order_items" does not exist
 web	T01	agent	transaction	no	same	00000	00000	-	-	BEGIN	-	-	-
 web	T02	agent	transaction	no	follows	00000	42P01	no	no	INSERT INTO orders (user_id, total) VALUES ('11111111-1111-1111-1111-111111111111', 19.50) RETURNING id	-	-	relation "orders" does not exist
@@ -202,14 +202,14 @@ web	T24	agent	transaction	no	refused	00000	0A000	yes	yes	TRUNCATE TABLE audit_lo
 web	T25	agent	transaction	no	follows	00000	00000	-	-	SELECT count(*) FROM audit_log	-	-	-
 web	C01	agent	discovery	no	follows	00000	00000	-	-	SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name	-	-	-
 web	C02	agent	discovery	no	follows	00000	00000	-	-	SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY 1, 2	-	-	-
-web	C03	agent	discovery	no	follows	00000	00000	-	-	SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' ORDER BY ordinal_position	-	-	-
+web	C03	agent	discovery	no	same	00000	00000	-	-	SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' ORDER BY ordinal_position	-	-	-
 web	C04	agent	discovery	no	follows	00000	00000	-	-	SELECT table_name, column_name, data_type, udt_name FROM information_schema.columns WHERE table_schema = 'public' ORDER BY table_name, ordinal_position	-	-	-
 web	C05	agent	discovery	no	follows	00000	00000	-	-	SELECT tc.table_name, kcu.column_name, ccu.table_name AS foreign_table_name, ccu.column_name AS foreign_column_name FROM information_schema.table_constraints AS tc JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public' ORDER BY 1, 2	-	-	-
 web	C06	agent	discovery	no	follows	00000	00000	-	-	SELECT kcu.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu USING (constraint_name, table_schema) WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_name = 'order_items' ORDER BY kcu.ordinal_position	-	-	-
 web	C07	agent	discovery	no	follows	00000	00000	-	-	SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename	-	-	-
-web	C08	agent	discovery	no	follows	00000	00000	-	-	SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'products' ORDER BY indexname	-	-	-
+web	C08	agent	discovery	no	same	00000	00000	-	-	SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'products' ORDER BY indexname	-	-	-
 web	C09	agent	discovery	no	follows	00000	00000	-	-	SELECT c.relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY 1	-	-	-
-web	C10	agent	discovery	no	follows	00000	42P01	yes	yes	SELECT a.attname, format_type(a.atttypid, a.atttypmod) AS type, a.attnotnull FROM pg_attribute a WHERE a.attrelid = 'products'::regclass AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum	-	-	relation "products" does not exist
+web	C10	agent	discovery	no	follows	00000	00000	-	-	SELECT a.attname, format_type(a.atttypid, a.atttypmod) AS type, a.attnotnull FROM pg_attribute a WHERE a.attrelid = 'products'::regclass AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum	-	-	-
 web	C11	agent	discovery	no	refused	00000	0A000	yes	no way	SELECT to_regclass('public.users') IS NOT NULL AS users_exists, to_regclass('public.nope') IS NOT NULL AS nope_exists	-	-	The function to_regclass(unknown) is not supported by the postgresql language
 web	C12	agent	discovery	no	refused	00000	0A000	yes	yes	SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users')	-	-	A select list with no item is not supported by the postgresql language
 web	C13	agent	discovery	no	follows	00000	42P01	yes	yes	SELECT conname, contype, pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'order_items'::regclass ORDER BY conname	-	-	relation "order_items" does not exist
@@ -218,54 +218,54 @@ web	C15	agent	discovery	no	follows	00000	00000	-	-	SELECT t.typname, e.enumlabel
 web	C16	agent	discovery	yes	refused	00000	0A000	no	no	SELECT extname FROM pg_extension ORDER BY 1	-	-	Error on parsing query: The catalog relation "pg_extension" is not supported by this server
 web	C17	agent	discovery	no	refused	00000	0A000	yes	yes	SELECT obj_description('public.users'::regclass) AS comment	-	-	The type regclass is not supported by the postgresql language
 web	C18	agent	discovery	yes	refused	00000	0A000	yes	no way	SELECT pg_size_pretty(pg_total_relation_size('products'))	-	-	The function pg_total_relation_size(unknown) is not supported by the postgresql language
-web	C19	agent	discovery	yes	follows	00000	00000	-	-	SELECT relname, reltuples::bigint AS estimate FROM pg_class WHERE relname = 'products'	-	-	-
+web	C19	agent	discovery	yes	same	00000	00000	-	-	SELECT relname, reltuples::bigint AS estimate FROM pg_class WHERE relname = 'products'	-	-	-
 web	C20	agent	discovery	yes	silent	00000	00000	-	-	SHOW server_version	1 row: (18.7 (Debian 18.7-1.pgdg12+2))	1 row: (12.0)	-
 web	C21	agent	discovery	yes	same	00000	00000	-	-	SHOW search_path	-	-	-
 web	C22	agent	discovery	no	follows	00000	00000	-	-	SELECT pg_catalog.pg_class.relname FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace WHERE pg_catalog.pg_class.relkind = ANY (ARRAY['r', 'p']) AND pg_catalog.pg_class.relpersistence != 't' AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != 'pg_catalog' ORDER BY 1	-	-	-
 web	C23	agent	discovery	no	follows	00000	00000	-	-	SELECT n.nspname AS table_schema, c.relname AS table_name, CASE WHEN c.relkind = 'r' THEN 'table' WHEN c.relkind = 'v' THEN 'view' WHEN c.relkind = 'm' THEN 'materialized_view' END AS type, c.relrowsecurity AS rls_enabled FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r', 'v', 'm') AND n.nspname = 'public' ORDER BY 2	-	-	-
 web	C24	agent	discovery	no	follows	00000	00000	-	-	SELECT tbl.relname AS table_name, namespace.nspname AS namespace, (tbl.relhassubclass AND tbl.relkind = 'p') AS is_partition, tbl.relrowsecurity AS has_row_level_security, obj_description(tbl.oid, 'pg_class') AS description FROM pg_class AS tbl INNER JOIN pg_namespace AS namespace ON namespace.oid = tbl.relnamespace WHERE tbl.relkind IN ('r', 'p') AND namespace.nspname = ANY (ARRAY['public']) ORDER BY namespace, table_name	-	-	-
-web	C25	agent	discovery	no	follows	00000	00000	-	-	SELECT i.relname AS index_name, ix.indisunique, a.attname AS column_name FROM pg_class t, pg_class i, pg_index ix, pg_attribute a WHERE t.oid = ix.indrelid AND i.oid = ix.indexrelid AND a.attrelid = t.oid AND a.attnum = ANY(ix.indkey) AND t.relkind = 'r' AND t.relname = 'products' ORDER BY i.relname, a.attname	-	-	-
+web	C25	agent	discovery	no	same	00000	00000	-	-	SELECT i.relname AS index_name, ix.indisunique, a.attname AS column_name FROM pg_class t, pg_class i, pg_index ix, pg_attribute a WHERE t.oid = ix.indrelid AND i.oid = ix.indexrelid AND a.attrelid = t.oid AND a.attnum = ANY(ix.indkey) AND t.relkind = 'r' AND t.relname = 'products' ORDER BY i.relname, a.attname	-	-	-
 web	C26	agent	discovery	no	refused	00000	42P01	no	no	SELECT info.table_name, info.column_name, format_type(att.atttypid, att.atttypmod) AS formatted_type, info.data_type, info.udt_name, pg_get_expr(attdef.adbin, attdef.adrelid) AS column_default, info.is_nullable, info.is_identity, info.character_maximum_length FROM information_schema.columns info JOIN pg_attribute att ON att.attname = info.column_name AND att.attrelid = (quote_ident(info.table_schema) || '.' || quote_ident(info.table_name))::regclass LEFT OUTER JOIN pg_attrdef attdef ON attdef.adrelid = att.attrelid AND attdef.adnum = att.attnum WHERE info.table_schema = 'public' AND info.table_name = 'users' ORDER BY info.ordinal_position	-	-	relation "pg_attribute" does not exist
 web	C27	agent	discovery	no	follows	00000	00000	-	-	SELECT rc.constraint_name, rc.delete_rule, rc.update_rule FROM information_schema.referential_constraints rc ORDER BY 1	-	-	-
-web	C28	agent	discovery	no	follows	00000	00000	-	-	SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'users' AND constraint_type <> 'CHECK' ORDER BY 1	-	-	-
-web	C29	agent	discovery	no	follows	00000	00000	-	-	SELECT c.oid IS NOT NULL AS found, n.nspname, c.relname FROM pg_catalog.pg_class c LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relname OPERATOR(pg_catalog.~) '^(users)$' COLLATE pg_catalog.default AND pg_catalog.pg_table_is_visible(c.oid) ORDER BY 2, 3	-	-	-
+web	C28	agent	discovery	no	same	00000	00000	-	-	SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'users' AND constraint_type <> 'CHECK' ORDER BY 1	-	-	-
+web	C29	agent	discovery	no	same	00000	00000	-	-	SELECT c.oid IS NOT NULL AS found, n.nspname, c.relname FROM pg_catalog.pg_class c LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relname OPERATOR(pg_catalog.~) '^(users)$' COLLATE pg_catalog.default AND pg_catalog.pg_table_is_visible(c.oid) ORDER BY 2, 3	-	-	-
 web	C30	agent	discovery	no	same	00000	00000	-	-	SELECT column_name FROM information_schema.columns WHERE table_name = 'no_such_table'	-	-	-
 web	C31	agent	discovery	yes	refused	00000	0A000	yes	no way	SELECT current_setting('server_version_num')::int >= 120000 AS modern	-	-	The function current_setting(unknown) is not supported by the postgresql language
 web	C32	agent	discovery	no	follows	00000	00000	-	-	SELECT table_name, count(*) AS columns FROM information_schema.columns WHERE table_schema = 'public' GROUP BY table_name ORDER BY table_name	-	-	-
-web	E01	agent	read	no	follows	42703	42P01	no	no	SELECT nme FROM products	-	-	relation "products" does not exist
-web	E02	agent	read	no	follows	42703	42P01	no	no	SELECT p.nam FROM products p	-	-	relation "products" does not exist
+web	E01	agent	read	no	same	42703	42703	yes	yes	SELECT nme FROM products	-	-	column "nme" does not exist
+web	E02	agent	read	no	same	42703	42703	yes	yes	SELECT p.nam FROM products p	-	-	column "p.nam" does not exist
 web	E03	agent	read	no	same	42P01	42P01	no	no	SELECT * FROM usr	-	-	relation "usr" does not exist
 web	E04	agent	read	no	refused	00000	42601	no	no	SELECT * FROM user	-	-	syntax error at or near "user"
-web	E05	agent	read	no	follows	42883	42P01	no	no	SELECT email FROM users WHERE id = 1	-	-	relation "users" does not exist
-web	E06	agent	read	no	follows	22P02	42P01	no	no	SELECT sku FROM products WHERE price = 'cheap'	-	-	relation "products" does not exist
-web	E07	agent	read	no	follows	42703	42P01	no	no	SELECT sku FROM products WHERE name = "Mouse"	-	-	relation "products" does not exist
+web	E05	agent	read	no	same	42883	42883	yes	yes	SELECT email FROM users WHERE id = 1	-	-	operator does not exist: uuid = integer
+web	E06	agent	read	no	same	22P02	22P02	no	no	SELECT sku FROM products WHERE price = 'cheap'	-	-	invalid input syntax for type numeric: "cheap"
+web	E07	agent	read	no	same	42703	42703	yes	yes	SELECT sku FROM products WHERE name = "Mouse"	-	-	column "Mouse" does not exist
 web	E08	agent	read	no	same	42601	42601	yes	yes	SELECT `name` FROM products	-	-	syntax error at or near "`"
-web	E09	agent	read	no	follows	42803	42P01	no	no	SELECT name, count(*) FROM products	-	-	relation "products" does not exist
-web	E10	agent	read	no	follows	42702	42P01	no	no	SELECT id FROM users, orders	-	-	relation "users" does not exist
-web	E11	agent	read	no	follows	42883	42P01	no	no	SELECT IFNULL(full_name, '') FROM users	-	-	relation "users" does not exist
+web	E09	agent	read	no	same	42803	42803	no	no	SELECT name, count(*) FROM products	-	-	column "name" must appear in the GROUP BY clause or be used in an aggregate function
+web	E10	agent	read	no	follows	42702	42P01	no	no	SELECT id FROM users, orders	-	-	relation "orders" does not exist
+web	E11	agent	read	no	same	42883	42883	yes	yes	SELECT IFNULL(full_name, '') FROM users	-	-	function ifnull(character varying, unknown) does not exist
 web	E12	agent	read	no	same	42883	42883	yes	yes	SELECT GETDATE()	-	-	function getdate() does not exist
 web	E13	agent	read	no	same	42601	42601	no	no	SELECT id FROM orders WHERE created_at > NOW() - INTERVAL 7 DAY	-	-	syntax error at or near "7"
 web	E14	agent	read	no	follows	42883	42P01	no	no	SELECT id FROM orders WHERE created_at > DATE_SUB(NOW(), INTERVAL '7 days')	-	-	relation "orders" does not exist
 web	E15	agent	read	no	same	42601	42601	yes	yes	SELECT sku FROM products ORDER BY id LIMIT 1, 2	-	-	LIMIT #,# syntax is not supported
-web	E16	agent	write	no	follows	23505	42P01	no	no	INSERT INTO products (sku, name, price) VALUES ('A-1', 'Duplicate', 1)	-	-	relation "products" does not exist
+web	E16	agent	write	no	same	23505	23505	no	no	INSERT INTO products (sku, name, price) VALUES ('A-1', 'Duplicate', 1)	-	-	duplicate key value violates unique constraint "products[sku]": the key already exists in products
 web	E17	agent	write	no	follows	23503	42P01	no	no	INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (9999, 1, 1, 1)	-	-	relation "order_items" does not exist
-web	E18	agent	write	no	follows	23502	42P01	no	no	INSERT INTO products (name, price) VALUES ('No sku', 1)	-	-	relation "products" does not exist
-web	E19	agent	write	no	follows	23514	42P01	no	no	INSERT INTO products (sku, name, price) VALUES ('Z-9', 'Negative', -1)	-	-	relation "products" does not exist
-web	E20	agent	write	no	follows	42703	42P01	no	no	INSERT INTO products (sku, name, price, color) VALUES ('Y-8', 'Colored', 1, 'red')	-	-	relation "products" does not exist
-web	E21	agent	write	no	follows	42601	42P01	no	no	INSERT INTO products (sku, name, price) VALUES ('X-7', 'Short')	-	-	relation "products" does not exist
+web	E18	agent	write	no	same	23502	23502	no	no	INSERT INTO products (name, price) VALUES ('No sku', 1)	-	-	null value in column "sku" of relation "products" violates not-null constraint
+web	E19	agent	write	no	same	23514	23514	no	no	INSERT INTO products (sku, name, price) VALUES ('Z-9', 'Negative', -1)	-	-	new row for relation "products" violates check constraint "products_price_check"
+web	E20	agent	write	no	same	42703	42703	yes	yes	INSERT INTO products (sku, name, price, color) VALUES ('Y-8', 'Colored', 1, 'red')	-	-	column "color" of relation "products" does not exist
+web	E21	agent	write	no	same	42601	42601	no	no	INSERT INTO products (sku, name, price) VALUES ('X-7', 'Short')	-	-	INSERT has more target columns than expressions
 web	E22	agent	read	no	same	22P02	22P02	no	no	SELECT 'abc'::int	-	-	invalid input syntax for type integer: "abc"
-web	E23	agent	read	no	follows	00000	42P01	no	no	SELECT sku FROM products WHERE stock > '5' ORDER BY sku	-	-	relation "products" does not exist
-web	E24	agent	read	no	follows	42883	42P01	no	no	SELECT sum(name) FROM products	-	-	relation "products" does not exist
-web	E25	agent	read	no	follows	42703	42P01	no	no	SELECT sku FROM products ORDER BY nme	-	-	relation "products" does not exist
-web	E26	agent	write	no	follows	42703	42P01	no	no	UPDATE products SET prise = 1 WHERE id = 1	-	-	relation "products" does not exist
-web	E27	agent	read	no	follows	42703	42P01	no	no	SELECT "Name" FROM products	-	-	relation "products" does not exist
-web	E28	agent	read	no	follows	00000	42P01	no	no	SELECT Name FROM Products ORDER BY SKU LIMIT 1	-	-	relation "products" does not exist
-web	E29	agent	write	no	follows	23502	42P01	no	no	INSERT INTO users (email) VALUES (NULL)	-	-	relation "users" does not exist
+web	E23	agent	read	no	same	00000	00000	-	-	SELECT sku FROM products WHERE stock > '5' ORDER BY sku	-	-	-
+web	E24	agent	read	no	same	42883	42883	yes	yes	SELECT sum(name) FROM products	-	-	function sum(text) does not exist
+web	E25	agent	read	no	same	42703	42703	yes	yes	SELECT sku FROM products ORDER BY nme	-	-	column "nme" does not exist
+web	E26	agent	write	no	same	42703	42703	yes	yes	UPDATE products SET prise = 1 WHERE id = 1	-	-	column "prise" of relation "products" does not exist
+web	E27	agent	read	no	same	42703	42703	yes	yes	SELECT "Name" FROM products	-	-	column "Name" does not exist
+web	E28	agent	read	no	same	00000	00000	-	-	SELECT Name FROM Products ORDER BY SKU LIMIT 1	-	-	-
+web	E29	agent	write	no	same	23502	23502	no	no	INSERT INTO users (email) VALUES (NULL)	-	-	null value in column "email" of relation "users" violates not-null constraint
 web	E30	agent	read	no	same	42601	42601	no	no	SELECT * FROM public.products WHERE sku = 'A-1' AND	-	-	syntax error at or near "AND"
-web	E31	agent	read	no	follows	22P02	42P01	no	no	SELECT sku FROM products WHERE id = 'abc'	-	-	relation "products" does not exist
+web	E31	agent	read	no	same	22P02	22P02	no	no	SELECT sku FROM products WHERE id = 'abc'	-	-	invalid input syntax for type integer: "abc"
 web	E32	agent	write	no	follows	22P02	42P01	no	no	INSERT INTO orders (user_id, status) VALUES ('11111111-1111-1111-1111-111111111111', 'refunded')	-	-	relation "orders" does not exist
-web	E33	agent	read	no	follows	42703	42P01	no	no	SELECT u.email FROM users u JOIN orders o ON o.userid = u.id	-	-	relation "users" does not exist
-web	E34	agent	write	no	follows	23503	42P01	no	no	DELETE FROM users WHERE email = 'ann@example.com'	-	-	relation "users" does not exist
+web	E33	agent	read	no	follows	42703	42P01	no	no	SELECT u.email FROM users u JOIN orders o ON o.userid = u.id	-	-	relation "orders" does not exist
+web	E34	agent	write	no	follows	23503	00000	-	-	DELETE FROM users WHERE email = 'ann@example.com'	-	-	-
 ddl-probes	P01	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p01 (id serial PRIMARY KEY, v text)	-	-	-
 ddl-probes	P02	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p02 (id bigserial PRIMARY KEY, v text)	-	-	-
 ddl-probes	P03	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p03 (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, v text)	-	-	-
@@ -276,8 +276,8 @@ ddl-probes	P07	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p07 (id int PR
 ddl-probes	P08	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p08 (id int PRIMARY KEY, meta jsonb DEFAULT '{}')	-	-	-
 ddl-probes	P09	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p09 (id int PRIMARY KEY, tags text[] DEFAULT '{}')	-	-	-
 ddl-probes	P10	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p10 (id int PRIMARY KEY, active boolean NOT NULL DEFAULT true, n int NOT NULL DEFAULT 0, s text DEFAULT 'x', price numeric DEFAULT 0)	-	-	-
-ddl-probes	P11	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p11 (id int PRIMARY KEY, name varchar(255))	-	-	A type modifier on a column of type varchar is not supported by the postgresql language
-ddl-probes	P12	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p12 (id int PRIMARY KEY, price numeric(10,2))	-	-	A type modifier on a column of type numeric is not supported by the postgresql language
+ddl-probes	P11	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p11 (id int PRIMARY KEY, name varchar(255))	-	-	-
+ddl-probes	P12	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p12 (id int PRIMARY KEY, price numeric(10,2))	-	-	-
 ddl-probes	P13	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p13 (id int PRIMARY KEY, n int CHECK (n > 0))	-	-	-
 ddl-probes	P14	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p14 (id int PRIMARY KEY, a int, b int, CHECK (a < b))	-	-	-
 ddl-probes	P15	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p15 (id int PRIMARY KEY, a int, b int, UNIQUE (a, b))	-	-	-
@@ -299,25 +299,25 @@ ddl-probes	P30	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p30 (id int PR
 ddl-probes	P31	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p31 (id int PRIMARY KEY, t time)	-	-	A column of type time is not supported by the postgresql language
 ddl-probes	P32	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p32 (id int PRIMARY KEY, d date, ts timestamp without time zone)	-	-	-
 ddl-probes	P33	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p33 (id int PRIMARY KEY, i interval)	-	-	A column of type interval is not supported by the postgresql language
-ddl-probes	P34	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p34 (id int PRIMARY KEY, c char(2))	-	-	A type modifier on a column of type bpchar is not supported by the postgresql language
+ddl-probes	P34	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p34 (id int PRIMARY KEY, c char(2))	-	-	A column of type char(n), which pads its values with spaces, is not supported by the postgresql language
 ddl-probes	P35	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p35 (id int PRIMARY KEY, a double precision, b real, c smallint, d integer, e bigint, f decimal, g boolean, h bytea)	-	-	-
 ddl-probes	P36	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p36 (id int PRIMARY KEY, a int[], b bigint[], c numeric[])	-	-	-
 ddl-probes	P37	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p37 (id int PRIMARY KEY, a int, b int GENERATED ALWAYS AS (a * 2) STORED)	-	-	This column option (CHECK, a generated column, COLLATE, storage, a deferrable or unenforced constraint and the like) is not supported by the postgresql language
 ddl-probes	P38	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p38 AS SELECT * FROM parent	-	-	This form of CREATE TABLE (OF, PARTITION OF, AS or a table option) is not supported by the postgresql language
 ddl-probes	P39	probes	schema	no	refused	00000	0A000	yes	yes	CREATE SCHEMA app	-	-	CREATE SCHEMA is not supported by the postgresql language
 ddl-probes	P40	probes	schema	no	refused	00000	0A000	yes	yes	CREATE SEQUENCE order_seq	-	-	CREATE SEQUENCE is not supported by the postgresql language
-ddl-probes	P41	probes	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE parent ADD COLUMN extra text	-	-	ALTER is not supported by the postgresql language
-ddl-probes	P42	probes	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE parent DROP COLUMN IF EXISTS extra	-	-	ALTER is not supported by the postgresql language
-ddl-probes	P43	probes	schema	no	refused	00000	0A000	yes	yes	DROP TABLE p25	-	-	DROP is not supported by the postgresql language
-ddl-probes	P44	probes	schema	no	refused	00000	0A000	yes	yes	DROP TABLE IF EXISTS no_such_table	-	-	DROP is not supported by the postgresql language
+ddl-probes	P41	probes	schema	no	same	00000	00000	-	-	ALTER TABLE parent ADD COLUMN extra text	-	-	-
+ddl-probes	P42	probes	schema	no	same	00000	00000	-	-	ALTER TABLE parent DROP COLUMN IF EXISTS extra	-	-	-
+ddl-probes	P43	probes	schema	no	same	00000	00000	-	-	DROP TABLE p25	-	-	-
+ddl-probes	P44	probes	schema	no	same	00000	00000	-	-	DROP TABLE IF EXISTS no_such_table	-	-	-
 ddl-probes	P45	probes	schema	no	same	00000	00000	-	-	CREATE EXTENSION IF NOT EXISTS pgcrypto	-	-	-
 ddl-probes	P46	probes	schema	no	refused	00000	0A000	yes	yes	CREATE EXTENSION IF NOT EXISTS "uuid-ossp"	-	-	CREATE EXTENSION uuid-ossp is not supported by the postgresql language
 ddl-probes	P47	probes	write	no	same	23502	23502	no	no	INSERT INTO p26 DEFAULT VALUES	-	-	null value in column "user_id" of relation "p26" violates not-null constraint
 ddl-probes	P48	probes	schema	no	same	00000	00000	-	-	CREATE TABLE IF NOT EXISTS public.p48 (id int PRIMARY KEY)	-	-	-
 ddl-probes	P49	probes	schema	no	same	00000	00000	-	-	CREATE TABLE "User" (id int PRIMARY KEY, "createdAt" timestamp)	-	-	-
 ddl-probes	P50	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p50 (id int PRIMARY KEY, name text NOT NULL, CONSTRAINT p50_name_key UNIQUE (name))	-	-	-
-ddl-probes	P51	probes	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE parent ADD CONSTRAINT parent_name_key UNIQUE (name)	-	-	ALTER is not supported by the postgresql language
-ddl-probes	P52	probes	schema	no	refused	00000	0A000	yes	yes	DROP INDEX IF EXISTS some_index	-	-	DROP is not supported by the postgresql language
+ddl-probes	P51	probes	schema	no	same	00000	00000	-	-	ALTER TABLE parent ADD CONSTRAINT parent_name_key UNIQUE (name)	-	-	-
+ddl-probes	P52	probes	schema	no	same	00000	00000	-	-	DROP INDEX IF EXISTS some_index	-	-	-
 ddl-probes	P53	probes	schema	no	same	0A000	0A000	yes	yes	TRUNCATE parent	-	-	TRUNCATE is not supported by the postgresql language
 ddl-probes	P54	probes	write	no	refused	00000	0A000	yes	yes	MERGE INTO parent p USING (VALUES (1, 'a')) AS v(id, name) ON p.id = v.id WHEN NOT MATCHED THEN INSERT (id, name) VALUES (v.id, v.name)	-	-	MERGE is not supported by the postgresql language
 ddl-probes	P55	probes	schema	no	refused	00000	0A000	yes	no way	DO $$ BEGIN RAISE NOTICE 'hi'; END $$	-	-	DO is not supported by the postgresql language
