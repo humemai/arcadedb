@@ -213,7 +213,7 @@ A call of a function or operator that PostgreSQL 18 has and `postgresql` lacks i
 | --- | --- | --- |
 | `SELECT make_date(2013, 2, 30)` | `0A000` | PostgreSQL has the function |
 | `SELECT substr('a'::bytea, 1, 1)` | `0A000` | the language has `substr` for text only |
-| `SELECT '{}'::jsonb \|\| '{}'::jsonb` | `0A000` | PostgreSQL has the operator |
+| `SELECT 'a'::bytea \|\| 'b'::bytea` | `0A000` | PostgreSQL has the operator |
 | `SELECT lower(1)` | `42883` | PostgreSQL has no `lower(integer)` either |
 | `SELECT no_such_function(1)` | `42883` | PostgreSQL has no such name |
 

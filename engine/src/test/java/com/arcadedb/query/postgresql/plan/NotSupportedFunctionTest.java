@@ -81,8 +81,7 @@ class NotSupportedFunctionTest extends TestHelper {
       "SELECT extract(day FROM interval '1' day)",
       // operators
       "SELECT - interval '1' day",
-      "SELECT '{\"a\": 1}'::jsonb - 'a'",
-      "SELECT '{}'::jsonb || '{}'::jsonb",
+      "SELECT 'a'::bytea || 'b'::bytea",
       "SELECT 'a'::bytea LIKE 'a'::bytea" })
   void whatPostgreSQLHasAndTheLanguageLacksIsNotSupported(final String sql) {
     assertState(sql, "0A000");
