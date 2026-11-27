@@ -15,6 +15,17 @@ It needs git, a JDK 21, and a container runtime. In CI it is the workflow "Postg
 
 PostgreSQL's files are fetched by the script at the pinned tag and are not committed.
 
+## The published page
+
+[`postgresql-regression.md`](postgresql-regression.md) holds the counts of one run over every file. A script writes it, never a hand:
+
+```sh
+uv run --no-project python .github/scripts/pg_regress_page.py collect e2e/target/pgregress  # or the downloaded artifact
+uv run --no-project python .github/scripts/pg_regress_page.py check
+```
+
+`collect` reads both sides of the run and fails unless the run with PostgreSQL on both sides holds only passed and out of scope, and unless its counts equal those of the run's `summary.md`. It keeps what the page needs in [`result`](../e2e/src/test/resources/pgregress/result); the only statement text there is that of the wrong statements, under the licence that [`ATTRIBUTIONS.md`](../ATTRIBUTIONS.md) names. CI runs `check`, which fails when the page and the result disagree, when a row does not add up, or when a wrong statement has no cause with an issue. [`causes.tsv`](../e2e/src/test/resources/pgregress/causes.tsv) gives each wrong statement the cause of the first rule that matches it, and each cause its issue. A new cause is a pull request with its issue.
+
 ## Verdicts
 
 | verdict | rule |

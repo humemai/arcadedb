@@ -2,6 +2,8 @@
 
 The `postgresql` language (a prototype in the fork `humemai/arcadedb`) aims to give PostgreSQL 18's answer or to refuse with an error. It is for tables: rows, keys, and joins. Questions about connections, such as paths of any length or graph patterns, belong in openCypher. It cannot match PostgreSQL in everything, because ArcadeDB stores records rather than tables, so the aim is that most PostgreSQL use works as it does there, and that every known difference is listed here. The page has four groups: what comes from the ArcadeDB engine, what is a choice and open to change, what is not built yet, and the answers that are still wrong. **Which of the choices would you change?**
 
+How many statements of PostgreSQL's own regression files pass, are refused, or are answered wrong, and which ones, is on the [regression page](postgresql-regression.md).
+
 ## Example: a join through an edge type
 
 The tested [examples page](postgresql-examples.md) runs the same query text on both systems, over these PostgreSQL tables:

@@ -1,0 +1,39 @@
+# The cause of each wrong statement of a regression run (fork issue #121): the first rule that matches wins.
+# A column with - matches anything; the SQLSTATE and file columns match the whole value, the others a part of it.
+cause	issue	postgresql_sqlstate_re	tested_sqlstate_re	file_re	reason_re	statement_re	title
+numeric_power_crash	-	-	-	-	^crashed	-	Numeric `^` with a huge exponent crashes
+numeric_power_digits	-	00000	00000	numeric	-	\^	Numeric `^` answers other digits than PostgreSQL
+privileges	176	42501	00000	-	-	-	A statement that PostgreSQL refuses for a missing privilege succeeds
+publication	177	42P10|55000	00000	publication	-	-	An UPDATE or DELETE that a publication forbids succeeds
+temp_on_commit	178	00000	00000	temp|create_index	differs: row counts differ: PostgreSQL 0,	-	A temporary table that PostgreSQL empties at COMMIT keeps its rows
+commit_checks	179	(?!00000).*	00000	-	-	^\s*(commit|end)\b	COMMIT succeeds where a check that PostgreSQL makes at COMMIT fails
+nulls_not_distinct	180	23505|00000	00000	constraints	-	unique_tbl	A copied unique key loses NULLS NOT DISTINCT
+refused_set	181	00000	00000	-	^it has no table	-	After a refused SET, a later statement answers as without the setting
+refused_set	181	00000	00000	aggregates	^rows differ	sum	After a refused SET, a later statement answers as without the setting
+refused_set	181	25006	00000	-	-	-	After a refused SET, a later statement answers as without the setting
+rules	182	00000	00000	rules	-	-	A write into a table with a rule succeeds without the rule
+identity_columns	183	00000	00000	-	-	is_identity	information_schema does not report identity columns as PostgreSQL does
+information_schema	184	00000	00000	-	-	information_schema	information_schema answers without the views and schemas that were refused
+cast_column_name	185	00000	00000	-	^column names differ	::|cast	The column of a cast of a cast is named after the inner type
+exists_column_name	186	00000	00000	subselect	^column names differ	-	EXISTS over a table without columns is not named exists
+sqrt_numeric	187	00000	00000	-	^column types differ	sqrt	sqrt of a numeric answers double precision
+power_nan	188	00000	00000	float8	got \[NaN	power	power(1, NaN) and power(-1, infinity) answer NaN instead of 1
+jsonb_equal	189	00000	00000	jsonb	-	distinct|group by	DISTINCT and GROUP BY keep two jsonb values that PostgreSQL treats as equal
+localtimestamp	190	00000	00000	-	-	localtimestamp|current_timestamp|current_date	LOCALTIMESTAMP is read from the clock for each call
+shadowed_function	191	00000	00000	polymorphism	-	concat\s*\(	After a refused CREATE FUNCTION the built-in function of the same name answers
+window_ties	192	00000	00000	window	-	row_number	row_number over tied rows numbers them in another order
+two_digit_year	193	22008|00000	00000	date	-	date '\d\d[-/ ]	A date with a two-digit year is read as a year of the first century
+outer_aggregate_cte	194	0A000	00000	with	-	-	An outer aggregate over a nested WITH succeeds where PostgreSQL refuses it
+constraint_name	195	42710	00000	-	-	-	CREATE TABLE accepts two constraints of one name
+constant_division	196	22012	00000	-	-	case	A constant division by zero in a branch that never runs succeeds
+out_of_range_accepted	197	22003|22008	00000	-	-	-	Values that PostgreSQL finds out of range are accepted
+missing_function	198	-	42883	-	-	-	A function or operator that the language lacks answers 42883 where PostgreSQL raises another error
+missing_relation	199	-	42P01|3F000	-	-	-	A relation that a refused statement would have made answers 42P01 where PostgreSQL raises another error
+datetime_code	200	-	22007	-	-	-	Date, time, and interval text that is out of range answers 22007
+binary_number_code	201	22003	22P02	-	-	0[box]	A binary number that is out of range answers 22P02 instead of 22003
+syntax_error_code	202	-	42601	-	-	-	Text that the parser does not read answers 42601 instead of 0A000
+cast_code	203	-	42846	-	-	-	A cast that the language lacks answers 42846
+bind_parameter_code	204	08P01	42P02	-	-	-	Too few parameters in a Bind answer 42P02 instead of 08P01
+whole_row_code	205	-	42703	-	-	-	A reference to a whole row answers 42703 instead of 0A000
+extract_unit_code	206	0A000	22023	-	-	extract|date_part	EXTRACT of a time zone from a date answers 22023 instead of 0A000
+excluded_ambiguous	207	-	42702	-	-	-	ON CONFLICT on a table named excluded answers 42702

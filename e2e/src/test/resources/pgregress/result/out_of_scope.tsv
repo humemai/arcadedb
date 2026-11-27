@@ -1,0 +1,16 @@
+entry	statements	reason
+explain	2202	2
+catalog-relation	1194	2
+publication	434	3
+system-column	253	2
+two-runs	162	1
+c-function-call	113	3
+catalog-qualified	101	2
+c-function	83	3
+tablespace	16	3
+language-handler	14	3
+access-method	13	3
+tied-order	9	1
+extension	2	3
+load	2	3
+replication-function	1	3

@@ -30,9 +30,14 @@
 # writes the pg18 and detail columns; the server runs with the C collation and the UTF8 encoding, and the version string,
 # collation and encoding of the server that wrote them are the # server:, # collation: and # encoding: lines below.
 #
+# Licences: the statements taken from the tests of PostgreSQL (the entries with an id of the form <test>:<line>) are under the
+# PostgreSQL License, and ATTRIBUTIONS.md has its notice. Everything else in this file is under the Apache License 2.0.
+#
 # Copyright © 2021-present Arcade Data Ltd (info@arcadedata.com)
 # SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 1996-2026 PostgreSQL Global Development Group
+# SPDX-FileCopyrightText: 1994 The Regents of the University of California
+# SPDX-License-Identifier: Apache-2.0 AND PostgreSQL
 # server: PostgreSQL 18.7 (Debian 18.7-1.pgdg13+5) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
 # collation: C
 # encoding: UTF8

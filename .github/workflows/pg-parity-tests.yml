@@ -28,7 +28,8 @@
 #
 # Started by hand with the input regenerate on, it rewrites the expected cells of the three corpus files from the real server and
 # uploads them as an artifact (the workflow has no write access): the generator is never on in a run that a push or a pull
-# request starts. Drop this file when anything goes upstream.
+# request starts. One step checks that the page of the regression counts (docs/postgresql-regression.md, fork issue #120) is
+# the one that its committed result gives. Drop this file when anything goes upstream.
 name: PostgreSQL prototype - answer parity
 
 on:
@@ -190,6 +191,12 @@ jobs:
             e2e/target/pgparity/report-idrule.txt
           if-no-files-found: ignore
           retention-days: 7
+
+      # No build and no PostgreSQL file: the script writes the page of the regression counts from its committed result and
+      # compares. It also fails when a row does not add up, or a wrong statement has no cause with an issue.
+      - name: Check the regression page against its result
+        if: ${{ !cancelled() }}
+        run: uv run --no-project --python 3.12 python .github/scripts/pg_regress_page.py check
 
       - name: Where the Maven files came from
         if: always()
