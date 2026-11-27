@@ -327,8 +327,11 @@ class PostgreSQLAgentMeasureTest extends PostgresWireProtocolTestBase {
   /** What the shadow answers to a statement that the language refused, with nothing of it kept. */
   private static Map<String, Object> probe(final Connection shadow, final String sql, final Item item) throws SQLException {
     final TransactionState state = state(shadow);
+    // a failed block takes only its end or a return to a savepoint: they run, and mirror fails the block again
     if (state == TransactionState.FAILED)
-      return failure("25P02", "the shadow is in a failed transaction block");
+      return ENDS.matcher(sql).lookingAt() ?
+          exec(shadow, sql, item.params) :
+          failure("25P02", "the shadow is in a failed transaction block");
     if (state == TransactionState.IDLE) {
       exec(shadow, "BEGIN", List.of());
       final Map<String, Object> result = exec(shadow, sql, item.params);

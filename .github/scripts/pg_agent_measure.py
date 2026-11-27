@@ -91,6 +91,8 @@ DISTANCE = re.compile(r"<=>|<->|<#>")
 # an error names a next step: a clause of its message starts with one of these verbs, it has a hint, or it asks for a retry
 STEP = re.compile(r"hint:\s*\S|(?:^|[.:;,]\s+)(?:please |then )?(?:use|write|send|cast|declare|retry|run|quote|add|remove|leave"
                   r"|repeat)\b|please retry", re.IGNORECASE)
+# how a hint starts that says that nothing can be written instead: it is not a next step
+NO_WAY = "There is no way to write this in the postgresql language yet"
 # how many silent answers and messages the page shows in full
 TOP_MESSAGES = 20
 SHOWN = 110
@@ -250,10 +252,19 @@ def error_text(outcome):
 
 
 def names_next_step(outcome):
-    """Static: the hint field is set, or the text says what to do. What the statement quotes does not count."""
-    if outcome.get("hint"):
+    """Static: the hint field says something, or the text says what to do. What the statement quotes does not count, and
+    neither do the words that say that there is no way yet."""
+    hint = " ".join(str(outcome.get("hint") or "").split())
+    if hint and not hint.startswith(NO_WAY):
         return True
-    return bool(STEP.search(re.sub(r'"[^"]*"', '"..."', " ".join(error_text(outcome).split()))))
+    text = " ".join(f"{error_text(outcome)}. {hint}".split())
+    text = re.sub(r"(?:Hint: )?" + re.escape(NO_WAY), "", re.sub(r'"[^"]*"', '"..."', text))
+    return bool(STEP.search(text))
+
+
+def hint_field(outcome):
+    hint = str(outcome.get("hint") or "")
+    return "no way" if hint.startswith(NO_WAY) else "yes" if hint else "no"
 
 
 def answer(outcome, limit=150):
@@ -303,7 +314,7 @@ def judge(directory):
                 "postgresql_18": "00000" if postgres["ok"] else printable(postgres.get("state")),
                 "language": "00000" if language["ok"] else printable(language.get("state")),
                 "next_step": ("yes" if names_next_step(language) else "no") if failed else "-",
-                "hint_field": ("yes" if language.get("hint") else "no") if failed else "-",
+                "hint_field": hint_field(language) if failed else "-",
                 "postgresql_18_answer": answer(postgres) if silent else "-",
                 "language_answer": answer(language) if silent else "-",
                 "message": printable(error_text(language)) if failed else "-",
@@ -343,7 +354,8 @@ def numbers(rows, entries):
             "classes": by_class,
             "m1": (sum(match for match, _ in by_class.values()), len(steady)),
             "m2": (sum(row["next_step"] == "yes" for row in errors), len(errors)),
-            "hint_field": sum(row["hint_field"] == "yes" for row in errors),
+            "hint_field": sum(row["hint_field"] != "no" for row in errors),
+            "no_way": sum(row["hint_field"] == "no way" for row in errors),
             "m3": sum(verdict_of(row, entries) == "silent" for row in part),
         }
     return result
@@ -442,11 +454,11 @@ def render():
     quiet = collections.Counter(message_group(row["message"]) for row in counted
                                 if row["verdict"] in OWN_ERRORS and row["next_step"] == "no")
     total = sum(quiet.values())
-    hinted = sum(measured[kind]["hint_field"] for kind in SETS)
+    hinted, no_way = (sum(measured[kind][key] for kind in SETS) for key in ("hint_field", "no_way"))
     errors = sum(measured[kind]["m2"][1] for kind in SETS)
     out.append(f"## M2: errors that name no next step\n\n{total:,} errors of the language name no next step. Of all {errors:,} "
-               f"errors of its own, {hinted:,} use the hint field of the protocol. Names and values are taken out of the "
-               "messages.\n\n| message | statements |\n| --- | ---: |\n")
+               f"errors of its own, {hinted:,} use the hint field of the protocol, and {no_way:,} of those hints say that there "
+               "is no way yet. Names and values are taken out of the messages.\n\n| message | statements |\n| --- | ---: |\n")
     top = sorted(quiet.items(), key=lambda item: (-item[1], item[0]))[:TOP_MESSAGES]
     for message, count in top:
         out.append(f"| {shown(message, 150)} | {count:,} |\n")
@@ -461,8 +473,9 @@ def render():
         "- **Match.** The same column names, rows (in order where the statement has `ORDER BY`), and count of a write, or the "
         "same SQLSTATE. Type names are not compared. JSON and numbers are compared by value, and vector distances within a "
         "relative difference of 0.00001. For `EXPLAIN` only the column names are compared.\n"
-        "- **Volatile.** A statement whose values depend on the clock, a random id, or the server is marked in the "
-        "[corpus](../postgresw/src/test/resources/agentmeasure/corpus.sql). It counts in M2 and M3, not in M1, and only its "
+        "- **Volatile.** A statement whose values depend on the clock, a random id, the server, or an order that PostgreSQL "
+        "does not fix is marked in the [corpus](../postgresw/src/test/resources/agentmeasure/corpus.sql). It counts in M2 and "
+        "M3, not in M1, and only its "
         "column names and row count are compared. Where the values are the server's own, such as its version or its search "
         "path, they are compared all the same.\n"
         "- **Class.** `discovery` reads `information_schema` or `pg_catalog`, `transaction` is a statement of the transaction "
@@ -471,8 +484,8 @@ def render():
         "transaction blocks. An answer that differs from PostgreSQL's and equals the answer of that database, or an error with "
         "its code, comes from an earlier statement. It does not match in M1, and counts in neither M2 nor M3.\n"
         "- **M2.** The error has a hint field, or its text has `Hint:`, or a clause that starts with use, write, send, cast, "
-        "declare, retry, run, quote, add, remove, leave, or repeat, or it asks to retry. The check reads the text only: it "
-        "does not say that the step works.\n"
+        f"declare, retry, run, quote, add, remove, leave, or repeat, or it asks to retry. The words \"{NO_WAY}\" are not a "
+        "next step. The check reads the text only: it does not say that the step works.\n"
         f"- **Not counted.** {setups} setup steps of the probes run in ArcadeDB `sql`.\n\n"
         "## Write this page again\n\nDownload the artifact `pg-agent-measure` of a run of the workflow "
         "[pg-agent-measure](../.github/workflows/pg-agent-measure.yml) and run:\n\n"

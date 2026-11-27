@@ -2,3 +2,16 @@
 # than PostgreSQL's on purpose, and is not counted in M3. Each line names the row of docs/postgresql-differences.md that keeps
 # the difference. A difference that is planned to change stays out. One line per statement, tabs between the cells.
 id	listed_as
+P24	`CREATE TABLE`: a table that an edge table refers to declares no column `rid`, its record id answers to it
+D07	Choices, 2: a record id is text
+D10	Choices, 2 and 3: the ends of an edge hold record ids, which are text
+D11	Choices, 2: a record id is text
+D12	`CREATE TABLE`: the record id is left out of `*`
+D22	`CREATE TABLE`: the record id is left out of `*`
+D34	Choices, 7: only declared properties are columns
+D44	From the engine: a foreign key on a `LINK` column is not enforced
+D45	Choices, 2: a record id is text
+D46	After D44: a foreign key on a `LINK` column is not enforced
+D47	After D44: deleting a vertex deletes its edges
+D48	From the engine: a foreign key on a `LINK` column is listed as not enforced
+D51	Choices, 2 and 10: a record id is text and is reported as an identity column

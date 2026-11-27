@@ -9,9 +9,10 @@
 --
 -- Directives, each on a line of its own:
 --   --# group NAME      the statements that follow belong to NAME
---   --@ ID TAGS         a statement starts. The tag volatile: its values depend on the clock, a random id, or the server, so
---                       only its column names and row count are compared, and it does not count in M1. The tag own-value
---                       with it: the values are the server's own (its version, its search path) and are compared all the same
+--   --@ ID TAGS         a statement starts. The tag volatile: its values depend on the clock, a random id, the server, or
+--                       an order that PostgreSQL does not fix, so only its column names and row count are compared, and it
+--                       does not count in M1. The tag own-value with it: the values are the server's own (its version, its
+--                       search path) and are compared all the same
 --   --! pg              the text that follows is what PostgreSQL runs instead
 --   --! via-sql         the language side runs the statement in ArcadeDB sql: a setup step, not counted
 --   --! rollback        the statement runs between BEGIN and ROLLBACK
@@ -803,7 +804,7 @@ SELECT array_to_string(tags, ',') FROM f ORDER BY id
 SELECT string_to_array('a,b', ',')
 --@ F33 feature
 SELECT string_agg(name, ',' ORDER BY name) FROM f
---@ F34 feature
+--@ F34 feature volatile
 SELECT string_agg(name, ',') FROM f
 --@ F35 feature
 SELECT now() - interval '7 days' < now()
@@ -1324,7 +1325,7 @@ UPDATE price SET amont = 99 WHERE id = 1
 CREATE PROPERTY price.amont INTEGER
 --! via-sql
 --! pg
-SELECT 1
+ALTER TABLE price ADD COLUMN amont integer
 --@ G104 hint
 UPDATE price SET amont = 99 WHERE id = 1
 --@ G105 hint
