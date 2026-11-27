@@ -23,6 +23,7 @@ import org.testcontainers.containers.GenericContainer;
 
 import java.sql.Connection;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -171,9 +172,11 @@ class PostgreSQLDropRenameColumnTest extends PostgreSQLSideBySideTestBase {
         sameValues(postgres, arcade, COLUMNS);
         sameValues(postgres, arcade, CONSTRAINTS);
         sameValues(postgres, arcade, CHECKS);
-        // the values are gone: a column of the same name starts empty, and sql finds none
+        // the values are gone: a column of the same name starts empty, and sql and openCypher find none
         compare("sql", "    0|0|0|\n", rows(arcade,
             "{sql} SELECT count(code) AS codes, count(lo) AS lows, count(`at`) AS times FROM acc"));
+        compare("openCypher", rows(postgres, "SELECT count(*), 0, 0, 0 FROM acc"), rows(arcade,
+            "{opencypher} MATCH (a:acc) RETURN count(a) AS n, count(a.code) AS codes, count(a.lo) AS lows, count(a.`at`) AS times"));
         both(postgres, arcade, "ALTER TABLE acc ADD COLUMN lo int");
         sameValues(postgres, arcade, "SELECT count(lo), count(note) FROM acc");
 
@@ -211,7 +214,7 @@ class PostgreSQLDropRenameColumnTest extends PostgreSQLSideBySideTestBase {
       final String values = rows(arcade, "SELECT id, v, m FROM partial ORDER BY id");
       final String constraints = rows(arcade, CONSTRAINTS);
       final String checks = rows(arcade, CHECKS);
-      final String indexes = rows(arcade, "{sql} SELECT name FROM schema:indexes ORDER BY name");
+      final String indexes = typeIndexes(arcade);
 
       for (final String change : List.of("ALTER TABLE partial DROP COLUMN v", "ALTER TABLE partial RENAME v TO w"))
         for (final boolean inBlock : new boolean[] { false, true }) {
@@ -224,9 +227,14 @@ class PostgreSQLDropRenameColumnTest extends PostgreSQLSideBySideTestBase {
           compare("the rows after " + change, values, rows(arcade, "SELECT id, v, m FROM partial ORDER BY id"));
           compare("the constraints after " + change, constraints, rows(arcade, CONSTRAINTS));
           compare("the checks after " + change, checks, rows(arcade, CHECKS));
-          compare("the indexes after " + change, indexes, rows(arcade, "{sql} SELECT name FROM schema:indexes ORDER BY name"));
+          compare("the indexes after " + change, indexes, typeIndexes(arcade));
+          // the index that was built again finds the rows
+          compare("a lookup by two columns after " + change, "    5|\n",
+              rows(arcade, "{sql} SELECT id FROM partial WHERE v = 5 AND id = 5"));
           compare("the new name after " + change, "    0|\n",
               rows(arcade, "{sql} SELECT count(*) AS n FROM partial WHERE w IS NOT NULL"));
+          compare("openCypher after " + change, "    40|40|0|\n", rows(arcade,
+              "{opencypher} MATCH (p:partial) RETURN count(p) AS n, count(p.v) AS kept, count(p.w) AS renamed"));
           compare("the key after " + change, "23505", state(arcade, "INSERT INTO partial (id, v, m) VALUES (50, 1, 'x')"));
           compare("the check after " + change, "23514", state(arcade, "INSERT INTO partial (id, v, m) VALUES (50, -1, 'x')"));
         }
@@ -239,6 +247,12 @@ class PostgreSQLDropRenameColumnTest extends PostgreSQLSideBySideTestBase {
       compare("dropped", "42703", state(arcade, "SELECT w FROM partial"));
       assertThat(failures).as(String.join("\n", failures)).isEmpty();
     }
+  }
+
+  /** The names of the indexes of the types. Those of the buckets say when they were built, which building one again changes. */
+  private static String typeIndexes(final Connection connection) {
+    return rows(connection, "{sql} SELECT name FROM schema:indexes ORDER BY name").lines().filter(line -> line.contains("["))
+        .collect(Collectors.joining("\n"));
   }
 
   /** The rows of an answer, without the header. */
