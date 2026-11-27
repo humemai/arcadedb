@@ -525,7 +525,8 @@ class StatementParserTest {
       "EXPLAIN CREATE TABLE t (a int)", "SELECT * FROM a NATURAL JOIN b", "SELECT * FROM a JOIN b USING (x) AS j",
       "SELECT * FROM generate_series(1, 3)", "SELECT (1, 2)", "SELECT count(*) OVER w FROM t",
       "SELECT count(*) FILTER (WHERE a) FROM t", "SELECT DISTINCT ON (a) a FROM t", "SELECT 1 INTO t", "SELECT 1 FOR UPDATE",
-      "SELECT a FROM t FETCH FIRST 1 ROWS ONLY", "SELECT a SIMILAR TO b", "SELECT a IS TRUE", "SELECT 1 = ANY (ARRAY[1])",
+      "SELECT a FROM t FETCH FIRST 1 ROWS ONLY", "SELECT a SIMILAR TO b", "SELECT a IS TRUE", "SELECT 1 + ANY (ARRAY[1])",
+      "SELECT a < ALL (SELECT b FROM t)",
       "SELECT a COLLATE \"C\"", "SELECT a[1] FROM t", "SELECT f(a => 1)", "TRUNCATE t", "CREATE EXTENSION vector",
       "SAVEPOINT a", "MERGE INTO t USING s ON t.a = s.a WHEN MATCHED THEN DELETE", "VACUUM" })
   void everyOtherRefusalNamesAWayOut(final String text) {

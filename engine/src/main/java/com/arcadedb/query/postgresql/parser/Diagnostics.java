@@ -197,8 +197,7 @@ final class Diagnostics {
           "Run the query and the write as two statements in one transaction, with RETURNING to read what a write changed";
       case "unsupportedInSubquery" -> "Name the query in a WITH clause, or run it first and send its values as parameters";
       case "unsupportedSymmetric" -> "Write x BETWEEN low AND high with the smaller bound first";
-      case "unsupportedQuantifiedComparison" -> "Write IN with one parameter for each value, as in x IN ($1, $2), or IN (SELECT ...)."
-          + " There is no way to search an array column yet";
+      case "unsupportedQuantifiedComparison" -> "Write ANY or ALL after a comparison: =, <>, <, <=, > or >=";
       case "unsupportedIndirection", "unsupportedSubscript" -> "Select the whole value and read the field or element in your program";
       case "unsupportedRowComma" -> "Compare the columns one by one, as in a < $1 OR (a = $1 AND b < $2)";
       case "unsupportedAggregateOrder" -> PostgreSQLHints.NO_WAY + ": select the rows with ORDER BY and aggregate in your program";
