@@ -22,6 +22,7 @@ import com.arcadedb.database.Database;
 import com.arcadedb.exception.AlreadyExistsException;
 import com.arcadedb.query.postgresql.PostgreSQLAmbiguousIdentifierException;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
+import com.arcadedb.query.postgresql.PostgreSQLUndefinedTableException;
 import com.arcadedb.query.postgresql.ast.CreateTableStatement;
 import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.Name;
@@ -59,7 +60,9 @@ import java.util.Set;
 /**
  * {@code CREATE TABLE} (fork issue #118). A table is a vertex type. A table that declares both ends of an edge, the columns
  * {@code source_id} and {@code target_id}, each {@code text NOT NULL REFERENCES a_table (rid) ON DELETE CASCADE}, is an edge
- * type. Every other {@code REFERENCES} is refused, because the engine keeps no foreign key but the ends of an edge.
+ * type. Every other {@code REFERENCES} is a foreign key between columns, which the engine checks for every language (fork issue
+ * #228): it needs a primary key or a unique index over the referenced columns, and the table gets an index over the referring ones.
+ * A table with {@code REFERENCES} on both {@code source_id} and {@code target_id} in any other form is refused.
  * <p>
  * What a write has to keep goes into the schema, so it holds for every language: the property types, mandatory and not-null for
  * {@code NOT NULL}, a unique index for each {@code UNIQUE} and {@code PRIMARY KEY} (a unique edge type for a key over the two
@@ -91,6 +94,13 @@ public final class CreateTablePlan {
   /** The types an identity column can have, each with the largest value it holds. */
   private static final Map<ColumnType, Long> COUNTED_TYPES = Map.of(ColumnType.INT2, (long) Short.MAX_VALUE, ColumnType.INT4,
       (long) Integer.MAX_VALUE, ColumnType.INT8, Long.MAX_VALUE);
+
+  /** The types of which a foreign key can refer from one to another, and those PostgreSQL compares besides (fork issue #228). */
+  private static final Set<ColumnType> INTEGERS = Set.of(ColumnType.INT2, ColumnType.INT4, ColumnType.INT8);
+  private static final Set<ColumnType> TEXTS    = Set.of(ColumnType.TEXT, ColumnType.VARCHAR);
+  private static final Set<ColumnType> FLOATS   = Set.of(ColumnType.FLOAT4, ColumnType.FLOAT8);
+  private static final Set<ColumnType> NUMBERS  = Set.of(ColumnType.NUMERIC, ColumnType.FLOAT4, ColumnType.FLOAT8);
+  private static final Set<ColumnType> TIMES    = Set.of(ColumnType.DATE, ColumnType.TIMESTAMP, ColumnType.TIMESTAMPTZ);
 
   /** The type of a column, in the engine and in the view; {@code dimensions} is 0 unless the column is a {@code vector(n)}. */
   private record Mapped(ColumnType type, Type engine, String ofType, int dimensions) {
@@ -174,7 +184,13 @@ public final class CreateTablePlan {
         spec.notNull = true;
       }
 
-    final Map<String, ForeignKey> ends = foreignKeys.isEmpty() ? Map.of() : ends(table, columns, foreignKeys);
+    // foreign keys over source_id and over target_id declare a link table; every other one is a key the engine checks
+    final boolean linkTable = ENDS.stream()
+        .allMatch(end -> foreignKeys.stream().anyMatch(key -> key.columns().equals(List.of(end))));
+    final List<ForeignKey> endKeys = linkTable ?
+        foreignKeys.stream().filter(key -> key.columns().size() == 1 && ENDS.contains(key.columns().get(0))).toList() :
+        List.of();
+    final Map<String, ForeignKey> ends = linkTable ? ends(table, columns, endKeys) : Map.of();
     final Map<String, String> endTables = new LinkedHashMap<>();
     for (final String end : ENDS)
       if (ends.containsKey(end))
@@ -198,9 +214,150 @@ public final class CreateTablePlan {
       if (spec.literal != null)
         readDefault(spec);
 
-    final TableDefinition definition = definition(table, columns, unique, ends);
-    create(table, columns, unique, endTables, uniqueEnds, definition);
+    final Set<String> keyNames = new LinkedHashSet<>();
+    final List<com.arcadedb.schema.ForeignKey> checked = new ArrayList<>();
+    for (final ForeignKey key : foreignKeys)
+      if (!endKeys.contains(key))
+        checked.add(checkedKey(table, columns, unique, key, keyName(table, key, keyNames)));
+
+    final TableDefinition definition = definition(table, columns, unique, ends, keyNames);
+    create(table, columns, unique, endTables, uniqueEnds, definition, checked);
     return answer("CREATE TABLE " + table);
+  }
+
+  // ------------------------------------------------------------------------------------------------ foreign keys
+
+  /** The name of a foreign key: the one the statement gives, else the one PostgreSQL would give, with a number when it is taken. */
+  private static String keyName(final String table, final ForeignKey key, final Set<String> taken) {
+    if (key.name() != null) {
+      if (!taken.add(key.name()))
+        throw PostgreSQLEvaluationException.duplicateConstraint(key.name(), table);
+      return key.name();
+    }
+    final String base = table + "_" + String.join("_", key.columns()) + "_fkey";
+    String name = base;
+    for (int next = 1; !taken.add(name); next++)
+      name = base + next;
+    return name;
+  }
+
+  /**
+   * A foreign key between columns, which the engine checks (fork issue #228): it refers to the columns of a primary key or a unique
+   * index, of the table itself or of another one, with types that compare as the referring ones do.
+   */
+  private com.arcadedb.schema.ForeignKey checkedKey(final String table, final Map<String, Spec> columns, final List<Key> unique,
+      final ForeignKey key, final String name) {
+    final CreateTableStatement.Reference reference = key.reference();
+    final com.arcadedb.schema.ForeignKey.Action onDelete = action(reference.onDelete(), reference.position());
+    final com.arcadedb.schema.ForeignKey.Action onUpdate = action(reference.onUpdate(), reference.position());
+    String target = tableName(reference.table(), reference.position());
+    final List<String> properties = new ArrayList<>();
+    final List<ColumnType> types = new ArrayList<>();
+    if (target.equals(table)) {
+      final List<String> written = new ArrayList<>(reference.columns().stream().map(Name::value).toList());
+      if (written.isEmpty())
+        written.addAll(unique.stream().filter(Key::primary).findFirst().orElseThrow(() -> noPrimaryKey(table)).columns());
+      for (final String column : written) {
+        if (!columns.containsKey(column))
+          throw undefinedReferenced(column);
+        properties.add(column);
+        types.add(columns.get(column).mapped.type());
+      }
+      if (unique.stream().noneMatch(each -> sameColumns(each.columns(), written)))
+        throw noUniqueKey(table);
+    } else {
+      final Table referenced = catalog.findTable(identifier(reference.table().get(reference.table().size() - 1)));
+      if (referenced == null)
+        throw new PostgreSQLUndefinedTableException(target);
+      target = referenced.name();
+      if (reference.columns().isEmpty() && referenced.primaryKey() == null)
+        throw noPrimaryKey(target);
+      final List<Identifier> named = reference.columns().isEmpty() ?
+          referenced.primaryKey().columns().stream().map(column -> new Identifier(column, true)).toList() :
+          reference.columns().stream().map(CreateTablePlan::identifier).toList();
+      for (final Identifier each : named) {
+        final Column column = referenced.findColumn(each);
+        if (column == null)
+          throw undefinedReferenced(each.text());
+        if (column.kind() != Column.Kind.PROPERTY)
+          // the record id: only the two ends of a link table refer to it
+          throw refusedReference(reference.position());
+        properties.add(column.property());
+        types.add(column.type());
+      }
+      if (database.getSchema().getType(target).getAllIndexes(false).stream()
+          .noneMatch(index -> index.isUnique() && sameColumns(index.getPropertyNames(), properties)))
+        throw noUniqueKey(target);
+    }
+    if (properties.size() != key.columns().size())
+      throw new PostgreSQLEvaluationException("42830", "number of referencing and referenced columns for foreign key disagree");
+    for (int i = 0; i < properties.size(); i++) {
+      final ColumnType referring = columns.get(key.columns().get(i)).mapped.type();
+      checkTypes(name, referring, types.get(i), reference.position());
+      if (!KEY_TYPES.contains(referring))
+        throw unsupported("A key over a column of type " + referring, reference.position());
+    }
+    return new com.arcadedb.schema.ForeignKey(name, key.columns(), target, properties, onDelete, onUpdate);
+  }
+
+  private static boolean sameColumns(final List<String> key, final List<String> columns) {
+    return key.size() == columns.size() && Set.copyOf(columns).size() == columns.size() && key.containsAll(columns);
+  }
+
+  /** Refuses types that PostgreSQL cannot compare, and those it compares that an index of the engine cannot. */
+  private static void checkTypes(final String name, final ColumnType referring, final ColumnType referenced,
+      final SourcePosition position) {
+    if (referring == referenced || INTEGERS.contains(referring) && INTEGERS.contains(referenced)
+        || TEXTS.contains(referring) && TEXTS.contains(referenced))
+      return;
+    final boolean postgresCompares = INTEGERS.contains(referring) && NUMBERS.contains(referenced)
+        || referring == ColumnType.NUMERIC && FLOATS.contains(referenced)
+        || FLOATS.contains(referring) && FLOATS.contains(referenced) || TIMES.contains(referring) && TIMES.contains(referenced);
+    final String types = PgType.of(referring).displayName() + " and " + PgType.of(referenced).displayName();
+    if (postgresCompares)
+      throw unsupported("A foreign key between columns of the types " + types, position);
+    throw new PostgreSQLEvaluationException("42804",
+        "foreign key constraint \"" + name + "\" cannot be implemented: the key columns are of incompatible types: " + types);
+  }
+
+  private static com.arcadedb.schema.ForeignKey.Action action(final CreateTableStatement.Action action,
+      final SourcePosition position) {
+    return switch (action) {
+      case NO_ACTION -> com.arcadedb.schema.ForeignKey.Action.NO_ACTION;
+      case RESTRICT -> com.arcadedb.schema.ForeignKey.Action.RESTRICT;
+      case CASCADE -> com.arcadedb.schema.ForeignKey.Action.CASCADE;
+      case SET_NULL -> com.arcadedb.schema.ForeignKey.Action.SET_NULL;
+      case SET_DEFAULT -> throw unsupported("The referential action SET DEFAULT", position);
+    };
+  }
+
+  private static PostgreSQLEvaluationException noPrimaryKey(final String table) {
+    return new PostgreSQLEvaluationException("42704", "there is no primary key for referenced table \"" + table + "\"");
+  }
+
+  private static PostgreSQLEvaluationException noUniqueKey(final String table) {
+    return new PostgreSQLEvaluationException("42830",
+        "there is no unique constraint matching given keys for referenced table \"" + table + "\"");
+  }
+
+  private static PostgreSQLEvaluationException undefinedReferenced(final String column) {
+    return new PostgreSQLEvaluationException("42703",
+        "column \"" + column + "\" referenced in foreign key constraint does not exist");
+  }
+
+  /** Adds the index over the referring columns of each key, unless one is there, and declares the keys. */
+  private void createForeignKeys(final DocumentType type, final List<com.arcadedb.schema.ForeignKey> checked) {
+    if (checked.isEmpty())
+      return;
+    for (final com.arcadedb.schema.ForeignKey key : checked) {
+      final List<String> keyOrder = database.getSchema().getType(key.referencedType()).getAllIndexes(false).stream()
+          .filter(index -> index.isUnique() && sameColumns(index.getPropertyNames(), key.referencedColumns()))
+          .findFirst().orElseThrow(() -> noUniqueKey(key.referencedType())).getPropertyNames();
+      final List<String> properties = key.columnsInKeyOrder(keyOrder);
+      if (type.getAllIndexes(false).stream().noneMatch(index -> index.getPropertyNames().equals(properties)))
+        type.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, false, properties.toArray(new String[0]));
+    }
+    type.setCustomValue(com.arcadedb.schema.ForeignKey.CUSTOM_KEY, com.arcadedb.schema.ForeignKey.toJson(checked));
   }
 
   private static PostgreSQLResultSet answer(final String step) {
@@ -615,8 +772,8 @@ public final class CreateTablePlan {
   // ------------------------------------------------------------------------------------------------ the schema
 
   private TableDefinition definition(final String table, final Map<String, Spec> columns, final List<Key> keys,
-      final Map<String, ForeignKey> ends) {
-    final Set<String> names = new LinkedHashSet<>();
+      final Map<String, ForeignKey> ends, final Set<String> keyNames) {
+    final Set<String> names = new LinkedHashSet<>(keyNames);
     final Set<String> text = new LinkedHashSet<>();
     final Set<String> instants = new LinkedHashSet<>();
     for (final Spec spec : columns.values())
@@ -659,7 +816,8 @@ public final class CreateTablePlan {
   }
 
   private void create(final String table, final Map<String, Spec> columns, final List<Key> keys,
-      final Map<String, String> endTables, final boolean uniqueEnds, final TableDefinition definition) {
+      final Map<String, String> endTables, final boolean uniqueEnds, final TableDefinition definition,
+      final List<com.arcadedb.schema.ForeignKey> checked) {
     final Schema schema = database.getSchema();
     final boolean edge = !endTables.isEmpty();
     final DocumentType type = edge ? schema.buildEdgeType().withName(table).withUnique(uniqueEnds).create()
@@ -684,6 +842,7 @@ public final class CreateTablePlan {
         type.setCustomValue(EdgeEndpoints.TARGET_KEY, endTables.get(Column.TARGET_ID));
       }
       type.setCustomValue(TableDefinition.CUSTOM_KEY, definition.toJson());
+      createForeignKeys(type, checked);
       made = true;
     } finally {
       // the schema is not transactional: a table that could not be made whole is taken back

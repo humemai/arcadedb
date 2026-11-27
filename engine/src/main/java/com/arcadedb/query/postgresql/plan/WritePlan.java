@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql.plan;
 
 import com.arcadedb.database.Database;
+import com.arcadedb.database.DatabaseInternal;
 
 import java.util.List;
 
@@ -64,6 +65,9 @@ public final class WritePlan {
       database.begin();
     try {
       final PostgreSQLResultSet result = body.run(database);
+      // as PostgreSQL does at the end of a statement: the referential actions, and the foreign keys checked (fork issue #228)
+      if (database instanceof DatabaseInternal internal)
+        internal.getTransaction().checkForeignKeys();
       if (own)
         database.commit();
       return result;

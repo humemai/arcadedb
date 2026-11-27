@@ -94,8 +94,11 @@ public final class PostgreSQLHints {
     rule("An index on a table of the schema", "Leave the schema out, or write public");
     rule("A column name that starts with @", "Choose a name that does not start with @");
     rule("A foreign key other than the two ends",
-        "Leave REFERENCES out, then nothing checks the values, or declare a link table with the columns source_id and target_id,"
-            + " each text NOT NULL REFERENCES table (rid) ON DELETE CASCADE");
+        "Refer to a primary key or a unique column of the table, which is checked, or declare a link table with the columns"
+            + " source_id and target_id, each text NOT NULL REFERENCES table (rid) ON DELETE CASCADE");
+    rule("A foreign key between columns of the types", "Give the referring column the type of the column it refers to");
+    rule("The referential action SET DEFAULT", "Write ON DELETE SET NULL or CASCADE");
+    rule("A column list after SET NULL", "Leave the column list out: SET NULL sets every referring column");
     rule("A type modifier on a column", "Leave the modifier out: declare text or numeric, whose length and precision are not checked");
     rule("A column of type timestamptz[]", "Declare timestamp[] and keep its times in UTC");
     rule("A column of type uuid", "Declare the column text and send the UUID as text");

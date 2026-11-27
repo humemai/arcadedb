@@ -238,6 +238,9 @@ final class AstBuilder {
       return CreateTableStatement.Action.RESTRICT;
     if (context instanceof CascadeActionContext)
       return CreateTableStatement.Action.CASCADE;
+    if (context instanceof SetNullActionContext setNull && !setNull.colId().isEmpty())
+      throw new PostgreSQLFeatureNotSupportedException(
+          "A column list after SET NULL is not supported by the postgresql language (" + position(setNull.getStart()) + ")");
     return context instanceof SetNullActionContext ? CreateTableStatement.Action.SET_NULL
         : CreateTableStatement.Action.SET_DEFAULT;
   }
