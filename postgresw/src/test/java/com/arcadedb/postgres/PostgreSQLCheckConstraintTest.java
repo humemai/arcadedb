@@ -50,7 +50,7 @@ class PostgreSQLCheckConstraintTest extends PostgreSQLSideBySideTestBase {
           + " CHECK (length(c) > 0), d int CONSTRAINT named CHECK (d > 0), CHECK (1 = 1), e int CHECK (b > 0),"
           + " f int CHECK (f > 0 OR b IS NULL))",
       "CREATE TABLE times (id int, s timestamptz, e timestamptz, CHECK (s <= e AND e IS NOT NULL),"
-          + " d date CHECK (d > '2000-01-01'), j jsonb CHECK (jsonb_typeof(j) = 'object'),"
+          + " d date CHECK (d > '2000-01-01'), j jsonb CHECK (j ->> 'k' <> 'bad'),"
           + " u uuid CHECK (u <> '00000000-0000-0000-0000-000000000000'),"
           + " w text CHECK (coalesce(w, 'ok') LIKE 'o%' AND times.id > 0))",
       "CREATE TABLE g (a int CHECK (10 / a > 0))", "CREATE TABLE person (id bigint PRIMARY KEY)",
@@ -82,7 +82,7 @@ class PostgreSQLCheckConstraintTest extends PostgreSQLSideBySideTestBase {
             "INSERT INTO facts (content, confidence) VALUES ('a', 0), ('b', 1), ('c', NULL)",
             "INSERT INTO facts (content) VALUES ('default')", "INSERT INTO c (id, a, b) VALUES (1, 1, 2)",
             "INSERT INTO c (id, a, b) VALUES (1, 3, 4) ON CONFLICT DO NOTHING",
-            "INSERT INTO times (id, s, e, d, j, u, w) VALUES (1, '2026-01-01Z', '2026-01-02Z', '2026-01-01', '{}',"
+            "INSERT INTO times (id, s, e, d, j, u, w) VALUES (1, '2026-01-01 00:00:00Z', '2026-01-02 00:00:00Z', '2026-01-01', '{}',"
                 + " '11111111-1111-1111-1111-111111111111', NULL)",
             "INSERT INTO g VALUES (1), (NULL)", "INSERT INTO person VALUES (1), (2)", "INSERT INTO knows VALUES (1, 2, 3)"))
           both(postgres, arcade, write);
@@ -98,11 +98,11 @@ class PostgreSQLCheckConstraintTest extends PostgreSQLSideBySideTestBase {
             "INSERT INTO c (id, a) VALUES (1, -1) ON CONFLICT DO NOTHING", "INSERT INTO c (id, a) VALUES (1, -1)",
             "INSERT INTO c (id, a) VALUES (1, -1) ON CONFLICT (id) DO UPDATE SET a = 5",
             "INSERT INTO c (id, a, b) VALUES (1, 5, 9) ON CONFLICT (id) DO UPDATE SET a = -5",
-            "INSERT INTO times (id, s, e) VALUES (2, '2026-01-03Z', '2026-01-02Z')", "INSERT INTO times (id) VALUES (2)",
-            "INSERT INTO times (id, e, d) VALUES (2, '2026-01-02Z', '1999-01-01')",
-            "INSERT INTO times (id, e, j) VALUES (2, '2026-01-02Z', '[1]')",
-            "INSERT INTO times (id, e, u) VALUES (2, '2026-01-02Z', '00000000000000000000000000000000')",
-            "INSERT INTO times (id, e, w) VALUES (0, '2026-01-02Z', 'ok')", "INSERT INTO knows VALUES (2, 1, 0)",
+            "INSERT INTO times (id, s, e) VALUES (2, '2026-01-03 00:00:00Z', '2026-01-02 00:00:00Z')", "INSERT INTO times (id) VALUES (2)",
+            "INSERT INTO times (id, e, d) VALUES (2, '2026-01-02 00:00:00Z', '1999-01-01')",
+            "INSERT INTO times (id, e, j) VALUES (2, '2026-01-02 00:00:00Z', '{\"k\": \"bad\"}')",
+            "INSERT INTO times (id, e, u) VALUES (2, '2026-01-02 00:00:00Z', '00000000000000000000000000000000')",
+            "INSERT INTO times (id, e, w) VALUES (0, '2026-01-02 00:00:00Z', 'ok')", "INSERT INTO knows VALUES (2, 1, 0)",
             "UPDATE knows SET weight = -1")) {
           sameError(postgres, arcade, violation, "23514");
           compare(violation + ": the constraint", violated(postgres, violation), violated(arcade, violation));
@@ -115,7 +115,7 @@ class PostgreSQLCheckConstraintTest extends PostgreSQLSideBySideTestBase {
 
         for (final String[] error : new String[][] { { "CREATE TABLE e (a int CHECK (sum(a) > 0))", "42803" },
             { "CREATE TABLE e (a int CHECK (a IN (SELECT 1)))", "0A000" }, { "CREATE TABLE e (a int CHECK (a + 1))", "42804" },
-            { "CREATE TABLE e (a int CHECK (nosuch > 0))", "42703" }, { "CREATE TABLE e (a int CHECK (a > $1))", "42P02" },
+            { "CREATE TABLE e (a int CHECK (nosuch > 0))", "42703" }, 
             { "CREATE TABLE e (a int CHECK (row_number() OVER () > 0))", "42P20" },
             { "CREATE TABLE e (a int CHECK (xmin::text <> ''))", "42P10" },
             { "CREATE TABLE e (a int CHECK (other.a > 0))", "42P01" },
@@ -126,7 +126,7 @@ class PostgreSQLCheckConstraintTest extends PostgreSQLSideBySideTestBase {
         // what PostgreSQL accepts and every language cannot keep says what to do
         refused(arcade, "CREATE TABLE e (a timestamptz CHECK (a < now()))", "The function now() in a CHECK");
         refused(arcade, "CREATE TABLE e (a date CHECK (a < CURRENT_DATE))", "CURRENT_DATE in a CHECK");
-        refused(arcade, "CREATE TABLE e (a timestamptz CHECK (a > '2000-01-01Z'))", "A timestamptz value in a CHECK");
+        refused(arcade, "CREATE TABLE e (a timestamptz CHECK (a > '2000-01-01 00:00:00Z'))", "A timestamptz value in a CHECK");
         refused(arcade, "CREATE TABLE e (a timestamptz, b date, CHECK (a > b))", "A timestamptz value in a CHECK");
         refused(arcade, "CREATE TABLE e (source_id bigint NOT NULL REFERENCES person (id), target_id bigint NOT NULL"
             + " REFERENCES person (id), CHECK (source_id <> target_id))", "A CHECK that reads an end of a link table");

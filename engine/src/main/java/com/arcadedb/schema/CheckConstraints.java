@@ -24,6 +24,7 @@ import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.plan.CheckExpression;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,9 +53,9 @@ public final class CheckConstraints {
     this.empty = empty;
   }
 
-  static CheckConstraints of(final long serial, final Schema schema) {
+  static CheckConstraints of(final long serial, final Schema schema, final Collection<? extends DocumentType> types) {
     return new CheckConstraints(serial, schema,
-        schema.getTypes().stream().noneMatch(type -> type.getCustomValue(CheckConstraint.CUSTOM_KEY) != null));
+        types.stream().noneMatch(type -> type.getCustomValue(CheckConstraint.CUSTOM_KEY) != null));
   }
 
   long serial() {

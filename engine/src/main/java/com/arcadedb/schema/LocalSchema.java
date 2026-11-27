@@ -7535,7 +7535,7 @@ public class LocalSchema implements Schema {
     final long serial = typesChangeSerial.get();
     CheckConstraints current = checkConstraints;
     if (current == null || current.serial() != serial) {
-      current = CheckConstraints.of(serial, this);
+      current = CheckConstraints.of(serial, this, typeMap().values());
       checkConstraints = current;
     }
     return current;

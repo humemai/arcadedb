@@ -422,7 +422,7 @@ public final class CreateTablePlan {
       String name = constraint.name() == null ? null : constraint.name().value();
       if (name != null) {
         if (!taken.add(name))
-          throw new PostgreSQLEvaluationException("42710", "check constraint \"" + name + "\" already exists");
+          throw PostgreSQLEvaluationException.duplicateConstraint(name, table);
       } else {
         final String base =
             table + (compiled.columnNames().size() == 1 ? "_" + compiled.columnNames().get(0) : "") + "_check";

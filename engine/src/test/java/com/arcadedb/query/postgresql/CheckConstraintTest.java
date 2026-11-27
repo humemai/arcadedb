@@ -109,6 +109,13 @@ class CheckConstraintTest extends TestHelper {
   }
 
   @Test
+  void aParameterIsNoPartOfACheck() {
+    // over the PostgreSQL protocol the server refuses the statement before the language reads it (fork issue #204)
+    assertThatThrownBy(() -> database.command("postgresql", "CREATE TABLE p (a int CHECK (a > $1))", 1))
+        .isInstanceOfSatisfying(PostgreSQLEvaluationException.class, e -> assertThat(e.getSqlState()).isEqualTo("42P02"));
+  }
+
+  @Test
   void anErrorOfTheExpressionKeepsItsState() {
     database.command("postgresql", "CREATE TABLE g (a int CHECK (10 / a > 0))").close();
     refused(() -> run("sql", "INSERT INTO g SET a = 0"), "22012", "g_a_check");
