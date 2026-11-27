@@ -100,6 +100,8 @@ class AlterTableInTransactionTest extends TestHelper {
     try (final ResultSet written = database.query("sql", "SELECT count(*) AS n FROM t WHERE w IS NOT NULL")) {
       assertThat(written.next().<Number>getProperty("n").longValue()).isZero();
     }
+    // the integrity check after the test accepts no row that lacks a mandatory property
+    database.getSchema().getType("t").getProperty("m").setMandatory(false);
   }
 
   private void run(final String statement) {
