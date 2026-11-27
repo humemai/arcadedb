@@ -126,6 +126,7 @@ Every refusal below is `0A000`.
 | `ALTER`, `DROP`, and every `CREATE` but `CREATE TABLE` and `CREATE INDEX` | refused; use ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
 | Types | no `uuid`, `timestamptz`, `time`, or `char(n)` |
 | Queries | refused: `array_agg`, the JSON aggregates, most window frames, `ntile`, named windows, `WITH RECURSIVE`, `= ANY`, `->>`, `LATERAL`, `NATURAL` joins, `SIMILAR TO` |
+| `numeric ^ numeric` | an integer exponent only. The bases `1`, `-1`, and `0` take every integer; another base takes `0` to `2147483647`, or a larger one when `numeric` cannot hold the result (`22003`, or zero). Every other exponent is refused. The result, its scale, and these errors are those of PostgreSQL 18 (`PostgreSQLNumericPowerTest`, fork issue [#161](https://github.com/humemai/arcadedb/issues/161)) |
 | Large operations | joins, `GROUP BY`, derived tables, `WITH`, and set operations fail with `53200` over a memory limit instead of spilling to disk |
 
 ## Known wrong answers
