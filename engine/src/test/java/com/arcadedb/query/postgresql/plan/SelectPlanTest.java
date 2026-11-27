@@ -268,13 +268,16 @@ class SelectPlanTest extends TestHelper {
   void anUnknownNameIsReportedWithWhatCanBeNamed() {
     assertThatThrownBy(() -> rows("SELECT nam FROM person")).isInstanceOf(PostgreSQLCatalogException.class)
         .hasMessageContaining("column \"nam\" does not exist")
-        .hasMessageContaining("Hint: the columns of person are id, age, city, name, pid; ");
+        .hasMessageContaining("Hint: Perhaps you meant to reference the column \"person.name\"; "
+            + "the columns of person are id, age, city, name, pid")
+        .hasMessageNotContaining("CREATE PROPERTY");
     assertThatThrownBy(() -> rows("SELECT p.nam FROM person p")).hasMessageContaining("column \"p.nam\" does not exist")
-        .hasMessageContaining("the columns of p are id, age, city, name, pid; ");
+        .hasMessageContaining("Perhaps you meant to reference the column \"p.name\"; "
+            + "the columns of p are id, age, city, name, pid");
     assertThatThrownBy(() -> rows("SELECT (SELECT count(*) FROM orders o WHERE nope = 1) FROM person p"))
         .hasMessageContaining("the columns of o are ").hasMessageNotContaining("the columns of p are ");
     assertThatThrownBy(() -> rows("SELECT pid FROM person UNION SELECT oid FROM orders ORDER BY nosuch"))
-        .hasMessageContaining("the columns of the UNION result are pid; ");
+        .hasMessageContaining("Hint: the columns of the UNION result are pid");
     assertThatThrownBy(() -> rows("SELECT name FROM persons")).isInstanceOf(PostgreSQLCatalogException.class)
         .hasMessageContaining("relation \"persons\" does not exist");
   }

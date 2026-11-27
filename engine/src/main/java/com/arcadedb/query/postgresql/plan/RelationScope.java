@@ -128,7 +128,7 @@ public final class RelationScope implements ExpressionCompiler.Scope {
       if (column.quoted())
         break;
     }
-    throw PostgreSQLReferenceException.undefinedColumn(column.value(), visibleColumns(null));
+    throw PostgreSQLReferenceException.undefinedColumn(column.value(), unknownColumnHint(null, column));
   }
 
   @Override
@@ -301,23 +301,24 @@ public final class RelationScope implements ExpressionCompiler.Scope {
     if (relation != null && !hasRelation(relation))
       throw PostgreSQLReferenceException.missingFromEntry(relation.value());
     throw PostgreSQLReferenceException.undefinedColumn(relation == null ? column.value() : relation.value() + "." + column.value(),
-        visibleColumns(relation));
+        unknownColumnHint(relation, column));
   }
 
   /**
-   * What a statement could have named instead of a column that does not exist, for the hint of the error: the columns of every
-   * relation of this query, or of the relation the name is qualified with. {@code null} when no relation has a name.
+   * What a statement could have named instead of a column that does not exist, for the hint of the error: the closest column, and
+   * the columns of every relation of this query, or of the relation the name is qualified with. {@code null} when no relation has
+   * a name.
    */
-  private String visibleColumns(final Name relation) {
+  private String unknownColumnHint(final Name relation, final Name column) {
     final Map<String, List<String>> columns = new LinkedHashMap<>();
     for (final RelationSource.Field field : fields)
       if (!field.hidden() && !field.relation().isEmpty() && (relation == null || sameRelation(relation, field.relation())))
         columns.computeIfAbsent(field.relation(), name -> new ArrayList<>()).add(field.name());
     if (columns.isEmpty())
       return null;
-    return columns.entrySet().stream().limit(MAX_LISTED_RELATIONS)
-        .map(entry -> PostgreSQLCatalogException.columnList(entry.getKey(), entry.getValue()))
-        .collect(Collectors.joining("; "));
+    return PostgreSQLCatalogException.unknownColumnHint(column.value(), columns, columns.entrySet().stream()
+        .limit(MAX_LISTED_RELATIONS).map(entry -> PostgreSQLCatalogException.columnList(entry.getKey(), entry.getValue()))
+        .collect(Collectors.joining("; ")));
   }
 
   private boolean hasRelation(final Name relation) {
