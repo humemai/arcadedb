@@ -20,6 +20,8 @@ package com.arcadedb.query.postgresql.eval;
 
 import com.arcadedb.exception.AlreadyExistsException;
 import com.arcadedb.exception.CommandExecutionException;
+import com.arcadedb.query.postgresql.PostgreSQLError;
+import com.arcadedb.query.postgresql.PostgreSQLHints;
 
 /**
  * An error that PostgreSQL would raise while it types or evaluates an expression, with the SQLSTATE PostgreSQL gives it, so a
@@ -53,22 +55,50 @@ import com.arcadedb.exception.CommandExecutionException;
  * subset</td></tr>
  * </table>
  */
-public class PostgreSQLEvaluationException extends CommandExecutionException {
+public class PostgreSQLEvaluationException extends CommandExecutionException implements PostgreSQLError {
   private final String sqlState;
+  private       String hint;
 
+  /** A message written with its hint is taken apart; a refusal ({@code 0A000}) without one takes {@link PostgreSQLHints#of}. */
   public PostgreSQLEvaluationException(final String sqlState, final String message) {
-    super(message);
+    super(PostgreSQLError.Text.of(message).message());
     this.sqlState = sqlState;
+    this.hint = hintOf(sqlState, message);
   }
 
   /** An error that stands for an exception of the engine, kept as its cause. */
   public PostgreSQLEvaluationException(final String sqlState, final String message, final Throwable cause) {
-    super(message, cause);
+    super(PostgreSQLError.Text.of(message).message(), cause);
     this.sqlState = sqlState;
+    this.hint = hintOf(sqlState, message);
+  }
+
+  /** An error with a hint of its own: what the statement can write instead. */
+  public static PostgreSQLEvaluationException withHint(final String sqlState, final String message, final String hint) {
+    final PostgreSQLEvaluationException error = new PostgreSQLEvaluationException(sqlState, message);
+    error.hint = hint;
+    return error;
+  }
+
+  private static String hintOf(final String sqlState, final String message) {
+    final PostgreSQLError.Text text = PostgreSQLError.Text.of(message);
+    if (text.hint() != null)
+      return text.hint();
+    return "0A000".equals(sqlState) ? PostgreSQLHints.of(message) : null;
   }
 
   public String getSqlState() {
     return sqlState;
+  }
+
+  @Override
+  public String getHint() {
+    return hint;
+  }
+
+  @Override
+  public String getMessage() {
+    return new PostgreSQLError.Text(super.getMessage(), hint).joined();
   }
 
   /**

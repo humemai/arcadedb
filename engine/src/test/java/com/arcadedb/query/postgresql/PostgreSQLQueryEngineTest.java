@@ -105,7 +105,7 @@ class PostgreSQLQueryEngineTest extends TestHelper {
         .isInstanceOf(PostgreSQLFeatureNotSupportedException.class)
         .hasMessageContaining("CREATE VIEW is not supported by the postgresql language")
         .hasMessageContaining("line 2, column 3")
-        .hasMessageContaining("{sql}");
+        .hasMessageContaining("Hint: Write the query of the view in a WITH clause");
   }
 
   // stage 1 of fork issue #29: the parser reads the writes and the analysis classifies them, the executors come in the next stages

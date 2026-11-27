@@ -18,7 +18,9 @@
  */
 package com.arcadedb.query.postgresql.parser;
 
+import com.arcadedb.exception.CommandParsingException;
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
+import com.arcadedb.query.postgresql.PostgreSQLHints;
 import com.arcadedb.query.postgresql.PostgreSQLSyntaxException;
 import com.arcadedb.query.postgresql.ast.SourcePosition;
 import com.arcadedb.query.postgresql.grammar.PostgreSQLParser;
@@ -130,17 +132,118 @@ final class Diagnostics {
   }
 
   /**
-   * The refusal for the construct that a rule named {@code unsupported...} matched. A statement that the language does not run
-   * (DDL, a session or a utility statement) says how to run it.
+   * The refusal for the construct that a rule named {@code unsupported...} matched, with the hint of what to write instead (fork
+   * issue #241). A form that PostgreSQL refuses too, {@code LIMIT 1, 2} and a name in backticks, is {@code 42601} as there.
    */
-  static PostgreSQLFeatureNotSupportedException refusal(final String ruleName, final ParserRuleContext marker) {
+  static CommandParsingException refusal(final String ruleName, final ParserRuleContext marker) {
     final Token start = marker.getStart();
+    if ("unsupportedLimitComma".equals(ruleName))
+      return new PostgreSQLSyntaxException("LIMIT #,# syntax is not supported (" + position(start) + ")",
+          "Use separate LIMIT and OFFSET clauses: LIMIT 1, 2 is LIMIT 2 OFFSET 1");
+    if ("unsupportedPrefixOperator".equals(ruleName) && start.getText().contains("`"))
+      return new PostgreSQLSyntaxException("syntax error at or near \"`\" (" + position(start) + ")",
+          "PostgreSQL has no backticks: write a name in double quotes, as in \"name\"");
     final String what = DESCRIPTIONS.containsKey(ruleName) ? DESCRIPTIONS.get(ruleName) : words(ruleName, marker);
-    String message = what + " is not supported by the postgresql language (" + position(start) + ")";
-    if ("unsupportedStatement".equals(ruleName) && !NOT_WRITES.contains(start.getType()))
-      message += ": the language runs SELECT, INSERT, UPDATE, DELETE, CREATE TABLE, CREATE INDEX and the transaction statements,"
-          + " use the sql language for it (the {sql} marker on the wire)";
-    return new PostgreSQLFeatureNotSupportedException(message);
+    final String message = what + " is not supported by the postgresql language (" + position(start) + ")";
+    if ("unsupportedStatement".equals(ruleName)) {
+      final List<String> statement = new ArrayList<>();
+      tokens(marker.getParent() instanceof ParserRuleContext command ? command : marker, statement);
+      return new PostgreSQLFeatureNotSupportedException(message, StatementHints.of(statement, StatementHints.AS_WRITTEN),
+          statement);
+    }
+    return new PostgreSQLFeatureNotSupportedException(message, hint(ruleName, what, start.getText().toUpperCase(Locale.ROOT)));
+  }
+
+  private static void tokens(final ParseTree tree, final List<String> tokens) {
+    if (tree instanceof TerminalNode terminal) {
+      if (terminal.getSymbol().getType() != Token.EOF && !";".equals(terminal.getText()))
+        tokens.add(terminal.getText());
+      return;
+    }
+    for (int i = 0; i < tree.getChildCount(); i++)
+      tokens(tree.getChild(i), tokens);
+  }
+
+  /**
+   * @param what  the construct as the message names it
+   * @param first the first word of the construct, in upper case
+   */
+  private static String hint(final String ruleName, final String what, final String first) {
+    return switch (ruleName) {
+      case "unsupportedColumnConstraint" -> "GENERATED".equals(first) ?
+          "Leave GENERATED out. For generated keys declare no id column: the table then has a record id as id, which"
+              + " INSERT ... RETURNING id returns" :
+          "Leave " + first + " and what belongs to it out, and check in your program what it would have checked";
+      case "unsupportedTableConstraint", "unsupportedConstraintOption" ->
+          "Leave " + first + " and what belongs to it out; UNIQUE (columns) and PRIMARY KEY (columns) keep values unique";
+      case "unsupportedExplainOption" -> "Write EXPLAIN SELECT ... with no option: it plans the statement and runs nothing";
+      case "unsupportedDistinctOn" -> "Number the rows in a WITH query with row_number() OVER (PARTITION BY ... ORDER BY ...) and"
+          + " keep the rows numbered 1";
+      case "unsupportedInto" -> "Create the table with CREATE TABLE, then write INSERT INTO name SELECT ...";
+      case "unsupportedWindowClause" -> "Write the window inside the OVER (...) of each function";
+      case "unsupportedLockingClause" -> "Leave the clause out: no row is locked. Of two transactions that change one row the later"
+          + " commit fails with SQLSTATE 40001, run it again";
+      case "unsupportedGroupByQuantifier" -> "List the columns after GROUP BY";
+      case "unsupportedGroupingSet" -> "Write one SELECT for each grouping and put them together with UNION ALL";
+      case "unsupportedSortUsing" -> "Write ASC or DESC";
+      case "unsupportedFetchClause" -> "Write LIMIT n, with OFFSET m to skip rows";
+      case "unsupportedJoinUsingAlias", "unsupportedJoinAlias" -> "Leave the alias out and name the columns by their tables";
+      case "unsupportedColumnAliases", "unsupportedTableAlias" -> "Name a query in a WITH clause, with its columns named by AS";
+      case "unsupportedTableRef" -> "There are no table functions and no LATERAL yet: write the rows with VALUES, or a subquery"
+          + " that reads no earlier table, as in FROM (SELECT ...) AS s";
+      case "unsupportedRecursive" -> "Write paths of any length in openCypher, where a table is a vertex type and a link table is an"
+          + " edge type, as in {opencypher}MATCH (a:person)-[:knows*]->(b:person) RETURN b.name";
+      case "unsupportedWithWrite", "unsupportedCteBody" ->
+          "Run the query and the write as two statements in one transaction, with RETURNING to read what a write changed";
+      case "unsupportedInSubquery" -> "Name the query in a WITH clause, or run it first and send its values as parameters";
+      case "unsupportedSymmetric" -> "Write x BETWEEN low AND high with the smaller bound first";
+      case "unsupportedQuantifiedComparison" -> "Write ANY or ALL after a comparison: =, <>, <, <=, > or >=";
+      case "unsupportedIndirection", "unsupportedSubscript" -> "Select the whole value and read the field or element in your program";
+      case "unsupportedRowComma" -> "Compare the columns one by one, as in a < $1 OR (a = $1 AND b < $2)";
+      case "unsupportedAggregateOrder" -> PostgreSQLHints.NO_WAY + ": select the rows with ORDER BY and aggregate in your program";
+      case "unsupportedNamedArg" -> "Pass the arguments by position; an interval is written interval '3 days'";
+      case "unsupportedVariadic" -> "Pass the values one by one";
+      case "unsupportedSimilarEscape" -> "Use substring(value FROM start FOR length), or match with LIKE";
+      case "unsupportedUnicodeString", "unsupportedUnicodeIdent" -> "Write the characters themselves";
+      case "unsupportedCollate" -> "Leave COLLATE out: text compares as in the C collation";
+      case "unsupportedAtTimeZone" -> "Leave AT TIME ZONE out and convert the time in your program";
+      case "unsupportedStarArg" -> "Name the columns one by one";
+      case "unsupportedMultiAssign" -> "Assign one column at a time";
+      case "unsupportedUpdateFrom", "unsupportedDeleteUsing" -> "Put the condition in WHERE with a subquery, as in"
+          + " WHERE id IN (SELECT ...)";
+      case "unsupportedCurrentOf" -> "Name the row in WHERE by its key";
+      case "unsupportedTransactionMode" -> "Send BEGIN with no mode";
+      case "unsupportedTransactionChain" -> "Send COMMIT, then BEGIN";
+      case "unsupportedTableKind" -> "Create an ordinary table, or name the query in a WITH clause";
+      case "unsupportedExplainedCreate" -> "Run the CREATE statement without EXPLAIN";
+      case "unsupportedTableForm" -> "Write CREATE TABLE name (column type, ...) and fill it with INSERT INTO name SELECT ...";
+      case "unsupportedTableOption", "unsupportedIndexOption", "unsupportedConcurrently", "unsupportedReferenceOption",
+          "unsupportedParameterNamespace" -> "Leave the clause out";
+      case "unsupportedTableElement" -> "Write the columns out";
+      case "unsupportedIndexExpression" -> "Store the computed value in a column of its own and index that column";
+      case "unsupportedIndexElementOption" -> "Name the column only, for a vector index with its operator class";
+      case "unsupportedIndexParameter" -> "Give a whole number";
+      case "unsupportedInsertSource" -> "Write INSERT INTO name (columns) VALUES (...) or INSERT INTO name (columns) SELECT ...";
+      default -> hintOfWords(what);
+    };
+  }
+
+  /** The hint of a construct that the message names by its own words. */
+  private static String hintOfWords(final String what) {
+    if (what.startsWith("NATURAL"))
+      return "Write JOIN ... ON, or JOIN ... USING (columns)";
+    if (what.endsWith("SIMILAR TO"))
+      return "Use LIKE or ILIKE";
+    if ("A subquery".equals(what) || "A parenthesised query".equals(what))
+      return "Name the query in a WITH clause and read it by that name";
+    return switch (what.split(" ")[0]) {
+      case "FILTER" -> "Write the condition inside the aggregate, as in count(CASE WHEN condition THEN 1 END)";
+      case "IS" -> "Write a comparison, as in x = true, or coalesce(x, false)";
+      case "OVER" -> "Write the window inside OVER (...)";
+      case "TABLE" -> "Write SELECT * FROM name";
+      case "CURRENT_USER", "SESSION_USER", "USER" -> PostgreSQLHints.NO_WAY + ": your program knows the user it connected as";
+      default -> PostgreSQLHints.NO_WAY;
+    };
   }
 
   /** The words of the construct as written, in upper case: {@code RIGHT OUTER JOIN}, {@code IS NOT DISTINCT FROM}. */

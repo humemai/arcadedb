@@ -37,9 +37,9 @@ import java.util.Map;
  * <li>{@link PostgreSQLUndefinedSchemaException}: {@code 3F000}</li>
  * <li>{@link PostgreSQLAmbiguousIdentifierException}: {@code 42702} for a column, {@code 42P09} for a table</li>
  * </ul>
- * A hint, when there is one, is part of the message (the wire writes the message only) and is also available on its own.
+ * A hint, when there is one, ends the message and is also available on its own ({@link PostgreSQLError}).
  */
-public class PostgreSQLCatalogException extends CommandParsingException {
+public class PostgreSQLCatalogException extends CommandParsingException implements PostgreSQLError {
   private static final int MAX_LISTED_COLUMNS = 40;
   /** The edits between a name and the column that PostgreSQL still suggests for it ({@code MAX_FUZZY_DISTANCE}). */
   private static final int MAX_SUGGESTION_DISTANCE = 3;

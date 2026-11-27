@@ -24,6 +24,7 @@ import com.arcadedb.query.postgresql.PostgreSQLReferenceException;
 import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.SelectItem;
+import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.Identifier;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.eval.Evaluable;
@@ -229,6 +230,53 @@ public final class RelationScope implements ExpressionCompiler.Scope {
         throw reference.qualifier().isEmpty() || "42P01".equals(notThereEither.getSqlState()) ? notHere : notThereEither;
       }
     }
+  }
+
+  /**
+   * A join that compares the record ids of a column with the numeric key of a table names the record id column of that table,
+   * which is what the column can be joined with.
+   */
+  @Override
+  public String recordIdHint(final Expression ids, final Expression number) {
+    final RelationSource.Field field = fieldOf(ids);
+    if (field == null || field.recordIds() == RelationSource.RecordIds.NONE)
+      return outer == null ? null : outer.recordIdHint(ids, number);
+    final String column = qualified(field);
+    final String holds = column + " holds record ids, which are text such as '#12:3'";
+    final RelationSource.Field other = fieldOf(number);
+    if (other != null && !other.relation().equals(field.relation()))
+      for (final RelationSource.Field candidate : fields)
+        if (candidate.relation().equals(other.relation()) && candidate.recordIds() == RelationSource.RecordIds.OWN)
+          return holds + ", not the values of " + qualified(other) + ": join on " + qualified(candidate)
+              + ". A cast will not match them";
+    if (field.recordIds() == RelationSource.RecordIds.REFERRED)
+      return holds + ": join the table it refers to on that table's rid (id when it declares no id column) and filter by its key."
+          + " A cast will not match them";
+    for (final RelationSource.Field candidate : fields)
+      if (candidate.relation().equals(field.relation()) && candidate.recordIds() == RelationSource.RecordIds.NONE
+          && Column.ID.equals(candidate.name()))
+        return holds + ": compare " + qualified(candidate) + ", the key of the table, with the number";
+    return holds + ", not numbers: compare it with such a text, or name the row by another column. A cast will not match them";
+  }
+
+  /** The column of this query that a reference reads, {@code null} when it is not one or several could be meant. */
+  private RelationSource.Field fieldOf(final Expression expression) {
+    if (!(expression instanceof Expression.ColumnRef reference) || reference.qualifier().size() > 2)
+      return null;
+    final Name relation = reference.qualifier().isEmpty() ? null : reference.qualifier().get(reference.qualifier().size() - 1);
+    RelationSource.Field found = null;
+    for (final RelationSource.Field field : fields)
+      if ((same(reference.column(), field.name(), 0) || same(reference.column(), field.name(), 1))
+          && (relation == null || sameRelation(relation, field.relation()))) {
+        if (found != null)
+          return null;
+        found = field;
+      }
+    return found;
+  }
+
+  private static String qualified(final RelationSource.Field field) {
+    return field.relation().isEmpty() ? field.name() : field.relation() + "." + field.name();
   }
 
   private Evaluable own(final Expression.ColumnRef reference) {
