@@ -96,7 +96,7 @@ class PostgreSQLSearchPathAndRegclassTest extends PostgreSQLSideBySideTestBase {
       prepared.executeQuery().close();
       return "00000";
     } catch (final SQLException e) {
-      return e.getSqlState();
+      return e.getSQLState();
     }
   }
 }
