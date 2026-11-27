@@ -19,6 +19,8 @@
 package com.arcadedb.query.postgresql;
 
 import com.arcadedb.TestHelper;
+import com.arcadedb.exception.AlreadyExistsException;
+import com.arcadedb.exception.ErrorCategory;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
 import com.arcadedb.schema.Schema;
@@ -99,6 +101,8 @@ class CreateIndexTest extends TestHelper {
     assertState("CREATE INDEX memory_body_idx ON memory (id)", "42P07");
     assertState("CREATE INDEX memory_pkey ON memory (id)", "42P07");
     assertState("CREATE INDEX person ON memory (id)", "42P07");
+    assertConflict("CREATE INDEX memory_body ON memory (id)", AlreadyExistsException.Kind.INDEX);
+    assertConflict("CREATE INDEX person ON memory (id)", AlreadyExistsException.Kind.TYPE);
     run("CREATE INDEX IF NOT EXISTS memory_body ON memory (id)");
     assertThat(values("SELECT constraint_name FROM information_schema.table_constraints WHERE table_name = 'memory'"
         + " ORDER BY constraint_name", "constraint_name")).containsExactly("memory_pkey", "memory_rid_key");
@@ -188,5 +192,14 @@ class CreateIndexTest extends TestHelper {
   private void assertState(final String statement, final String sqlState) {
     assertThatThrownBy(() -> run(statement)).as(statement)
         .satisfies(e -> assertThat(PostgreSQLErrors.sqlState(e)).as(e.getMessage()).isEqualTo(sqlState));
+  }
+
+  /** A taken name is the conflict that every protocol answers (fork issue #160). */
+  private void assertConflict(final String statement, final AlreadyExistsException.Kind holder) {
+    assertThatThrownBy(() -> run(statement)).as(statement).satisfies(e -> {
+      assertThat(ErrorCategory.of(e)).isEqualTo(ErrorCategory.ALREADY_EXISTS);
+      assertThat(e.getCause()).isInstanceOfSatisfying(AlreadyExistsException.class,
+          taken -> assertThat(taken.getKind()).isEqualTo(holder));
+    });
   }
 }

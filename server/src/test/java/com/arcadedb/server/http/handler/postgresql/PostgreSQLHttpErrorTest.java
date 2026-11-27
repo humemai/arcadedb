@@ -19,6 +19,7 @@
 package com.arcadedb.server.http.handler.postgresql;
 
 import com.arcadedb.database.Database;
+import com.arcadedb.exception.AlreadyExistsException;
 import com.arcadedb.exception.DuplicatedKeyException;
 import com.arcadedb.schema.Schema;
 import com.arcadedb.schema.Type;
@@ -41,8 +42,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * An error of a statement of the {@code postgresql} language over HTTP is the caller's: a 4xx answer that carries the SQLSTATE in
- * the member {@code sqlState}, which is what a client that repairs its statement and sends it again reads. A duplicate key is the
- * 409 every language answers. No other language gets the member.
+ * the member {@code sqlState}, which is what a client that repairs its statement and sends it again reads. A duplicate key and a
+ * taken name are the 409 every language answers. No other language gets the member.
  */
 class PostgreSQLHttpErrorTest extends BaseGraphServerTest {
   private static final String TABLE = "pg_err_person";
@@ -68,6 +69,16 @@ class PostgreSQLHttpErrorTest extends BaseGraphServerTest {
     assertThat(answer.getString("exception", "")).isEqualTo(DuplicatedKeyException.class.getName());
     assertThat(answer.getString("exceptionArgs", "")).startsWith(TABLE + "[pid]|");
     assertThat(getServerDatabase(0, getDatabaseName()).countType(TABLE, false)).isEqualTo(1);
+  }
+
+  @Test
+  void aTakenNameIsTheConflictOfEveryLanguageAndCarriesTheSqlState() throws Exception {
+    final JSONObject answer = refused("command", "postgresql", "CREATE TABLE pg_err_person (pid int)", 409);
+
+    assertThat(answer.getString("sqlState", "")).isEqualTo("42P07");
+    assertThat(answer.getString("exception", "")).isEqualTo(AlreadyExistsException.class.getName());
+    assertThat(answer.getString("exceptionArgs", "")).isEqualTo("TYPE");
+    assertThat(answer.getString("detail", "")).contains("pg_err_person");
   }
 
   @ParameterizedTest

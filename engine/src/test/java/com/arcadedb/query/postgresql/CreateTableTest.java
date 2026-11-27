@@ -20,6 +20,8 @@ package com.arcadedb.query.postgresql;
 
 import com.arcadedb.TestHelper;
 import com.arcadedb.database.DatabaseInternal;
+import com.arcadedb.exception.AlreadyExistsException;
+import com.arcadedb.exception.ErrorCategory;
 import com.arcadedb.query.OperationType;
 import com.arcadedb.query.QueryEngine;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
@@ -233,13 +235,25 @@ class CreateTableTest extends TestHelper {
   void aNameThatIsTakenIsRefusedUnlessTheStatementAllowsIt() {
     database.getSchema().createVertexType("Person");
 
-    assertState("CREATE TABLE person (a int)", "42P07");
-    assertState("CREATE TABLE \"Person\" (a int)", "42P07");
+    assertTaken("CREATE TABLE person (a int)", "42P07", AlreadyExistsException.Kind.TYPE);
+    assertTaken("CREATE TABLE \"Person\" (a int)", "42P07", AlreadyExistsException.Kind.TYPE);
     run("CREATE TABLE IF NOT EXISTS person (a int)");
     assertThat(database.getSchema().getType("Person").getPropertyNames()).isEmpty();
     run("CREATE TABLE other (a int CONSTRAINT other_a UNIQUE)");
-    assertState("CREATE TABLE t (a int CONSTRAINT other UNIQUE)", "42P07");
+    assertTaken("CREATE TABLE t (a int CONSTRAINT other UNIQUE)", "42P07", AlreadyExistsException.Kind.TYPE);
+    assertTaken("CREATE TABLE t (a int CONSTRAINT k UNIQUE, b int CONSTRAINT k UNIQUE)", "42P07",
+        AlreadyExistsException.Kind.INDEX);
     assertThat(database.getSchema().existsType("t")).isFalse();
+  }
+
+  @Test
+  void aConstraintNameThatIsTakenIsAConflict() {
+    run("CREATE TABLE tag (name text)");
+
+    assertTaken("CREATE TABLE tagged (source_id text NOT NULL CONSTRAINT ends REFERENCES tag (rid) ON DELETE CASCADE,"
+            + " target_id text NOT NULL CONSTRAINT ends REFERENCES tag (rid) ON DELETE CASCADE)", "42710",
+        AlreadyExistsException.Kind.CONSTRAINT);
+    assertThat(database.getSchema().existsType("tagged")).isFalse();
   }
 
   @ParameterizedTest
@@ -352,5 +366,15 @@ class CreateTableTest extends TestHelper {
   private void assertState(final String statement, final String sqlState) {
     assertThatThrownBy(() -> run(statement)).as(statement)
         .satisfies(e -> assertThat(PostgreSQLErrors.sqlState(e)).as(e.getMessage()).isEqualTo(sqlState));
+  }
+
+  /** A taken name keeps PostgreSQL's SQLSTATE and is the conflict that every protocol answers (fork issue #160). */
+  private void assertTaken(final String statement, final String sqlState, final AlreadyExistsException.Kind holder) {
+    assertThatThrownBy(() -> run(statement)).as(statement).satisfies(e -> {
+      assertThat(PostgreSQLErrors.sqlState(e)).as(e.getMessage()).isEqualTo(sqlState);
+      assertThat(ErrorCategory.of(e)).isEqualTo(ErrorCategory.ALREADY_EXISTS);
+      assertThat(e.getCause()).isInstanceOfSatisfying(AlreadyExistsException.class,
+          taken -> assertThat(taken.getKind()).isEqualTo(holder));
+    });
   }
 }
