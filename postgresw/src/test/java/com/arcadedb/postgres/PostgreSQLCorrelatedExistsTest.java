@@ -60,6 +60,9 @@ class PostgreSQLCorrelatedExistsTest extends PostgresWireProtocolTestBase {
   private static final String HEAD = "SELECT x FROM a WHERE EXISTS (SELECT 1 FROM b WHERE ";
   private static final String TAIL = ") ORDER BY x";
 
+  private static final String NESTED      = "SELECT x FROM a WHERE (SELECT count(*) FROM b b1 WHERE EXISTS (SELECT 1 FROM b WHERE ";
+  private static final String NESTED_TAIL = ")) > 0 ORDER BY x";
+
   private static final List<String> ANSWERED = List.of(
       // the subquery of the term reads a column of the EXISTS subquery
       HEAD + "a.x = (SELECT min(d.y) FROM d WHERE d.k = g)" + TAIL,
@@ -74,13 +77,16 @@ class PostgreSQLCorrelatedExistsTest extends PostgresWireProtocolTestBase {
       HEAD + "a.x IN (SELECT d.y FROM d WHERE d.k = a.g)" + TAIL,
       HEAD + "a.x IN (SELECT d.y FROM d WHERE d.k = 30)" + TAIL,
       HEAD + "b.g IN (SELECT d.k FROM d)" + TAIL,
-      HEAD + "b.g IN (SELECT d.k FROM d WHERE d.k = b.g) AND a.x > 1" + TAIL);
+      HEAD + "b.g IN (SELECT d.k FROM d WHERE d.k = b.g) AND a.x > 1" + TAIL,
+      // a column two queries out
+      NESTED + "b.g = (SELECT max(d.k) FROM d WHERE d.y = a.x)" + NESTED_TAIL);
 
   private static final List<String> REFUSED = List.of(
       HEAD + "a.x IN (SELECT d.y FROM d WHERE d.k = g)" + TAIL,
       HEAD + "a.x NOT IN (SELECT d.y FROM d WHERE d.k = b.g)" + TAIL,
       HEAD + "b.g IN (SELECT d.k FROM d WHERE d.y = a.x)" + TAIL,
-      HEAD + "1 = (SELECT count(*) FROM d WHERE d.k = b.g AND d.y = a.x)" + TAIL);
+      HEAD + "1 = (SELECT count(*) FROM d WHERE d.k = b.g AND d.y = a.x)" + TAIL,
+      NESTED + "b.g IN (SELECT d.k FROM d WHERE d.y = a.x)" + NESTED_TAIL);
 
   @Override
   public void setTestConfiguration() {

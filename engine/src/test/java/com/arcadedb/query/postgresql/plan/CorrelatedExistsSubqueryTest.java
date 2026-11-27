@@ -88,6 +88,20 @@ class CorrelatedExistsSubqueryTest extends TestHelper {
         .satisfies(e -> assertThat(PostgreSQLErrors.sqlState(e)).as(e.getMessage()).isEqualTo("0A000"));
   }
 
+  /**
+   * Inside a correlated subquery, a column of a query further out counts as one of the query around the {@code EXISTS}, as a
+   * direct reference to it does: a comparison is answered, and an {@code IN} subquery beside a column of the {@code EXISTS}
+   * subquery is refused.
+   */
+  @Test
+  void aColumnTwoQueriesOutCountsAsOneOfTheQueryAround() {
+    final String head = "SELECT x FROM a WHERE (SELECT count(*) FROM b b1 WHERE EXISTS (SELECT 1 FROM b WHERE ";
+    assertThat(values(head + "b.g = (SELECT max(d.k) FROM d WHERE d.y = a.x))) > 0 ORDER BY x")).containsExactly("1");
+    final String refused = head + "b.g IN (SELECT d.k FROM d WHERE d.y = a.x))) > 0 ORDER BY x";
+    assertThatThrownBy(() -> values(refused)).as(refused)
+        .satisfies(e -> assertThat(PostgreSQLErrors.sqlState(e)).as(e.getMessage()).isEqualTo("0A000"));
+  }
+
   private List<String> values(final String statement) {
     final List<String> values = new ArrayList<>();
     try (final ResultSet resultSet = database.query("postgresql", statement)) {
