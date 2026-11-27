@@ -238,17 +238,33 @@ public final class Casts {
     else {
       if (!NUMBER.matcher(s).matches())
         throw PostgreSQLEvaluationException.invalidText(type, text);
+      // out of range: a number that becomes infinity, or zero though a digit before its exponent is none
+      final boolean zero = s.split("[eE]", 2)[0].chars().noneMatch(c -> c >= '1' && c <= '9');
       if (type == PgType.FLOAT4) {
         final float narrow = Float.parseFloat(s);
-        if (Float.isInfinite(narrow))
+        if (Float.isInfinite(narrow) || narrow == 0.0f && !zero)
           throw PostgreSQLEvaluationException.outOfRange(text, type);
         return narrow;
       }
       value = Double.parseDouble(s);
-      if (Double.isInfinite(value))
+      if (Double.isInfinite(value) || value == 0.0 && !zero)
         throw PostgreSQLEvaluationException.outOfRange(text, type);
     }
     return type == PgType.FLOAT4 ? (Object) (float) value : (Object) value;
+  }
+
+  /**
+   * PostgreSQL raises {@code 22003} where a conversion to {@code real} or {@code double precision} gives infinity or zero for a
+   * number that is neither.
+   */
+  private static void checkConverted(final Number value, final double converted) {
+    if (value instanceof BigDecimal number) {
+      if (Double.isInfinite(converted) || converted == 0.0 && number.signum() != 0)
+        throw new PostgreSQLEvaluationException("22003", "value out of range: " + (converted == 0.0 ? "underflow" : "overflow"));
+    } else if (Double.isInfinite(converted) && !Double.isInfinite(value.doubleValue()))
+      throw new PostgreSQLEvaluationException("22003", "value out of range: overflow");
+    else if (converted == 0.0 && value.doubleValue() != 0.0)
+      throw new PostgreSQLEvaluationException("22003", "value out of range: underflow");
   }
 
   private static LocalDate parseDate(final String text) {
@@ -327,14 +343,16 @@ public final class Casts {
     case FLOAT4:
       if (from.isNumber()) {
         final float narrow = ((Number) value).floatValue();
-        if (Float.isInfinite(narrow) && !Double.isInfinite(((Number) value).doubleValue()))
-          throw new PostgreSQLEvaluationException("22003", "value out of range: overflow");
+        checkConverted((Number) value, narrow);
         return narrow;
       }
       break;
     case FLOAT8:
-      if (from.isNumber())
-        return ((Number) value).doubleValue();
+      if (from.isNumber()) {
+        final double wide = ((Number) value).doubleValue();
+        checkConverted((Number) value, wide);
+        return wide;
+      }
       break;
     case DATE:
       if (from == PgType.TIMESTAMP)
