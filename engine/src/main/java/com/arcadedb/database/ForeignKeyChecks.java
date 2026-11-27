@@ -30,6 +30,7 @@ import com.arcadedb.utility.IntHashSet;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -94,28 +95,37 @@ final class ForeignKeyChecks {
 
   /** Runs the referential actions of what changed since the last call, then checks it, in the view of the transaction. */
   void checkStatement() {
-    final List<Note> checking = new ArrayList<>();
-    for (int round = 0; !pending.isEmpty(); round++) {
-      if (round == MAX_ROUNDS)
-        throw new ForeignKeyException("54001", "The referential actions of the foreign keys do not come to an end");
-      final List<Note> batch = new ArrayList<>(pending.values());
-      pending.clear();
-      checking.addAll(batch);
-      act(batch);
+    final Map<Id, Note> checking = new LinkedHashMap<>();
+    try {
+      for (int round = 0; !pending.isEmpty(); round++) {
+        if (round == MAX_ROUNDS)
+          throw new ForeignKeyException("54001", "The referential actions of the foreign keys do not come to an end");
+        final Map<Id, Note> batch = new LinkedHashMap<>(pending);
+        pending.clear();
+        checking.putAll(batch);
+        act(batch.values());
+      }
+      for (final Note note : checking.values())
+        verify(note);
+    } catch (final RuntimeException e) {
+      // a caller that goes on is refused again at its commit, unless what it wrote was taken back
+      pending.putAll(checking);
+      throw e;
     }
-    for (final Note note : checking)
-      verify(note);
   }
 
   /** Every action of a round is read from the state before any of them is applied: two rows may swap their keys. */
-  private void act(final List<Note> batch) {
+  private void act(final Collection<Note> batch) {
     final List<Runnable> actions = new ArrayList<>();
     for (final Note note : batch) {
       if (!note.referencedSide())
         continue;
       final ForeignKey key = note.key().key();
       final TypeIndex referenced = note.key().referencedIndex();
-      for (final RID rid : note.removed()) {
+      // each loss of a key is acted on once: a later one finds other records under the key
+      final List<RID> removed = List.copyOf(note.removed());
+      note.removed().clear();
+      for (final RID rid : removed) {
         final Document row = load(rid);
         final Object[] now = row == null ? null : valueOf(row, referenced.getPropertyNames());
         if (now != null && holds(referenced, now, note.value()))
@@ -182,15 +192,12 @@ final class ForeignKeyChecks {
    * transaction, so before the commit leaves the state in which it can write.
    */
   IntHashSet referencedFiles() {
+    // a record that lost a key was written, so its file is locked already
     for (final Note note : all.values())
-      if (note.referencedSide()) {
-        for (final RID rid : note.removed())
-          files.add(rid.getBucketId());
-      } else if (!changesOf(note.key().referringIndex(), note.value()).added().isEmpty()
-          && changesOf(note.key().referencedIndex(), note.value()).added().isEmpty()) {
+      if (!note.referencedSide() && !changesOf(note.key().referringIndex(), note.value()).added().isEmpty()
+          && changesOf(note.key().referencedIndex(), note.value()).added().isEmpty())
         for (final RID rid : find(note.key().referencedIndex(), note.value(), Integer.MAX_VALUE))
           files.add(rid.getBucketId());
-      }
     return files;
   }
 
