@@ -63,9 +63,12 @@ public interface RelationSource {
     }
   }
 
-  /** Whose record ids a column holds: none, those of its own rows, or those of the rows it refers to. */
+  /**
+   * Whose record ids a column holds: none, those of its own rows, those of the rows it refers to, or those that a column of a
+   * derived table or of a {@code WITH} query passes on from the query inside (fork issue #240).
+   */
   enum RecordIds {
-    NONE, OWN, REFERRED
+    NONE, OWN, REFERRED, PASSED_ON
   }
 
   /**

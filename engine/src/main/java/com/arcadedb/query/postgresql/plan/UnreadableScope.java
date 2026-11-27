@@ -54,6 +54,11 @@ final class UnreadableScope implements ExpressionCompiler.Scope {
   }
 
   @Override
+  public String recordIdColumn(final Expression expression) {
+    return beyond == null ? null : beyond.recordIdColumn(expression);
+  }
+
+  @Override
   public Evaluable column(final Expression.ColumnRef reference) {
     final List<Name> qualifier = reference.qualifier();
     final Name column = reference.column();

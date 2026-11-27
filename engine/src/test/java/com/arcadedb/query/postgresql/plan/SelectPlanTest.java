@@ -406,8 +406,29 @@ class SelectPlanTest extends TestHelper {
     assertThat(column("SELECT pid FROM person WHERE rid = $1", bo)).containsExactly(2);
     assertThat(column("SELECT pid FROM person WHERE rid = '" + bo + "'")).containsExactly(2);
     assertThat(column("SELECT pid FROM person WHERE rid = '#999:0'")).isEmpty();
-    assertThat(column("SELECT pid FROM person WHERE rid = 'junk'")).isEmpty();
-    assertThat(column("SELECT pid FROM person WHERE rid = 'junk' OR pid = 1")).containsExactly(1);
+    // a text that is no record id is an error, not a statement that matches nothing (fork issue #240)
+    for (final String statement : List.of("SELECT pid FROM person WHERE rid = 'junk'",
+        "SELECT pid FROM person WHERE rid = 'junk' OR pid = 1", "SELECT pid FROM person WHERE 'junk' <> rid",
+        "SELECT pid FROM person WHERE rid IN ('#1:0', 'junk')", "SELECT pid FROM person WHERE rid NOT IN ('1')",
+        "SELECT pid FROM person WHERE rid = ANY(ARRAY['junk'])", "SELECT pid FROM person WHERE rid = ANY('{junk}')",
+        "SELECT pid FROM person WHERE rid BETWEEN 'a' AND 'b'", "SELECT pid FROM person WHERE rid > 'junk'",
+        "SELECT pid FROM person WHERE rid IS DISTINCT FROM 'junk'", "SELECT pid FROM person WHERE rid = CAST('1' AS text)",
+        "SELECT CASE rid WHEN 'junk' THEN 1 END FROM person", "SELECT pid FROM person WHERE rid::text = 'junk'",
+        "SELECT pid FROM (SELECT rid AS r, pid FROM person) q WHERE r = 'junk'",
+        "WITH q AS (SELECT * FROM (SELECT rid, pid FROM person) i) SELECT pid FROM q WHERE rid = '1'"))
+      assertThat(state(statement)).as(statement).isEqualTo("22P02");
+    assertThat(state("SELECT pid FROM person WHERE rid = $1", "junk")).isEqualTo("22P02");
+    // a value read from a row is compared as it is
+    assertThat(column("SELECT pid FROM person WHERE rid = name")).isEmpty();
+    // the largest record id is not the newest row, so max and min of one are refused
+    for (final String statement : List.of("SELECT max(rid) FROM person", "SELECT min(p.rid) FROM person p",
+        "SELECT max(rid::text) FROM person", "SELECT max(rid) OVER () FROM person",
+        "SELECT max(r) FROM (SELECT rid AS r FROM person) q", "WITH q AS (SELECT rid FROM person) SELECT min(rid) FROM q",
+        "SELECT pid, max(rid) FROM person GROUP BY pid",
+        "SELECT max(r) FROM (SELECT rid AS r FROM person UNION ALL SELECT rid FROM company) q"))
+      assertThat(state(statement)).as(statement).isEqualTo("0A000");
+    assertThat(column("SELECT count(rid) FROM person")).containsExactly((long) ids.size());
+    assertThat(column("SELECT max(name) FROM person")).hasSize(1);
     final String company = (String) column("SELECT rid FROM company ORDER BY cid").get(0);
     assertThat(column("SELECT pid FROM person WHERE rid = $1", company)).as("a record of another table is not a row").isEmpty();
     assertThat(column("SELECT cid FROM company WHERE rid = $1", company)).containsExactly(10);

@@ -49,6 +49,12 @@ public interface QueryPlan {
   List<PgType> outputTypes();
 
   /**
+   * Whether output column {@code index}, counted from 0, is a column of record ids of the query, so that a query that reads
+   * this one as a derived table or as a {@code WITH} query knows it too (fork issue #240).
+   */
+  boolean holdsRecordIds(int index);
+
+  /**
    * The place that reads output column {@code index}, counted from 0, converts it to {@code type}: a parameter of a described
    * statement that is that whole column, and has no type yet, takes it.
    */

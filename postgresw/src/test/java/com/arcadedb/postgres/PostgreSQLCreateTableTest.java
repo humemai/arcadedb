@@ -216,14 +216,14 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
             "SELECT name, (SELECT count(*) FROM (SELECT label FROM memo WHERE id = 2) s) AS n FROM person ORDER BY name",
             "SELECT (SELECT rid FROM t2 LIMIT 1) AS r FROM ticket",
             // person.rid is listed, because knows refers to it: it is a column of its table on both servers
-            "SELECT (SELECT rid <> '7' FROM person WHERE id = 1) AS other FROM ticket",
+            "SELECT (SELECT rid <> '#999:7' FROM person WHERE id = 1) AS other FROM ticket",
             "SELECT name FROM person WHERE rid = (SELECT rid FROM t2 LIMIT 1) ORDER BY name"))
           same(postgres, arcade, query);
         // within one FROM too a listed record id is a column of its table, and one that the catalog does not list gives way to it
         // (fork issue #163)
         for (final String query : List.of("SELECT name FROM person, memo WHERE rid = person.rid ORDER BY name",
             "SELECT name FROM memo JOIN person ON rid = person.rid ORDER BY name",
-            "SELECT count(*) FROM person p, ticket t WHERE p.rid <> 'x' AND t.rid = 7"))
+            "SELECT count(*) FROM person p, ticket t WHERE p.rid <> '#999:7' AND t.rid = 7"))
           same(postgres, arcade, query);
         for (final String ambiguous : List.of("SELECT rid FROM person, ticket", "SELECT rid FROM ticket, person",
             "SELECT 1 FROM person JOIN ticket ON rid = 7", "SELECT name FROM person, ticket WHERE rid = 7")) {

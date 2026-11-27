@@ -83,6 +83,11 @@ final class OuterBindings implements ExpressionCompiler.Scope {
   }
 
   @Override
+  public String recordIdColumn(final Expression expression) {
+    return outer.recordIdColumn(expression);
+  }
+
+  @Override
   public Evaluable column(final Expression.ColumnRef reference) {
     final String key = key(reference);
     Evaluable read = reads.get(key);
