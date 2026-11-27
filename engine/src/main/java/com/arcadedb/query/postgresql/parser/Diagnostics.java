@@ -189,8 +189,8 @@ final class Diagnostics {
       case "unsupportedFetchClause" -> "Write LIMIT n, with OFFSET m to skip rows";
       case "unsupportedJoinUsingAlias", "unsupportedJoinAlias" -> "Leave the alias out and name the columns by their tables";
       case "unsupportedColumnAliases", "unsupportedTableAlias" -> "Name a query in a WITH clause, with its columns named by AS";
-      case "unsupportedTableRef" -> "Name a subquery in a WITH clause and read it by that name: WITH s AS (SELECT ...) SELECT ..."
-          + " FROM s. There are no table functions and no LATERAL yet";
+      case "unsupportedTableRef" -> "There are no table functions and no LATERAL yet: write the rows with VALUES, or a subquery"
+          + " that reads no earlier table, as in FROM (SELECT ...) AS s";
       case "unsupportedRecursive" -> "Write paths of any length in openCypher, where a table is a vertex type and a link table is an"
           + " edge type, as in {opencypher}MATCH (a:person)-[:knows*]->(b:person) RETURN b.name";
       case "unsupportedWithWrite", "unsupportedCteBody" ->

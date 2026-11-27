@@ -52,7 +52,7 @@ class PostgreSQLErrorHintTest extends PostgreSQLSessionAgainstPostgresTestBase {
       List.of("SELECT v FROM acc WHERE id = 1 FOR UPDATE", "40001"),
       List.of("CREATE TABLE gen (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, v text)", "GENERATED"),
       List.of("SELECT make_interval(days => 3)", "interval '3 days'"),
-      List.of("SELECT meta FROM (SELECT '{}'::jsonb AS meta) s", "WITH"),
+      List.of("SELECT s.x FROM acc, LATERAL (SELECT acc.id AS x) s", "LATERAL"),
       List.of("SELECT '{\"a\": 1}'::jsonb ->> 'a'", "jsonb"),
       List.of("TRUNCATE acc", "DELETE FROM acc"),
       List.of("CREATE EXTENSION IF NOT EXISTS plpgsql", "Leave the statement out"),
@@ -63,6 +63,7 @@ class PostgreSQLErrorHintTest extends PostgreSQLSessionAgainstPostgresTestBase {
   private static final List<String> WAYS_OUT = List.of(
       "SELECT v FROM acc ORDER BY id LIMIT 2 OFFSET 1",
       "SELECT \"v\" FROM acc",
+      "SELECT s.x FROM (SELECT id AS x FROM acc) AS s",
       "WITH v AS (SELECT id FROM acc) SELECT id FROM v",
       "SELECT date '2026-01-01' + interval '3 days'",
       "SELECT count(CASE WHEN id > 1 THEN 1 END) FROM acc",
