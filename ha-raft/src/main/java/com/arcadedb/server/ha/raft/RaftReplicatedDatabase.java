@@ -74,6 +74,7 @@ import com.arcadedb.exception.TransactionOutcomeUnknownException;
 import com.arcadedb.exception.ImplicitTransactionRequiredException;
 import com.arcadedb.exception.ObjectInUseException;
 import com.arcadedb.exception.UnknownFunctionException;
+import com.arcadedb.exception.ForeignKeyException;
 import com.arcadedb.exception.ValidationException;
 import com.arcadedb.function.sql.misc.SQLFunctionEnsureLabelTypes;
 import com.arcadedb.graph.Edge;
@@ -6408,6 +6409,7 @@ public class RaftReplicatedDatabase implements DatabaseInternal, HAReplicatedDat
     String reason = null;
     String exceptionClass = null;
     String exceptionArgs = null;
+    String sqlState = null;
 
     try {
       if (body != null && !body.isEmpty()) {
@@ -6416,6 +6418,7 @@ public class RaftReplicatedDatabase implements DatabaseInternal, HAReplicatedDat
         detail = json.getString("detail", reason);
         exceptionClass = json.getString("exception", null);
         exceptionArgs = json.getString("exceptionArgs", null);
+        sqlState = json.getString("sqlState", null);
       }
     } catch (final Exception ignored) {
       return new TransactionException(message);
@@ -6456,6 +6459,11 @@ public class RaftReplicatedDatabase implements DatabaseInternal, HAReplicatedDat
     if (DuplicatedKeyException.class.getName().equals(exceptionClass)
         && DuplicatedKeyException.fromExceptionArgs(exceptionArgs) instanceof final DuplicatedKeyException duplicatedKey)
       return duplicatedKey;
+
+    // A foreign key the leader refused the forwarded write for (fork issue #228), with its SQLSTATE: as a plain
+    // TransactionException this node would answer a caller's mistake as a server fault
+    if (ForeignKeyException.class.getName().equals(exceptionClass))
+      return ForeignKeyException.fromRemote(sqlState, detail != null ? detail : message);
 
     // A refused value carries the constraint it violates in exceptionArgs (issue #11314), so this node answers its client with
     // the same kind the leader would have

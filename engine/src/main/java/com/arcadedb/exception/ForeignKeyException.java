@@ -31,6 +31,14 @@ public class ForeignKeyException extends ValidationException {
     this.sqlState = sqlState;
   }
 
+  /**
+   * The refusal a server answered, rebuilt by a client or by a follower that forwarded the write: with the SQLSTATE the server
+   * sent, or the one of a violated key when the answer carries none.
+   */
+  public static ForeignKeyException fromRemote(final String sqlState, final String message) {
+    return new ForeignKeyException(sqlState != null && !sqlState.isEmpty() ? sqlState : "23503", message);
+  }
+
   public String getSqlState() {
     return sqlState;
   }

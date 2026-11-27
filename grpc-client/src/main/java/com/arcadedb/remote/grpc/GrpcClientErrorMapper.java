@@ -23,6 +23,7 @@ import com.arcadedb.exception.ConcurrentModificationException;
 import com.arcadedb.exception.DatabaseNotAvailableException;
 import com.arcadedb.exception.DatabaseNotFoundException;
 import com.arcadedb.exception.DuplicatedKeyException;
+import com.arcadedb.exception.ForeignKeyException;
 import com.arcadedb.exception.ErrorCategory;
 import com.arcadedb.exception.NeedRetryException;
 import com.arcadedb.exception.QueryTerminatedException;
@@ -72,6 +73,8 @@ final class GrpcClientErrorMapper {
   static final Metadata.Key<String> UNAVAILABLE_REASON_KEY = Metadata.Key.of("arcadedb-unavailable-reason",
       Metadata.ASCII_STRING_MARSHALLER);
   static final Metadata.Key<String> VALIDATION_KIND_KEY  = Metadata.Key.of("arcadedb-validation-kind",
+      Metadata.ASCII_STRING_MARSHALLER);
+  static final Metadata.Key<String> SQL_STATE_KEY        = Metadata.Key.of("arcadedb-sql-state",
       Metadata.ASCII_STRING_MARSHALLER);
 
   private static final int MAX_CAUSE_DEPTH = 32;
@@ -341,6 +344,9 @@ final class GrpcClientErrorMapper {
           new SchemaException(msg);
       // A listener refused the write (issues #10085, #10161): a refusal of the request, typed so it is not read as a fault
       case "com.arcadedb.exception.RecordVetoedException" -> new RecordVetoedException(msg);
+      // a foreign key (fork issue #228), with the SQLSTATE that tells a violated key from a restricted one
+      case "com.arcadedb.exception.ForeignKeyException" ->
+          ForeignKeyException.fromRemote(trailers != null ? trailers.get(SQL_STATE_KEY) : null, msg);
       // with the constraint it violates (issue #11314), null from a server that does not send it
       case "com.arcadedb.exception.ValidationException" -> new ValidationException(
           ValidationException.Kind.fromName(trailers != null ? trailers.get(VALIDATION_KIND_KEY) : null), msg);

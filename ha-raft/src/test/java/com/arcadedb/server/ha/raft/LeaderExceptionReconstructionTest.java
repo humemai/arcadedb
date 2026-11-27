@@ -24,6 +24,7 @@ import com.arcadedb.exception.ConcurrentModificationException;
 import com.arcadedb.exception.DeletedEntityException;
 import com.arcadedb.exception.ErrorCategory;
 import com.arcadedb.exception.ExternalResourceException;
+import com.arcadedb.exception.ForeignKeyException;
 import com.arcadedb.exception.NeedRetryException;
 import com.arcadedb.exception.ObjectInUseException;
 import com.arcadedb.exception.TransactionCommittedRemotelyException;
@@ -519,6 +520,20 @@ class LeaderExceptionReconstructionTest {
 
     assertThat(rebuilt).isInstanceOf(ValidationException.class).hasMessage("The property 'T.p' cannot be null");
     assertThat(((ValidationException) rebuilt).getKind()).isEqualTo(ValidationException.Kind.NOT_NULL);
+  }
+
+  // Fork issue #228: a foreign key the leader refused a forwarded write for keeps its type and its SQLSTATE
+  @Test
+  void aForeignKeyRefusalFromTheLeaderKeepsItsState() {
+    final String body = new JSONObject().put("error", "Constraint violated (FOREIGN_KEY)")
+        .put("exception", ForeignKeyException.class.getName()).put("exceptionArgs", ValidationException.Kind.FOREIGN_KEY.name())
+        .put("sqlState", "23001").put("detail", "restricted").toString();
+
+    final RuntimeException rebuilt = RaftReplicatedDatabase.reconstructLeaderException(400, body, null);
+
+    assertThat(rebuilt).isExactlyInstanceOf(ForeignKeyException.class).hasMessage("restricted");
+    assertThat(((ForeignKeyException) rebuilt).getSqlState()).isEqualTo("23001");
+    assertThat(ErrorCategory.of(rebuilt)).isEqualTo(ErrorCategory.VALIDATION);
   }
 
   // Regression for #11314: a leader that names no kind is rebuilt with none
