@@ -66,6 +66,13 @@ final class RegressDatabase implements AutoCloseable {
     }
   }
 
+  /** The server refused a query of the harness. */
+  static final class Unreadable extends IllegalStateException {
+    private Unreadable(final String message) {
+      super(message);
+    }
+  }
+
   /** The tables a statement reads or writes, as the plan of the server names them. */
   record Relations(Set<String> all, Set<String> written) {
   }
@@ -359,6 +366,18 @@ final class RegressDatabase implements AutoCloseable {
     return normalize(textRows(table), table.columns().stream().map(Column::type).toList(), "ISO");
   }
 
+  /**
+   * {@link #rows}, or {@code null} when PostgreSQL cannot read its own table: a virtual column that overflows, a function of the
+   * table that raises an error, or a temporary table without a free buffer.
+   */
+  List<List<Object>> readableRows(final Table table) {
+    try {
+      return rows(table);
+    } catch (final Unreadable e) {
+      return null;
+    }
+  }
+
   RegressSubject.Shape shape(final Table table) {
     return probe(true, () -> RegressSubject.Shape.read(this::select, table.schema(), table.name()));
   }
@@ -436,8 +455,7 @@ final class RegressDatabase implements AutoCloseable {
   private List<String[]> select(final String sql) {
     final RegressWire.Reply reply = send(sql, null);
     if (reply.failed())
-      throw new IllegalStateException("The harness could not read the server: " + reply.sqlState + " " + reply.message
-          + " for: " + sql);
+      throw new Unreadable("The harness could not read the server: " + reply.sqlState + " " + reply.message + " for: " + sql);
     return reply.rows;
   }
 

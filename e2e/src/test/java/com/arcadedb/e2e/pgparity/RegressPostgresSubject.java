@@ -72,7 +72,7 @@ final class RegressPostgresSubject implements RegressSubject {
   @Override
   public List<List<Object>> rows(final RegressDatabase.Table table) {
     final RegressDatabase.Table own = database.tables().get(table.key());
-    return own == null ? null : database.rows(own);
+    return own == null ? null : database.readableRows(own);
   }
 
   @Override

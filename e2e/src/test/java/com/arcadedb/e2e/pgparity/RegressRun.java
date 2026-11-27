@@ -86,8 +86,8 @@ final class RegressRun {
     }
   }
 
-  /** What the first run of PostgreSQL answered, and what its tables held afterwards where they changed. */
-  private record Recorded(RegressSubject.Answer answer, Map<String, String> changed) {
+  /** The statement of the first run of PostgreSQL, what it answered, and what its tables held afterwards where they changed. */
+  private record Recorded(String sql, RegressSubject.Answer answer, Map<String, String> changed) {
   }
 
   /** What to do with the steps of a script. */
@@ -155,7 +155,8 @@ final class RegressRun {
         @Override
         public RegressDatabase.Executed statement(final RegressPsql.Send send, final Supplier<String> copyData) {
           final RegressDatabase.Executed executed = database.execute(send.sql(), send.parameters(), copyData);
-          recorded.put(send.key(), new Recorded(executed.answer(), contents(database, database.changesAfter(send.sql()))));
+          recorded.put(send.key(),
+              new Recorded(send.sql(), executed.answer(), contents(database, database.changesAfter(send.sql()))));
           return executed;
         }
 
@@ -308,7 +309,7 @@ final class RegressRun {
     final RegressOrder order = expected.columns() == null ? null : RegressOrder.of(sql);
     final List<List<Object>> keys = order == null ? null : order.keys(expected.columns(), expected.rows(), database::peek);
 
-    if (entry == null && differs(recorded.get(send.key()), expected, keys, contents(database, changed)))
+    if (entry == null && differs(recorded.get(send.key()), sql, expected, keys, contents(database, changed)))
       entry = outOfScope.entry(RegressOutOfScope.TWO_RUNS);
 
     final String serverState = expected.failed() ? expected.sqlState() : "00000";
@@ -367,13 +368,17 @@ final class RegressRun {
     final RegressSubject.Shape expected = database.shape(now);
     if (!expected.equals(shape))
       return "table " + key + " differs in information_schema: PostgreSQL " + expected + ", got " + shape;
-    final String rows = RegressJudge.rows(database.rows(now), subject.rows(now));
+    final List<List<Object>> held = database.readableRows(now);
+    if (held == null)
+      return null; // PostgreSQL itself cannot read the table: there are no contents to compare with
+    final String rows = RegressJudge.rows(held, subject.rows(now));
     return rows == null ? null : "table " + key + " differs: " + rows;
   }
 
-  private static boolean differs(final Recorded recorded, final RegressSubject.Answer second,
+  private static boolean differs(final Recorded recorded, final String sql, final RegressSubject.Answer second,
       final List<List<Object>> keys, final Map<String, String> changed) {
-    if (recorded == null || recorded.answer().failed() != second.failed())
+    // psql can put an answer of the server into a statement, an object id for one: then the text differs too
+    if (recorded == null || !recorded.sql().equals(sql) || recorded.answer().failed() != second.failed())
       return true;
     if (second.failed())
       return !second.sqlState().equals(recorded.answer().sqlState());
