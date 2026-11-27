@@ -85,7 +85,7 @@ window	ok	inside	-	SELECT name, row_number() OVER (ORDER BY name) FROM person	wr
 distinct-on	ok	outside	-	SELECT DISTINCT ON (city) city, name FROM person	written for the parser	-
 ilike	ok	inside	-	SELECT name FROM person WHERE name ILIKE 'a%'	written for the parser	-
 is-distinct-from	ok	inside	-	SELECT 1 IS DISTINCT FROM 2	written for the parser	-
-any-array	ok	outside	-	SELECT 1 = ANY (ARRAY[1, 2])	written for the parser	-
+any-array	ok	inside	-	SELECT 1 = ANY (ARRAY[1, 2])	written for the parser	-
 lateral	ok	outside	-	SELECT * FROM person p, LATERAL (SELECT 1) s	written for the parser	-
 for-update	ok	outside	-	SELECT * FROM person FOR UPDATE	written for the parser	-
 select-into	ok	outside	-	SELECT 1 INTO t	written for the parser	-
@@ -1253,9 +1253,9 @@ join:4268	ok	outside	-	explain (verbose, costs off)\nselect * from j1\ninner joi
 join:4289	ok	outside	-	explain (costs off) select * from j1\ninner join j2 on j1.id1 = j2.id1 and j1.id2 = j2.id2\nwhere j1.id1 % 1000 = 1 and j2.id1 % 1000 = 1	src/test/regress/sql/join.sql:4289; src/test/regress/expected/join.out:11310	42P01
 join:4293	ok	inside	-	select * from j1\ninner join j2 on j1.id1 = j2.id1 and j1.id2 = j2.id2\nwhere j1.id1 % 1000 = 1 and j2.id1 % 1000 = 1	src/test/regress/sql/join.sql:4293; src/test/regress/expected/join.out:11322	42P01
 join:4298	ok	outside	-	explain (costs off) select * from j1\ninner join j2 on j1.id1 = j2.id1 and j1.id2 = j2.id2\nwhere j1.id1 % 1000 = 1 and j2.id1 % 1000 = 1 and j2.id1 = any (array[1])	src/test/regress/sql/join.sql:4298; src/test/regress/expected/join.out:11332	42P01
-join:4302	ok	outside	-	select * from j1\ninner join j2 on j1.id1 = j2.id1 and j1.id2 = j2.id2\nwhere j1.id1 % 1000 = 1 and j2.id1 % 1000 = 1 and j2.id1 = any (array[1])	src/test/regress/sql/join.sql:4302; src/test/regress/expected/join.out:11345	42P01
+join:4302	ok	inside	-	select * from j1\ninner join j2 on j1.id1 = j2.id1 and j1.id2 = j2.id2\nwhere j1.id1 % 1000 = 1 and j2.id1 % 1000 = 1 and j2.id1 = any (array[1])	src/test/regress/sql/join.sql:4302; src/test/regress/expected/join.out:11345	42P01
 join:4307	ok	outside	-	explain (costs off) select * from j1\ninner join j2 on j1.id1 = j2.id1 and j1.id2 = j2.id2\nwhere j1.id1 % 1000 = 1 and j2.id1 % 1000 = 1 and j2.id1 >= any (array[1,5])	src/test/regress/sql/join.sql:4307; src/test/regress/expected/join.out:11355	42P01
-join:4311	ok	outside	-	select * from j1\ninner join j2 on j1.id1 = j2.id1 and j1.id2 = j2.id2\nwhere j1.id1 % 1000 = 1 and j2.id1 % 1000 = 1 and j2.id1 >= any (array[1,5])	src/test/regress/sql/join.sql:4311; src/test/regress/expected/join.out:11368	42P01
+join:4311	ok	inside	-	select * from j1\ninner join j2 on j1.id1 = j2.id1 and j1.id2 = j2.id2\nwhere j1.id1 % 1000 = 1 and j2.id1 % 1000 = 1 and j2.id1 >= any (array[1,5])	src/test/regress/sql/join.sql:4311; src/test/regress/expected/join.out:11368	42P01
 join:4324	ok	outside	-	explain (verbose, costs off)\nselect t1.unique1, t2.hundred\nfrom onek t1, tenk1 t2\nwhere exists (select 1 from tenk1 t3\n              where t3.thousand = t1.unique1 and t3.tenthous = t2.hundred)\n      and t1.unique1 < 1	src/test/regress/sql/join.sql:4324; src/test/regress/expected/join.out:11384	42P01
 join:4336	ok	outside	-	explain (verbose, costs off)\nselect t1.unique1, t2.hundred\nfrom onek t1, tenk1 t2\nwhere exists (select 1 from j3\n              where j3.unique1 = t1.unique1 and j3.tenthous = t2.hundred)\n      and t1.unique1 < 1	src/test/regress/sql/join.sql:4336; src/test/regress/expected/join.out:11416	42P01
 join:4362	ok	outside	-	EXPLAIN (COSTS OFF)\nSELECT t1.a FROM skip_fetch t1 LEFT JOIN skip_fetch t2 ON t2.a = 1 WHERE t2.a IS NULL	src/test/regress/sql/join.sql:4362; src/test/regress/expected/join.out:11456	42P01

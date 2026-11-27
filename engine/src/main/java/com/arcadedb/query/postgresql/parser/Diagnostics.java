@@ -64,7 +64,7 @@ final class Diagnostics {
       Map.entry("unsupportedInSubquery", "A subquery"),
       Map.entry("unsupportedPrefixOperator", "A prefix operator"),
       Map.entry("unsupportedSymmetric", "BETWEEN SYMMETRIC"),
-      Map.entry("unsupportedQuantifiedComparison", "A comparison with ANY, SOME or ALL"),
+      Map.entry("unsupportedQuantifiedComparison", "ANY, SOME or ALL with an operator that is not a comparison"),
       Map.entry("unsupportedIndirection", "A field selection or a subscript"),
       Map.entry("unsupportedRowComma", "A row constructor"),
       Map.entry("unsupportedSubscript", "A subscript"),

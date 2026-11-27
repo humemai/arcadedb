@@ -162,7 +162,7 @@ Limits:
 | `ALTER`, `DROP`, and every `CREATE` but `CREATE TABLE` and `CREATE INDEX` | refused; use ArcadeDB `sql`. `COPY`, `TRUNCATE`, `GRANT`, and `MERGE` are refused too |
 | Types | no `json` (there is `jsonb`), `uuid`, `time`, `timetz`, `timestamptz[]` columns, or `char(n)` |
 | Syntax | a whole-row value such as `(t.*)`, `WITHOUT OVERLAPS`, `COALESCE`, `GREATEST`, `LEAST`, and `NULLIF` as functions in `FROM`, and an index parameter with a namespace are read and refused (`0A000`; fork issue [#202](https://github.com/humemai/arcadedb/issues/202)) |
-| Queries | refused: `array_agg`, the JSON aggregates, most window frames, `ntile`, named windows, `WITH RECURSIVE`, `= ANY`, `->>`, `LATERAL`, `NATURAL` joins, `SIMILAR TO` |
+| Queries | refused: `array_agg`, the JSON aggregates, most window frames, `ntile`, named windows, `WITH RECURSIVE`, `ANY` and `ALL` with an operator that is not a comparison, `->>`, `LATERAL`, `NATURAL` joins, `SIMILAR TO` |
 | `numeric ^ numeric` | an integer exponent only. The bases `1`, `-1`, and `0` take every integer; another base takes `0` to `2147483647`, or a larger one when `numeric` cannot hold the result (`22003`, or zero). Every other exponent is refused. The result, its scale, and these errors are those of PostgreSQL 18 (`PostgreSQLNumericPowerTest`, fork issue [#161](https://github.com/humemai/arcadedb/issues/161)) |
 | A large `numeric` parameter in binary format | results hold all that `numeric` holds in the text and in the binary format (`PostgreSQLLargeNumericTest`, fork issue [#171](https://github.com/humemai/arcadedb/issues/171)), but a parameter that a client sends in binary is refused above 4,000 groups of four digits, a weight beyond 4,000, or 16,000 decimals (from reading the code, not tested) |
 | Large operations | joins, `GROUP BY`, derived tables, `WITH`, and set operations fail with `53200` over a memory limit instead of spilling to disk |
@@ -170,6 +170,14 @@ Limits:
 | Interval text | pairs of a number and a unit up to `millennium`, and a time. `infinity`, `1-2`, the ISO 8601 form, and a fraction of a day or of a larger unit are refused (`0A000`). A unit given twice is `22007`, a field that does not fit is `22015`, and years and months that do not fit together are `22008`. A sum with a date or a timestamp outside PostgreSQL's range is `22008`, and one before the year 1 or after 9999 is refused |
 | Time zone | any spelling of a zone, used by every time value | over the wire, `CURRENT_DATE`, `LOCALTIMESTAMP`, and their defaults read the clock in the session's zone when it is a name of the time zone database or a zero offset. With another spelling (`9`, `'+09:00'`, a POSIX rule, an interval, or an unknown name, which PostgreSQL refuses with `22023`), the `SET` runs and those two are `0A000`. Through the engine API the clock is that of the Java virtual machine (fork issue [#237](https://github.com/humemai/arcadedb/issues/237)). `timestamptz` is computed in UTC only: in a session whose time zone is not UTC, which pgjdbc sets from the zone of its Java process, a statement that reads or makes one is `0A000` and says to send `SET TIME ZONE 'UTC'`. A zone name or abbreviation in a text, `AT TIME ZONE`, and a time before the year 1 or after 9999 in UTC are refused too (fork issue [#223](https://github.com/humemai/arcadedb/issues/223)) |
 | `SET search_path` | names resolve in the listed schemas | there is one schema, `public`. Over the wire, a path that names neither it nor `current_schema()` is accepted, and every statement of the language is then `0A000` until the path names it again, where PostgreSQL finds no table (`42P01`) |
+
+## Kept differences
+
+These answer differently from PostgreSQL and stay so, by decision. The [regression page](postgresql-regression.md) counts their statements as wrong, in a row of their own.
+
+| case | difference |
+| --- | --- |
+| Privileges and roles | `CREATE ROLE`, `GRANT`, `SET ROLE`, and `SET SESSION AUTHORIZATION` are refused (`0A000`). The statements after them are not checked against that role or that grant, so one that PostgreSQL refuses with `42501` can succeed (fork issue [#176](https://github.com/humemai/arcadedb/issues/176)) |
 
 ## Known wrong answers
 

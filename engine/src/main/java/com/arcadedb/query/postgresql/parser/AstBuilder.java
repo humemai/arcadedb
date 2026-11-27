@@ -665,6 +665,18 @@ final class AstBuilder {
     if (context instanceof LikeExprContext e)
       return new Expression.Like(position(e.getStart()), expression(e.aExpr(0)), expression(e.pattern), null,
           has(e, PostgreSQLParser.NOT), e.op.getType() == PostgreSQLParser.ILIKE);
+    if (context instanceof QuantifiedArrayExprContext e)
+      return new Expression.Quantified(position(e.op), comparison(e.op), expression(e.l), expression(e.r),
+          e.quantifier.getType() == PostgreSQLParser.ALL);
+    if (context instanceof QuantifiedSubqueryExprContext e) {
+      // x = ANY (query) is x IN (query), and x <> ALL (query) is x NOT IN (query)
+      final boolean all = e.quantifier.getType() == PostgreSQLParser.ALL;
+      final BinaryOperator operator = comparison(e.op);
+      if (operator != (all ? BinaryOperator.NOT_EQUAL : BinaryOperator.EQUAL))
+        throw Diagnostics.notSupported("A comparison " + operator.symbol() + (all ? " ALL" : " ANY")
+            + " of a subquery, which EXISTS can express,", e.op);
+      return new Expression.InSubquery(position(e.getStart()), expression(e.l), query(e.selectStmt()), all);
+    }
     if (context instanceof ComparisonExprContext e) {
       // the comparison operators do not associate: a < b < c is a syntax error in PostgreSQL
       if (e.l instanceof ComparisonExprContext)
