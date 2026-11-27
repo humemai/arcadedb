@@ -45,6 +45,7 @@ import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.Subquery;
 import com.arcadedb.query.postgresql.eval.SubqueryPlanner;
+import com.arcadedb.query.postgresql.eval.ValueInput;
 import com.arcadedb.query.postgresql.eval.VectorDistance;
 import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.plan.infoschema.InformationSchema;
@@ -54,6 +55,7 @@ import com.arcadedb.query.postgresql.plan.join.JoinWarnings;
 
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -582,7 +584,7 @@ public class SelectPlanner {
   private static boolean aggregateOfTheOuterQuery(final Expression expression, final OuterBindings outer) {
     if (expression instanceof Expression.FunctionCall call && ExpressionCompiler.isAggregate(call)) {
       final List<Expression.ColumnRef> references = new ArrayList<>();
-      for (final Expression argument : call.args())
+      for (final Expression argument : ExpressionCompiler.children(call))
         referencesIn(argument, references);
       if (references.isEmpty())
         return false;
@@ -1308,7 +1310,7 @@ public class SelectPlanner {
         specs.add(spec);
         known = specs.size() - 1;
       }
-      return new Evaluable.Slot(spec.resultType(), spec.resultType().typeName(), groupAsts.size() + known);
+      return new Evaluable.Slot(spec.resultType(), spec.resultTypeName(), groupAsts.size() + known);
     }
 
     private SelectPlan.AggregateSpec specOf(final Expression.FunctionCall call) {
@@ -1318,10 +1320,80 @@ public class SelectPlanner {
 
   /** Types an aggregate call (a grouping query's, or a window aggregate's) against the compiler of its input row. */
   static SelectPlan.AggregateSpec aggregateSpec(final Expression.FunctionCall call, final ExpressionCompiler inputCompiler) {
+    final String name = call.name().get(call.name().size() - 1).value();
+    final SelectPlan.AggregateSpec spec = switch (name) {
+      case "string_agg" -> stringAggSpec(call, inputCompiler);
+      case "array_agg", "jsonb_agg" -> listAggSpec(name, call, inputCompiler);
+      default -> scalarAggSpec(name, call, inputCompiler);
+    };
+    if (call.distinct() && call.orderBy().isEmpty() && spec.collects() && !Comparison.isComparable(spec.argumentType()))
+      throw new PostgreSQLFeatureNotSupportedException(
+          name + "(DISTINCT ...) of a value of type " + spec.argumentType().displayName() + " is not supported",
+          "Make the values distinct in a subquery in FROM, and aggregate its rows");
+    final Evaluable filter = call.filter() == null ? null : inputCompiler.compileCondition(call.filter(), "FILTER");
+    final Evaluable[] keys = new Evaluable[call.orderBy().size()];
+    final List<Comparator<Object>> orderings = new ArrayList<>(keys.length);
+    for (int i = 0; i < keys.length; i++) {
+      final SortItem item = call.orderBy().get(i);
+      // an integer here is a constant, not the position of an argument, as in PostgreSQL
+      keys[i] = inputCompiler.resolveOutput(inputCompiler.compile(item.expression()));
+      if (call.distinct() && !isArgument(item.expression(), keys[i], call, inputCompiler))
+        throw PostgreSQLReferenceException.invalidReference(
+            "in an aggregate with DISTINCT, ORDER BY expressions must appear in argument list");
+      if (!Comparison.isComparable(keys[i].type()))
+        throw new PostgreSQLFeatureNotSupportedException(
+            "ORDER BY a value of type " + keys[i].type().displayName() + " is not supported");
+      final Boolean nullsFirst = item.nulls() == SortItem.Nulls.FIRST ? Boolean.TRUE
+          : item.nulls() == SortItem.Nulls.LAST ? Boolean.FALSE : null;
+      orderings.add(Comparison.ordering(keys[i].type(), item.direction() == SortItem.Direction.DESC, nullsFirst));
+    }
+    return filter == null && keys.length == 0 ? spec : spec.with(filter, keys, orderings);
+  }
+
+  /** Whether a sort key of an aggregate is one of its arguments: the same expression, or the same column written another way. */
+  private static boolean isArgument(final Expression key, final Evaluable compiled, final Expression.FunctionCall call,
+      final ExpressionCompiler inputCompiler) {
+    for (final Expression argument : call.args())
+      if (argument.equals(key) || compiled instanceof Evaluable.Slot slot && argument instanceof Expression.ColumnRef
+          && inputCompiler.compile(argument) instanceof Evaluable.Slot other && other.index() == slot.index())
+        return true;
+    return false;
+  }
+
+  /**
+   * {@code array_agg(value)} and {@code jsonb_agg(value)}: the values of the rows as one array, or one JSON array. An argument of
+   * no type is the error PostgreSQL gives for each.
+   */
+  private static SelectPlan.AggregateSpec listAggSpec(final String name, final Expression.FunctionCall call,
+      final ExpressionCompiler inputCompiler) {
+    if (call.star() || call.args().size() != 1)
+      throw PostgreSQLEvaluationException.noFunction(name, inputCompiler.argumentTypes(call));
+    final Evaluable argument = inputCompiler.compile(call.args().get(0));
+    final PgType type = argument.type();
+    final boolean array = name.equals("array_agg");
+    if (type == PgType.UNKNOWN)
+      throw array ? new PostgreSQLEvaluationException("42725", "function array_agg(unknown) is not unique. Hint: Could not choose a"
+          + " best candidate function. You might need to add explicit type casts.")
+          : new PostgreSQLEvaluationException("42804", "could not determine polymorphic type because input has type unknown");
+    if (array) {
+      if (!ValueInput.isElementType(type))
+        throw new PostgreSQLFeatureNotSupportedException(
+            "array_agg of a value of type " + type.displayName() + " is not supported: an array has one dimension of booleans,"
+                + " numbers, text, bytea, dates or timestamps",
+            "Use jsonb_agg, which collects any value");
+      return new SelectPlan.AggregateSpec(name, type, PgType.ARRAY, "_" + type.typeName(), argument, call.distinct(), null, null,
+          new Evaluable[0], List.of());
+    }
+    if (type == PgType.VECTOR || type == PgType.INTERVAL)
+      throw new PostgreSQLFeatureNotSupportedException(
+          "The function " + name + " is not supported for a value of type " + type.displayName());
+    return new SelectPlan.AggregateSpec(name, type, PgType.JSONB, argument, call.distinct(), null);
+  }
+
+  /** {@code count}, {@code sum}, {@code avg}, {@code min} and {@code max}. */
+  private static SelectPlan.AggregateSpec scalarAggSpec(final String name, final Expression.FunctionCall call,
+      final ExpressionCompiler inputCompiler) {
     {
-      final String name = call.name().get(call.name().size() - 1).value();
-      if (name.equals("string_agg"))
-        return stringAggSpec(call, inputCompiler);
       Evaluable argument = null;
       PgType argumentType = PgType.UNKNOWN;
       if (call.star()) {

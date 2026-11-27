@@ -147,7 +147,8 @@ final class ColumnNames {
         yield expression(when.operand(), names) && expression(when.otherwise(), names);
       }
       case Expression.Cast cast -> expression(cast.operand(), names);
-      case Expression.FunctionCall call -> all(call.args(), names) && (call.over() == null
+      case Expression.FunctionCall call -> all(call.args(), names) && sorts(call.orderBy(), names)
+          && expression(call.filter(), names) && (call.over() == null
           || all(call.over().partitionBy(), names) && sorts(call.over().orderBy(), names));
       case Expression.ArrayConstructor array -> all(array.elements(), names);
       case Expression.SpecialFunction special -> all(special.args(), names);

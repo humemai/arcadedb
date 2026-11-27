@@ -61,14 +61,34 @@ public final class SelectPlan implements QueryPlan {
   record SortKey(int position, Comparator<Object> ordering) {
   }
 
-  /** An aggregate function call of a grouping query. */
   /**
-   * One aggregate of a grouping query.
+   * One aggregate call: of a grouping query, or of a window.
    *
-   * @param delimiter the second argument of {@code string_agg}, evaluated per row; {@code null} for the aggregates of one argument
+   * @param resultTypeName the name of the result type, which for an array says the element type ({@code _int4})
+   * @param delimiter      the second argument of {@code string_agg}, evaluated per row; {@code null} for the aggregates of one
+   *                       argument
+   * @param filter         the condition of {@code FILTER (WHERE ...)}: a row for which it is not true is not given to the
+   *                       aggregate, and its arguments are not evaluated; {@code null} for none
+   * @param orderKeys      the keys of the {@code ORDER BY} of the call, evaluated per row, empty for none
+   * @param orderings      the order of each key
    */
-  record AggregateSpec(String name, PgType argumentType, PgType resultType, Evaluable argument, boolean distinct,
-                       Evaluable delimiter) {
+  record AggregateSpec(String name, PgType argumentType, PgType resultType, String resultTypeName, Evaluable argument,
+                       boolean distinct, Evaluable delimiter, Evaluable filter, Evaluable[] orderKeys,
+                       List<Comparator<Object>> orderings) {
+    AggregateSpec(final String name, final PgType argumentType, final PgType resultType, final Evaluable argument,
+        final boolean distinct, final Evaluable delimiter) {
+      this(name, argumentType, resultType, resultType.typeName(), argument, distinct, delimiter, null, new Evaluable[0], List.of());
+    }
+
+    /** This aggregate with the {@code FILTER} and the {@code ORDER BY} of its call. */
+    AggregateSpec with(final Evaluable condition, final Evaluable[] keys, final List<Comparator<Object>> order) {
+      return new AggregateSpec(name, argumentType, resultType, resultTypeName, argument, distinct, delimiter, condition, keys, order);
+    }
+
+    /** An aggregate whose result depends on the order its rows come in, so that DISTINCT has to give them in PostgreSQL's order. */
+    boolean collects() {
+      return "array_agg".equals(name) || "jsonb_agg".equals(name);
+    }
   }
 
   private final RelationSource source;
@@ -353,11 +373,8 @@ public final class SelectPlan implements QueryPlan {
           accumulators.put(key, group);
           keyValues.put(key, values);
         }
-        for (int a = 0; a < specs.size(); a++) {
-          final AggregateSpec spec = specs.get(a);
-          group[a].add(spec.argument() == null ? Boolean.TRUE : spec.argument().eval(row),
-              spec.delimiter() == null ? null : spec.delimiter().eval(row));
-        }
+        for (int a = 0; a < specs.size(); a++)
+          group[a].addRow(specs.get(a), row, memory);
       }
       if (keys.length == 0 && accumulators.isEmpty()) {
         accumulators.put(List.of(), newAccumulators());
@@ -394,8 +411,45 @@ public final class SelectPlan implements QueryPlan {
 
     Object result();
 
+    /**
+     * One input row of the aggregate {@code spec}: its {@code FILTER} first, then its arguments.
+     *
+     * @param memory what an aggregate that keeps rows charges them to, {@code null} for none
+     */
+    default void addRow(final AggregateSpec spec, final Object[] row, final BuildMemory memory) {
+      if (spec.filter() != null && !Boolean.TRUE.equals(spec.filter().eval(row)))
+        return;
+      add(spec.argument() == null ? Boolean.TRUE : spec.argument().eval(row),
+          spec.delimiter() == null ? null : spec.delimiter().eval(row));
+    }
+
     static Accumulator create(final AggregateSpec spec) {
-      final Accumulator accumulator = switch (spec.name()) {
+      // an ORDER BY, and the order that DISTINCT gives to the rows of a list, need every row before the first is aggregated
+      if (spec.orderKeys().length > 0 || spec.distinct() && spec.collects())
+        return new SortedAccumulator(spec);
+      final Accumulator accumulator = plain(spec);
+      if (!spec.distinct())
+        return accumulator;
+      if (spec.name().equals("string_agg"))
+        return new DistinctStringAgg();
+      final Set<Object> seen = new HashSet<>();
+      return new Accumulator() {
+        @Override
+        public void add(final Object value) {
+          if (value != null && seen.add(normalize(value)))
+            accumulator.add(value);
+        }
+
+        @Override
+        public Object result() {
+          return accumulator.result();
+        }
+      };
+    }
+
+    /** The accumulator of an aggregate over its rows as they come, without {@code DISTINCT}. */
+    private static Accumulator plain(final AggregateSpec spec) {
+      return switch (spec.name()) {
         case "count" -> new Accumulator() {
           private long count;
 
@@ -474,6 +528,23 @@ public final class SelectPlan implements QueryPlan {
             return Numbers.divideNumeric((BigDecimal) total, BigDecimal.valueOf(count));
           }
         };
+        // NULL is an element like any other, and no row at all is NULL and not an empty list
+        case "array_agg", "jsonb_agg" -> new Accumulator() {
+          private final boolean json = spec.name().equals("jsonb_agg");
+          private List<Object> items;
+
+          @Override
+          public void add(final Object value) {
+            if (items == null)
+              items = new ArrayList<>();
+            items.add(json && value != null ? Jsonb.of(value, spec.argument().type(), spec.argument().typeName()) : value);
+          }
+
+          @Override
+          public Object result() {
+            return items == null ? null : new ArrayList<>(items);
+          }
+        };
         default -> new Accumulator() {
           private final boolean wantMax = spec.name().equals("max");
           private Object best;
@@ -497,23 +568,67 @@ public final class SelectPlan implements QueryPlan {
           }
         };
       };
-      if (!spec.distinct())
-        return accumulator;
-      if (spec.name().equals("string_agg"))
-        return new DistinctStringAgg();
-      final Set<Object> seen = new HashSet<>();
-      return new Accumulator() {
-        @Override
-        public void add(final Object value) {
-          if (value != null && seen.add(normalize(value)))
-            accumulator.add(value);
-        }
+    }
+  }
 
-        @Override
-        public Object result() {
-          return accumulator.result();
+  /**
+   * An aggregate that sees its rows in an order: the one of its {@code ORDER BY}, and for {@code DISTINCT} the order of its
+   * arguments after those keys (every key is one of them, as PostgreSQL requires), which is how PostgreSQL implements it: sort,
+   * then skip a row equal to the one before. The rows are kept until the input ends, and are charged to the memory of the
+   * grouping.
+   */
+  private static final class SortedAccumulator implements Accumulator {
+    private final AggregateSpec  spec;
+    /** The value, the second argument, then the keys of one row. */
+    private final List<Object[]> rows = new ArrayList<>();
+
+    SortedAccumulator(final AggregateSpec spec) {
+      this.spec = spec;
+    }
+
+    @Override
+    public void addRow(final AggregateSpec ignored, final Object[] row, final BuildMemory memory) {
+      if (spec.filter() != null && !Boolean.TRUE.equals(spec.filter().eval(row)))
+        return;
+      final Evaluable[] keys = spec.orderKeys();
+      final Object[] kept = new Object[2 + keys.length];
+      kept[0] = spec.argument() == null ? Boolean.TRUE : spec.argument().eval(row);
+      kept[1] = spec.delimiter() == null ? null : spec.delimiter().eval(row);
+      for (int i = 0; i < keys.length; i++)
+        kept[2 + i] = keys[i].eval(row);
+      if (memory != null)
+        memory.charge(kept);
+      rows.add(kept);
+    }
+
+    @Override
+    public void add(final Object value) {
+      throw new IllegalStateException("A sorted aggregate reads its rows");
+    }
+
+    @Override
+    public Object result() {
+      final List<Object[]> sorted = new ArrayList<>(rows);
+      final Comparator<Object> arguments = spec.distinct() ? Comparison.ordering(spec.argumentType(), false, null) : null;
+      final Comparator<Object> delimiters = spec.distinct() && spec.delimiter() != null
+          ? Comparison.ordering(PgType.TEXT, false, null) : null;
+      sorted.sort((a, b) -> {
+        for (int i = 0; i < spec.orderings().size(); i++) {
+          final int order = spec.orderings().get(i).compare(a[2 + i], b[2 + i]);
+          if (order != 0)
+            return order;
         }
-      };
+        if (arguments == null)
+          return 0;
+        final int order = arguments.compare(a[0], b[0]);
+        return order != 0 || delimiters == null ? order : delimiters.compare(a[1], b[1]);
+      });
+      final Accumulator accumulator = Accumulator.plain(spec);
+      final Set<List<Object>> seen = spec.distinct() ? new HashSet<>() : null;
+      for (final Object[] row : sorted)
+        if (seen == null || seen.add(Arrays.asList(normalize(row[0]), row[1])))
+          accumulator.add(row[0], row[1]);
+      return accumulator.result();
     }
   }
 

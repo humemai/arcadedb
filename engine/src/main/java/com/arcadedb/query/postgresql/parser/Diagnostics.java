@@ -68,7 +68,6 @@ final class Diagnostics {
       Map.entry("unsupportedIndirection", "A field selection or a subscript"),
       Map.entry("unsupportedRowComma", "A row constructor"),
       Map.entry("unsupportedSubscript", "A subscript"),
-      Map.entry("unsupportedAggregateOrder", "ORDER BY inside a function call"),
       Map.entry("unsupportedNamedArg", "A named argument"),
       Map.entry("unsupportedVariadic", "VARIADIC"),
       Map.entry("unsupportedSimilarEscape", "SUBSTRING with SIMILAR"),
@@ -207,7 +206,6 @@ final class Diagnostics {
       case "unsupportedQuantifiedComparison" -> "Write ANY or ALL after a comparison: =, <>, <, <=, > or >=";
       case "unsupportedIndirection", "unsupportedSubscript" -> "Select the whole value and read the field or element in your program";
       case "unsupportedRowComma" -> "Compare the columns one by one, as in a < $1 OR (a = $1 AND b < $2)";
-      case "unsupportedAggregateOrder" -> PostgreSQLHints.NO_WAY + ": select the rows with ORDER BY and aggregate in your program";
       case "unsupportedNamedArg" -> "Pass the arguments by position; an interval is written interval '3 days'";
       case "unsupportedVariadic" -> "Pass the values one by one";
       case "unsupportedSimilarEscape" -> "Use substring(value FROM start FOR length), or match with LIKE";
@@ -246,7 +244,6 @@ final class Diagnostics {
     if ("A subquery".equals(what) || "A parenthesised query".equals(what))
       return "Name the query in a WITH clause and read it by that name";
     return switch (what.split(" ")[0]) {
-      case "FILTER" -> "Write the condition inside the aggregate, as in count(CASE WHEN condition THEN 1 END)";
       case "IS" -> "Write a comparison, as in x = true, or coalesce(x, false)";
       case "OVER" -> "Write the window inside OVER (...)";
       case "TABLE" -> "Write SELECT * FROM name";

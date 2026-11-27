@@ -343,7 +343,10 @@ public final class AstPrinter {
       }
       case Expression.Cast cast -> "CAST(" + print(cast.operand()) + " AS " + print(cast.type()) + ")";
       case Expression.FunctionCall call -> call.name().stream().map(AstPrinter::print).collect(Collectors.joining("."))
-          + (call.star() ? "(*)" : "(" + (call.distinct() ? "DISTINCT " : "") + printAll(call.args()) + ")")
+          + (call.star() ? "(*)" : "(" + (call.distinct() ? "DISTINCT " : "") + printAll(call.args())
+              + (call.orderBy().isEmpty() ? ""
+                  : " ORDER BY " + call.orderBy().stream().map(AstPrinter::print).collect(Collectors.joining(", "))) + ")")
+          + (call.filter() == null ? "" : " FILTER (WHERE " + print(call.filter()) + ")")
           + (call.over() == null ? "" : " OVER (" + printWindow(call.over()) + ")");
       case Expression.ArrayConstructor array -> "ARRAY[" + printAll(array.elements()) + "]";
       case Expression.SpecialFunction function -> function.args().isEmpty() ? function.kind().name()

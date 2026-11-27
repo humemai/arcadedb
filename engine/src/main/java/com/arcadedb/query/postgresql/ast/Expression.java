@@ -379,22 +379,26 @@ public sealed interface Expression extends Node {
    * @param args     the arguments, empty for {@code f()} and for {@code count(*)}
    * @param distinct true for {@code f(DISTINCT x)}
    * @param star     true for {@code count(*)}
+   * @param over     the window of {@code OVER}, {@code null} for none
+   * @param orderBy  the {@code ORDER BY} inside the parentheses of an aggregate, empty for none
+   * @param filter   the condition of {@code FILTER (WHERE ...)}, {@code null} for none
    */
-  record FunctionCall(SourcePosition position, List<Name> name, List<Expression> args, boolean distinct, boolean star, Window over)
-      implements Expression {
+  record FunctionCall(SourcePosition position, List<Name> name, List<Expression> args, boolean distinct, boolean star, Window over,
+                      List<SortItem> orderBy, Expression filter) implements Expression {
     public FunctionCall {
       Objects.requireNonNull(position, "position");
       name = List.copyOf(name);
       args = List.copyOf(args);
+      orderBy = List.copyOf(orderBy);
       if (name.isEmpty())
         throw new IllegalArgumentException("A function has a name");
-      if (star && (!args.isEmpty() || distinct))
-        throw new IllegalArgumentException("f(*) has no arguments and no DISTINCT");
+      if (star && (!args.isEmpty() || distinct || !orderBy.isEmpty()))
+        throw new IllegalArgumentException("f(*) has no arguments, no DISTINCT and no ORDER BY");
     }
 
     public FunctionCall(final SourcePosition position, final List<Name> name, final List<Expression> args, final boolean distinct,
         final boolean star) {
-      this(position, name, args, distinct, star, null);
+      this(position, name, args, distinct, star, null, List.of(), null);
     }
   }
 

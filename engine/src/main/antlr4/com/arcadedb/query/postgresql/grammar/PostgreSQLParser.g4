@@ -818,8 +818,8 @@ cExpr
   | LPAREN aExpr unsupportedRowComma RPAREN                                   # unsupportedRowExpr
   | caseExpr                                                                   # caseExprAlt
   | CAST LPAREN aExpr AS typename RPAREN                                       # castExpr
-  | funcApplication overClause                                                 # windowCallExpr
-  | funcApplication unsupportedFunctionSuffix?                                 # functionCallExpr
+  | funcApplication filterClause? overClause                                   # windowCallExpr
+  | funcApplication filterClause? unsupportedFunctionSuffix?                   # functionCallExpr
   | fn=(COALESCE | GREATEST | LEAST) LPAREN exprList RPAREN                    # variadicSpecialExpr
   | NULLIF LPAREN l=aExpr COMMA r=aExpr RPAREN                                 # nullIfExpr
   | CURRENT_DATE                                                               # currentDateExpr
@@ -843,8 +843,13 @@ unsupportedRowComma
   : COMMA balancedTokens
   ;
 
-// OVER (PARTITION BY ... ORDER BY ... [ROWS UNBOUNDED PRECEDING | ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW]): any other frame,
-// a window name or a FILTER is read by unsupportedFunctionSuffix
+// FILTER (WHERE condition) of an aggregate (filter_clause of gram.y), fork issue #234
+filterClause
+  : FILTER LPAREN WHERE aExpr RPAREN
+  ;
+
+// OVER (PARTITION BY ... ORDER BY ... [ROWS UNBOUNDED PRECEDING | ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW]): any other frame
+// or a window name is read by unsupportedFunctionSuffix
 overClause
   : OVER LPAREN (PARTITION BY partition+=aExpr (COMMA partition+=aExpr)*)? sortClause? rowsFrame? RPAREN
   ;
@@ -856,7 +861,6 @@ rowsFrame
 
 unsupportedFunctionSuffix
   : WITHIN GROUP parenGroup
-  | FILTER parenGroup (OVER (parenGroup | colId))?
   | OVER (parenGroup | colId)
   ;
 
@@ -899,7 +903,8 @@ exprList
 funcApplication
   : name=funcName LPAREN RPAREN                                  # funcNoArgs
   | name=funcName LPAREN STAR RPAREN                             # funcStar
-  | name=funcName LPAREN q=(ALL | DISTINCT)? args=funcArgList RPAREN   # funcWithArgs
+  // the ORDER BY of an aggregate (opt_sort_clause of func_application), fork issue #234
+  | name=funcName LPAREN q=(ALL | DISTINCT)? args=funcArgList order=sortClause? RPAREN   # funcWithArgs
   ;
 
 funcName
@@ -908,7 +913,7 @@ funcName
   ;
 
 funcArgList
-  : items+=funcArgExpr (COMMA items+=funcArgExpr)* unsupportedAggregateOrder?
+  : items+=funcArgExpr (COMMA items+=funcArgExpr)*
   ;
 
 funcArgExpr
@@ -928,10 +933,6 @@ paramName
 
 unsupportedVariadic
   : VARIADIC aExpr
-  ;
-
-unsupportedAggregateOrder
-  : ORDER BY balancedTokens
   ;
 
 extractArg

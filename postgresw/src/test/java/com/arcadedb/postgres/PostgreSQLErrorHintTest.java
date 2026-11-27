@@ -56,8 +56,7 @@ class PostgreSQLErrorHintTest extends PostgreSQLSessionAgainstPostgresTestBase {
       List.of("SELECT '{\"a\": 1}'::jsonb AS v ORDER BY v", "->>"),
       List.of("TRUNCATE acc", "DELETE FROM acc"),
       List.of("CREATE EXTENSION IF NOT EXISTS plpgsql", "Leave the statement out"),
-      List.of("ALTER TABLE acc ADD CONSTRAINT u UNIQUE (v)", "CREATE UNIQUE INDEX ON acc (v)"),
-      List.of("SELECT count(*) FILTER (WHERE id > 1) FROM acc", "CASE WHEN"));
+      List.of("ALTER TABLE acc ADD CONSTRAINT u UNIQUE (v)", "CREATE UNIQUE INDEX ON acc (v)"));
 
   /** What the hints of this language say to write, run in the order given. */
   private static final List<String> WAYS_OUT = List.of(
@@ -66,7 +65,6 @@ class PostgreSQLErrorHintTest extends PostgreSQLSessionAgainstPostgresTestBase {
       "SELECT s.x FROM (SELECT id AS x FROM acc) AS s",
       "WITH v AS (SELECT id FROM acc) SELECT id FROM v",
       "SELECT date '2026-01-01' + interval '3 days'",
-      "SELECT count(CASE WHEN id > 1 THEN 1 END) FROM acc",
       "CREATE UNIQUE INDEX ON acc (v)",
       "SELECT id FROM acc WHERE id IN (1, 2)",
       "DELETE FROM acc WHERE id IN (SELECT id FROM acc WHERE v = 'zz')");
