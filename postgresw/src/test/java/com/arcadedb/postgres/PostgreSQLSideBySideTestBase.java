@@ -203,8 +203,12 @@ abstract class PostgreSQLSideBySideTestBase extends PostgresWireProtocolTestBase
       out.append("    ");
       for (int i = 1; i <= columns.getColumnCount(); i++) {
         final Object value = rows.getObject(i);
-        out.append(value instanceof Number ? new BigDecimal(value.toString()).stripTrailingZeros().toPlainString()
-            : String.valueOf(rows.getString(i))).append('|');
+        String text = value instanceof Number ? new BigDecimal(value.toString()).stripTrailingZeros().toPlainString()
+            : String.valueOf(rows.getString(i));
+        // the wire sends six digits of a second with every timestamp, and PostgreSQL no trailing zeros (fork issue #253)
+        if ("timestamp".equals(columns.getColumnTypeName(i)))
+          text = text.replaceFirst("(\\.\\d*?)0+$", "$1").replaceFirst("\\.$", "");
+        out.append(text).append('|');
       }
       out.append('\n');
     }
