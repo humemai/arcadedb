@@ -41,9 +41,12 @@ import java.util.regex.Pattern;
  * <p>Input is the text form of section 8.5.4 of the manual in the {@code postgres} and {@code SQL standard} spellings that the
  * parser of {@code interval 'N' unit} produces: pairs of a quantity and a unit ({@code 1 year 2 months}, {@code 90 days},
  * {@code 1 day 12 hours}), {@code HH:MM[:SS[.ffffff]]}, a trailing {@code ago}, and a bare number whose unit comes from the
- * field restriction of the literal ({@code interval '90' day} is 90 days, {@code interval '1' month} is one month, and a bare
- * number without a restriction is a number of seconds). The ISO 8601 form ({@code P1Y2M}), fractional years, months, weeks and
- * days, and the range restrictions ({@code day to second}) are refused with SQLSTATE {@code 0A000}, never answered differently.
+ * field restriction of the literal ({@code interval '90' day} is 90 days, {@code interval '1' month} is one month, a bare number
+ * in front of a time is a number of days, and another bare number without a restriction is a number of seconds). The ISO 8601
+ * form ({@code P1Y2M}), {@code infinity}, {@code 1-2}, fractional years, months, weeks and days, and the range restrictions
+ * ({@code day to second}) are refused with SQLSTATE {@code 0A000}, never answered differently. The errors are those of
+ * PostgreSQL (fork issue #200): {@code 22007} for a text that is none, a unit given twice included, {@code 22015} for a field
+ * that does not fit, and {@code 22008} for years and months that do not fit together.
  *
  * @param months the months, a year being 12
  * @param days   the days, which are calendar days and not 24 hours
@@ -59,6 +62,21 @@ public record PgInterval(int months, int days, long micros) {
   private static final Pattern NUMBER = Pattern.compile("[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)");
   private static final Pattern GLUED  = Pattern.compile("([+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+))([a-z]+)");
   private static final Pattern TIME   = Pattern.compile("([+-]?)([0-9]+):([0-9]{1,2})(?::([0-9]{1,2})(?:\\.([0-9]+))?)?");
+  /** Forms that PostgreSQL reads and this parser does not: {@code 1-2} (years and months) and other layouts of a time. */
+  private static final Pattern UNREAD = Pattern.compile("[+-]?[0-9]+-[0-9]+|[+-]?[0-9.]*:[0-9.:]*");
+
+  /** The first timestamp of PostgreSQL, 4714-11-24 BC, and its last year. */
+  private static final LocalDateTime FIRST_TIMESTAMP        = LocalDateTime.of(-4713, 11, 24, 0, 0);
+  private static final int           LAST_YEAR_OF_TIMESTAMP = 294_276;
+
+  // one bit for each unit of a text, which gives each of them once; a time, and seconds with a fraction, give several
+  private static final int MICROSECOND = 1;
+  private static final int MILLISECOND = 1 << 1;
+  private static final int SECOND      = 1 << 2;
+  private static final int MINUTE      = 1 << 3;
+  private static final int HOUR        = 1 << 4;
+  private static final int ALL_SECONDS = MICROSECOND | MILLISECOND | SECOND;
+  private static final int A_TIME      = ALL_SECONDS | MINUTE | HOUR;
 
   /** The field restrictions of a literal that the prototype reads: a single field, as in {@code interval '90' day}. */
   public static boolean isSupportedField(final String field) {
@@ -81,13 +99,24 @@ public record PgInterval(int months, int days, long micros) {
    * then the time.
    */
   public static LocalDateTime add(final LocalDateTime start, final PgInterval interval, final boolean subtract) {
+    final LocalDateTime result;
     try {
       final long sign = subtract ? -1L : 1L;
-      return start.plusMonths(sign * interval.months()).plusDays(sign * interval.days()).plus(sign * interval.micros(),
+      result = start.plusMonths(sign * interval.months()).plusDays(sign * interval.days()).plus(sign * interval.micros(),
           ChronoUnit.MICROS);
     } catch (final DateTimeException | ArithmeticException e) {
-      throw new PostgreSQLEvaluationException("22008", "timestamp out of range");
+      throw timestampOutOfRange();
     }
+    if (result.isBefore(FIRST_TIMESTAMP) || result.getYear() > LAST_YEAR_OF_TIMESTAMP)
+      throw timestampOutOfRange();
+    // PostgreSQL answers these, and the text of such a year would not be the one it writes
+    if (result.getYear() < 1 || result.getYear() > 9999)
+      throw PostgreSQLEvaluationException.unsupported("A timestamp before the year 1 or after the year 9999 is not supported");
+    return result;
+  }
+
+  private static PostgreSQLEvaluationException timestampOutOfRange() {
+    return new PostgreSQLEvaluationException("22008", "timestamp out of range");
   }
 
   /**
@@ -105,6 +134,8 @@ public record PgInterval(int months, int days, long micros) {
       throw invalid(text);
     if (rest.startsWith("p") || rest.startsWith("-p") || rest.startsWith("+p"))
       throw PostgreSQLEvaluationException.unsupported("The ISO 8601 form of an interval is not supported: \"" + text + "\"");
+    if (rest.equals("infinity") || rest.equals("-infinity") || rest.equals("+infinity"))
+      throw PostgreSQLEvaluationException.unsupported("An infinite interval is not supported");
 
     final List<String> tokens = new ArrayList<>(List.of(rest.split("\\s+")));
     boolean ago = false;
@@ -113,19 +144,26 @@ public record PgInterval(int months, int days, long micros) {
       tokens.remove(tokens.size() - 1);
     }
 
-    long months = 0;
-    long days = 0;
+    // years, months and days are 32 bits wide each while the text is read, as in PostgreSQL: 22015 when one does not fit
+    int years = 0;
+    int months = 0;
+    int days = 0;
     long micros = 0;
+    int given = 0;
     try {
       for (int i = 0; i < tokens.size(); i++) {
         final String token = tokens.get(i);
         final Matcher time = TIME.matcher(token);
         if (time.matches()) {
-          long part = Long.parseLong(time.group(2)) * MICROS_PER_HOUR + Long.parseLong(time.group(3)) * MICROS_PER_MINUTE;
-          if (time.group(4) != null)
-            part += Long.parseLong(time.group(4)) * MICROS_PER_SECOND;
+          given = once(given, A_TIME, text);
+          final long minutes = Long.parseLong(time.group(3));
+          final long seconds = time.group(4) == null ? 0 : Long.parseLong(time.group(4));
+          if (minutes > 59 || seconds > 60)
+            throw outOfRange();
+          long part = Math.addExact(Math.multiplyExact(Long.parseLong(time.group(2)), MICROS_PER_HOUR),
+              minutes * MICROS_PER_MINUTE + seconds * MICROS_PER_SECOND);
           if (time.group(5) != null)
-            part += fractionToMicros(time.group(5));
+            part = Math.addExact(part, fractionToMicros(time.group(5)));
           micros = Math.addExact(micros, "-".equals(time.group(1)) ? -part : part);
           continue;
         }
@@ -134,22 +172,33 @@ public record PgInterval(int months, int days, long micros) {
         final Matcher glued = GLUED.matcher(token);
         if (NUMBER.matcher(token).matches()) {
           quantity = token;
-          if (i + 1 < tokens.size() && !NUMBER.matcher(tokens.get(i + 1)).matches() && !TIME.matcher(tokens.get(i + 1)).matches())
+          final String next = i + 1 < tokens.size() ? tokens.get(i + 1) : null;
+          if (next != null && TIME.matcher(next).matches())
+            // a number in front of a time is a number of days
+            unit = "day";
+          else if (next != null && !NUMBER.matcher(next).matches())
             unit = tokens.get(++i);
           else
             unit = bareUnit(field);
         } else if (glued.matches()) {
           quantity = glued.group(1);
           unit = glued.group(2);
-        } else
+        } else if (UNREAD.matcher(token).matches())
+          throw PostgreSQLEvaluationException.unsupported("This form of an interval is not supported: \"" + text + "\"");
+        else
           throw invalid(text);
 
         final BigDecimal number = new BigDecimal(quantity.startsWith("+") ? quantity.substring(1) : quantity);
-        switch (unit(unit, text)) {
-        case "year" -> months = Math.addExact(months, Math.multiplyExact(whole(number, unit, text), 12L));
-        case "month" -> months = Math.addExact(months, whole(number, unit, text));
-        case "week" -> days = Math.addExact(days, Math.multiplyExact(whole(number, unit, text), 7L));
-        case "day" -> days = Math.addExact(days, whole(number, unit, text));
+        final String name = unit(unit, text);
+        given = once(given, bits(name, number), text);
+        switch (name) {
+        case "millennium" -> years = field(years, whole(number, unit, text), 1000);
+        case "century" -> years = field(years, whole(number, unit, text), 100);
+        case "decade" -> years = field(years, whole(number, unit, text), 10);
+        case "year" -> years = field(years, whole(number, unit, text), 1);
+        case "month" -> months = field(months, whole(number, unit, text), 1);
+        case "week" -> days = field(days, whole(number, unit, text), 7);
+        case "day" -> days = field(days, whole(number, unit, text), 1);
         case "hour" -> micros = Math.addExact(micros, scaled(number, MICROS_PER_HOUR));
         case "minute" -> micros = Math.addExact(micros, scaled(number, MICROS_PER_MINUTE));
         case "second" -> micros = Math.addExact(micros, scaled(number, MICROS_PER_SECOND));
@@ -157,17 +206,50 @@ public record PgInterval(int months, int days, long micros) {
         default -> micros = Math.addExact(micros, scaled(number, 1L));
         }
       }
+      if (ago) {
+        years = Math.negateExact(years);
+        months = Math.negateExact(months);
+        days = Math.negateExact(days);
+        micros = Math.negateExact(micros);
+      }
     } catch (final ArithmeticException | NumberFormatException e) {
       throw outOfRange();
     }
-    if (ago) {
-      months = -months;
-      days = -days;
-      micros = -micros;
-    }
-    if (months > Integer.MAX_VALUE || months < Integer.MIN_VALUE || days > Integer.MAX_VALUE || days < Integer.MIN_VALUE)
-      throw outOfRange();
-    return restrict(new PgInterval((int) months, (int) days, micros), field);
+    // the years and the months together are the months of the value: PostgreSQL gives this overflow its own code
+    final long total = years * 12L + months;
+    if (total > Integer.MAX_VALUE || total < Integer.MIN_VALUE)
+      throw new PostgreSQLEvaluationException("22008", "interval out of range");
+    return restrict(new PgInterval((int) total, days, micros), field);
+  }
+
+  /** The units of the text so far with one more, which must not be one of them yet. */
+  private static int once(final int given, final int unit, final String text) {
+    if ((given & unit) != 0)
+      throw invalid(text);
+    return given | unit;
+  }
+
+  private static int bits(final String unit, final BigDecimal number) {
+    return switch (unit) {
+      case "microsecond" -> MICROSECOND;
+      case "millisecond" -> MILLISECOND;
+      // a fraction of a second gives the milliseconds and the microseconds too
+      case "second" -> number.stripTrailingZeros().scale() > 0 ? ALL_SECONDS : SECOND;
+      case "minute" -> MINUTE;
+      case "hour" -> HOUR;
+      case "day" -> 1 << 5;
+      case "week" -> 1 << 6;
+      case "month" -> 1 << 7;
+      case "year" -> 1 << 8;
+      case "decade" -> 1 << 9;
+      case "century" -> 1 << 10;
+      default -> 1 << 11;
+    };
+  }
+
+  /** A field of 32 bits with the quantity times the scale added to it. */
+  private static int field(final int value, final long quantity, final int scale) {
+    return Math.addExact(value, Math.multiplyExact(Math.toIntExact(quantity), scale));
   }
 
   /** The unit of a bare number: the field of the literal, else the seconds of {@code interval '1'}. */
@@ -178,6 +260,12 @@ public record PgInterval(int months, int days, long micros) {
   /** The name of a unit word as one of the units this parser keeps, or the error PostgreSQL gives for an unknown word. */
   private static String unit(final String word, final String text) {
     switch (word) {
+    case "mil", "mils", "millennia", "millennium", "millenniums":
+      return "millennium";
+    case "c", "cent", "century", "centuries":
+      return "century";
+    case "dec", "decs", "decade", "decades":
+      return "decade";
     case "y", "yr", "yrs", "year", "years":
       return "year";
     case "mon", "mons", "month", "months":
@@ -192,9 +280,9 @@ public record PgInterval(int months, int days, long micros) {
       return "minute";
     case "s", "sec", "secs", "second", "seconds":
       return "second";
-    case "ms", "msec", "msecs", "millisecond", "milliseconds":
+    case "ms", "msec", "msecs", "msecond", "mseconds", "millisecond", "milliseconds":
       return "millisecond";
-    case "us", "usec", "usecs", "microsecond", "microseconds":
+    case "us", "usec", "usecs", "usecond", "useconds", "microsecond", "microseconds":
       return "microsecond";
     default:
       throw invalid(text);
