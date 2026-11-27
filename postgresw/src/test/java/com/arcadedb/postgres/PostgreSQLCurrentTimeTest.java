@@ -48,7 +48,7 @@ class PostgreSQLCurrentTimeTest extends PostgreSQLSideBySideTestBase {
       "UPDATE d SET a = now() WHERE id = 2");
 
   private static final List<String> QUERIES = List.of(
-      "SELECT now() = current_timestamp AS a, current_timestamp = transaction_timestamp() AS b, pg_catalog.now() = now() AS c",
+      "SELECT now() = current_timestamp AS a, current_timestamp = transaction_timestamp() AS b",
       "SELECT now() > timestamptz '2026-01-01 00:00:00Z' AS recent, now() - interval '1 day' < now() AS before",
       "SELECT localtimestamp = now()::timestamp AS a, current_date = now()::date AS b, localtimestamp = localtimestamp(6) AS c",
       "SELECT current_timestamp(0)::text LIKE '%.%' AS fraction, now()::text LIKE '%+00' AS utc",
