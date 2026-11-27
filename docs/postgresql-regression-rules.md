@@ -54,7 +54,9 @@ The entries are in [`e2e/src/test/resources/pgregress/out-of-scope.tsv`](../e2e/
 ### Two runs of PostgreSQL
 
 - Each file runs twice on PostgreSQL, on two servers and on a new database each time. The second run is the reference that the other side is compared with, statement by statement.
-- A statement whose outcome or changed table contents differ between the two runs is out of scope, entry `two-runs`.
+- A statement whose outcome or changed table contents differ between the two runs is out of scope, entry `two-runs`. So is a statement whose text differs, because `psql` put an answer of the server into it, such as an object id.
+- The entry `tied-order` is for a statement that numbers rows which tie on a distance: PostgreSQL gave it another order only in a third run.
+- A table that PostgreSQL itself cannot read, such as one with a virtual column that overflows, is not compared.
 - The server has the `C` collation, the `UTF8` encoding, no automatic vacuum, and otherwise the defaults of the image. `pg_regress` sets another date style and time zone; the harness does not.
 
 ### The shared setup

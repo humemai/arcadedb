@@ -31,4 +31,5 @@ explain	2	^explain\b	EXPLAIN shows the plan of PostgreSQL, which the language do
 catalog-qualified	2	(?<![\w$])pg_catalog \.	names an object of pg_catalog
 catalog-relation	2	@catalog-relation	reads or changes a table or view of pg_catalog
 system-column	2	(?<![\w$"])(ctid|xmin|xmax|cmin|cmax|tableoid)(?![\w$"])	uses a system column
+tied-order	1	^create temp table \w+ as select row_number \( \) over \( order by p 	numbers rows that tie on a distance, in an order that PostgreSQL does not fix
 two-runs	1	@two-runs	PostgreSQL answers it differently in two runs on two fresh databases
