@@ -118,11 +118,12 @@ A call of a function or operator that PostgreSQL 18 has and `postgresql` lacks i
 | `SELECT lower(1)` | `42883` | PostgreSQL has no `lower(integer)` either |
 | `SELECT no_such_function(1)` | `42883` | PostgreSQL has no such name |
 
-Limits (the first three from reading the code):
+Limits:
 
 - An extension is not in the list: `l2_distance` of pgvector, which the language lacks, is `42883`.
-- The element type of an array is not compared, so an array argument fits every array parameter.
-- The list says only whether PostgreSQL has a candidate. A call that PostgreSQL refuses as ambiguous (`42725`) or for another reason is `0A000` too.
+- The match is simpler than PostgreSQL's. The element type of an array is not compared, and the polymorphic arguments of one call need not agree, so `width_bucket('5'::text, ARRAY[3, 4])` is `0A000` where PostgreSQL answers `42883`.
+- The list says only whether PostgreSQL has a candidate. A call that PostgreSQL refuses as ambiguous (`42725`) or for another reason is `0A000` too (from reading the code, not tested).
+- The language answers for the first call that it cannot make, whatever PostgreSQL finds later. In `SELECT f1(point(3, 4))` that is `point` (`0A000`), while PostgreSQL answers `42883` for `f1`. `regproc('know')` is `0A000` too, while PostgreSQL has the cast and answers `42883` for the name `know`.
 - A function that a script makes with `CREATE FUNCTION`, which is refused, is not in the list, so a later call of it is `42883`.
 
 ## Choices, open to change
