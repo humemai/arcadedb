@@ -887,7 +887,7 @@ public final class CreateTablePlan {
   /** Whether the expression is {@code gen_random_uuid()}. */
   private static boolean isRandomUuid(final Expression expression) {
     return expression instanceof Expression.FunctionCall call && call.args().isEmpty() && !call.distinct() && !call.star()
-        && call.over() == null
+        && call.over() == null && call.orderBy().isEmpty() && call.filter() == null
         && (call.name().size() == 1 || call.name().size() == 2 && "pg_catalog".equals(call.name().get(0).value()))
         && "gen_random_uuid".equals(call.name().get(call.name().size() - 1).value().toLowerCase(Locale.ROOT));
   }

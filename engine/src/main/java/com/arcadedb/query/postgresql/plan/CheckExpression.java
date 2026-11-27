@@ -275,6 +275,10 @@ public final class CheckExpression {
     case Expression.Cast e -> children.add(e.operand());
     case Expression.FunctionCall e -> {
       children.addAll(e.args());
+      for (final SortItem item : e.orderBy())
+        children.add(item.expression());
+      if (e.filter() != null)
+        children.add(e.filter());
       if (e.over() != null) {
         children.addAll(e.over().partitionBy());
         for (final SortItem item : e.over().orderBy())
