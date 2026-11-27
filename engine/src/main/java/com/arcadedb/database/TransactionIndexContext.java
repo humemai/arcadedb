@@ -785,9 +785,11 @@ public class TransactionIndexContext {
       // NULL VALUES AND SKIP NUL VALUES
       return;
 
-    final ForeignKeys foreignKeys = database.getSchema().getEmbedded().getForeignKeys();
-    if (!foreignKeys.isEmpty())
-      noteForeignKeys(foreignKeys, index, operation, keysValues, rid);
+    // fork issue #228: the index of a type holds a foreign key, so a change of an index that belongs to none asks the schema nothing,
+    // and this method keeps working on a transaction context that has no database behind it
+    final TypeIndex keyHolder = index.getTypeIndex();
+    if (keyHolder != null)
+      noteForeignKeys(keyHolder, operation, keysValues, rid);
 
     final String indexName = index.getName();
 
@@ -924,10 +926,10 @@ public class TransactionIndexContext {
    * Notes what a change of an index leaves to check for the foreign keys it holds (fork issue #228): a referring record that
    * takes a key, or a referenced one that loses it.
    */
-  private void noteForeignKeys(final ForeignKeys keys, final IndexInternal index, final IndexKey.IndexKeyOperation operation,
-      final Object[] keysValues, final RID rid) {
-    final TypeIndex typeIndex = index.getTypeIndex();
-    if (typeIndex == null)
+  private void noteForeignKeys(final TypeIndex typeIndex, final IndexKey.IndexKeyOperation operation, final Object[] keysValues,
+      final RID rid) {
+    final ForeignKeys keys = database.getSchema().getEmbedded().getForeignKeys();
+    if (keys.isEmpty())
       return;
     for (final ForeignKeys.Role role : keys.rolesOf(typeIndex.getName()))
       if (role.referencedSide() == (operation == IndexKey.IndexKeyOperation.REMOVE)) {
