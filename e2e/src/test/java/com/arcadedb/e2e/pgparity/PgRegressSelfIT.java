@@ -36,11 +36,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The self-tests of the regression harness (fork issue #119) on a script of its own, {@code pgregress/self_test.sql}: PostgreSQL
  * against PostgreSQL gives only passed and out of scope, a planted wrong row and a planted extra row in a table are reported as
- * wrong, a planted refusal as refused, and the same script runs to its end with ArcadeDB on the side under test.
+ * wrong, a planted refusal as refused, and the same script runs to its end with ArcadeDB on the side under test. A second script,
+ * {@code pgregress/self_test_rules.sql}, holds a case for each rule that blocks a statement or puts it out of scope (fork issue
+ * #121): with ArcadeDB the case is not judged, a statement beside it is, and with PostgreSQL nothing is blocked.
  */
 class PgRegressSelfIT {
   private static final String FILE       = "self_test";
   private static final int    STATEMENTS = 27;
+  private static final String RULES      = "self_test_rules";
+  private static final int    RULE_STATEMENTS = 35;
 
   private static RegressServer first;
   private static RegressServer second;
@@ -51,8 +55,9 @@ class PgRegressSelfIT {
   static void start() throws Exception {
     regress = Files.createTempDirectory("pgregress-self");
     Files.createDirectories(regress.resolve("sql"));
-    Files.writeString(regress.resolve("sql").resolve(FILE + ".sql"),
-        RegressOutOfScope.resource("/pgregress/self_test.sql"), StandardCharsets.UTF_8);
+    for (final String file : List.of(FILE, RULES))
+      Files.writeString(regress.resolve("sql").resolve(file + ".sql"),
+          RegressOutOfScope.resource("/pgregress/" + file + ".sql"), StandardCharsets.UTF_8);
     first = RegressServer.start(null, 0);
     second = RegressServer.start(null, 1_000);
     third = RegressServer.start(null, 2_000);
@@ -63,19 +68,26 @@ class PgRegressSelfIT {
     for (final RegressServer server : new RegressServer[] { first, second, third })
       if (server != null)
         server.close();
-    Files.deleteIfExists(regress.resolve("sql").resolve(FILE + ".sql"));
+    for (final String file : List.of(FILE, RULES))
+      Files.deleteIfExists(regress.resolve("sql").resolve(file + ".sql"));
     Files.deleteIfExists(regress.resolve("sql"));
     Files.deleteIfExists(regress);
   }
 
   private static RegressRun.FileResult run(final Supplier<RegressSubject> subjects) throws IOException {
-    final RegressRun.FileResult result = new RegressRun(regress, first, second, subjects).run(FILE);
+    final RegressRun.FileResult result = run(FILE, STATEMENTS, subjects);
+    assertThat(result.skipped).isEqualTo(1);
+    return result;
+  }
+
+  private static RegressRun.FileResult run(final String file, final int statements, final Supplier<RegressSubject> subjects)
+      throws IOException {
+    final RegressRun.FileResult result = new RegressRun(regress, first, second, subjects).run(file);
     RegressReport.write(Path.of("target", "pgregress", "self-test"), result);
     result.lines.forEach(line -> System.out.println("pgregress: " + RegressReport.line(line)));
     assertThat(result.failure).isNull();
     result.check();
-    assertThat(result.statements).isEqualTo(STATEMENTS);
-    assertThat(result.skipped).isEqualTo(1);
+    assertThat(result.statements).isEqualTo(statements);
     return result;
   }
 
@@ -149,6 +161,57 @@ class PgRegressSelfIT {
 
     assertThat(line(result, "SELECT now()").verdict()).isEqualTo(RegressJudge.Verdict.OUT_OF_SCOPE);
     assertThat(line(result, "BEGIN").verdict()).isEqualTo(RegressJudge.Verdict.PASSED);
+  }
+
+  @Test
+  void theRulesBlockNothingWithPostgresOnBothSides() throws Exception {
+    final RegressRun.FileResult result = run(RULES, RULE_STATEMENTS, () -> new RegressPostgresSubject(third));
+
+    onlyPassedOrOutOfScope(result.lines);
+    assertThat(line(result, "tied_number").entry()).isEqualTo(RegressOutOfScope.TIED_ROWS);
+    assertThat(line(result, "own_number").verdict()).isEqualTo(RegressJudge.Verdict.PASSED);
+  }
+
+  @Test
+  void whatTheSidesCannotAgreeOnIsNotJudgedOnArcadeDB() throws Exception {
+    final RegressRun.FileResult result = run(RULES, RULE_STATEMENTS, () -> new RegressArcade(30));
+
+    // a write into a table with a rule, which the plan does not name, and into a table of the language with a default
+    assertBlocked(line(result, "INSERT INTO ruled"), "a rule");
+    assertBlocked(line(result, "INSERT INTO preset"), "the table has a default");
+    assertJudged(line(result, "SELECT b FROM preset"));
+    // writes that depend on what a copy does not carry, and the COMMIT after one
+    assertBlocked(line(result, "INSERT INTO emptied"), "ON COMMIT DELETE ROWS");
+    assertBlocked(line(result, "INSERT INTO one_null"), "NULLS NOT DISTINCT");
+    assertBlocked(line(result, "INSERT INTO child"), "uses child");
+    assertBlocked(startingWith(result, "COMMIT"), "a transaction that holds a blocked write");
+    assertJudged(startingWith(result, "END"));
+    // a table that the search path puts outside of public, and relations that the other side cannot hold
+    assertBlocked(line(result, "CREATE TABLE placed"), "the search path");
+    assertBlocked(line(result, "missing_column"), "elsewhere.placed");
+    assertBlocked(line(result, "SELECT b FROM seen"), "a view");
+    // queries of information_schema about what differs, by the string they write or by what PostgreSQL answers
+    assertBlocked(line(result, "is_identity"), "numbered");
+    assertBlocked(line(result, "LIKE 'see%'"), "seen");
+    assertBlocked(line(result, "table_schema = 'elsewhere'"), "elsewhere");
+    assertJudged(line(result, "table_name = 'ordinary'"));
+    // rows that tie in the order of a window
+    assertThat(line(result, "tied_number").entry()).isEqualTo(RegressOutOfScope.TIED_ROWS);
+    assertJudged(line(result, "own_number"));
+  }
+
+  private static RegressRun.Line startingWith(final RegressRun.FileResult result, final String word) {
+    return result.lines.stream().filter(line -> line.statement().strip().startsWith(word)).findFirst().orElseThrow();
+  }
+
+  private static void assertBlocked(final RegressRun.Line line, final String reason) {
+    assertThat(line.verdict()).as(RegressReport.line(line)).isEqualTo(RegressJudge.Verdict.BLOCKED);
+    assertThat(line.reason()).contains(reason);
+  }
+
+  private static void assertJudged(final RegressRun.Line line) {
+    assertThat(line.verdict()).as(RegressReport.line(line))
+        .isNotIn(RegressJudge.Verdict.BLOCKED, RegressJudge.Verdict.OUT_OF_SCOPE);
   }
 
   /** A side under test that answers one statement, the one that holds {@code marker}, otherwise than the side it wraps. */

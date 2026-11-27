@@ -45,11 +45,29 @@ final class RegressDatabase implements AutoCloseable {
   record Column(String name, String type, String formatted, boolean notNull) {
   }
 
+  /** What a statement can name: a table, or a relation that is no table. */
+  interface Named {
+    /**
+     * The name for a relation of {@code public} and for a temporary one, {@code schema.name} for any other relation and for one
+     * that a temporary relation of the same name hides.
+     */
+    String key();
+
+    String schema();
+
+    String name();
+
+    /** Whether {@code schema.name} names this relation; {@code pg_temp} is the temporary schema of the session. */
+    default boolean isCalled(final String inSchema, final String called) {
+      return name().equals(called)
+          && (schema().equals(inSchema) || "pg_temp".equals(inSchema) && schema().startsWith("pg_temp"));
+    }
+  }
+
   /**
    * A table of the database.
    *
-   * @param key         the name for a table of {@code public} and for a temporary table, {@code schema.name} for any other table
-   *                    and for a table that a temporary table of the same name hides
+   * @param key         see {@link Named#key()}
    * @param primaryKey  the columns of the primary key, empty when the table has none
    * @param uniqueKeys  the columns of each unique constraint
    * @param writeLimits what the table has that decides what a write does and that the engine API cannot give a copy
@@ -59,11 +77,11 @@ final class RegressDatabase implements AutoCloseable {
    */
   record Table(String key, String schema, String name, List<Column> columns, List<String> primaryKey,
       List<List<String>> uniqueKeys, List<String> writeLimits, boolean nested, long rowCount, String signature,
-      String fingerprint) {
-    /** Whether {@code schema.name} names this table; {@code pg_temp} is the temporary schema of the session. */
-    boolean isCalled(final String inSchema, final String called) {
-      return name.equals(called) && (schema.equals(inSchema) || "pg_temp".equals(inSchema) && schema.startsWith("pg_temp"));
-    }
+      String fingerprint) implements Named {
+  }
+
+  /** A relation that is no table. @param kind what it is, with its article: {@code a view} */
+  record OtherRelation(String key, String schema, String name, String kind) implements Named {
   }
 
   /** The server refused a query of the harness. */
@@ -98,6 +116,10 @@ final class RegressDatabase implements AutoCloseable {
   private final Map<Integer, String> typeNames = new HashMap<>();
   private       RegressWire          wire;
   private       Map<String, Table>   tables    = new LinkedHashMap<>();
+  private       Map<String, OtherRelation> others = new LinkedHashMap<>();
+  private       Set<String>          schemas   = new LinkedHashSet<>();
+  /** The temporary tables that were created with {@code ON COMMIT DELETE ROWS}: the catalog does not keep that. */
+  private final Set<String>          emptiedAtCommit = new LinkedHashSet<>();
   private       String               marker;
   private       boolean              writing;
 
@@ -136,11 +158,85 @@ final class RegressDatabase implements AutoCloseable {
     return tables;
   }
 
+  /** The relations that are no tables, as the last {@link #changes} saw them. */
+  Map<String, OtherRelation> others() {
+    return others;
+  }
+
+  /** The schemas beside {@code public} and the ones of the server, as the last {@link #changes} saw them. */
+  Set<String> schemas() {
+    return schemas;
+  }
+
+  /**
+   * The keys of the tables and of the other relations that written names mean: with a schema, that one; without a schema, the one
+   * that the search path of the session of the file finds first, and where it finds none, the one of {@code public} or the
+   * temporary one.
+   *
+   * @param mayRead false where a query of the harness before the statement would change what the statement does, as before
+   *                {@code SET TRANSACTION}
+   */
+  Set<String> resolve(final Set<String> names, final boolean mayRead) {
+    final List<Named> all = new ArrayList<>(tables.values());
+    all.addAll(others.values());
+    final Set<String> resolved = new LinkedHashSet<>();
+    List<String> path = null;
+    for (final String written : names) {
+      final int dot = written.indexOf('.');
+      if (dot > 0) {
+        for (final Named relation : all)
+          if (relation.key().equals(written) || relation.isCalled(written.substring(0, dot), written.substring(dot + 1)))
+            resolved.add(relation.key());
+        continue;
+      }
+      final List<Named> candidates = all.stream().filter(relation -> relation.name().equals(written)).toList();
+      Named found = null;
+      // a relation of that name outside of public: the search path says which one the statement means
+      if (candidates.stream().anyMatch(relation -> !relation.key().equals(written))) {
+        if (path == null)
+          path = mayRead ? searchPath() : List.of();
+        found = path.stream()
+            .flatMap(schema -> candidates.stream().filter(relation -> relation.schema().equals(schema)))
+            .findFirst().orElse(null);
+      }
+      if (found != null)
+        resolved.add(found.key());
+      else
+        candidates.stream().filter(relation -> relation.key().equals(written)).forEach(relation -> resolved.add(relation.key()));
+    }
+    return resolved;
+  }
+
+  /** The schemas of the search path of the session of the file, in their order; empty when the server does not say. */
+  private List<String> searchPath() {
+    return answerOf("SELECT unnest(current_schemas(true))::text").stream().map(row -> row[0]).toList();
+  }
+
+  /** The schema in which the session of the file creates a relation that is named without one, else {@code null}. */
+  String currentSchema() {
+    final List<String[]> rows = answerOf("SELECT current_schema()::text");
+    return rows.isEmpty() ? null : rows.get(0)[0];
+  }
+
+  /** The rows of a query of the harness in the settings of the file; none when the server refuses it. */
+  private List<String[]> answerOf(final String sql) {
+    if (wire.transactionState() == 'E')
+      return List.of();
+    return probe(false, () -> {
+      final RegressWire.Reply reply = send(sql, null);
+      return reply.failed() ? List.<String[]>of() : reply.rows;
+    });
+  }
+
   /** Runs one statement of a file, in the session as the file left it. */
   Executed execute(final String sql, final List<String> parameters, final Supplier<String> copyData) {
     final RegressWire.Reply reply = parameters == null ? send(sql, copyData) : sendWith(sql, parameters);
     if (reply.failed())
       return new Executed(RegressSubject.Answer.error(reply.sqlState, reply.message), null);
+    final String emptied = RegressSql.emptiedAtCommit(RegressSql.tokens(sql));
+    // not for IF NOT EXISTS on a temporary table that is there already: it stays as it was
+    if (emptied != null && !(tables.containsKey(emptied) && tables.get(emptied).schema().startsWith("pg_temp")))
+      emptiedAtCommit.add(emptied);
     final long affected = affected(reply.tag);
     if (reply.columns == null || reply.columns.isEmpty() && reply.rows.isEmpty())
       return new Executed(new RegressSubject.Answer(null, null, List.of(), affected, null, null, false), null);
@@ -214,7 +310,12 @@ final class RegressDatabase implements AutoCloseable {
    * {@code BEGIN} and {@code SET TRANSACTION} would make the server refuse the latter.
    */
   Set<String> changesAfter(final String sql) {
-    return CHANGE_NOTHING.contains(RegressSql.firstWord(RegressSql.tokens(sql))) ? Set.of() : changes();
+    return changesNothing(RegressSql.firstWord(RegressSql.tokens(sql))) ? Set.of() : changes();
+  }
+
+  /** Whether a statement that starts with this word changes no table. */
+  static boolean changesNothing(final String firstWord) {
+    return CHANGE_NOTHING.contains(firstWord);
   }
 
   private Set<String> refresh() {
@@ -255,13 +356,36 @@ final class RegressDatabase implements AutoCloseable {
         + "UNION ALL SELECT i.indrelid::text, 'unique index', '', pg_get_indexdef(i.indexrelid), 'false' FROM pg_index i "
         + "WHERE i.indisunique AND NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid "
         + "AND c.contype IN ('p', 'u')) "
+        + "UNION ALL SELECT i.indrelid::text, 'unique key with NULLS NOT DISTINCT', '', pg_get_indexdef(i.indexrelid), 'false' "
+        + "FROM pg_index i WHERE i.indnullsnotdistinct "
         + "UNION ALL SELECT oid::text, 'row security', '', 'on', 'false' FROM pg_class WHERE relrowsecurity ORDER BY 1, 2, 4"))
       rules.computeIfAbsent(row[0], oid -> new ArrayList<>()).add(row);
 
+    final List<String[]> besideTables = select("SELECT n.nspname::text, c.relname::text, (c.relpersistence = 't')::text, "
+        + "c.relkind::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+        + "WHERE c.relkind IN ('v', 'm', 'f', 'S', 't') AND n.nspname NOT IN ('pg_catalog', 'information_schema') "
+        + "AND n.nspname !~ '^pg_toast_temp' AND (n.nspname !~ '^pg_temp' OR n.oid = pg_my_temp_schema()) ORDER BY 1, 2");
     final Set<String> temporary = new LinkedHashSet<>();
     for (final List<String[]> of : columns.values())
       if ("true".equals(of.get(0)[3]))
         temporary.add(of.get(0)[2]);
+    for (final String[] row : besideTables)
+      if ("true".equals(row[2]))
+        temporary.add(row[1]);
+    final Map<String, OtherRelation> relations = new LinkedHashMap<>();
+    for (final String[] row : besideTables) {
+      final String key = key(row[0], row[1], "true".equals(row[2]), temporary);
+      relations.put(key, new OtherRelation(key, row[0], row[1], switch (row[3]) {
+        case "v" -> "a view";
+        case "m" -> "a materialized view";
+        case "f" -> "a foreign table";
+        case "S" -> "a sequence";
+        default -> "a TOAST table";
+      }));
+    }
+    others = relations;
+    schemas = new LinkedHashSet<>(select("SELECT nspname::text FROM pg_namespace WHERE nspname !~ '^pg_' "
+        + "AND nspname NOT IN ('public', 'information_schema') ORDER BY 1").stream().map(row -> row[0]).toList());
 
     final List<Table> found = new ArrayList<>();
     final List<String> qualified = new ArrayList<>();
@@ -269,8 +393,7 @@ final class RegressDatabase implements AutoCloseable {
       final String[] first = entry.getValue().get(0);
       final String schema = first[1];
       final String name = first[2];
-      final String key = "true".equals(first[3]) || schema.equals("public") && !temporary.contains(name) ? name
-          : schema + "." + name;
+      final String key = key(schema, name, "true".equals(first[3]), temporary);
       final List<Column> of = new ArrayList<>();
       final List<String> writeLimits = new ArrayList<>();
       final StringBuilder signature = new StringBuilder(schema).append('.').append(name).append(' ').append(first[4]);
@@ -301,6 +424,10 @@ final class RegressDatabase implements AutoCloseable {
             default -> "a " + rule[1];
           });
       }
+      if ("true".equals(first[3]) && emptiedAtCommit.contains(name)) {
+        signature.append("|on commit delete rows");
+        writeLimits.add("ON COMMIT DELETE ROWS");
+      }
       found.add(new Table(key, schema, name, of, primaryKey, uniqueKeys, writeLimits, "true".equals(first[4]), 0,
           signature.toString(), null));
       qualified.add(identifier(schema) + "." + identifier(name));
@@ -315,7 +442,13 @@ final class RegressDatabase implements AutoCloseable {
           table.uniqueKeys(), table.writeLimits(), table.nested(), print == null ? -1 : Long.parseLong(print[1]),
           table.signature(), print == null ? "unreadable" : print[1] + ":" + print[2]));
     }
+    // a table that is gone takes what was known of it along
+    emptiedAtCommit.retainAll(result.keySet());
     return result;
+  }
+
+  private static String key(final String schema, final String name, final boolean isTemporary, final Set<String> temporary) {
+    return isTemporary || schema.equals("public") && !temporary.contains(name) ? name : schema + "." + name;
   }
 
   /** For each table its position, its number of rows and a hash of them; {@code null} for a table that cannot be read. */

@@ -83,7 +83,10 @@ final class RegressArcade implements RegressSubject {
   private final Map<String, String> blocked       = new LinkedHashMap<>();
   /** The state of the reference table at the time it was blocked: it is tried again when that changes. */
   private final Map<String, String> blockedState  = new HashMap<>();
+  /** For a table that a write is not judged against, the reason. */
   private final Map<String, String> writeLimits   = new HashMap<>();
+  /** Tables whose copy lacks something that the reference table has. */
+  private final Set<String>         lacking       = new HashSet<>();
   /** The definition of the reference table that this database holds. */
   private final Map<String, String> mirrored      = new HashMap<>();
   private final Set<String>         copied        = new HashSet<>();
@@ -185,6 +188,7 @@ final class RegressArcade implements RegressSubject {
     blocked.clear();
     blockedState.clear();
     writeLimits.clear();
+    lacking.clear();
     mirrored.clear();
     copied.clear();
     inBlock.clear();
@@ -370,11 +374,15 @@ final class RegressArcade implements RegressSubject {
     if (table != null && !blocked.containsKey(key) && !mirrored.containsKey(key) && schema.existsType(key)
         && difference(reference, table) == null) {
       mirrored.put(key, table.signature());
+      // what decides a write counts for every table, not only for a copy (fork issue #182)
+      if (!table.writeLimits().isEmpty())
+        writeLimits.put(key, "a write is not judged: the table has " + String.join(", ", table.writeLimits()));
       return;
     }
     blocked.remove(key);
     blockedState.remove(key);
     writeLimits.remove(key);
+    lacking.remove(key);
     mirrored.remove(key);
     copied.remove(key);
     try {
@@ -390,8 +398,10 @@ final class RegressArcade implements RegressSubject {
         throw new RegressValues.Unsupported(difference);
       mirrored.put(key, table.signature());
       copied.add(key);
-      if (!table.writeLimits().isEmpty())
-        writeLimits.put(key, String.join(", ", table.writeLimits()));
+      if (!table.writeLimits().isEmpty()) {
+        writeLimits.put(key, "the copy does not carry " + String.join(", ", table.writeLimits()));
+        lacking.add(key);
+      }
     } catch (final RuntimeException e) {
       block(table, key, e);
       drop(key);
@@ -573,9 +583,28 @@ final class RegressArcade implements RegressSubject {
     final String reason = blocked.get(table);
     if (reason != null)
       return reason;
-    if (write && writeLimits.containsKey(table))
-      return "the copy does not carry " + writeLimits.get(table);
-    return null;
+    return write ? writeLimits.get(table) : null;
+  }
+
+  @Override
+  public String blocked(final RegressDatabase.OtherRelation relation) {
+    return "the other side cannot hold " + relation.kind();
+  }
+
+  @Override
+  public String misplaced(final RegressDatabase.Table table) {
+    return "the search path puts it outside of public, and only tables of public and temporary tables are held";
+  }
+
+  @Override
+  public Set<String> differing(final RegressDatabase reference) {
+    final Set<String> names = new HashSet<>(reference.schemas());
+    for (final RegressDatabase.OtherRelation relation : reference.others().values())
+      names.add(relation.name());
+    for (final RegressDatabase.Table table : reference.tables().values())
+      if (blocked.containsKey(table.key()) || lacking.contains(table.key()) || table.schema().startsWith("pg_temp"))
+        names.add(table.name());
+    return names;
   }
 
   @Override

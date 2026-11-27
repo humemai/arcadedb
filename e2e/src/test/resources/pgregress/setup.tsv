@@ -18,3 +18,4 @@ select_parallel	test_setup,create_misc
 select_views	test_setup,create_view
 with	test_setup,create_misc
 self_test	-
+self_test_rules	-

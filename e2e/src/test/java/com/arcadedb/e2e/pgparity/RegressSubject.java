@@ -147,6 +147,28 @@ interface RegressSubject extends AutoCloseable {
     return null;
   }
 
+  /** @return why a statement that uses a relation of the reference that is no table cannot be judged, {@code null} when it can */
+  default String blocked(final RegressDatabase.OtherRelation relation) {
+    return null;
+  }
+
+  /**
+   * @param table a table that a statement made outside of {@code public} because the search path of the reference says so
+   *
+   * @return why the statement cannot be judged, {@code null} when it can
+   */
+  default String misplaced(final RegressDatabase.Table table) {
+    return null;
+  }
+
+  /**
+   * @return the names of the tables, other relations, and schemas of the reference that differ on this side: a query of
+   *         {@code information_schema} about one of them cannot be judged
+   */
+  default Set<String> differing(final RegressDatabase reference) {
+    return Set.of();
+  }
+
   /** @return whether the harness made the table on this side, not the language under test */
   default boolean copied(final String table) {
     return false;

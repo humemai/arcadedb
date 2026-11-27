@@ -204,6 +204,82 @@ final class RegressSql {
     return "";
   }
 
+  /** Every name of the statement, with its schema where one is written before it. */
+  static Set<String> names(final List<Token> tokens) {
+    final Set<String> names = new LinkedHashSet<>();
+    for (int i = 0; i < tokens.size(); i++) {
+      final String name = tokens.get(i).name();
+      if (name == null)
+        continue;
+      final String qualifier = i >= 2 && tokens.get(i - 1).isSymbol(".") ? tokens.get(i - 2).name() : null;
+      names.add(qualifier == null ? name : qualifier + "." + name);
+    }
+    return names;
+  }
+
+  /** Whether the statement writes {@code schema.name}. */
+  static boolean writesWithSchema(final List<Token> tokens, final String schema, final String name) {
+    for (int i = 0; i + 2 < tokens.size(); i++)
+      if (schema.equals(tokens.get(i).name()) && tokens.get(i + 1).isSymbol(".") && name.equals(tokens.get(i + 2).name()))
+        return true;
+    return false;
+  }
+
+  /** The name of the table that the statement creates with {@code ON COMMIT DELETE ROWS}, else {@code null}. */
+  static String emptiedAtCommit(final List<Token> tokens) {
+    if (!createsTable(tokens) || !normalized(tokens).contains(" on commit delete rows"))
+      return null;
+    int i = 1;
+    while (i < tokens.size() && !tokens.get(i).is("table"))
+      i++;
+    i++;
+    while (i < tokens.size() && (tokens.get(i).is("if") || tokens.get(i).is("not") || tokens.get(i).is("exists")))
+      i++;
+    if (i + 2 < tokens.size() && tokens.get(i + 1).isSymbol("."))
+      i += 2;
+    return i < tokens.size() ? tokens.get(i).name() : null;
+  }
+
+  private static final Set<String> QUERIES = Set.of("select", "with", "table", "values");
+
+  /** Whether the statement is a query that names a view of {@code information_schema} with its schema. */
+  static boolean queriesInformationSchema(final List<Token> tokens) {
+    if (!QUERIES.contains(firstWord(tokens)))
+      return false;
+    for (int i = 0; i + 1 < tokens.size(); i++)
+      if ("information_schema".equals(tokens.get(i).name()) && tokens.get(i + 1).isSymbol("."))
+        return true;
+    return false;
+  }
+
+  /**
+   * The query with {@code rank()} in the place of every {@code row_number()} whose window orders its rows: both give the same
+   * numbers unless rows tie in that order. {@code null} for any other statement.
+   */
+  static String rankForRowNumber(final String sql, final List<Token> tokens) {
+    final String first = firstWord(tokens);
+    if (!first.equals("select") && !first.equals("with"))
+      return null;
+    final StringBuilder ranked = new StringBuilder(sql);
+    boolean found = false;
+    // from the end, so that the offsets of the tokens before stay
+    for (int i = tokens.size() - 5; i >= 0; i--)
+      if (tokens.get(i).is("row_number") && tokens.get(i + 1).isSymbol("(") && tokens.get(i + 2).isSymbol(")")
+          && tokens.get(i + 3).is("over") && tokens.get(i + 4).isSymbol("(") && holdsOrder(tokens, i + 4)) {
+        ranked.replace(tokens.get(i).start(), tokens.get(i).end(), "rank");
+        found = true;
+      }
+    return found ? ranked.toString() : null;
+  }
+
+  /** Whether the parentheses that open at {@code open} hold the word {@code ORDER}. */
+  private static boolean holdsOrder(final List<Token> tokens, final int open) {
+    for (int i = open + 1; i < tokens.size() && tokens.get(i).depth() > tokens.get(open).depth(); i++)
+      if (tokens.get(i).is("order"))
+        return true;
+    return false;
+  }
+
   private static final Set<String> BEFORE_A_TABLE = Set.of("from", "join", "into", "update", "only", "table");
 
   private static final Set<String> AFTER_A_FROM_LIST = Set.of("select", "where", "group", "having", "window", "order", "limit",
