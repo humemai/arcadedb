@@ -15,3 +15,7 @@ D46	After D44: a foreign key on a `LINK` column is not enforced
 D47	After D44: deleting a vertex deletes its edges
 D48	From the engine: a foreign key on a `LINK` column is listed as not enforced
 D51	Choices, 2 and 10: a record id is text and is reported as an identity column
+W88	Server version: 12.0, so that tools send what the language answers
+G11	Server version: 12.0, so that tools send what the language answers
+C20	Server version: 12.0, so that tools send what the language answers
+F87	Server version: 12.0, so that tools send what the language answers

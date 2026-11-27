@@ -9,17 +9,17 @@ Statements that an LLM wrote ran on PostgreSQL 18 and on the `postgresql` langua
 | | |
 | --- | --- |
 | PostgreSQL | PostgreSQL 18.7 (Debian 18.7-1.pgdg12+2), `C` collation, time zone UTC |
-| engine | [`35fe85cc19`](https://github.com/humemai/arcadedb/commit/35fe85cc1901ab49335b021a6917ca2ff6a425a7) |
-| CI run | [46025682964](https://github.com/humemai/arcadedb/actions/runs/46025682964) |
+| engine | [`ecf76a2f32`](https://github.com/humemai/arcadedb/commit/ecf76a2f32314a7d10fd6c3211c5c8718c8fa3eb) |
+| CI run | [46047484900](https://github.com/humemai/arcadedb/actions/runs/46047484900) |
 | date | 2026-11-27 (UTC) |
 
 ## Numbers
 
 | number | what it counts | agent scripts | probes | target |
 | --- | --- | ---: | ---: | ---: |
-| M1 | non-volatile statements that match PostgreSQL 18 as written | 27 of 248 (10.9%) | 152 of 333 (45.6%) | not set |
-| M2 | errors of the language's own that name a next step | 63 of 72 (87.5%) | 137 of 154 (89.0%) | 100% |
-| M3 | silent differences | 4 | 13 | 0 |
+| M1 | non-volatile statements that match PostgreSQL 18 as written | 29 of 248 (11.7%) | 183 of 333 (55.0%) | not set |
+| M2 | errors of the language's own that name a next step | 54 of 62 (87.1%) | 120 of 134 (89.6%) | 100% |
+| M3 | silent differences | 0 | 0 | 0 |
 
 ## M1 by class
 
@@ -27,12 +27,12 @@ One refused `CREATE TABLE` hides every later statement on its table, so the clas
 
 | class | agent scripts | probes |
 | --- | ---: | ---: |
-| schema | 1 of 33 (3.0%) | 35 of 81 (43.2%) |
-| write | 0 of 50 (0.0%) | 39 of 58 (67.2%) |
-| read | 8 of 114 (7.0%) | 52 of 159 (32.7%) |
+| schema | 3 of 33 (9.1%) | 45 of 81 (55.6%) |
+| write | 0 of 50 (0.0%) | 41 of 58 (70.7%) |
+| read | 8 of 114 (7.0%) | 71 of 159 (44.7%) |
 | transaction | 16 of 25 (64.0%) | 25 of 32 (78.1%) |
 | discovery | 2 of 26 (7.7%) | 1 of 3 (33.3%) |
-| all | 27 of 248 (10.9%) | 152 of 333 (45.6%) |
+| all | 29 of 248 (11.7%) | 183 of 333 (55.0%) |
 
 ## Every statement, by verdict
 
@@ -40,45 +40,28 @@ Volatile statements are included here.
 
 | verdict | meaning | agent scripts | probes |
 | --- | --- | ---: | ---: |
-| same | the same columns, rows, and count as PostgreSQL, or the same SQLSTATE | 27 | 168 |
-| refused | the language fails where PostgreSQL succeeds | 72 | 146 |
+| same | the same columns, rows, and count as PostgreSQL, or the same SQLSTATE | 30 | 199 |
+| refused | the language fails where PostgreSQL succeeds | 62 | 126 |
 | other code | both fail, with different codes | 0 | 8 |
-| after an earlier failure | differs from PostgreSQL, and equals what PostgreSQL answers after it has run only what the language ran | 164 | 7 |
-| listed difference | succeeds with another answer that the list of kept differences names | 0 | 13 |
-| silent difference | succeeds where PostgreSQL answers otherwise or refuses | 4 | 13 |
+| after an earlier failure | differs from PostgreSQL, and equals what PostgreSQL answers after it has run only what the language ran | 173 | 7 |
+| listed difference | succeeds with another answer that the list of kept differences names | 2 | 15 |
+| silent difference | succeeds where PostgreSQL answers otherwise or refuses | 0 | 0 |
 | all | | 267 | 355 |
 
 ## M3: silent differences
 
-17 statements succeed where PostgreSQL answers otherwise or refuses, and are not in the list of kept differences. The rows of the agent scripts come first.
-
-| id | statement | PostgreSQL 18 | `postgresql` |
-| --- | --- | --- | --- |
-| W88 | `SELECT version()` | `1 row: (PostgreSQL 18.7 (Debian 18.7-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit)` | `1 row: (PostgreSQL 12.0 (ArcadeDB 26.12.1-SNAPSHOT))` |
-| C13 | `SELECT conname, contype, pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'order_items'::regclass ...` | `8 rows: (order_items_order_id_fkey, f, FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE) (order_items_order_id_not_null, n, NOT NULL ord ...` | `no rows (conname, contype, pg_get_constraintdef)` |
-| C20 | `SHOW server_version` | `1 row: (18.7 (Debian 18.7-1.pgdg12+2))` | `1 row: (12.0)` |
-| C21 | `SHOW search_path` | `1 row: (public)` | `1 row: (postgresdb)` |
-| F87 | `SHOW server_version_num` | `1 row: (180007)` | `1 row: (120000)` |
-| D14 | `SELECT name FROM person WHERE rid = '1'` | `1 row: (Ada)` | `no rows (name)` |
-| D19 | `SELECT id, label FROM tag ORDER BY id LIMIT 8` | `8 rows: (1, t01) (2, t02) (3, t03) ...` | `8 rows: (#11:0, t01) (#11:1, t03) (#11:10, t21) ...` |
-| D20 | `SELECT id, label FROM tag ORDER BY id DESC LIMIT 3` | `3 rows: (30, t30) (29, t29) (28, t28)` | `3 rows: (#14:9, t20) (#14:8, t18) (#14:7, t16)` |
-| D21 | `SELECT max(id), min(id) FROM tag` | `1 row: (30, 1)` | `1 row: (#14:9, #11:0)` |
-| D25 | `INSERT INTO tag (label) VALUES ('late') RETURNING id` | `1 row: (31)` | `1 row: (#11:15)` |
-| G11 | `SELECT version()` | `1 row: (PostgreSQL 18.7 (Debian 18.7-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit)` | `1 row: (PostgreSQL 12.0 (ArcadeDB 26.12.1-SNAPSHOT))` |
-| G92 | `SELECT title FROM doc WHERE id = 'abc'` | `42703 column "id" does not exist` | `no rows (title)` |
-| G93 | `SELECT title FROM doc WHERE id = '#999:999'` | `42703 column "id" does not exist` | `no rows (title)` |
-| G94 | `UPDATE doc SET title = 'z' WHERE id = '1'` | `42703 column "id" does not exist` | `success, count 0` |
-| G95 | `DELETE FROM doc WHERE id = '12'` | `42703 column "id" does not exist` | `success, count 0` |
-| G96 | `SELECT title FROM doc WHERE id = ANY(ARRAY['#1:0'])` | `42703 column "id" does not exist` | `no rows (title)` |
-| G119 | `INSERT INTO auto1 (name) VALUES ('first') RETURNING id` | `42703 column "id" does not exist` | `1 row: (#47:0)` |
+0 statements succeed where PostgreSQL answers otherwise or refuses, and are not in the list of kept differences. The rows of the agent scripts come first.
 
 ## Kept differences
 
-13 statements succeed with another answer on purpose and are not in M3. Each has a line in [listed.tsv](../postgresw/src/test/resources/agentmeasure/listed.tsv) that names its place on the [differences page](postgresql-differences.md). A difference that is planned to change is not in the list.
+17 statements succeed with another answer on purpose and are not in M3. Each has a line in [listed.tsv](../postgresw/src/test/resources/agentmeasure/listed.tsv) that names its place on the [differences page](postgresql-differences.md). A difference that is planned to change is not in the list.
 
 | id | statement | listed as |
 | --- | --- | --- |
+| W88 | `SELECT version()` | Server version: 12.0, so that tools send what the language answers |
+| C20 | `SHOW server_version` | Server version: 12.0, so that tools send what the language answers |
 | P24 | `CREATE TABLE p24 (source_id text NOT NULL REFERENCES parent(rid) ON DELETE CASCADE, target_id text NOT NULL RE ...` | `CREATE TABLE`: a table that an edge table refers to declares no column `rid`, its record id answers to it |
+| F87 | `SHOW server_version_num` | Server version: 12.0, so that tools send what the language answers |
 | D07 | `INSERT INTO knows (source_id, target_id, since) VALUES ((SELECT rid FROM person WHERE id = 2), (SELECT rid FRO ...` | Choices, 2: a record id is text |
 | D10 | `SELECT * FROM knows ORDER BY since` | Choices, 2 and 3: the ends of an edge hold record ids, which are text |
 | D11 | `SELECT rid, id, name FROM person ORDER BY id` | Choices, 2: a record id is text |
@@ -91,17 +74,17 @@ Volatile statements are included here.
 | D47 | `SELECT count(*) FROM knows` | After D44: deleting a vertex deletes its edges |
 | D48 | `SELECT constraint_name, table_name, enforced FROM information_schema.table_constraints WHERE constraint_type = ...` | From the engine: a foreign key on a `LINK` column is listed as not enforced |
 | D51 | `SELECT column_name, data_type, is_nullable, column_default, is_identity FROM information_schema.columns WHERE ...` | Choices, 2 and 10: a record id is text and is reported as an identity column |
+| G11 | `SELECT version()` | Server version: 12.0, so that tools send what the language answers |
 
 ## M2: errors that name no next step
 
-26 errors of the language name no next step. Of all 226 errors of its own, 207 use the hint field of the protocol, and 63 of those hints say that there is no way yet. Names and values are taken out of the messages.
+22 errors of the language name no next step. Of all 196 errors of its own, 181 use the hint field of the protocol, and 59 of those hints say that there is no way yet. Names and values are taken out of the messages.
 
 | message | statements |
 | --- | ---: |
 | `ALTER is not supported by the postgresql language` | 2 |
 | `CURRENT_USER is not supported by the postgresql language` | 2 |
 | `WITHIN GROUP is not supported by the postgresql language` | 2 |
-| `cannot cast type jsonb to text` | 2 |
 | `insert or update on table "..." violates foreign key constraint on column "...": the value "..." is not a vertex of the table person` | 2 |
 | `relation "..." does not exist` | 2 |
 | `ARRAY is not supported by the postgresql language` | 1 |
@@ -110,15 +93,13 @@ Volatile statements are included here.
 | `Error on executing query: read-only transactions are not supported by this server: a transaction declared READ ONLY would still accept writes` | 1 |
 | `Error on executing query: transaction isolation level "..." is not supported here: transactions run at "..."` | 1 |
 | `Error on parsing query: The catalog relation "..." is not supported by this server` | 1 |
-| `Error on parsing query: This catalog query has a shape this server does not support` | 1 |
 | `GRANT is not supported by the postgresql language` | 1 |
 | `LISTEN is not supported by the postgresql language` | 1 |
 | `Syntax error on parsing query: SQL syntax error at line 1, column 6: no viable alternative at input '...' ALTER TABLE acc ADD COLUMN extra text ^` | 1 |
 | `cannot cast type anyarray to text` | 1 |
 | `column "..." must appear in the GROUP BY clause or be used in an aggregate function` | 1 |
-| `invalid input syntax for type bigint: "..."` | 1 |
 | `syntax error at or near "..."` | 1 |
-| all | 26 |
+| all | 22 |
 
 ## Rules
 

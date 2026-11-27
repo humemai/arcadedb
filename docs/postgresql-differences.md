@@ -308,6 +308,7 @@ These answer differently from PostgreSQL and stay so, by decision. The [regressi
 | case | difference |
 | --- | --- |
 | Privileges and roles | `CREATE ROLE`, `GRANT`, `SET ROLE`, and `SET SESSION AUTHORIZATION` are refused (`0A000`). The statements after them are not checked against that role or that grant, so one that PostgreSQL refuses with `42501` can succeed (fork issue [#176](https://github.com/humemai/arcadedb/issues/176)) |
+| Server version | PostgreSQL 18.7 answers `18.7` to `SHOW server_version` and `180007` to `SHOW server_version_num`. A `postgresql` connection answers `12.0`, `120000`, and `PostgreSQL 12.0 (ArcadeDB ...)` to `SELECT version()`, as a `sql` connection does. Tools choose their statements by this number, and at 18 they send some that the language cannot answer: SQLAlchemy 2.0.58 and 2.1.9 write every read of a `jsonb` key as a subscript (`data['k']`, `0A000`), and `psql` 18 fails on `\d table`, `\d+ table`, and `\l`. At 12, Django, which needs 15 or later, does not connect (fork issue [#289](https://github.com/humemai/arcadedb/issues/289)) |
 
 ## Known wrong answers
 
