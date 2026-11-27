@@ -194,8 +194,9 @@ class PostgreSQLDropRenameColumnTest extends PostgreSQLSideBySideTestBase {
   }
 
   /**
-   * The rows are rewritten and one of them is refused part way: the {@code sql} language made a mandatory property that one row
-   * lacks, so every later write of that row fails. The column, its values, key, check and index stay.
+   * The rows are rewritten and one of them is refused part way: a property that one row lacks is mandatory, so every later write
+   * of that row fails. The {@code sql} statement refuses to set the flag over such a row, so the Java API of the server sets it.
+   * The column, its values, key, check and index stay.
    */
   @Test
   void aStatementThatFailsWhileItRewritesTheRowsLeavesTheTableAsItWas() throws Exception {
@@ -206,7 +207,7 @@ class PostgreSQLDropRenameColumnTest extends PostgreSQLSideBySideTestBase {
         run(arcade, "INSERT INTO partial VALUES (" + id + ", " + id + ")");
       run(arcade, "{sql} CREATE PROPERTY partial.m STRING");
       run(arcade, "{sql} UPDATE partial SET m = 'x' WHERE id < 40");
-      run(arcade, "{sql} ALTER PROPERTY partial.m MANDATORY true");
+      getServerDatabase(0, getDatabaseName()).getSchema().getType("partial").getProperty("m").setMandatory(true);
       final String values = rows(arcade, "SELECT id, v, m FROM partial ORDER BY id");
       final String constraints = rows(arcade, CONSTRAINTS);
       final String checks = rows(arcade, CHECKS);

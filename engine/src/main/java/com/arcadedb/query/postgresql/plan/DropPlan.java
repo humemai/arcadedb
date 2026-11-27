@@ -224,7 +224,7 @@ public final class DropPlan {
   private PostgreSQLResultSet dropIndexes() {
     final List<Found> found = new ArrayList<>();
     // as in PostgreSQL, every name is looked up before anything is said about what depends on one
-    PostgreSQLEvaluationException ofKey = null;
+    PostgreSQLEvaluationException dependedOn = null;
     for (final List<Name> written : statement.names()) {
       requireSchema(written);
       final Name last = written.get(written.size() - 1);
@@ -232,8 +232,8 @@ public final class DropPlan {
       final Found index = findIndex(name);
       final Table keyed = index == null || index.declared() == null ? tableWithKey(name) : null;
       if (keyed != null) {
-        if (ofKey == null)
-          ofKey = keyIndex(name, keyed.name(), keyed.documentType());
+        if (dependedOn == null)
+          dependedOn = keyIndex(name, keyed.name(), keyed.documentType());
         continue;
       }
       if (index == null) {
@@ -245,8 +245,8 @@ public final class DropPlan {
       }
       found.add(index);
     }
-    if (ofKey != null)
-      throw ofKey;
+    if (dependedOn != null)
+      throw dependedOn;
     if (found.isEmpty())
       return answer("DROP INDEX: no such index, nothing to do");
 
