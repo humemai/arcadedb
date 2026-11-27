@@ -325,7 +325,7 @@ features	F00	probes	schema	no	same	00000	00000	-	-	CREATE TABLE f (id bigint PRI
 features	F01	probes	write	no	same	00000	00000	-	-	INSERT INTO f (id, name, n, price, at, meta, tags, emb) VALUES (1, 'ann', 10, 1.50, '2026-01-05 10:00:00', '{"a": 1, "b": {"c": "x"}, "l": ["p", "q"]}', '{red,blue}', '[1,0,0]'), (2, 'bob', 20, 2.25, '2026-02-10 11:30:00', '{"a": 2}', '{blue}', '[0,1,0]'), (3, 'cy', NULL, NULL, NULL, NULL, NULL, NULL)	-	-	-
 features	F02	probes	read	no	refused	00000	0A000	yes	no way	SELECT array_agg(name ORDER BY id) FROM f	-	-	ORDER BY inside a function call is not supported by the postgresql language
 features	F03	probes	read	no	refused	00000	0A000	yes	no way	SELECT json_agg(name ORDER BY id) FROM f	-	-	ORDER BY inside a function call is not supported by the postgresql language
-features	F04	probes	read	no	refused	00000	0A000	yes	no way	SELECT jsonb_agg(n) FROM f	-	-	The aggregate function jsonb_agg is not supported
+features	F04	probes	read	yes	refused	00000	0A000	yes	no way	SELECT jsonb_agg(n) FROM f	-	-	The aggregate function jsonb_agg is not supported
 features	F05	probes	read	no	refused	00000	0A000	yes	no way	SELECT json_build_object('id', id, 'name', name) FROM f ORDER BY id	-	-	The function json_build_object(unknown, bigint, unknown, text) is not supported by the postgresql language
 features	F06	probes	read	no	same	00000	00000	-	-	SELECT jsonb_build_object('id', id) FROM f ORDER BY id	-	-	-
 features	F07	probes	read	no	refused	00000	42703	yes	yes	SELECT row_to_json(t) FROM (SELECT id, name FROM f ORDER BY id) t	-	-	column "t" does not exist
@@ -420,7 +420,7 @@ features	F95	probes	read	no	same	00000	00000	-	-	EXPLAIN SELECT * FROM f WHERE i
 features	F96	probes	read	yes	refused	00000	0A000	yes	yes	EXPLAIN ANALYZE SELECT * FROM f WHERE id = 1	-	-	EXPLAIN with an option is not supported by the postgresql language
 features	F97	probes	read	no	refused	00000	0A000	yes	yes	SELECT * FROM f NATURAL JOIN f g	-	-	NATURAL JOIN is not supported by the postgresql language
 features	F98	probes	read	no	same	00000	00000	-	-	SELECT t.id FROM f AS t WHERE EXISTS (SELECT 1 FROM f u WHERE u.id = t.id AND u.n > 10) ORDER BY t.id	-	-	-
-features	F99	probes	read	no	refused	00000	0A000	yes	no way	SELECT (SELECT array_agg(g.name) FROM f g) AS names	-	-	The aggregate function array_agg is not supported
+features	F99	probes	read	yes	refused	00000	0A000	yes	no way	SELECT (SELECT array_agg(g.name) FROM f g) AS names	-	-	The aggregate function array_agg is not supported
 features	F100	probes	read	no	refused	00000	0A000	no	no way	SELECT ARRAY(SELECT name FROM f ORDER BY id)	-	-	ARRAY is not supported by the postgresql language
 features	F101	probes	read	no	refused	00000	42703	yes	yes	SELECT f FROM f WHERE id = 1	-	-	column "f" does not exist
 features	F102	probes	read	no	same	00000	00000	-	-	SELECT 1 AS one WHERE NOT EXISTS (SELECT 1 FROM f WHERE id = 100)	-	-	-

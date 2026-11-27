@@ -17,7 +17,7 @@ Statements that an LLM wrote ran on PostgreSQL 18 and on the `postgresql` langua
 
 | number | what it counts | agent scripts | probes | target |
 | --- | --- | ---: | ---: | ---: |
-| M1 | non-volatile statements that match PostgreSQL 18 as written | 29 of 248 (11.7%) | 183 of 333 (55.0%) | not set |
+| M1 | non-volatile statements that match PostgreSQL 18 as written | 29 of 248 (11.7%) | 183 of 331 (55.3%) | not set |
 | M2 | errors of the language's own that name a next step | 54 of 62 (87.1%) | 120 of 134 (89.6%) | 100% |
 | M3 | silent differences | 0 | 0 | 0 |
 
@@ -29,10 +29,10 @@ One refused `CREATE TABLE` hides every later statement on its table, so the clas
 | --- | ---: | ---: |
 | schema | 3 of 33 (9.1%) | 45 of 81 (55.6%) |
 | write | 0 of 50 (0.0%) | 41 of 58 (70.7%) |
-| read | 8 of 114 (7.0%) | 71 of 159 (44.7%) |
+| read | 8 of 114 (7.0%) | 71 of 157 (45.2%) |
 | transaction | 16 of 25 (64.0%) | 25 of 32 (78.1%) |
 | discovery | 2 of 26 (7.7%) | 1 of 3 (33.3%) |
-| all | 29 of 248 (11.7%) | 183 of 333 (55.0%) |
+| all | 29 of 248 (11.7%) | 183 of 331 (55.3%) |
 
 ## Every statement, by verdict
 
