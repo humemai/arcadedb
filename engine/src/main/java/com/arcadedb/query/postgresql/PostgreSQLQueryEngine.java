@@ -76,7 +76,9 @@ import com.arcadedb.utility.CollectionUtils;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -265,10 +267,26 @@ public class PostgreSQLQueryEngine implements QueryEngine {
 
   private final ThreadLocal<Block> block = ThreadLocal.withInitial(Block::new);
 
-  /** The tables that {@code CREATE TABLE} made in a transaction that did not commit, until they are looked at (fork issue #229). */
-  private final ConcurrentLinkedDeque<DocumentType> rolledBack = new ConcurrentLinkedDeque<>();
+  /**
+   * What a transaction owes the schema (fork issues #229 and #230). The schema of the engine is not transactional: what a
+   * statement changed is there at once, so it is taken back when the transaction does not commit, and finished when it does.
+   */
+  private static final class Owed {
+    /** how to take each change back, in the order the changes were made */
+    private final List<Runnable> back      = new ArrayList<>();
+    /** what is left to do for the changes once the transaction has committed */
+    private final List<Runnable> finish    = new ArrayList<>();
+    /** the tables that {@code CREATE TABLE} made in the transaction */
+    private final Set<DocumentType> created = Collections.newSetFromMap(new IdentityHashMap<>());
+  }
 
-  /** The engine keeps the block of each thread and the tables of rolled back transactions, so one instance serves the database. */
+  /** The key under which a transaction holds what it owes. */
+  private static final String OWED = "postgresql:schema";
+
+  /** What is owed by transactions that have ended, until the next statement outside a transaction. */
+  private final ConcurrentLinkedDeque<Runnable> ended = new ConcurrentLinkedDeque<>();
+
+  /** The engine keeps the block of each thread and what ended transactions owe, so one instance serves the database. */
   @Override
   public boolean isReusable() {
     return true;
@@ -280,8 +298,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
    *                 {@code command}, which is what {@link #analyze} says by reporting it as not idempotent
    */
   private ResultSet execute(final String query, final Parameters parameters, final boolean readOnly) {
-    // a transaction that the caller rolled back itself left its tables to this statement (fork issue #229)
-    dropRolledBackTables();
+    // a transaction that the caller ended itself left its schema changes to this statement (fork issues #229 and #230)
+    settle();
     final Block state = block.get();
     if (state.open && !database.isTransactionActive()) {
       // the transaction ended in another way: the caller committed it, or the database closed it
@@ -317,11 +335,16 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       if (statement instanceof CreateIndexStatement create)
         return new CreateIndexPlan(database, catalog(), create).execute(table -> requireTableOfBlock(state, table, create));
       if (statement instanceof AlterTableStatement alter) {
-        // a rollback could not take a change of the schema back (fork issue #230)
-        if (database.isTransactionActive() && (state.open || !database.getTransaction().isImplicit()))
-          throw new PostgreSQLFeatureNotSupportedException("ALTER TABLE inside a transaction block is not supported by the"
-              + " postgresql language, because a rollback would not take the change back (" + alter.position() + ")");
-        return new AlterTablePlan(database, catalog(), alter, parameters.at(TransactionClock.now(database))).execute();
+        final AlterTablePlan plan = new AlterTablePlan(database, catalog(), alter, parameters.at(TransactionClock.now(database)));
+        final PostgreSQLResultSet changed = plan.execute();
+        if (database.isTransactionActive()) {
+          // the rows are of the transaction; the schema is taken back by a rollback, and finished by a commit (fork issue #230)
+          final Owed owed = owed();
+          owed.back.add(plan::takeBack);
+          owed.finish.add(plan::finish);
+        } else
+          plan.finish();
+        return changed;
       }
       if (statement instanceof DropStatement drop) {
         // the schema is not transactional, and a rollback could not bring dropped rows back (fork issue #230); a transaction
@@ -377,48 +400,69 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
-   * The schema of the engine is not transactional: a table is there, and other sessions see it, as soon as {@code CREATE TABLE}
-   * has run, in a transaction too. When that transaction does not commit, the table is dropped if it holds no record (fork issue
-   * #229). The transaction tells it while the database is locked for its end, where no schema change can be made, so the table is
-   * only noted there and dropped by {@link #dropRolledBackTables}.
+   * What the current transaction owes the schema, made at its first change. The transaction tells how it ended while the database
+   * is locked for that, where no schema change can be made, so what is owed is only noted there and done by {@link #settle}. A
+   * conclusion that is neither a commit nor a rollback, and a transaction of a thread that died, leave the changes in place.
    */
-  private void dropIfRolledBack(final DocumentType table) {
+  private Owed owed() {
     final TransactionContext transaction = database.getTransaction();
+    if (transaction.getAttachment(OWED) instanceof Owed there)
+      return there;
+    final Owed owed = new Owed();
     final AtomicBoolean committed = new AtomicBoolean();
     transaction.addAfterCommitCallback(() -> committed.set(true));
-    transaction.addAfterCompletionCallbackIfAbsent(createdTableKey(table), () -> {
-      if (!committed.get())
-        rolledBack.add(table);
-    });
+    transaction.addAfterCompletionCallbackIfAbsent(OWED, () -> ended.add(() -> {
+      if (committed.get())
+        owed.finish.forEach(this::attempt);
+      else
+        // the last change first
+        for (int i = owed.back.size() - 1; i >= 0; i--)
+          attempt(owed.back.get(i));
+    }));
+    transaction.setAttachment(OWED, owed);
+    return owed;
   }
 
-  /** Under this key a transaction holds what it owes a table that it made: the table, not only its name. */
-  private static String createdTableKey(final DocumentType table) {
-    return "postgresql:create-table:" + table.getName() + ':' + System.identityHashCode(table);
+  private void attempt(final Runnable change) {
+    try {
+      change.run();
+    } catch (final RuntimeException e) {
+      LogManager.instance().log(this, Level.WARNING, "Cannot complete a schema change of a transaction that ended", e);
+    }
+  }
+
+  /**
+   * A table that {@code CREATE TABLE} made in a transaction is there, and other sessions see it, as soon as it has run. When that
+   * transaction does not commit, the table is dropped if it holds no record (fork issue #229).
+   */
+  private void dropIfRolledBack(final DocumentType table) {
+    final Owed owed = owed();
+    owed.created.add(table);
+    owed.back.add(() -> dropIfEmpty(table));
   }
 
   /**
    * For a server that rolls a transaction back itself, as the PostgreSQL protocol does for {@code ROLLBACK}, for an error and for
-   * a connection that ends: drops the empty tables that the transaction made. Nothing is thrown.
+   * a connection that ends: takes back the schema changes of the transaction. Nothing is thrown.
    */
   public static void afterRollback(final Database database) {
     try {
       if (database instanceof DatabaseInternal internal
           && internal.getQueryEngine(ENGINE_NAME) instanceof PostgreSQLQueryEngine engine)
-        engine.dropRolledBackTables();
+        engine.settle();
     } catch (final RuntimeException e) {
       LogManager.instance().log(PostgreSQLQueryEngine.class, Level.WARNING,
-          "Cannot drop the tables that a rolled back transaction made", e);
+          "Cannot take back the schema changes of a rolled back transaction", e);
     }
   }
 
-  /** Drops the tables that rolled back transactions made and left empty, the last one made first. */
-  private void dropRolledBackTables() {
-    if (rolledBack.isEmpty() || database.isTransactionActive())
+  /** Does what ended transactions owe the schema, that of the transaction that ended last first. */
+  private void settle() {
+    if (ended.isEmpty() || database.isTransactionActive())
       return;
-    DocumentType table;
-    while ((table = rolledBack.pollLast()) != null)
-      dropIfEmpty(table);
+    Runnable next;
+    while ((next = ended.pollLast()) != null)
+      next.run();
   }
 
   private void dropIfEmpty(final DocumentType table) {
@@ -449,7 +493,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
     if (!database.isTransactionActive())
       return;
     final TransactionContext transaction = database.getTransaction();
-    if ((state.open || !transaction.isImplicit()) && !transaction.hasAfterCompletionCallbackKey(createdTableKey(table)))
+    if ((state.open || !transaction.isImplicit())
+        && !(transaction.getAttachment(OWED) instanceof Owed owed && owed.created.contains(table)))
       throw new PostgreSQLFeatureNotSupportedException("CREATE INDEX inside a transaction block is not supported by the"
           + " postgresql language on a table that the block did not create, because a rollback would not take the index back ("
           + create.position() + ")");
@@ -487,9 +532,10 @@ public class PostgreSQLQueryEngine implements QueryEngine {
               e.addSuppressed(suppressed);
             }
           }
-          dropRolledBackTables();
+          settle();
           throw WriteErrors.translate(e);
         }
+        settle();
       }
     }
     case ROLLBACK -> {
@@ -497,7 +543,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       state.failed = false;
       if (database.isTransactionActive())
         database.rollback();
-      dropRolledBackTables();
+      settle();
     }
     }
     return new PostgreSQLResultSet(List.of(), new PostgreSQLResultSet.Plan(List.of(kind.name()))).withAffectedRows(0);
