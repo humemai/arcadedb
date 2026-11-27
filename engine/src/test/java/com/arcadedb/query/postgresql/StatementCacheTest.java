@@ -80,7 +80,7 @@ class StatementCacheTest extends TestHelper {
   @Test
   void aRefusedTextIsNeverKeptAndIsTheSameRefusalEachTime() {
     for (int i = 0; i < 2; i++) {
-      assertThatThrownBy(() -> database.query("postgresql", "DROP TABLE t")).isInstanceOfSatisfying(
+      assertThatThrownBy(() -> database.query("postgresql", "TRUNCATE t")).isInstanceOfSatisfying(
           PostgreSQLFeatureNotSupportedException.class, e -> assertThat(e.getSqlState()).isEqualTo("0A000"));
       assertThatThrownBy(() -> database.query("postgresql", "SELECTX 1")).isInstanceOfSatisfying(PostgreSQLSyntaxException.class,
           e -> assertThat(e.getSqlState()).isEqualTo("42601"));

@@ -158,7 +158,7 @@ class CreateIndexTest extends TestHelper {
       "CREATE INDEX ON person (id NULLS FIRST)", "CREATE INDEX ON person (id) WHERE id > 1",
       "CREATE INDEX ON person (id) INCLUDE (name)", "CREATE UNIQUE INDEX ON person (id) NULLS NOT DISTINCT",
       "CREATE INDEX CONCURRENTLY ON person (id)", "CREATE INDEX ON information_schema.tables (table_name)",
-      "DROP INDEX memory_pkey" })
+      "DROP INDEX CONCURRENTLY memory_pkey" })
   void whatTheEngineCannotDoIsNotSupportedWithItsPosition(final String statement) {
     assertThatThrownBy(() -> run(statement)).isInstanceOfSatisfying(PostgreSQLFeatureNotSupportedException.class, e -> {
       assertThat(e.getSqlState()).isEqualTo("0A000");

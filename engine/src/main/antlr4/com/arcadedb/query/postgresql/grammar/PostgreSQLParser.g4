@@ -62,6 +62,7 @@ stmt
   | createIndexStmt SEMI?  # createIndexCommand
   | createExtensionStmt SEMI?  # createExtensionCommand
   | alterTableStmt SEMI?   # alterTableCommand
+  | dropStmt SEMI?         # dropCommand
   | unsupportedTransactionStmt skipRest SEMI?   # unsupportedTransactionCommand
   | unsupportedStatement skipRest SEMI?   # unsupportedCommand
   | SEMI?                  # emptyCommand
@@ -95,7 +96,8 @@ unsupportedStatement
   // CREATE of anything but a table, an index or an extension, which createTableStmt, createIndexStmt and createExtensionStmt
   // read
   | CREATE ~(TABLE | TEMP | TEMPORARY | UNLOGGED | LOCAL | GLOBAL | INDEX | UNIQUE | EXTENSION)
-  | DEALLOCATE | DECLARE | DISCARD | DO | DROP | EXECUTE | FETCH | GRANT | IMPORT | LISTEN | LOAD
+  // DROP of anything but a table or an index, which dropStmt reads
+  | DEALLOCATE | DECLARE | DISCARD | DO | DROP ~(TABLE | INDEX) | EXECUTE | FETCH | GRANT | IMPORT | LISTEN | LOAD
   | LOCK | MERGE | MOVE | NOTIFY | PREPARE | REASSIGN | REFRESH | REINDEX | RELEASE | RESET | REVOKE | SAVEPOINT
   | SECURITY | SET | SHOW | TRUNCATE | UNLISTEN | VACUUM
   ;
@@ -272,6 +274,19 @@ unsupportedAlterAction
   | FORCE | OF | NOT OF
   | ALTER CONSTRAINT
   | ALTER COLUMN? colId (TYPE | SET ~(NOT | DEFAULT) | RESET | ADD | DROP (IDENTITY | EXPRESSION) | RESTART | OPTIONS)
+  ;
+
+// ============================================================================
+// DROP TABLE and DROP INDEX (DropStmt of gram.y), fork issue #230
+// ============================================================================
+
+dropStmt
+  : DROP INDEX unsupportedDropConcurrently skipRest
+  | DROP kind=(TABLE | INDEX) (IF EXISTS)? names+=qualifiedName (COMMA names+=qualifiedName)* behavior=(CASCADE | RESTRICT)?
+  ;
+
+unsupportedDropConcurrently
+  : CONCURRENTLY
   ;
 
 // ============================================================================

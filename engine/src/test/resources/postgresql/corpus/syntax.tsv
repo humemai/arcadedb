@@ -1454,7 +1454,7 @@ out-insert	ok	inside	-	INSERT INTO company VALUES (40, 'Dune')	s3	22P02
 out-update	ok	inside	-	UPDATE person SET age = 1 WHERE pid = 1	s3	-
 out-delete	ok	inside	-	DELETE FROM person	s3	-
 out-create-table	ok	inside	-	CREATE TABLE t (a int)	s3	-
-out-drop-table	ok	outside	-	DROP TABLE t	s3	-
+out-drop-table	ok	inside	-	DROP TABLE t	s3	-
 out-truncate	ok	outside	-	TRUNCATE person	s3	-
 out-begin	ok	inside	-	BEGIN	s3	-
 out-commit	ok	inside	-	COMMIT	s3	-

@@ -122,7 +122,7 @@ class CatalogCacheTest extends TestHelper {
   @Test
   void aRefusalIsTheSameWithAKeptCatalog() {
     for (int i = 0; i < 3; i++)
-      assertThatThrownBy(() -> rows("DROP TABLE t")).isInstanceOf(PostgreSQLFeatureNotSupportedException.class);
+      assertThatThrownBy(() -> rows("TRUNCATE t")).isInstanceOf(PostgreSQLFeatureNotSupportedException.class);
   }
 
   @Test

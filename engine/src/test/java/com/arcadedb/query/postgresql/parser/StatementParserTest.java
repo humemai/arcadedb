@@ -441,7 +441,9 @@ class StatementParserTest {
         new String[] { "\n  create view a as select 1", "CREATE VIEW is not supported by the postgresql language (line 2, column 3)" },
         new String[] { "CREATE TEMP TABLE t (a int)",
             "A temporary or unlogged table is not supported by the postgresql language (line 1, column 8)" },
-        new String[] { "DROP TABLE t", "DROP is not supported" },
+        new String[] { "DROP VIEW v", "DROP VIEW is not supported" },
+        new String[] { "DROP INDEX CONCURRENTLY i",
+            "DROP INDEX CONCURRENTLY is not supported by the postgresql language (line 1, column 12)" },
         new String[] { "SET search_path = x", "SET is not supported" },
         new String[] { "WITH RECURSIVE x AS (SELECT 1) SELECT * FROM x", "WITH RECURSIVE is not supported by the postgresql language (line 1, column 6)" },
         new String[] { "WITH x AS (INSERT INTO t VALUES (1) RETURNING a) SELECT * FROM x", "A data-modifying statement in WITH is not supported" },
@@ -499,8 +501,6 @@ class StatementParserTest {
         .hasMessageContaining("WITH clause");
     assertThatThrownBy(() -> StatementParser.parse("ALTER TABLE t DROP COLUMN c"))
         .hasMessageEndingWith("{sql}DROP PROPERTY `t`.`c` FORCE");
-    assertThatThrownBy(() -> StatementParser.parse("DROP TABLE IF EXISTS \"T\""))
-        .hasMessageEndingWith("{sql}DROP TYPE `T` IF EXISTS");
     assertThatThrownBy(() -> StatementParser.parse("WITH RECURSIVE x AS (SELECT 1) SELECT 1")).hasMessageNotContaining("{sql}")
         .hasMessageContaining("{opencypher}");
   }
@@ -520,7 +520,8 @@ class StatementParserTest {
 
   /** Every other refusal of {@link #refusals()} and each statement of the language's DDL says what to write instead. */
   @ParameterizedTest
-  @ValueSource(strings = { "CREATE VIEW a AS SELECT 1", "CREATE TEMP TABLE t (a int)", "DROP TABLE t", "SET search_path = x",
+  @ValueSource(strings = { "CREATE VIEW a AS SELECT 1", "CREATE TEMP TABLE t (a int)", "DROP INDEX CONCURRENTLY i",
+      "SET search_path = x",
       "WITH x AS (INSERT INTO t VALUES (1) RETURNING a) SELECT * FROM x", "TABLE t", "EXPLAIN ANALYZE SELECT 1",
       "EXPLAIN CREATE TABLE t (a int)", "SELECT * FROM a NATURAL JOIN b", "SELECT * FROM a JOIN b USING (x) AS j",
       "SELECT * FROM generate_series(1, 3)", "SELECT (1, 2)", "SELECT count(*) OVER w FROM t",

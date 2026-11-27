@@ -130,11 +130,10 @@ class PostgreSQLErrorHintTest extends PostgreSQLSessionAgainstPostgresTestBase {
         assertThat(answer(own, "SELECT name, population FROM city")).isEqualTo("rows []");
         runSuggestion(own, "ALTER TABLE CITY DROP COLUMN NAME");
         runSuggestion(own, "ALTER TABLE acc RENAME TO account");
-        runSuggestion(own, "DROP INDEX acc_v_idx");
+        assertThat(answer(own, "DROP INDEX acc_v_idx")).doesNotStartWith("error");
         runSuggestion(own, "ALTER TABLE account DROP CONSTRAINT acc_pkey");
         assertThat(answer(own, "DELETE FROM account")).isEqualTo("count 2");
-        runSuggestion(own, "DROP TABLE account");
-        runSuggestion(own, "DROP TABLE IF EXISTS account");
+        assertThat(answer(own, "DROP TABLE account")).doesNotStartWith("error");
         assertThat(answer(own, "SELECT * FROM account")).isEqualTo("error 42P01");
       }
     });
