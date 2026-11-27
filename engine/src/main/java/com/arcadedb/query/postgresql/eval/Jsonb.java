@@ -226,7 +226,7 @@ public final class Jsonb {
     return a.length != b.length ? Integer.compare(a.length, b.length) : Arrays.compareUnsigned(a, b);
   }
 
-  private static void quote(final String text, final StringBuilder out) {
+  static void quote(final String text, final StringBuilder out) {
     out.append('"');
     for (int i = 0; i < text.length(); i++) {
       final char c = text.charAt(i);
@@ -548,6 +548,8 @@ public final class Jsonb {
     switch (type) {
     case JSONB:
       return member(view(value));
+    case JSON:
+      return member(view(ValueInput.parseJson(((Json.Value) value).text())));
     case BOOL:
     case INT2:
     case INT4:

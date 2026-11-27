@@ -41,6 +41,7 @@ import com.arcadedb.query.postgresql.eval.Casts;
 import com.arcadedb.query.postgresql.eval.Comparison;
 import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
+import com.arcadedb.query.postgresql.eval.Json;
 import com.arcadedb.query.postgresql.eval.Parameters;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.Subquery;
@@ -351,8 +352,11 @@ public class SelectPlanner {
     if (grouping) {
       final List<Expression> groupAsts = groupExpressions(select);
       final List<Evaluable> groupEvaluables = new ArrayList<>();
-      for (final Expression expression : groupAsts)
-        groupEvaluables.add(compiler.compile(expression));
+      for (final Expression expression : groupAsts) {
+        final Evaluable key = compiler.compile(expression);
+        Comparison.requireEquality(key.type());
+        groupEvaluables.add(key);
+      }
       groupingScope = new GroupingScope(groupAsts, groupEvaluables, compiler, subqueryPlanner());
       outputCompiler = new ExpressionCompiler(groupingScope, parameters);
     }
@@ -388,6 +392,9 @@ public class SelectPlanner {
         asts.add(projection.expression());
       }
     }
+    if (select.distinct())
+      for (final Evaluable output : outputs)
+        Comparison.requireEquality(output.type());
 
     Evaluable having = null;
     if (select.having() != null)
@@ -412,6 +419,7 @@ public class SelectPlanner {
         position = outputs.size() + extras.size();
         extras.add(key);
       }
+      Comparison.refuseJsonOrder(key.type());
       if (!Comparison.isComparable(key.type()))
         throw new PostgreSQLFeatureNotSupportedException(
             "ORDER BY a value of type " + key.type().displayName() + " is not supported");
@@ -1091,6 +1099,9 @@ public class SelectPlanner {
       final PgType leftType = left.outputTypes().get(i);
       final PgType rightType = right.outputTypes().get(i);
       final PgType type = SetTypes.resolve(leftType, rightType, operation);
+      // every set operation but UNION ALL looks for equal rows
+      if (set.kind() != SetOperationStatement.Kind.UNION || !set.all())
+        Comparison.requireEquality(type);
       left.inferParameter(i, type);
       right.inferParameter(i, type);
       final String typeName = leftType == type ? left.columns().get(i).typeName()
@@ -1111,6 +1122,7 @@ public class SelectPlanner {
         throw new PostgreSQLFeatureNotSupportedException("invalid " + operation + " ORDER BY clause: only result column names "
             + "and positions can be used, not expressions or functions");
       }
+      Comparison.refuseJsonOrder(types.get(position));
       if (!Comparison.isComparable(types.get(position)))
         throw new PostgreSQLFeatureNotSupportedException(
             "ORDER BY a value of type " + types.get(position).displayName() + " is not supported");
@@ -1323,9 +1335,12 @@ public class SelectPlanner {
     final String name = call.name().get(call.name().size() - 1).value();
     final SelectPlan.AggregateSpec spec = switch (name) {
       case "string_agg" -> stringAggSpec(call, inputCompiler);
-      case "array_agg", "jsonb_agg" -> listAggSpec(name, call, inputCompiler);
+      case "array_agg", "jsonb_agg", "json_agg" -> listAggSpec(name, call, inputCompiler);
+      case "json_object_agg", "jsonb_object_agg" -> objectAggSpec(name, call, inputCompiler);
       default -> scalarAggSpec(name, call, inputCompiler);
     };
+    if (call.distinct())
+      Comparison.requireEquality(spec.argumentType());
     if (call.distinct() && call.orderBy().isEmpty() && spec.collects() && !Comparison.isComparable(spec.argumentType()))
       throw new PostgreSQLFeatureNotSupportedException(
           name + "(DISTINCT ...) of a value of type " + spec.argumentType().displayName() + " is not supported",
@@ -1340,6 +1355,7 @@ public class SelectPlanner {
       if (call.distinct() && !isArgument(item.expression(), keys[i], call, inputCompiler))
         throw PostgreSQLReferenceException.invalidReference(
             "in an aggregate with DISTINCT, ORDER BY expressions must appear in argument list");
+      Comparison.refuseJsonOrder(keys[i].type());
       if (!Comparison.isComparable(keys[i].type()))
         throw new PostgreSQLFeatureNotSupportedException(
             "ORDER BY a value of type " + keys[i].type().displayName() + " is not supported");
@@ -1387,7 +1403,30 @@ public class SelectPlanner {
     if (type == PgType.VECTOR || type == PgType.INTERVAL)
       throw new PostgreSQLFeatureNotSupportedException(
           "The function " + name + " is not supported for a value of type " + type.displayName());
-    return new SelectPlan.AggregateSpec(name, type, PgType.JSONB, argument, call.distinct(), null);
+    return new SelectPlan.AggregateSpec(name, type, name.equals("json_agg") ? PgType.JSON : PgType.JSONB, argument,
+        call.distinct(), null);
+  }
+
+  /**
+   * {@code json_object_agg(name, value)} and {@code jsonb_object_agg(name, value)}: one object of the rows. The name is the
+   * argument of the specification, the value its second argument.
+   */
+  private static SelectPlan.AggregateSpec objectAggSpec(final String name, final Expression.FunctionCall call,
+      final ExpressionCompiler inputCompiler) {
+    if (call.star() || call.args().size() != 2)
+      throw PostgreSQLEvaluationException.noFunction(name, inputCompiler.argumentTypes(call));
+    final Evaluable key = inputCompiler.resolveOutput(inputCompiler.compile(call.args().get(0)));
+    final Evaluable value = inputCompiler.resolveOutput(inputCompiler.compile(call.args().get(1)));
+    if (Json.isNoKey(key.type()))
+      throw new PostgreSQLEvaluationException("22023", "key value must be scalar, not array, composite, or json");
+    if (value.type() == PgType.VECTOR || value.type() == PgType.INTERVAL || key.type() == PgType.INTERVAL)
+      throw new PostgreSQLFeatureNotSupportedException(
+          "The function " + name + " is not supported for a value of type "
+              + (key.type() == PgType.INTERVAL ? key : value).type().displayName());
+    if (call.distinct())
+      throw new PostgreSQLFeatureNotSupportedException(name + "(DISTINCT ...) is not supported",
+          "Make the rows distinct in a subquery in FROM, and aggregate its rows");
+    return new SelectPlan.AggregateSpec(name, key.type(), name.startsWith("jsonb") ? PgType.JSONB : PgType.JSON, key, false, value);
   }
 
   /** {@code count}, {@code sum}, {@code avg}, {@code min} and {@code max}. */

@@ -64,7 +64,7 @@ class NotSupportedFunctionTest extends TestHelper {
       // every argument of PostgreSQL's function has a default
       "SELECT make_interval()",
       // VARIADIC "any"
-      "SELECT json_build_object('a', 1)",
+      "SELECT num_nulls(1)",
       // a cast written as a call, to a type that the language lacks
       "SELECT regrole('x')",
       // aggregates and window functions

@@ -80,6 +80,9 @@ final class Assignments {
       return;
     if (from.isDateTime() && to.isDateTime())
       return;
+    // PostgreSQL has an assignment cast from json to jsonb
+    if (from == PgType.JSON && to == PgType.JSONB)
+      return;
     throw PostgreSQLEvaluationException.mismatch(
         "column \"" + column.name() + "\" is of type " + to.displayName() + " but expression is of type " + from.displayName());
   }

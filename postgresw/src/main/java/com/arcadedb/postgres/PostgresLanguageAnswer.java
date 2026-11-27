@@ -235,7 +235,8 @@ final class PostgresLanguageAnswer {
   static PgType parameterType(final long oid) {
     final PostgresType type = oid == 0 ? null : PostgresType.byCode((int) oid);
     final PgType pgType = type == null ? null : PgType.byName(List.of(type.typeName));
-    return pgType != null ? pgType : PgType.UNKNOWN;
+    // a parameter declared json takes the type of where it stands, a jsonb column among them, as it did before the language had json
+    return pgType != null && pgType != PgType.JSON ? pgType : PgType.UNKNOWN;
   }
 
   /** Whether {@code oid} is the type {@code timestamptz} or {@code timestamptz[]}. */
@@ -293,7 +294,8 @@ final class PostgresLanguageAnswer {
    */
   static long parameterOid(final PgType type, final String typeName) {
     return switch (type) {
-      case BOOL, INT2, INT4, INT8, NUMERIC, FLOAT4, FLOAT8, TEXT, VARCHAR, DATE, TIMESTAMP, TIMESTAMPTZ, JSONB, BYTEA, UUID ->
+      case BOOL, INT2, INT4, INT8, NUMERIC, FLOAT4, FLOAT8, TEXT, VARCHAR, DATE, TIMESTAMP, TIMESTAMPTZ, JSONB, JSON, BYTEA,
+          UUID ->
           PostgresType.byName(type.typeName()).code;
       case VECTOR -> wireType(type.typeName()).code;
       case ARRAY -> typeName.startsWith("_") ? wireType(typeName).code : 0L;

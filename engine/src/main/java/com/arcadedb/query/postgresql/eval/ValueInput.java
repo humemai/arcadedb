@@ -78,7 +78,8 @@ public final class ValueInput {
     if (value == null)
       return null;
     final Object json = value instanceof String text ? new JsonText(text).read()
-        : value instanceof JsonbText sent ? new JsonText(sent.text()).read() : jsonValue(value, 0);
+        : value instanceof JsonbText sent ? new JsonText(sent.text()).read()
+        : value instanceof Json.Value built ? new JsonText(built.text()).read() : jsonValue(value, 0);
     if (!(json instanceof Map<?, ?>) && !(json instanceof List<?>))
       throw PostgreSQLEvaluationException.unsupported("A JSON scalar is not supported as a jsonb value: give an object or an array");
     return json;
