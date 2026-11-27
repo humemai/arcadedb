@@ -68,7 +68,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Each script starts with an empty database on each side. A second database of the PostgreSQL server, the shadow, runs only what
  * the language ran and keeps the transaction state of the language. So an answer that differs from PostgreSQL's only because an
  * earlier statement was refused equals the answer of the shadow, and can be told from one that differs on its own. A statement
- * that the language refused is tried on the shadow and rolled back.
+ * that the language refused is tried on the shadow and rolled back, and the sequences are put back where they stood.
  * <p>
  * Runs only with {@code -Dpgagent.measure=true} (the workflow pg-agent-measure.yml), and needs a Docker daemon.
  */
@@ -324,6 +324,34 @@ class PostgreSQLAgentMeasureTest extends PostgresWireProtocolTestBase {
     return result;
   }
 
+  /** Where a sequence stands: its last value, or where it starts when it has given none. */
+  private record Counter(String name, long value, boolean given) {
+  }
+
+  /** Where every sequence of the database of the connection stands. */
+  private static List<Counter> counters(final Connection connection) throws SQLException {
+    final List<Counter> counters = new ArrayList<>();
+    try (final Statement statement = connection.createStatement(); final ResultSet rows = statement.executeQuery(
+        "SELECT format('%I.%I', schemaname, sequencename), coalesce(last_value, start_value), last_value IS NOT NULL"
+            + " FROM pg_sequences")) {
+      while (rows.next())
+        counters.add(new Counter(rows.getString(1), rows.getLong(2), rows.getBoolean(3)));
+    }
+    return counters;
+  }
+
+  /** Puts the sequences back: a rollback does not give a number back, and a later {@code serial} column would show it. */
+  private static void putBack(final Connection connection, final List<Counter> counters) throws SQLException {
+    try (final PreparedStatement statement = connection.prepareStatement("SELECT setval(?::regclass, ?, ?)")) {
+      for (final Counter counter : counters) {
+        statement.setString(1, counter.name());
+        statement.setLong(2, counter.value());
+        statement.setBoolean(3, counter.given());
+        statement.execute();
+      }
+    }
+  }
+
   /** What the shadow answers to a statement that the language refused, with nothing of it kept. */
   private static Map<String, Object> probe(final Connection shadow, final String sql, final Item item) throws SQLException {
     final TransactionState state = state(shadow);
@@ -333,9 +361,11 @@ class PostgreSQLAgentMeasureTest extends PostgresWireProtocolTestBase {
           exec(shadow, sql, item.params) :
           failure("25P02", "the shadow is in a failed transaction block");
     if (state == TransactionState.IDLE) {
+      final List<Counter> before = counters(shadow);
       exec(shadow, "BEGIN", List.of());
       final Map<String, Object> result = exec(shadow, sql, item.params);
       exec(shadow, "ROLLBACK", List.of());
+      putBack(shadow, before);
       return result;
     }
     // the end of the block is not tried: it would keep what the language may not have kept
@@ -345,9 +375,11 @@ class PostgreSQLAgentMeasureTest extends PostgresWireProtocolTestBase {
       result.put("count", 0);
       return result;
     }
+    final List<Counter> before = counters(shadow);
     exec(shadow, "SAVEPOINT measure_probe", List.of());
     final Map<String, Object> result = exec(shadow, sql, item.params);
     exec(shadow, "ROLLBACK TO SAVEPOINT measure_probe", List.of());
+    putBack(shadow, before);
     return result;
   }
 
