@@ -39,6 +39,7 @@ import com.arcadedb.exception.TimeoutException;
 import com.arcadedb.exception.TransactionCommittedRemotelyException;
 import com.arcadedb.exception.TransactionException;
 import com.arcadedb.exception.TypeAlreadyExistsException;
+import com.arcadedb.exception.ForeignKeyException;
 import com.arcadedb.exception.ValidationException;
 import com.arcadedb.exception.VertexNotFoundException;
 import com.arcadedb.log.LogManager;
@@ -1338,6 +1339,9 @@ public class RemoteHttpComponent extends RWLockContext {
     final String exceptionArgs = error.getString("exceptionArgs", null);
     if (exceptionArgs != null)
       body.put("exceptionArgs", exceptionArgs);
+    final String sqlState = error.getString("sqlState", null);
+    if (sqlState != null)
+      body.put("sqlState", sqlState);
 
     final Exception mapped;
     try {
@@ -1364,6 +1368,8 @@ public class RemoteHttpComponent extends RWLockContext {
     String reason = null;
     String exception = null;
     String exceptionArgs = null;
+    // The SQLSTATE of a failure that has one, null for the others
+    String sqlState = null;
     // A bounded excerpt of a body that is not JSON, null when the body was JSON or empty (issue #11387)
     String unparsedBody = null;
     final String responsePayload = responseBody;
@@ -1375,6 +1381,7 @@ public class RemoteHttpComponent extends RWLockContext {
         detail = jsonResponse.has("detail") ? jsonResponse.getString("detail") : null;
         exception = jsonResponse.has("exception") ? jsonResponse.getString("exception") : null;
         exceptionArgs = jsonResponse.has("exceptionArgs") ? jsonResponse.getString("exceptionArgs") : null;
+        sqlState = jsonResponse.getString("sqlState", null);
       }
     } catch (final Exception e) {
       // A BODY THAT IS NOT JSON (ISSUE #11387) IS NOT ONE OF THE SERVER'S OWN ANSWERS BUT A HOP'S IN FRONT OF IT: AN INGRESS, A LOAD
@@ -1466,6 +1473,9 @@ public class RemoteHttpComponent extends RWLockContext {
       } else if (exception.equals(RecordVetoedException.class.getName())) {
         // A LISTENER REFUSED THE WRITE (ISSUES #10085, #10161): ITS OWN TYPE, SO A CALLER CAN TELL A REFUSAL FROM A FAULT
         return new RecordVetoedException(detail);
+      } else if (exception.equals(ForeignKeyException.class.getName())) {
+        // A FOREIGN KEY (FORK ISSUE #228): WITH THE SQLSTATE IN sqlState, WHICH TELLS A VIOLATED KEY FROM A RESTRICTED ONE
+        return ForeignKeyException.fromRemote(sqlState, detail);
       } else if (exception.equals(ValidationException.class.getName())) {
         // WITH THE CONSTRAINT IT VIOLATES IN exceptionArgs (ISSUE #11314), NULL FROM A SERVER THAT DOES NOT SEND IT
         return new ValidationException(ValidationException.Kind.fromName(exceptionArgs), detail);

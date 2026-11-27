@@ -24,6 +24,7 @@ import com.arcadedb.exception.DatabaseNotAvailableException;
 import com.arcadedb.exception.DatabaseOperationInProgressException;
 import com.arcadedb.exception.DuplicatedKeyException;
 import com.arcadedb.exception.ErrorCategory;
+import com.arcadedb.exception.ForeignKeyException;
 import com.arcadedb.exception.NeedRetryException;
 import com.arcadedb.exception.QueryTerminatedException;
 import com.arcadedb.exception.SchemaException;
@@ -100,6 +101,12 @@ public final class GrpcErrorMapper {
    * body carries in {@code exceptionArgs}, so the client rebuilds the exception with it. A {@link Enum#name()}, plain ASCII.
    */
   public static final Metadata.Key<String> VALIDATION_KIND_KEY = Metadata.Key.of("arcadedb-validation-kind",
+      Metadata.ASCII_STRING_MARSHALLER);
+  /**
+   * Trailer carrying the SQLSTATE of a {@link ForeignKeyException} (fork issue #228): what the HTTP body carries in
+   * {@code sqlState}, so the client rebuilds the exception with it. Five ASCII characters, never content.
+   */
+  public static final Metadata.Key<String> SQL_STATE_KEY = Metadata.Key.of("arcadedb-sql-state",
       Metadata.ASCII_STRING_MARSHALLER);
 
   /**
@@ -239,6 +246,8 @@ public final class GrpcErrorMapper {
         null;
     if (refused != null && refused.getKind() != null)
       trailers.put(VALIDATION_KIND_KEY, refused.getKind().name());
+    if (refused instanceof ForeignKeyException foreignKey)
+      trailers.put(SQL_STATE_KEY, foreignKey.getSqlState());
 
     final Status.Code code;
     String redirect = null;
