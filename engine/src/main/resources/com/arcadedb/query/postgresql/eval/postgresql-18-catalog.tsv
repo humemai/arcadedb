@@ -1,0 +1,4434 @@
+# What PostgreSQL 18.7 has, from the system catalog of a server (pg_proc, pg_operator, pg_cast, and pg_type, the schema
+# pg_catalog), written by .github/scripts/pg_catalog_list.sh. Do not edit. Fields are separated by tabs, "-" is none:
+#
+#   cast      source type, target type                                       an implicit cast
+#   function  name, argument types, arguments with a default, element type of VARIADIC
+#   operator  name, left type, right type
+#   type      name, category
+#
+# SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
+# SPDX-FileCopyrightText: 1996-2026 PostgreSQL Global Development Group
+# SPDX-FileCopyrightText: 1994 The Regents of the University of California
+# SPDX-License-Identifier: Apache-2.0 AND PostgreSQL
+#
+# The list is data of PostgreSQL, under the PostgreSQL License:
+#
+# Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group
+# Portions Copyright (c) 1994, The Regents of the University of California
+#
+# Permission to use, copy, modify, and distribute this software and its
+# documentation for any purpose, without fee, and without a written agreement
+# is hereby granted, provided that the above copyright notice and this
+# paragraph and the following two paragraphs appear in all copies.
+#
+# IN NO EVENT SHALL THE UNIVERSITY OF CALIFORNIA BE LIABLE TO ANY PARTY FOR
+# DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING
+# LOST PROFITS, ARISING OUT OF THE USE OF THIS SOFTWARE AND ITS
+# DOCUMENTATION, EVEN IF THE UNIVERSITY OF CALIFORNIA HAS BEEN ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+# THE UNIVERSITY OF CALIFORNIA SPECIFICALLY DISCLAIMS ANY WARRANTIES,
+# INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS FOR A PARTICULAR PURPOSE.  THE SOFTWARE PROVIDED HEREUNDER IS
+# ON AN "AS IS" BASIS, AND THE UNIVERSITY OF CALIFORNIA HAS NO OBLIGATIONS TO
+# PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+#
+cast	bit	bit
+cast	bit	varbit
+cast	bpchar	bpchar
+cast	bpchar	name
+cast	bpchar	text
+cast	bpchar	varchar
+cast	char	text
+cast	cidr	inet
+cast	date	timestamp
+cast	date	timestamptz
+cast	float4	float8
+cast	int2	float4
+cast	int2	float8
+cast	int2	int4
+cast	int2	int8
+cast	int2	numeric
+cast	int2	oid
+cast	int2	regclass
+cast	int2	regcollation
+cast	int2	regconfig
+cast	int2	regdictionary
+cast	int2	regnamespace
+cast	int2	regoper
+cast	int2	regoperator
+cast	int2	regproc
+cast	int2	regprocedure
+cast	int2	regrole
+cast	int2	regtype
+cast	int4	float4
+cast	int4	float8
+cast	int4	int8
+cast	int4	numeric
+cast	int4	oid
+cast	int4	regclass
+cast	int4	regcollation
+cast	int4	regconfig
+cast	int4	regdictionary
+cast	int4	regnamespace
+cast	int4	regoper
+cast	int4	regoperator
+cast	int4	regproc
+cast	int4	regprocedure
+cast	int4	regrole
+cast	int4	regtype
+cast	int8	float4
+cast	int8	float8
+cast	int8	numeric
+cast	int8	oid
+cast	int8	regclass
+cast	int8	regcollation
+cast	int8	regconfig
+cast	int8	regdictionary
+cast	int8	regnamespace
+cast	int8	regoper
+cast	int8	regoperator
+cast	int8	regproc
+cast	int8	regprocedure
+cast	int8	regrole
+cast	int8	regtype
+cast	interval	interval
+cast	macaddr	macaddr8
+cast	macaddr8	macaddr
+cast	name	text
+cast	numeric	float4
+cast	numeric	float8
+cast	numeric	numeric
+cast	oid	regclass
+cast	oid	regcollation
+cast	oid	regconfig
+cast	oid	regdictionary
+cast	oid	regnamespace
+cast	oid	regoper
+cast	oid	regoperator
+cast	oid	regproc
+cast	oid	regprocedure
+cast	oid	regrole
+cast	oid	regtype
+cast	pg_dependencies	bytea
+cast	pg_dependencies	text
+cast	pg_mcv_list	bytea
+cast	pg_mcv_list	text
+cast	pg_ndistinct	bytea
+cast	pg_ndistinct	text
+cast	pg_node_tree	text
+cast	regclass	oid
+cast	regcollation	oid
+cast	regconfig	oid
+cast	regdictionary	oid
+cast	regnamespace	oid
+cast	regoper	oid
+cast	regoper	regoperator
+cast	regoperator	oid
+cast	regoperator	regoper
+cast	regproc	oid
+cast	regproc	regprocedure
+cast	regprocedure	oid
+cast	regprocedure	regproc
+cast	regrole	oid
+cast	regtype	oid
+cast	text	bpchar
+cast	text	name
+cast	text	regclass
+cast	text	varchar
+cast	time	interval
+cast	time	time
+cast	time	timetz
+cast	timestamp	timestamp
+cast	timestamp	timestamptz
+cast	timestamptz	timestamptz
+cast	timetz	timetz
+cast	varbit	bit
+cast	varbit	varbit
+cast	varchar	bpchar
+cast	varchar	name
+cast	varchar	regclass
+cast	varchar	text
+cast	varchar	varchar
+function	RI_FKey_cascade_del	-	0	-
+function	RI_FKey_cascade_upd	-	0	-
+function	RI_FKey_check_ins	-	0	-
+function	RI_FKey_check_upd	-	0	-
+function	RI_FKey_noaction_del	-	0	-
+function	RI_FKey_noaction_upd	-	0	-
+function	RI_FKey_restrict_del	-	0	-
+function	RI_FKey_restrict_upd	-	0	-
+function	RI_FKey_setdefault_del	-	0	-
+function	RI_FKey_setdefault_upd	-	0	-
+function	RI_FKey_setnull_del	-	0	-
+function	RI_FKey_setnull_upd	-	0	-
+function	abbrev	cidr	0	-
+function	abbrev	inet	0	-
+function	abs	float4	0	-
+function	abs	float8	0	-
+function	abs	int2	0	-
+function	abs	int4	0	-
+function	abs	int8	0	-
+function	abs	numeric	0	-
+function	aclcontains	_aclitem,aclitem	0	-
+function	acldefault	char,oid	0	-
+function	aclexplode	_aclitem	0	-
+function	aclinsert	_aclitem,aclitem	0	-
+function	aclitemeq	aclitem,aclitem	0	-
+function	aclitemin	cstring	0	-
+function	aclitemout	aclitem	0	-
+function	aclremove	_aclitem,aclitem	0	-
+function	acos	float8	0	-
+function	acosd	float8	0	-
+function	acosh	float8	0	-
+function	age	timestamp	0	-
+function	age	timestamp,timestamp	0	-
+function	age	timestamptz	0	-
+function	age	timestamptz,timestamptz	0	-
+function	age	xid	0	-
+function	amvalidate	oid	0	-
+function	any_in	cstring	0	-
+function	any_out	any	0	-
+function	any_value	anyelement	0	-
+function	any_value_transfn	anyelement,anyelement	0	-
+function	anyarray_in	cstring	0	-
+function	anyarray_out	anyarray	0	-
+function	anyarray_recv	internal	0	-
+function	anyarray_send	anyarray	0	-
+function	anycompatible_in	cstring	0	-
+function	anycompatible_out	anycompatible	0	-
+function	anycompatiblearray_in	cstring	0	-
+function	anycompatiblearray_out	anycompatiblearray	0	-
+function	anycompatiblearray_recv	internal	0	-
+function	anycompatiblearray_send	anycompatiblearray	0	-
+function	anycompatiblemultirange_in	cstring,oid,int4	0	-
+function	anycompatiblemultirange_out	anycompatiblemultirange	0	-
+function	anycompatiblenonarray_in	cstring	0	-
+function	anycompatiblenonarray_out	anycompatiblenonarray	0	-
+function	anycompatiblerange_in	cstring,oid,int4	0	-
+function	anycompatiblerange_out	anycompatiblerange	0	-
+function	anyelement_in	cstring	0	-
+function	anyelement_out	anyelement	0	-
+function	anyenum_in	cstring	0	-
+function	anyenum_out	anyenum	0	-
+function	anymultirange_in	cstring,oid,int4	0	-
+function	anymultirange_out	anymultirange	0	-
+function	anynonarray_in	cstring	0	-
+function	anynonarray_out	anynonarray	0	-
+function	anyrange_in	cstring,oid,int4	0	-
+function	anyrange_out	anyrange	0	-
+function	anytextcat	anynonarray,text	0	-
+function	area	box	0	-
+function	area	circle	0	-
+function	area	path	0	-
+function	areajoinsel	internal,oid,internal,int2,internal	0	-
+function	areasel	internal,oid,internal,int4	0	-
+function	array_agg	anyarray	0	-
+function	array_agg	anynonarray	0	-
+function	array_agg_array_combine	internal,internal	0	-
+function	array_agg_array_deserialize	bytea,internal	0	-
+function	array_agg_array_finalfn	internal,anyarray	0	-
+function	array_agg_array_serialize	internal	0	-
+function	array_agg_array_transfn	internal,anyarray	0	-
+function	array_agg_combine	internal,internal	0	-
+function	array_agg_deserialize	bytea,internal	0	-
+function	array_agg_finalfn	internal,anynonarray	0	-
+function	array_agg_serialize	internal	0	-
+function	array_agg_transfn	internal,anynonarray	0	-
+function	array_append	anycompatiblearray,anycompatible	0	-
+function	array_append_support	internal	0	-
+function	array_cat	anycompatiblearray,anycompatiblearray	0	-
+function	array_dims	anyarray	0	-
+function	array_eq	anyarray,anyarray	0	-
+function	array_fill	anyelement,_int4	0	-
+function	array_fill	anyelement,_int4,_int4	0	-
+function	array_ge	anyarray,anyarray	0	-
+function	array_gt	anyarray,anyarray	0	-
+function	array_in	cstring,oid,int4	0	-
+function	array_larger	anyarray,anyarray	0	-
+function	array_le	anyarray,anyarray	0	-
+function	array_length	anyarray,int4	0	-
+function	array_lower	anyarray,int4	0	-
+function	array_lt	anyarray,anyarray	0	-
+function	array_ndims	anyarray	0	-
+function	array_ne	anyarray,anyarray	0	-
+function	array_out	anyarray	0	-
+function	array_position	anycompatiblearray,anycompatible	0	-
+function	array_position	anycompatiblearray,anycompatible,int4	0	-
+function	array_positions	anycompatiblearray,anycompatible	0	-
+function	array_prepend	anycompatible,anycompatiblearray	0	-
+function	array_prepend_support	internal	0	-
+function	array_recv	internal,oid,int4	0	-
+function	array_remove	anycompatiblearray,anycompatible	0	-
+function	array_replace	anycompatiblearray,anycompatible,anycompatible	0	-
+function	array_reverse	anyarray	0	-
+function	array_sample	anyarray,int4	0	-
+function	array_send	anyarray	0	-
+function	array_shuffle	anyarray	0	-
+function	array_smaller	anyarray,anyarray	0	-
+function	array_sort	anyarray	0	-
+function	array_sort	anyarray,bool	0	-
+function	array_sort	anyarray,bool,bool	0	-
+function	array_subscript_handler	internal	0	-
+function	array_subscript_handler_support	internal	0	-
+function	array_to_json	anyarray	0	-
+function	array_to_json	anyarray,bool	0	-
+function	array_to_string	anyarray,text	0	-
+function	array_to_string	anyarray,text,text	0	-
+function	array_to_tsvector	_text	0	-
+function	array_typanalyze	internal	0	-
+function	array_unnest_support	internal	0	-
+function	array_upper	anyarray,int4	0	-
+function	arraycontained	anyarray,anyarray	0	-
+function	arraycontains	anyarray,anyarray	0	-
+function	arraycontjoinsel	internal,oid,internal,int2,internal	0	-
+function	arraycontsel	internal,oid,internal,int4	0	-
+function	arrayoverlap	anyarray,anyarray	0	-
+function	ascii	text	0	-
+function	asin	float8	0	-
+function	asind	float8	0	-
+function	asinh	float8	0	-
+function	atan	float8	0	-
+function	atan2	float8,float8	0	-
+function	atan2d	float8,float8	0	-
+function	atand	float8	0	-
+function	atanh	float8	0	-
+function	avg	float4	0	-
+function	avg	float8	0	-
+function	avg	int2	0	-
+function	avg	int4	0	-
+function	avg	int8	0	-
+function	avg	interval	0	-
+function	avg	numeric	0	-
+function	bernoulli	internal	0	-
+function	big5_to_euc_tw	int4,int4,cstring,internal,int4,bool	0	-
+function	big5_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	big5_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	binary_upgrade_add_sub_rel_state	text,oid,char,pg_lsn	0	-
+function	binary_upgrade_create_empty_extension	text,text,bool,text,_oid,_text,_text	0	-
+function	binary_upgrade_logical_slot_has_caught_up	name	0	-
+function	binary_upgrade_replorigin_advance	text,pg_lsn	0	-
+function	binary_upgrade_set_missing_value	oid,text,text	0	-
+function	binary_upgrade_set_next_array_pg_type_oid	oid	0	-
+function	binary_upgrade_set_next_attribute_versions	_pg_lsn	0	-
+function	binary_upgrade_set_next_heap_pg_class_oid	oid	0	-
+function	binary_upgrade_set_next_heap_relfilenode	oid	0	-
+function	binary_upgrade_set_next_index_pg_class_oid	oid	0	-
+function	binary_upgrade_set_next_index_relfilenode	oid	0	-
+function	binary_upgrade_set_next_multirange_array_pg_type_oid	oid	0	-
+function	binary_upgrade_set_next_multirange_pg_type_oid	oid	0	-
+function	binary_upgrade_set_next_pg_authid_oid	oid	0	-
+function	binary_upgrade_set_next_pg_enum_oid	oid	0	-
+function	binary_upgrade_set_next_pg_tablespace_oid	oid	0	-
+function	binary_upgrade_set_next_pg_type_oid	oid	0	-
+function	binary_upgrade_set_next_toast_pg_class_oid	oid	0	-
+function	binary_upgrade_set_next_toast_relfilenode	oid	0	-
+function	binary_upgrade_set_record_init_privs	bool	0	-
+function	bit	bit,int4,bool	0	-
+function	bit	int4,int4	0	-
+function	bit	int8,int4	0	-
+function	bit_and	bit	0	-
+function	bit_and	int2	0	-
+function	bit_and	int4	0	-
+function	bit_and	int8	0	-
+function	bit_count	bit	0	-
+function	bit_count	bytea	0	-
+function	bit_in	cstring,oid,int4	0	-
+function	bit_length	bit	0	-
+function	bit_length	bytea	0	-
+function	bit_length	text	0	-
+function	bit_or	bit	0	-
+function	bit_or	int2	0	-
+function	bit_or	int4	0	-
+function	bit_or	int8	0	-
+function	bit_out	bit	0	-
+function	bit_recv	internal,oid,int4	0	-
+function	bit_send	bit	0	-
+function	bit_xor	bit	0	-
+function	bit_xor	int2	0	-
+function	bit_xor	int4	0	-
+function	bit_xor	int8	0	-
+function	bitand	bit,bit	0	-
+function	bitcat	varbit,varbit	0	-
+function	bitcmp	bit,bit	0	-
+function	biteq	bit,bit	0	-
+function	bitge	bit,bit	0	-
+function	bitgt	bit,bit	0	-
+function	bitle	bit,bit	0	-
+function	bitlt	bit,bit	0	-
+function	bitne	bit,bit	0	-
+function	bitnot	bit	0	-
+function	bitor	bit,bit	0	-
+function	bitshiftleft	bit,int4	0	-
+function	bitshiftright	bit,int4	0	-
+function	bittypmodin	_cstring	0	-
+function	bittypmodout	int4	0	-
+function	bitxor	bit,bit	0	-
+function	bool	int4	0	-
+function	bool	jsonb	0	-
+function	bool_accum	internal,bool	0	-
+function	bool_accum_inv	internal,bool	0	-
+function	bool_alltrue	internal	0	-
+function	bool_and	bool	0	-
+function	bool_anytrue	internal	0	-
+function	bool_or	bool	0	-
+function	booland_statefunc	bool,bool	0	-
+function	booleq	bool,bool	0	-
+function	boolge	bool,bool	0	-
+function	boolgt	bool,bool	0	-
+function	boolin	cstring	0	-
+function	boolle	bool,bool	0	-
+function	boollt	bool,bool	0	-
+function	boolne	bool,bool	0	-
+function	boolor_statefunc	bool,bool	0	-
+function	boolout	bool	0	-
+function	boolrecv	internal	0	-
+function	boolsend	bool	0	-
+function	bound_box	box,box	0	-
+function	box	circle	0	-
+function	box	point	0	-
+function	box	point,point	0	-
+function	box	polygon	0	-
+function	box_above	box,box	0	-
+function	box_above_eq	box,box	0	-
+function	box_add	box,point	0	-
+function	box_below	box,box	0	-
+function	box_below_eq	box,box	0	-
+function	box_center	box	0	-
+function	box_contain	box,box	0	-
+function	box_contain_pt	box,point	0	-
+function	box_contained	box,box	0	-
+function	box_distance	box,box	0	-
+function	box_div	box,point	0	-
+function	box_eq	box,box	0	-
+function	box_ge	box,box	0	-
+function	box_gt	box,box	0	-
+function	box_in	cstring	0	-
+function	box_intersect	box,box	0	-
+function	box_le	box,box	0	-
+function	box_left	box,box	0	-
+function	box_lt	box,box	0	-
+function	box_mul	box,point	0	-
+function	box_out	box	0	-
+function	box_overabove	box,box	0	-
+function	box_overbelow	box,box	0	-
+function	box_overlap	box,box	0	-
+function	box_overleft	box,box	0	-
+function	box_overright	box,box	0	-
+function	box_recv	internal	0	-
+function	box_right	box,box	0	-
+function	box_same	box,box	0	-
+function	box_send	box	0	-
+function	box_sub	box,point	0	-
+function	bpchar	bpchar,int4,bool	0	-
+function	bpchar	char	0	-
+function	bpchar	name	0	-
+function	bpchar_larger	bpchar,bpchar	0	-
+function	bpchar_pattern_ge	bpchar,bpchar	0	-
+function	bpchar_pattern_gt	bpchar,bpchar	0	-
+function	bpchar_pattern_le	bpchar,bpchar	0	-
+function	bpchar_pattern_lt	bpchar,bpchar	0	-
+function	bpchar_smaller	bpchar,bpchar	0	-
+function	bpchar_sortsupport	internal	0	-
+function	bpcharcmp	bpchar,bpchar	0	-
+function	bpchareq	bpchar,bpchar	0	-
+function	bpcharge	bpchar,bpchar	0	-
+function	bpchargt	bpchar,bpchar	0	-
+function	bpchariclike	bpchar,text	0	-
+function	bpcharicnlike	bpchar,text	0	-
+function	bpcharicregexeq	bpchar,text	0	-
+function	bpcharicregexne	bpchar,text	0	-
+function	bpcharin	cstring,oid,int4	0	-
+function	bpcharle	bpchar,bpchar	0	-
+function	bpcharlike	bpchar,text	0	-
+function	bpcharlt	bpchar,bpchar	0	-
+function	bpcharne	bpchar,bpchar	0	-
+function	bpcharnlike	bpchar,text	0	-
+function	bpcharout	bpchar	0	-
+function	bpcharrecv	internal,oid,int4	0	-
+function	bpcharregexeq	bpchar,text	0	-
+function	bpcharregexne	bpchar,text	0	-
+function	bpcharsend	bpchar	0	-
+function	bpchartypmodin	_cstring	0	-
+function	bpchartypmodout	int4	0	-
+function	brin_bloom_add_value	internal,internal,internal,internal	0	-
+function	brin_bloom_consistent	internal,internal,internal,int4	0	-
+function	brin_bloom_opcinfo	internal	0	-
+function	brin_bloom_options	internal	0	-
+function	brin_bloom_summary_in	cstring	0	-
+function	brin_bloom_summary_out	pg_brin_bloom_summary	0	-
+function	brin_bloom_summary_recv	internal	0	-
+function	brin_bloom_summary_send	pg_brin_bloom_summary	0	-
+function	brin_bloom_union	internal,internal,internal	0	-
+function	brin_desummarize_range	regclass,int8	0	-
+function	brin_inclusion_add_value	internal,internal,internal,internal	0	-
+function	brin_inclusion_consistent	internal,internal,internal	0	-
+function	brin_inclusion_opcinfo	internal	0	-
+function	brin_inclusion_union	internal,internal,internal	0	-
+function	brin_minmax_add_value	internal,internal,internal,internal	0	-
+function	brin_minmax_consistent	internal,internal,internal	0	-
+function	brin_minmax_multi_add_value	internal,internal,internal,internal	0	-
+function	brin_minmax_multi_consistent	internal,internal,internal,int4	0	-
+function	brin_minmax_multi_distance_date	internal,internal	0	-
+function	brin_minmax_multi_distance_float4	internal,internal	0	-
+function	brin_minmax_multi_distance_float8	internal,internal	0	-
+function	brin_minmax_multi_distance_inet	internal,internal	0	-
+function	brin_minmax_multi_distance_int2	internal,internal	0	-
+function	brin_minmax_multi_distance_int4	internal,internal	0	-
+function	brin_minmax_multi_distance_int8	internal,internal	0	-
+function	brin_minmax_multi_distance_interval	internal,internal	0	-
+function	brin_minmax_multi_distance_macaddr	internal,internal	0	-
+function	brin_minmax_multi_distance_macaddr8	internal,internal	0	-
+function	brin_minmax_multi_distance_numeric	internal,internal	0	-
+function	brin_minmax_multi_distance_pg_lsn	internal,internal	0	-
+function	brin_minmax_multi_distance_tid	internal,internal	0	-
+function	brin_minmax_multi_distance_time	internal,internal	0	-
+function	brin_minmax_multi_distance_timestamp	internal,internal	0	-
+function	brin_minmax_multi_distance_timetz	internal,internal	0	-
+function	brin_minmax_multi_distance_uuid	internal,internal	0	-
+function	brin_minmax_multi_opcinfo	internal	0	-
+function	brin_minmax_multi_options	internal	0	-
+function	brin_minmax_multi_summary_in	cstring	0	-
+function	brin_minmax_multi_summary_out	pg_brin_minmax_multi_summary	0	-
+function	brin_minmax_multi_summary_recv	internal	0	-
+function	brin_minmax_multi_summary_send	pg_brin_minmax_multi_summary	0	-
+function	brin_minmax_multi_union	internal,internal,internal	0	-
+function	brin_minmax_opcinfo	internal	0	-
+function	brin_minmax_union	internal,internal,internal	0	-
+function	brin_summarize_new_values	regclass	0	-
+function	brin_summarize_range	regclass,int8	0	-
+function	brinhandler	internal	0	-
+function	broadcast	inet	0	-
+function	btarraycmp	anyarray,anyarray	0	-
+function	btboolcmp	bool,bool	0	-
+function	btboolskipsupport	internal	0	-
+function	btbpchar_pattern_cmp	bpchar,bpchar	0	-
+function	btbpchar_pattern_sortsupport	internal	0	-
+function	btcharcmp	char,char	0	-
+function	btcharskipsupport	internal	0	-
+function	btequalimage	oid	0	-
+function	btfloat48cmp	float4,float8	0	-
+function	btfloat4cmp	float4,float4	0	-
+function	btfloat4sortsupport	internal	0	-
+function	btfloat84cmp	float8,float4	0	-
+function	btfloat8cmp	float8,float8	0	-
+function	btfloat8sortsupport	internal	0	-
+function	bthandler	internal	0	-
+function	btint24cmp	int2,int4	0	-
+function	btint28cmp	int2,int8	0	-
+function	btint2cmp	int2,int2	0	-
+function	btint2skipsupport	internal	0	-
+function	btint2sortsupport	internal	0	-
+function	btint42cmp	int4,int2	0	-
+function	btint48cmp	int4,int8	0	-
+function	btint4cmp	int4,int4	0	-
+function	btint4skipsupport	internal	0	-
+function	btint4sortsupport	internal	0	-
+function	btint82cmp	int8,int2	0	-
+function	btint84cmp	int8,int4	0	-
+function	btint8cmp	int8,int8	0	-
+function	btint8skipsupport	internal	0	-
+function	btint8sortsupport	internal	0	-
+function	btnamecmp	name,name	0	-
+function	btnamesortsupport	internal	0	-
+function	btnametextcmp	name,text	0	-
+function	btoidcmp	oid,oid	0	-
+function	btoidskipsupport	internal	0	-
+function	btoidsortsupport	internal	0	-
+function	btoidvectorcmp	oidvector,oidvector	0	-
+function	btrecordcmp	record,record	0	-
+function	btrecordimagecmp	record,record	0	-
+function	btrim	bytea,bytea	0	-
+function	btrim	text	0	-
+function	btrim	text,text	0	-
+function	bttext_pattern_cmp	text,text	0	-
+function	bttext_pattern_sortsupport	internal	0	-
+function	bttextcmp	text,text	0	-
+function	bttextnamecmp	text,name	0	-
+function	bttextsortsupport	internal	0	-
+function	bttidcmp	tid,tid	0	-
+function	btvarstrequalimage	oid	0	-
+function	bytea	int2	0	-
+function	bytea	int4	0	-
+function	bytea	int8	0	-
+function	bytea_larger	bytea,bytea	0	-
+function	bytea_smaller	bytea,bytea	0	-
+function	bytea_sortsupport	internal	0	-
+function	bytea_string_agg_finalfn	internal	0	-
+function	bytea_string_agg_transfn	internal,bytea,bytea	0	-
+function	byteacat	bytea,bytea	0	-
+function	byteacmp	bytea,bytea	0	-
+function	byteaeq	bytea,bytea	0	-
+function	byteage	bytea,bytea	0	-
+function	byteagt	bytea,bytea	0	-
+function	byteain	cstring	0	-
+function	byteale	bytea,bytea	0	-
+function	bytealike	bytea,bytea	0	-
+function	bytealt	bytea,bytea	0	-
+function	byteane	bytea,bytea	0	-
+function	byteanlike	bytea,bytea	0	-
+function	byteaout	bytea	0	-
+function	bytearecv	internal	0	-
+function	byteasend	bytea	0	-
+function	cardinality	anyarray	0	-
+function	casefold	text	0	-
+function	cash_cmp	money,money	0	-
+function	cash_div_cash	money,money	0	-
+function	cash_div_flt4	money,float4	0	-
+function	cash_div_flt8	money,float8	0	-
+function	cash_div_int2	money,int2	0	-
+function	cash_div_int4	money,int4	0	-
+function	cash_div_int8	money,int8	0	-
+function	cash_eq	money,money	0	-
+function	cash_ge	money,money	0	-
+function	cash_gt	money,money	0	-
+function	cash_in	cstring	0	-
+function	cash_le	money,money	0	-
+function	cash_lt	money,money	0	-
+function	cash_mi	money,money	0	-
+function	cash_mul_flt4	money,float4	0	-
+function	cash_mul_flt8	money,float8	0	-
+function	cash_mul_int2	money,int2	0	-
+function	cash_mul_int4	money,int4	0	-
+function	cash_mul_int8	money,int8	0	-
+function	cash_ne	money,money	0	-
+function	cash_out	money	0	-
+function	cash_pl	money,money	0	-
+function	cash_recv	internal	0	-
+function	cash_send	money	0	-
+function	cash_words	money	0	-
+function	cashlarger	money,money	0	-
+function	cashsmaller	money,money	0	-
+function	cbrt	float8	0	-
+function	ceil	float8	0	-
+function	ceil	numeric	0	-
+function	ceiling	float8	0	-
+function	ceiling	numeric	0	-
+function	center	box	0	-
+function	center	circle	0	-
+function	char	int4	0	-
+function	char	text	0	-
+function	char_length	bpchar	0	-
+function	char_length	text	0	-
+function	character_length	bpchar	0	-
+function	character_length	text	0	-
+function	chareq	char,char	0	-
+function	charge	char,char	0	-
+function	chargt	char,char	0	-
+function	charin	cstring	0	-
+function	charle	char,char	0	-
+function	charlt	char,char	0	-
+function	charne	char,char	0	-
+function	charout	char	0	-
+function	charrecv	internal	0	-
+function	charsend	char	0	-
+function	chr	int4	0	-
+function	cideq	cid,cid	0	-
+function	cidin	cstring	0	-
+function	cidout	cid	0	-
+function	cidr	inet	0	-
+function	cidr_in	cstring	0	-
+function	cidr_out	cidr	0	-
+function	cidr_recv	internal	0	-
+function	cidr_send	cidr	0	-
+function	cidrecv	internal	0	-
+function	cidsend	cid	0	-
+function	circle	box	0	-
+function	circle	point,float8	0	-
+function	circle	polygon	0	-
+function	circle_above	circle,circle	0	-
+function	circle_add_pt	circle,point	0	-
+function	circle_below	circle,circle	0	-
+function	circle_center	circle	0	-
+function	circle_contain	circle,circle	0	-
+function	circle_contain_pt	circle,point	0	-
+function	circle_contained	circle,circle	0	-
+function	circle_distance	circle,circle	0	-
+function	circle_div_pt	circle,point	0	-
+function	circle_eq	circle,circle	0	-
+function	circle_ge	circle,circle	0	-
+function	circle_gt	circle,circle	0	-
+function	circle_in	cstring	0	-
+function	circle_le	circle,circle	0	-
+function	circle_left	circle,circle	0	-
+function	circle_lt	circle,circle	0	-
+function	circle_mul_pt	circle,point	0	-
+function	circle_ne	circle,circle	0	-
+function	circle_out	circle	0	-
+function	circle_overabove	circle,circle	0	-
+function	circle_overbelow	circle,circle	0	-
+function	circle_overlap	circle,circle	0	-
+function	circle_overleft	circle,circle	0	-
+function	circle_overright	circle,circle	0	-
+function	circle_recv	internal	0	-
+function	circle_right	circle,circle	0	-
+function	circle_same	circle,circle	0	-
+function	circle_send	circle	0	-
+function	circle_sub_pt	circle,point	0	-
+function	clock_timestamp	-	0	-
+function	close_ls	line,lseg	0	-
+function	close_lseg	lseg,lseg	0	-
+function	close_pb	point,box	0	-
+function	close_pl	point,line	0	-
+function	close_ps	point,lseg	0	-
+function	close_sb	lseg,box	0	-
+function	col_description	oid,int4	0	-
+function	concat	any	0	any
+function	concat_ws	text,any	0	any
+function	contjoinsel	internal,oid,internal,int2,internal	0	-
+function	contsel	internal,oid,internal,int4	0	-
+function	convert	bytea,name,name	0	-
+function	convert_from	bytea,name	0	-
+function	convert_to	text,name	0	-
+function	corr	float8,float8	0	-
+function	cos	float8	0	-
+function	cosd	float8	0	-
+function	cosh	float8	0	-
+function	cot	float8	0	-
+function	cotd	float8	0	-
+function	count	-	0	-
+function	count	any	0	-
+function	covar_pop	float8,float8	0	-
+function	covar_samp	float8,float8	0	-
+function	crc32	bytea	0	-
+function	crc32c	bytea	0	-
+function	cstring_in	cstring	0	-
+function	cstring_out	cstring	0	-
+function	cstring_recv	internal	0	-
+function	cstring_send	cstring	0	-
+function	cume_dist	-	0	-
+function	cume_dist	any	0	any
+function	cume_dist_final	internal,any	0	any
+function	current_database	-	0	-
+function	current_query	-	0	-
+function	current_schema	-	0	-
+function	current_schemas	bool	0	-
+function	current_setting	text	0	-
+function	current_setting	text,bool	0	-
+function	current_user	-	0	-
+function	currtid2	text,tid	0	-
+function	currval	regclass	0	-
+function	cursor_to_xml	refcursor,int4,bool,bool,text	0	-
+function	cursor_to_xmlschema	refcursor,bool,bool,text	0	-
+function	database_to_xml	bool,bool,text	0	-
+function	database_to_xml_and_xmlschema	bool,bool,text	0	-
+function	database_to_xmlschema	bool,bool,text	0	-
+function	date	timestamp	0	-
+function	date	timestamptz	0	-
+function	date_add	timestamptz,interval	0	-
+function	date_add	timestamptz,interval,text	0	-
+function	date_bin	interval,timestamp,timestamp	0	-
+function	date_bin	interval,timestamptz,timestamptz	0	-
+function	date_cmp	date,date	0	-
+function	date_cmp_timestamp	date,timestamp	0	-
+function	date_cmp_timestamptz	date,timestamptz	0	-
+function	date_eq	date,date	0	-
+function	date_eq_timestamp	date,timestamp	0	-
+function	date_eq_timestamptz	date,timestamptz	0	-
+function	date_ge	date,date	0	-
+function	date_ge_timestamp	date,timestamp	0	-
+function	date_ge_timestamptz	date,timestamptz	0	-
+function	date_gt	date,date	0	-
+function	date_gt_timestamp	date,timestamp	0	-
+function	date_gt_timestamptz	date,timestamptz	0	-
+function	date_in	cstring	0	-
+function	date_larger	date,date	0	-
+function	date_le	date,date	0	-
+function	date_le_timestamp	date,timestamp	0	-
+function	date_le_timestamptz	date,timestamptz	0	-
+function	date_lt	date,date	0	-
+function	date_lt_timestamp	date,timestamp	0	-
+function	date_lt_timestamptz	date,timestamptz	0	-
+function	date_mi	date,date	0	-
+function	date_mi_interval	date,interval	0	-
+function	date_mii	date,int4	0	-
+function	date_ne	date,date	0	-
+function	date_ne_timestamp	date,timestamp	0	-
+function	date_ne_timestamptz	date,timestamptz	0	-
+function	date_out	date	0	-
+function	date_part	text,date	0	-
+function	date_part	text,interval	0	-
+function	date_part	text,time	0	-
+function	date_part	text,timestamp	0	-
+function	date_part	text,timestamptz	0	-
+function	date_part	text,timetz	0	-
+function	date_pl_interval	date,interval	0	-
+function	date_pli	date,int4	0	-
+function	date_recv	internal	0	-
+function	date_send	date	0	-
+function	date_skipsupport	internal	0	-
+function	date_smaller	date,date	0	-
+function	date_sortsupport	internal	0	-
+function	date_subtract	timestamptz,interval	0	-
+function	date_subtract	timestamptz,interval,text	0	-
+function	date_trunc	text,interval	0	-
+function	date_trunc	text,timestamp	0	-
+function	date_trunc	text,timestamptz	0	-
+function	date_trunc	text,timestamptz,text	0	-
+function	datemultirange	-	0	-
+function	datemultirange	_daterange	0	daterange
+function	datemultirange	daterange	0	-
+function	daterange	date,date	0	-
+function	daterange	date,date,text	0	-
+function	daterange_canonical	daterange	0	-
+function	daterange_subdiff	date,date	0	-
+function	datetime_pl	date,time	0	-
+function	datetimetz_pl	date,timetz	0	-
+function	dcbrt	float8	0	-
+function	decode	text,text	0	-
+function	degrees	float8	0	-
+function	dense_rank	-	0	-
+function	dense_rank	any	0	any
+function	dense_rank_final	internal,any	0	any
+function	dexp	float8	0	-
+function	diagonal	box	0	-
+function	diameter	circle	0	-
+function	dispell_init	internal	0	-
+function	dispell_lexize	internal,internal,internal,internal	0	-
+function	dist_bp	box,point	0	-
+function	dist_bs	box,lseg	0	-
+function	dist_cpoint	circle,point	0	-
+function	dist_cpoly	circle,polygon	0	-
+function	dist_lp	line,point	0	-
+function	dist_ls	line,lseg	0	-
+function	dist_pathp	path,point	0	-
+function	dist_pb	point,box	0	-
+function	dist_pc	point,circle	0	-
+function	dist_pl	point,line	0	-
+function	dist_polyc	polygon,circle	0	-
+function	dist_polyp	polygon,point	0	-
+function	dist_ppath	point,path	0	-
+function	dist_ppoly	point,polygon	0	-
+function	dist_ps	point,lseg	0	-
+function	dist_sb	lseg,box	0	-
+function	dist_sl	lseg,line	0	-
+function	dist_sp	lseg,point	0	-
+function	div	numeric,numeric	0	-
+function	dlog1	float8	0	-
+function	dlog10	float8	0	-
+function	domain_in	cstring,oid,int4	0	-
+function	domain_recv	internal,oid,int4	0	-
+function	dpow	float8,float8	0	-
+function	dround	float8	0	-
+function	dsimple_init	internal	0	-
+function	dsimple_lexize	internal,internal,internal,internal	0	-
+function	dsnowball_init	internal	0	-
+function	dsnowball_lexize	internal,internal,internal,internal	0	-
+function	dsqrt	float8	0	-
+function	dsynonym_init	internal	0	-
+function	dsynonym_lexize	internal,internal,internal,internal	0	-
+function	dtrunc	float8	0	-
+function	elem_contained_by_multirange	anyelement,anymultirange	0	-
+function	elem_contained_by_range	anyelement,anyrange	0	-
+function	elem_contained_by_range_support	internal	0	-
+function	encode	bytea,text	0	-
+function	enum_cmp	anyenum,anyenum	0	-
+function	enum_eq	anyenum,anyenum	0	-
+function	enum_first	anyenum	0	-
+function	enum_ge	anyenum,anyenum	0	-
+function	enum_gt	anyenum,anyenum	0	-
+function	enum_in	cstring,oid	0	-
+function	enum_larger	anyenum,anyenum	0	-
+function	enum_last	anyenum	0	-
+function	enum_le	anyenum,anyenum	0	-
+function	enum_lt	anyenum,anyenum	0	-
+function	enum_ne	anyenum,anyenum	0	-
+function	enum_out	anyenum	0	-
+function	enum_range	anyenum	0	-
+function	enum_range	anyenum,anyenum	0	-
+function	enum_recv	internal,oid	0	-
+function	enum_send	anyenum	0	-
+function	enum_smaller	anyenum,anyenum	0	-
+function	eqjoinsel	internal,oid,internal,int2,internal	0	-
+function	eqsel	internal,oid,internal,int4	0	-
+function	erf	float8	0	-
+function	erfc	float8	0	-
+function	euc_cn_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	euc_cn_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	euc_jis_2004_to_shift_jis_2004	int4,int4,cstring,internal,int4,bool	0	-
+function	euc_jis_2004_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	euc_jp_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	euc_jp_to_sjis	int4,int4,cstring,internal,int4,bool	0	-
+function	euc_jp_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	euc_kr_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	euc_kr_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	euc_tw_to_big5	int4,int4,cstring,internal,int4,bool	0	-
+function	euc_tw_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	euc_tw_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	event_trigger_in	cstring	0	-
+function	event_trigger_out	event_trigger	0	-
+function	every	bool	0	-
+function	exp	float8	0	-
+function	exp	numeric	0	-
+function	extract	text,date	0	-
+function	extract	text,interval	0	-
+function	extract	text,time	0	-
+function	extract	text,timestamp	0	-
+function	extract	text,timestamptz	0	-
+function	extract	text,timetz	0	-
+function	factorial	int8	0	-
+function	family	inet	0	-
+function	fdw_handler_in	cstring	0	-
+function	fdw_handler_out	fdw_handler	0	-
+function	first_value	anyelement	0	-
+function	float4	float8	0	-
+function	float4	int2	0	-
+function	float4	int4	0	-
+function	float4	int8	0	-
+function	float4	jsonb	0	-
+function	float4	numeric	0	-
+function	float48div	float4,float8	0	-
+function	float48eq	float4,float8	0	-
+function	float48ge	float4,float8	0	-
+function	float48gt	float4,float8	0	-
+function	float48le	float4,float8	0	-
+function	float48lt	float4,float8	0	-
+function	float48mi	float4,float8	0	-
+function	float48mul	float4,float8	0	-
+function	float48ne	float4,float8	0	-
+function	float48pl	float4,float8	0	-
+function	float4_accum	_float8,float4	0	-
+function	float4abs	float4	0	-
+function	float4div	float4,float4	0	-
+function	float4eq	float4,float4	0	-
+function	float4ge	float4,float4	0	-
+function	float4gt	float4,float4	0	-
+function	float4in	cstring	0	-
+function	float4larger	float4,float4	0	-
+function	float4le	float4,float4	0	-
+function	float4lt	float4,float4	0	-
+function	float4mi	float4,float4	0	-
+function	float4mul	float4,float4	0	-
+function	float4ne	float4,float4	0	-
+function	float4out	float4	0	-
+function	float4pl	float4,float4	0	-
+function	float4recv	internal	0	-
+function	float4send	float4	0	-
+function	float4smaller	float4,float4	0	-
+function	float4um	float4	0	-
+function	float4up	float4	0	-
+function	float8	float4	0	-
+function	float8	int2	0	-
+function	float8	int4	0	-
+function	float8	int8	0	-
+function	float8	jsonb	0	-
+function	float8	numeric	0	-
+function	float84div	float8,float4	0	-
+function	float84eq	float8,float4	0	-
+function	float84ge	float8,float4	0	-
+function	float84gt	float8,float4	0	-
+function	float84le	float8,float4	0	-
+function	float84lt	float8,float4	0	-
+function	float84mi	float8,float4	0	-
+function	float84mul	float8,float4	0	-
+function	float84ne	float8,float4	0	-
+function	float84pl	float8,float4	0	-
+function	float8_accum	_float8,float8	0	-
+function	float8_avg	_float8	0	-
+function	float8_combine	_float8,_float8	0	-
+function	float8_corr	_float8	0	-
+function	float8_covar_pop	_float8	0	-
+function	float8_covar_samp	_float8	0	-
+function	float8_regr_accum	_float8,float8,float8	0	-
+function	float8_regr_avgx	_float8	0	-
+function	float8_regr_avgy	_float8	0	-
+function	float8_regr_combine	_float8,_float8	0	-
+function	float8_regr_intercept	_float8	0	-
+function	float8_regr_r2	_float8	0	-
+function	float8_regr_slope	_float8	0	-
+function	float8_regr_sxx	_float8	0	-
+function	float8_regr_sxy	_float8	0	-
+function	float8_regr_syy	_float8	0	-
+function	float8_stddev_pop	_float8	0	-
+function	float8_stddev_samp	_float8	0	-
+function	float8_var_pop	_float8	0	-
+function	float8_var_samp	_float8	0	-
+function	float8abs	float8	0	-
+function	float8div	float8,float8	0	-
+function	float8eq	float8,float8	0	-
+function	float8ge	float8,float8	0	-
+function	float8gt	float8,float8	0	-
+function	float8in	cstring	0	-
+function	float8larger	float8,float8	0	-
+function	float8le	float8,float8	0	-
+function	float8lt	float8,float8	0	-
+function	float8mi	float8,float8	0	-
+function	float8mul	float8,float8	0	-
+function	float8ne	float8,float8	0	-
+function	float8out	float8	0	-
+function	float8pl	float8,float8	0	-
+function	float8recv	internal	0	-
+function	float8send	float8	0	-
+function	float8smaller	float8,float8	0	-
+function	float8um	float8	0	-
+function	float8up	float8	0	-
+function	floor	float8	0	-
+function	floor	numeric	0	-
+function	flt4_mul_cash	float4,money	0	-
+function	flt8_mul_cash	float8,money	0	-
+function	fmgr_c_validator	oid	0	-
+function	fmgr_internal_validator	oid	0	-
+function	fmgr_sql_validator	oid	0	-
+function	format	text	0	-
+function	format	text,any	0	any
+function	format_type	oid,int4	0	-
+function	gamma	float8	0	-
+function	gb18030_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	gbk_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	gcd	int4,int4	0	-
+function	gcd	int8,int8	0	-
+function	gcd	numeric,numeric	0	-
+function	gen_random_uuid	-	0	-
+function	generate_series	int4,int4	0	-
+function	generate_series	int4,int4,int4	0	-
+function	generate_series	int8,int8	0	-
+function	generate_series	int8,int8,int8	0	-
+function	generate_series	numeric,numeric	0	-
+function	generate_series	numeric,numeric,numeric	0	-
+function	generate_series	timestamp,timestamp,interval	0	-
+function	generate_series	timestamptz,timestamptz,interval	0	-
+function	generate_series	timestamptz,timestamptz,interval,text	0	-
+function	generate_series_int4_support	internal	0	-
+function	generate_series_int8_support	internal	0	-
+function	generate_series_numeric_support	internal	0	-
+function	generate_series_timestamp_support	internal	0	-
+function	generate_subscripts	anyarray,int4	0	-
+function	generate_subscripts	anyarray,int4,bool	0	-
+function	get_bit	bit,int4	0	-
+function	get_bit	bytea,int8	0	-
+function	get_byte	bytea,int4	0	-
+function	get_current_ts_config	-	0	-
+function	getdatabaseencoding	-	0	-
+function	getpgusername	-	0	-
+function	gin_clean_pending_list	regclass	0	-
+function	gin_cmp_prefix	text,text,int2,internal	0	-
+function	gin_cmp_tslexeme	text,text	0	-
+function	gin_compare_jsonb	text,text	0	-
+function	gin_consistent_jsonb	internal,int2,jsonb,int4,internal,internal,internal,internal	0	-
+function	gin_consistent_jsonb_path	internal,int2,jsonb,int4,internal,internal,internal,internal	0	-
+function	gin_extract_jsonb	jsonb,internal,internal	0	-
+function	gin_extract_jsonb_path	jsonb,internal,internal	0	-
+function	gin_extract_jsonb_query	jsonb,internal,int2,internal,internal,internal,internal	0	-
+function	gin_extract_jsonb_query_path	jsonb,internal,int2,internal,internal,internal,internal	0	-
+function	gin_extract_tsquery	tsquery,internal,int2,internal,internal	0	-
+function	gin_extract_tsquery	tsquery,internal,int2,internal,internal,internal,internal	0	-
+function	gin_extract_tsquery	tsvector,internal,int2,internal,internal,internal,internal	0	-
+function	gin_extract_tsvector	tsvector,internal	0	-
+function	gin_extract_tsvector	tsvector,internal,internal	0	-
+function	gin_triconsistent_jsonb	internal,int2,jsonb,int4,internal,internal,internal	0	-
+function	gin_triconsistent_jsonb_path	internal,int2,jsonb,int4,internal,internal,internal	0	-
+function	gin_tsquery_consistent	internal,int2,tsquery,int4,internal,internal	0	-
+function	gin_tsquery_consistent	internal,int2,tsquery,int4,internal,internal,internal,internal	0	-
+function	gin_tsquery_consistent	internal,int2,tsvector,int4,internal,internal,internal,internal	0	-
+function	gin_tsquery_triconsistent	internal,int2,tsvector,int4,internal,internal,internal	0	-
+function	ginarrayconsistent	internal,int2,anyarray,int4,internal,internal,internal,internal	0	-
+function	ginarrayextract	anyarray,internal	0	-
+function	ginarrayextract	anyarray,internal,internal	0	-
+function	ginarraytriconsistent	internal,int2,anyarray,int4,internal,internal,internal	0	-
+function	ginhandler	internal	0	-
+function	ginqueryarrayextract	anyarray,internal,int2,internal,internal,internal,internal	0	-
+function	gist_box_consistent	internal,box,int2,oid,internal	0	-
+function	gist_box_distance	internal,box,int2,oid,internal	0	-
+function	gist_box_penalty	internal,internal,internal	0	-
+function	gist_box_picksplit	internal,internal	0	-
+function	gist_box_same	box,box,internal	0	-
+function	gist_box_union	internal,internal	0	-
+function	gist_circle_compress	internal	0	-
+function	gist_circle_consistent	internal,circle,int2,oid,internal	0	-
+function	gist_circle_distance	internal,circle,int2,oid,internal	0	-
+function	gist_point_compress	internal	0	-
+function	gist_point_consistent	internal,point,int2,oid,internal	0	-
+function	gist_point_distance	internal,point,int2,oid,internal	0	-
+function	gist_point_fetch	internal	0	-
+function	gist_point_sortsupport	internal	0	-
+function	gist_poly_compress	internal	0	-
+function	gist_poly_consistent	internal,polygon,int2,oid,internal	0	-
+function	gist_poly_distance	internal,polygon,int2,oid,internal	0	-
+function	gist_translate_cmptype_common	int4	0	-
+function	gisthandler	internal	0	-
+function	gtsquery_compress	internal	0	-
+function	gtsquery_consistent	internal,internal,int4,oid,internal	0	-
+function	gtsquery_consistent	internal,tsquery,int2,oid,internal	0	-
+function	gtsquery_penalty	internal,internal,internal	0	-
+function	gtsquery_picksplit	internal,internal	0	-
+function	gtsquery_same	int8,int8,internal	0	-
+function	gtsquery_union	internal,internal	0	-
+function	gtsvector_compress	internal	0	-
+function	gtsvector_consistent	internal,gtsvector,int4,oid,internal	0	-
+function	gtsvector_consistent	internal,tsvector,int2,oid,internal	0	-
+function	gtsvector_decompress	internal	0	-
+function	gtsvector_options	internal	0	-
+function	gtsvector_penalty	internal,internal,internal	0	-
+function	gtsvector_picksplit	internal,internal	0	-
+function	gtsvector_same	gtsvector,gtsvector,internal	0	-
+function	gtsvector_union	internal,internal	0	-
+function	gtsvectorin	cstring	0	-
+function	gtsvectorout	gtsvector	0	-
+function	has_any_column_privilege	name,oid,text	0	-
+function	has_any_column_privilege	name,text,text	0	-
+function	has_any_column_privilege	oid,oid,text	0	-
+function	has_any_column_privilege	oid,text	0	-
+function	has_any_column_privilege	oid,text,text	0	-
+function	has_any_column_privilege	text,text	0	-
+function	has_column_privilege	name,oid,int2,text	0	-
+function	has_column_privilege	name,oid,text,text	0	-
+function	has_column_privilege	name,text,int2,text	0	-
+function	has_column_privilege	name,text,text,text	0	-
+function	has_column_privilege	oid,int2,text	0	-
+function	has_column_privilege	oid,oid,int2,text	0	-
+function	has_column_privilege	oid,oid,text,text	0	-
+function	has_column_privilege	oid,text,int2,text	0	-
+function	has_column_privilege	oid,text,text	0	-
+function	has_column_privilege	oid,text,text,text	0	-
+function	has_column_privilege	text,int2,text	0	-
+function	has_column_privilege	text,text,text	0	-
+function	has_database_privilege	name,oid,text	0	-
+function	has_database_privilege	name,text,text	0	-
+function	has_database_privilege	oid,oid,text	0	-
+function	has_database_privilege	oid,text	0	-
+function	has_database_privilege	oid,text,text	0	-
+function	has_database_privilege	text,text	0	-
+function	has_foreign_data_wrapper_privilege	name,oid,text	0	-
+function	has_foreign_data_wrapper_privilege	name,text,text	0	-
+function	has_foreign_data_wrapper_privilege	oid,oid,text	0	-
+function	has_foreign_data_wrapper_privilege	oid,text	0	-
+function	has_foreign_data_wrapper_privilege	oid,text,text	0	-
+function	has_foreign_data_wrapper_privilege	text,text	0	-
+function	has_function_privilege	name,oid,text	0	-
+function	has_function_privilege	name,text,text	0	-
+function	has_function_privilege	oid,oid,text	0	-
+function	has_function_privilege	oid,text	0	-
+function	has_function_privilege	oid,text,text	0	-
+function	has_function_privilege	text,text	0	-
+function	has_language_privilege	name,oid,text	0	-
+function	has_language_privilege	name,text,text	0	-
+function	has_language_privilege	oid,oid,text	0	-
+function	has_language_privilege	oid,text	0	-
+function	has_language_privilege	oid,text,text	0	-
+function	has_language_privilege	text,text	0	-
+function	has_largeobject_privilege	name,oid,text	0	-
+function	has_largeobject_privilege	oid,oid,text	0	-
+function	has_largeobject_privilege	oid,text	0	-
+function	has_parameter_privilege	name,text,text	0	-
+function	has_parameter_privilege	oid,text,text	0	-
+function	has_parameter_privilege	text,text	0	-
+function	has_schema_privilege	name,oid,text	0	-
+function	has_schema_privilege	name,text,text	0	-
+function	has_schema_privilege	oid,oid,text	0	-
+function	has_schema_privilege	oid,text	0	-
+function	has_schema_privilege	oid,text,text	0	-
+function	has_schema_privilege	text,text	0	-
+function	has_sequence_privilege	name,oid,text	0	-
+function	has_sequence_privilege	name,text,text	0	-
+function	has_sequence_privilege	oid,oid,text	0	-
+function	has_sequence_privilege	oid,text	0	-
+function	has_sequence_privilege	oid,text,text	0	-
+function	has_sequence_privilege	text,text	0	-
+function	has_server_privilege	name,oid,text	0	-
+function	has_server_privilege	name,text,text	0	-
+function	has_server_privilege	oid,oid,text	0	-
+function	has_server_privilege	oid,text	0	-
+function	has_server_privilege	oid,text,text	0	-
+function	has_server_privilege	text,text	0	-
+function	has_table_privilege	name,oid,text	0	-
+function	has_table_privilege	name,text,text	0	-
+function	has_table_privilege	oid,oid,text	0	-
+function	has_table_privilege	oid,text	0	-
+function	has_table_privilege	oid,text,text	0	-
+function	has_table_privilege	text,text	0	-
+function	has_tablespace_privilege	name,oid,text	0	-
+function	has_tablespace_privilege	name,text,text	0	-
+function	has_tablespace_privilege	oid,oid,text	0	-
+function	has_tablespace_privilege	oid,text	0	-
+function	has_tablespace_privilege	oid,text,text	0	-
+function	has_tablespace_privilege	text,text	0	-
+function	has_type_privilege	name,oid,text	0	-
+function	has_type_privilege	name,text,text	0	-
+function	has_type_privilege	oid,oid,text	0	-
+function	has_type_privilege	oid,text	0	-
+function	has_type_privilege	oid,text,text	0	-
+function	has_type_privilege	text,text	0	-
+function	hash_aclitem	aclitem	0	-
+function	hash_aclitem_extended	aclitem,int8	0	-
+function	hash_array	anyarray	0	-
+function	hash_array_extended	anyarray,int8	0	-
+function	hash_multirange	anymultirange	0	-
+function	hash_multirange_extended	anymultirange,int8	0	-
+function	hash_numeric	numeric	0	-
+function	hash_numeric_extended	numeric,int8	0	-
+function	hash_range	anyrange	0	-
+function	hash_range_extended	anyrange,int8	0	-
+function	hash_record	record	0	-
+function	hash_record_extended	record,int8	0	-
+function	hashbool	bool	0	-
+function	hashboolextended	bool,int8	0	-
+function	hashbpchar	bpchar	0	-
+function	hashbpcharextended	bpchar,int8	0	-
+function	hashbytea	bytea	0	-
+function	hashbyteaextended	bytea,int8	0	-
+function	hashchar	char	0	-
+function	hashcharextended	char,int8	0	-
+function	hashcid	cid	0	-
+function	hashcidextended	cid,int8	0	-
+function	hashdate	date	0	-
+function	hashdateextended	date,int8	0	-
+function	hashenum	anyenum	0	-
+function	hashenumextended	anyenum,int8	0	-
+function	hashfloat4	float4	0	-
+function	hashfloat4extended	float4,int8	0	-
+function	hashfloat8	float8	0	-
+function	hashfloat8extended	float8,int8	0	-
+function	hashhandler	internal	0	-
+function	hashinet	inet	0	-
+function	hashinetextended	inet,int8	0	-
+function	hashint2	int2	0	-
+function	hashint2extended	int2,int8	0	-
+function	hashint4	int4	0	-
+function	hashint4extended	int4,int8	0	-
+function	hashint8	int8	0	-
+function	hashint8extended	int8,int8	0	-
+function	hashmacaddr	macaddr	0	-
+function	hashmacaddr8	macaddr8	0	-
+function	hashmacaddr8extended	macaddr8,int8	0	-
+function	hashmacaddrextended	macaddr,int8	0	-
+function	hashname	name	0	-
+function	hashnameextended	name,int8	0	-
+function	hashoid	oid	0	-
+function	hashoidextended	oid,int8	0	-
+function	hashoidvector	oidvector	0	-
+function	hashoidvectorextended	oidvector,int8	0	-
+function	hashtext	text	0	-
+function	hashtextextended	text,int8	0	-
+function	hashtid	tid	0	-
+function	hashtidextended	tid,int8	0	-
+function	hashvarlena	internal	0	-
+function	hashvarlenaextended	internal,int8	0	-
+function	hashxid	xid	0	-
+function	hashxid8	xid8	0	-
+function	hashxid8extended	xid8,int8	0	-
+function	hashxidextended	xid,int8	0	-
+function	heap_tableam_handler	internal	0	-
+function	height	box	0	-
+function	host	inet	0	-
+function	hostmask	inet	0	-
+function	iclikejoinsel	internal,oid,internal,int2,internal	0	-
+function	iclikesel	internal,oid,internal,int4	0	-
+function	icnlikejoinsel	internal,oid,internal,int2,internal	0	-
+function	icnlikesel	internal,oid,internal,int4	0	-
+function	icregexeqjoinsel	internal,oid,internal,int2,internal	0	-
+function	icregexeqsel	internal,oid,internal,int4	0	-
+function	icregexnejoinsel	internal,oid,internal,int2,internal	0	-
+function	icregexnesel	internal,oid,internal,int4	0	-
+function	icu_unicode_version	-	0	-
+function	in_range	date,date,interval,bool,bool	0	-
+function	in_range	float4,float4,float8,bool,bool	0	-
+function	in_range	float8,float8,float8,bool,bool	0	-
+function	in_range	int2,int2,int2,bool,bool	0	-
+function	in_range	int2,int2,int4,bool,bool	0	-
+function	in_range	int2,int2,int8,bool,bool	0	-
+function	in_range	int4,int4,int2,bool,bool	0	-
+function	in_range	int4,int4,int4,bool,bool	0	-
+function	in_range	int4,int4,int8,bool,bool	0	-
+function	in_range	int8,int8,int8,bool,bool	0	-
+function	in_range	interval,interval,interval,bool,bool	0	-
+function	in_range	numeric,numeric,numeric,bool,bool	0	-
+function	in_range	time,time,interval,bool,bool	0	-
+function	in_range	timestamp,timestamp,interval,bool,bool	0	-
+function	in_range	timestamptz,timestamptz,interval,bool,bool	0	-
+function	in_range	timetz,timetz,interval,bool,bool	0	-
+function	index_am_handler_in	cstring	0	-
+function	index_am_handler_out	index_am_handler	0	-
+function	inet_client_addr	-	0	-
+function	inet_client_port	-	0	-
+function	inet_gist_compress	internal	0	-
+function	inet_gist_consistent	internal,inet,int2,oid,internal	0	-
+function	inet_gist_fetch	internal	0	-
+function	inet_gist_penalty	internal,internal,internal	0	-
+function	inet_gist_picksplit	internal,internal	0	-
+function	inet_gist_same	inet,inet,internal	0	-
+function	inet_gist_union	internal,internal	0	-
+function	inet_in	cstring	0	-
+function	inet_merge	inet,inet	0	-
+function	inet_out	inet	0	-
+function	inet_recv	internal	0	-
+function	inet_same_family	inet,inet	0	-
+function	inet_send	inet	0	-
+function	inet_server_addr	-	0	-
+function	inet_server_port	-	0	-
+function	inet_spg_choose	internal,internal	0	-
+function	inet_spg_config	internal,internal	0	-
+function	inet_spg_inner_consistent	internal,internal	0	-
+function	inet_spg_leaf_consistent	internal,internal	0	-
+function	inet_spg_picksplit	internal,internal	0	-
+function	inetand	inet,inet	0	-
+function	inetmi	inet,inet	0	-
+function	inetmi_int8	inet,int8	0	-
+function	inetnot	inet	0	-
+function	inetor	inet,inet	0	-
+function	inetpl	inet,int8	0	-
+function	initcap	text	0	-
+function	int2	bytea	0	-
+function	int2	float4	0	-
+function	int2	float8	0	-
+function	int2	int4	0	-
+function	int2	int8	0	-
+function	int2	jsonb	0	-
+function	int2	numeric	0	-
+function	int24div	int2,int4	0	-
+function	int24eq	int2,int4	0	-
+function	int24ge	int2,int4	0	-
+function	int24gt	int2,int4	0	-
+function	int24le	int2,int4	0	-
+function	int24lt	int2,int4	0	-
+function	int24mi	int2,int4	0	-
+function	int24mul	int2,int4	0	-
+function	int24ne	int2,int4	0	-
+function	int24pl	int2,int4	0	-
+function	int28div	int2,int8	0	-
+function	int28eq	int2,int8	0	-
+function	int28ge	int2,int8	0	-
+function	int28gt	int2,int8	0	-
+function	int28le	int2,int8	0	-
+function	int28lt	int2,int8	0	-
+function	int28mi	int2,int8	0	-
+function	int28mul	int2,int8	0	-
+function	int28ne	int2,int8	0	-
+function	int28pl	int2,int8	0	-
+function	int2_accum	internal,int2	0	-
+function	int2_accum_inv	internal,int2	0	-
+function	int2_avg_accum	_int8,int2	0	-
+function	int2_avg_accum_inv	_int8,int2	0	-
+function	int2_mul_cash	int2,money	0	-
+function	int2_sum	int8,int2	0	-
+function	int2abs	int2	0	-
+function	int2and	int2,int2	0	-
+function	int2div	int2,int2	0	-
+function	int2eq	int2,int2	0	-
+function	int2ge	int2,int2	0	-
+function	int2gt	int2,int2	0	-
+function	int2in	cstring	0	-
+function	int2int4_sum	_int8	0	-
+function	int2larger	int2,int2	0	-
+function	int2le	int2,int2	0	-
+function	int2lt	int2,int2	0	-
+function	int2mi	int2,int2	0	-
+function	int2mod	int2,int2	0	-
+function	int2mul	int2,int2	0	-
+function	int2ne	int2,int2	0	-
+function	int2not	int2	0	-
+function	int2or	int2,int2	0	-
+function	int2out	int2	0	-
+function	int2pl	int2,int2	0	-
+function	int2recv	internal	0	-
+function	int2send	int2	0	-
+function	int2shl	int2,int4	0	-
+function	int2shr	int2,int4	0	-
+function	int2smaller	int2,int2	0	-
+function	int2um	int2	0	-
+function	int2up	int2	0	-
+function	int2vectorin	cstring	0	-
+function	int2vectorout	int2vector	0	-
+function	int2vectorrecv	internal	0	-
+function	int2vectorsend	int2vector	0	-
+function	int2xor	int2,int2	0	-
+function	int4	bit	0	-
+function	int4	bool	0	-
+function	int4	bytea	0	-
+function	int4	char	0	-
+function	int4	float4	0	-
+function	int4	float8	0	-
+function	int4	int2	0	-
+function	int4	int8	0	-
+function	int4	jsonb	0	-
+function	int4	numeric	0	-
+function	int42div	int4,int2	0	-
+function	int42eq	int4,int2	0	-
+function	int42ge	int4,int2	0	-
+function	int42gt	int4,int2	0	-
+function	int42le	int4,int2	0	-
+function	int42lt	int4,int2	0	-
+function	int42mi	int4,int2	0	-
+function	int42mul	int4,int2	0	-
+function	int42ne	int4,int2	0	-
+function	int42pl	int4,int2	0	-
+function	int48div	int4,int8	0	-
+function	int48eq	int4,int8	0	-
+function	int48ge	int4,int8	0	-
+function	int48gt	int4,int8	0	-
+function	int48le	int4,int8	0	-
+function	int48lt	int4,int8	0	-
+function	int48mi	int4,int8	0	-
+function	int48mul	int4,int8	0	-
+function	int48ne	int4,int8	0	-
+function	int48pl	int4,int8	0	-
+function	int4_accum	internal,int4	0	-
+function	int4_accum_inv	internal,int4	0	-
+function	int4_avg_accum	_int8,int4	0	-
+function	int4_avg_accum_inv	_int8,int4	0	-
+function	int4_avg_combine	_int8,_int8	0	-
+function	int4_mul_cash	int4,money	0	-
+function	int4_sum	int8,int4	0	-
+function	int4abs	int4	0	-
+function	int4and	int4,int4	0	-
+function	int4div	int4,int4	0	-
+function	int4eq	int4,int4	0	-
+function	int4ge	int4,int4	0	-
+function	int4gt	int4,int4	0	-
+function	int4in	cstring	0	-
+function	int4inc	int4	0	-
+function	int4larger	int4,int4	0	-
+function	int4le	int4,int4	0	-
+function	int4lt	int4,int4	0	-
+function	int4mi	int4,int4	0	-
+function	int4mod	int4,int4	0	-
+function	int4mul	int4,int4	0	-
+function	int4multirange	-	0	-
+function	int4multirange	_int4range	0	int4range
+function	int4multirange	int4range	0	-
+function	int4ne	int4,int4	0	-
+function	int4not	int4	0	-
+function	int4or	int4,int4	0	-
+function	int4out	int4	0	-
+function	int4pl	int4,int4	0	-
+function	int4range	int4,int4	0	-
+function	int4range	int4,int4,text	0	-
+function	int4range_canonical	int4range	0	-
+function	int4range_subdiff	int4,int4	0	-
+function	int4recv	internal	0	-
+function	int4send	int4	0	-
+function	int4shl	int4,int4	0	-
+function	int4shr	int4,int4	0	-
+function	int4smaller	int4,int4	0	-
+function	int4um	int4	0	-
+function	int4up	int4	0	-
+function	int4xor	int4,int4	0	-
+function	int8	bit	0	-
+function	int8	bytea	0	-
+function	int8	float4	0	-
+function	int8	float8	0	-
+function	int8	int2	0	-
+function	int8	int4	0	-
+function	int8	jsonb	0	-
+function	int8	numeric	0	-
+function	int8	oid	0	-
+function	int82div	int8,int2	0	-
+function	int82eq	int8,int2	0	-
+function	int82ge	int8,int2	0	-
+function	int82gt	int8,int2	0	-
+function	int82le	int8,int2	0	-
+function	int82lt	int8,int2	0	-
+function	int82mi	int8,int2	0	-
+function	int82mul	int8,int2	0	-
+function	int82ne	int8,int2	0	-
+function	int82pl	int8,int2	0	-
+function	int84div	int8,int4	0	-
+function	int84eq	int8,int4	0	-
+function	int84ge	int8,int4	0	-
+function	int84gt	int8,int4	0	-
+function	int84le	int8,int4	0	-
+function	int84lt	int8,int4	0	-
+function	int84mi	int8,int4	0	-
+function	int84mul	int8,int4	0	-
+function	int84ne	int8,int4	0	-
+function	int84pl	int8,int4	0	-
+function	int8_accum	internal,int8	0	-
+function	int8_accum_inv	internal,int8	0	-
+function	int8_avg	_int8	0	-
+function	int8_avg_accum	internal,int8	0	-
+function	int8_avg_accum_inv	internal,int8	0	-
+function	int8_avg_combine	internal,internal	0	-
+function	int8_avg_deserialize	bytea,internal	0	-
+function	int8_avg_serialize	internal	0	-
+function	int8_mul_cash	int8,money	0	-
+function	int8_sum	numeric,int8	0	-
+function	int8abs	int8	0	-
+function	int8and	int8,int8	0	-
+function	int8dec	int8	0	-
+function	int8dec_any	int8,any	0	-
+function	int8div	int8,int8	0	-
+function	int8eq	int8,int8	0	-
+function	int8ge	int8,int8	0	-
+function	int8gt	int8,int8	0	-
+function	int8in	cstring	0	-
+function	int8inc	int8	0	-
+function	int8inc_any	int8,any	0	-
+function	int8inc_float8_float8	int8,float8,float8	0	-
+function	int8inc_support	internal	0	-
+function	int8larger	int8,int8	0	-
+function	int8le	int8,int8	0	-
+function	int8lt	int8,int8	0	-
+function	int8mi	int8,int8	0	-
+function	int8mod	int8,int8	0	-
+function	int8mul	int8,int8	0	-
+function	int8multirange	-	0	-
+function	int8multirange	_int8range	0	int8range
+function	int8multirange	int8range	0	-
+function	int8ne	int8,int8	0	-
+function	int8not	int8	0	-
+function	int8or	int8,int8	0	-
+function	int8out	int8	0	-
+function	int8pl	int8,int8	0	-
+function	int8pl_inet	int8,inet	0	-
+function	int8range	int8,int8	0	-
+function	int8range	int8,int8,text	0	-
+function	int8range_canonical	int8range	0	-
+function	int8range_subdiff	int8,int8	0	-
+function	int8recv	internal	0	-
+function	int8send	int8	0	-
+function	int8shl	int8,int4	0	-
+function	int8shr	int8,int4	0	-
+function	int8smaller	int8,int8	0	-
+function	int8um	int8	0	-
+function	int8up	int8	0	-
+function	int8xor	int8,int8	0	-
+function	integer_pl_date	int4,date	0	-
+function	inter_lb	line,box	0	-
+function	inter_sb	lseg,box	0	-
+function	inter_sl	lseg,line	0	-
+function	internal_in	cstring	0	-
+function	internal_out	internal	0	-
+function	interval	interval,int4	0	-
+function	interval	time	0	-
+function	interval_avg	internal	0	-
+function	interval_avg_accum	internal,interval	0	-
+function	interval_avg_accum_inv	internal,interval	0	-
+function	interval_avg_combine	internal,internal	0	-
+function	interval_avg_deserialize	bytea,internal	0	-
+function	interval_avg_serialize	internal	0	-
+function	interval_cmp	interval,interval	0	-
+function	interval_div	interval,float8	0	-
+function	interval_eq	interval,interval	0	-
+function	interval_ge	interval,interval	0	-
+function	interval_gt	interval,interval	0	-
+function	interval_hash	interval	0	-
+function	interval_hash_extended	interval,int8	0	-
+function	interval_in	cstring,oid,int4	0	-
+function	interval_larger	interval,interval	0	-
+function	interval_le	interval,interval	0	-
+function	interval_lt	interval,interval	0	-
+function	interval_mi	interval,interval	0	-
+function	interval_mul	interval,float8	0	-
+function	interval_ne	interval,interval	0	-
+function	interval_out	interval	0	-
+function	interval_pl	interval,interval	0	-
+function	interval_pl_date	interval,date	0	-
+function	interval_pl_time	interval,time	0	-
+function	interval_pl_timestamp	interval,timestamp	0	-
+function	interval_pl_timestamptz	interval,timestamptz	0	-
+function	interval_pl_timetz	interval,timetz	0	-
+function	interval_recv	internal,oid,int4	0	-
+function	interval_send	interval	0	-
+function	interval_smaller	interval,interval	0	-
+function	interval_sum	internal	0	-
+function	interval_support	internal	0	-
+function	interval_um	interval	0	-
+function	intervaltypmodin	_cstring	0	-
+function	intervaltypmodout	int4	0	-
+function	is_normalized	text,text	1	-
+function	isclosed	path	0	-
+function	isempty	anymultirange	0	-
+function	isempty	anyrange	0	-
+function	isfinite	date	0	-
+function	isfinite	interval	0	-
+function	isfinite	timestamp	0	-
+function	isfinite	timestamptz	0	-
+function	ishorizontal	line	0	-
+function	ishorizontal	lseg	0	-
+function	ishorizontal	point,point	0	-
+function	iso8859_1_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	iso8859_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	iso_to_koi8r	int4,int4,cstring,internal,int4,bool	0	-
+function	iso_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	iso_to_win1251	int4,int4,cstring,internal,int4,bool	0	-
+function	iso_to_win866	int4,int4,cstring,internal,int4,bool	0	-
+function	isopen	path	0	-
+function	isparallel	line,line	0	-
+function	isparallel	lseg,lseg	0	-
+function	isperp	line,line	0	-
+function	isperp	lseg,lseg	0	-
+function	isvertical	line	0	-
+function	isvertical	lseg	0	-
+function	isvertical	point,point	0	-
+function	johab_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	json_agg	anyelement	0	-
+function	json_agg_finalfn	internal	0	-
+function	json_agg_strict	anyelement	0	-
+function	json_agg_strict_transfn	internal,anyelement	0	-
+function	json_agg_transfn	internal,anyelement	0	-
+function	json_array_element	json,int4	0	-
+function	json_array_element_text	json,int4	0	-
+function	json_array_elements	json	0	-
+function	json_array_elements_text	json	0	-
+function	json_array_length	json	0	-
+function	json_build_array	-	0	-
+function	json_build_array	any	0	any
+function	json_build_object	-	0	-
+function	json_build_object	any	0	any
+function	json_each	json	0	-
+function	json_each_text	json	0	-
+function	json_extract_path	json,_text	0	text
+function	json_extract_path_text	json,_text	0	text
+function	json_in	cstring	0	-
+function	json_object	_text	0	-
+function	json_object	_text,_text	0	-
+function	json_object_agg	any,any	0	-
+function	json_object_agg_finalfn	internal	0	-
+function	json_object_agg_strict	any,any	0	-
+function	json_object_agg_strict_transfn	internal,any,any	0	-
+function	json_object_agg_transfn	internal,any,any	0	-
+function	json_object_agg_unique	any,any	0	-
+function	json_object_agg_unique_strict	any,any	0	-
+function	json_object_agg_unique_strict_transfn	internal,any,any	0	-
+function	json_object_agg_unique_transfn	internal,any,any	0	-
+function	json_object_field	json,text	0	-
+function	json_object_field_text	json,text	0	-
+function	json_object_keys	json	0	-
+function	json_out	json	0	-
+function	json_populate_record	anyelement,json,bool	1	-
+function	json_populate_recordset	anyelement,json,bool	1	-
+function	json_recv	internal	0	-
+function	json_send	json	0	-
+function	json_strip_nulls	json,bool	1	-
+function	json_to_record	json	0	-
+function	json_to_recordset	json	0	-
+function	json_to_tsvector	json,jsonb	0	-
+function	json_to_tsvector	regconfig,json,jsonb	0	-
+function	json_typeof	json	0	-
+function	jsonb_agg	anyelement	0	-
+function	jsonb_agg_finalfn	internal	0	-
+function	jsonb_agg_strict	anyelement	0	-
+function	jsonb_agg_strict_transfn	internal,anyelement	0	-
+function	jsonb_agg_transfn	internal,anyelement	0	-
+function	jsonb_array_element	jsonb,int4	0	-
+function	jsonb_array_element_text	jsonb,int4	0	-
+function	jsonb_array_elements	jsonb	0	-
+function	jsonb_array_elements_text	jsonb	0	-
+function	jsonb_array_length	jsonb	0	-
+function	jsonb_build_array	-	0	-
+function	jsonb_build_array	any	0	any
+function	jsonb_build_object	-	0	-
+function	jsonb_build_object	any	0	any
+function	jsonb_cmp	jsonb,jsonb	0	-
+function	jsonb_concat	jsonb,jsonb	0	-
+function	jsonb_contained	jsonb,jsonb	0	-
+function	jsonb_contains	jsonb,jsonb	0	-
+function	jsonb_delete	jsonb,_text	0	text
+function	jsonb_delete	jsonb,int4	0	-
+function	jsonb_delete	jsonb,text	0	-
+function	jsonb_delete_path	jsonb,_text	0	-
+function	jsonb_each	jsonb	0	-
+function	jsonb_each_text	jsonb	0	-
+function	jsonb_eq	jsonb,jsonb	0	-
+function	jsonb_exists	jsonb,text	0	-
+function	jsonb_exists_all	jsonb,_text	0	-
+function	jsonb_exists_any	jsonb,_text	0	-
+function	jsonb_extract_path	jsonb,_text	0	text
+function	jsonb_extract_path_text	jsonb,_text	0	text
+function	jsonb_ge	jsonb,jsonb	0	-
+function	jsonb_gt	jsonb,jsonb	0	-
+function	jsonb_hash	jsonb	0	-
+function	jsonb_hash_extended	jsonb,int8	0	-
+function	jsonb_in	cstring	0	-
+function	jsonb_insert	jsonb,_text,jsonb,bool	1	-
+function	jsonb_le	jsonb,jsonb	0	-
+function	jsonb_lt	jsonb,jsonb	0	-
+function	jsonb_ne	jsonb,jsonb	0	-
+function	jsonb_object	_text	0	-
+function	jsonb_object	_text,_text	0	-
+function	jsonb_object_agg	any,any	0	-
+function	jsonb_object_agg_finalfn	internal	0	-
+function	jsonb_object_agg_strict	any,any	0	-
+function	jsonb_object_agg_strict_transfn	internal,any,any	0	-
+function	jsonb_object_agg_transfn	internal,any,any	0	-
+function	jsonb_object_agg_unique	any,any	0	-
+function	jsonb_object_agg_unique_strict	any,any	0	-
+function	jsonb_object_agg_unique_strict_transfn	internal,any,any	0	-
+function	jsonb_object_agg_unique_transfn	internal,any,any	0	-
+function	jsonb_object_field	jsonb,text	0	-
+function	jsonb_object_field_text	jsonb,text	0	-
+function	jsonb_object_keys	jsonb	0	-
+function	jsonb_out	jsonb	0	-
+function	jsonb_path_exists	jsonb,jsonpath,jsonb,bool	2	-
+function	jsonb_path_exists_opr	jsonb,jsonpath	0	-
+function	jsonb_path_exists_tz	jsonb,jsonpath,jsonb,bool	2	-
+function	jsonb_path_match	jsonb,jsonpath,jsonb,bool	2	-
+function	jsonb_path_match_opr	jsonb,jsonpath	0	-
+function	jsonb_path_match_tz	jsonb,jsonpath,jsonb,bool	2	-
+function	jsonb_path_query	jsonb,jsonpath,jsonb,bool	2	-
+function	jsonb_path_query_array	jsonb,jsonpath,jsonb,bool	2	-
+function	jsonb_path_query_array_tz	jsonb,jsonpath,jsonb,bool	2	-
+function	jsonb_path_query_first	jsonb,jsonpath,jsonb,bool	2	-
+function	jsonb_path_query_first_tz	jsonb,jsonpath,jsonb,bool	2	-
+function	jsonb_path_query_tz	jsonb,jsonpath,jsonb,bool	2	-
+function	jsonb_populate_record	anyelement,jsonb	0	-
+function	jsonb_populate_record_valid	anyelement,jsonb	0	-
+function	jsonb_populate_recordset	anyelement,jsonb	0	-
+function	jsonb_pretty	jsonb	0	-
+function	jsonb_recv	internal	0	-
+function	jsonb_send	jsonb	0	-
+function	jsonb_set	jsonb,_text,jsonb,bool	1	-
+function	jsonb_set_lax	jsonb,_text,jsonb,bool,text	2	-
+function	jsonb_strip_nulls	jsonb,bool	1	-
+function	jsonb_subscript_handler	internal	0	-
+function	jsonb_to_record	jsonb	0	-
+function	jsonb_to_recordset	jsonb	0	-
+function	jsonb_to_tsvector	jsonb,jsonb	0	-
+function	jsonb_to_tsvector	regconfig,jsonb,jsonb	0	-
+function	jsonb_typeof	jsonb	0	-
+function	jsonpath_in	cstring	0	-
+function	jsonpath_out	jsonpath	0	-
+function	jsonpath_recv	internal	0	-
+function	jsonpath_send	jsonpath	0	-
+function	justify_days	interval	0	-
+function	justify_hours	interval	0	-
+function	justify_interval	interval	0	-
+function	koi8r_to_iso	int4,int4,cstring,internal,int4,bool	0	-
+function	koi8r_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	koi8r_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	koi8r_to_win1251	int4,int4,cstring,internal,int4,bool	0	-
+function	koi8r_to_win866	int4,int4,cstring,internal,int4,bool	0	-
+function	koi8u_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	lag	anycompatible,int4,anycompatible	0	-
+function	lag	anyelement	0	-
+function	lag	anyelement,int4	0	-
+function	language_handler_in	cstring	0	-
+function	language_handler_out	language_handler	0	-
+function	last_value	anyelement	0	-
+function	lastval	-	0	-
+function	latin1_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	latin2_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	latin2_to_win1250	int4,int4,cstring,internal,int4,bool	0	-
+function	latin3_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	latin4_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	lcm	int4,int4	0	-
+function	lcm	int8,int8	0	-
+function	lcm	numeric,numeric	0	-
+function	lead	anycompatible,int4,anycompatible	0	-
+function	lead	anyelement	0	-
+function	lead	anyelement,int4	0	-
+function	left	text,int4	0	-
+function	length	bit	0	-
+function	length	bpchar	0	-
+function	length	bytea	0	-
+function	length	bytea,name	0	-
+function	length	lseg	0	-
+function	length	path	0	-
+function	length	text	0	-
+function	length	tsvector	0	-
+function	lgamma	float8	0	-
+function	like	bytea,bytea	0	-
+function	like	name,text	0	-
+function	like	text,text	0	-
+function	like_escape	bytea,bytea	0	-
+function	like_escape	text,text	0	-
+function	likejoinsel	internal,oid,internal,int2,internal	0	-
+function	likesel	internal,oid,internal,int4	0	-
+function	line	point,point	0	-
+function	line_distance	line,line	0	-
+function	line_eq	line,line	0	-
+function	line_horizontal	line	0	-
+function	line_in	cstring	0	-
+function	line_interpt	line,line	0	-
+function	line_intersect	line,line	0	-
+function	line_out	line	0	-
+function	line_parallel	line,line	0	-
+function	line_perp	line,line	0	-
+function	line_recv	internal	0	-
+function	line_send	line	0	-
+function	line_vertical	line	0	-
+function	ln	float8	0	-
+function	ln	numeric	0	-
+function	lo_close	int4	0	-
+function	lo_creat	int4	0	-
+function	lo_create	oid	0	-
+function	lo_export	oid,text	0	-
+function	lo_from_bytea	oid,bytea	0	-
+function	lo_get	oid	0	-
+function	lo_get	oid,int8,int4	0	-
+function	lo_import	text	0	-
+function	lo_import	text,oid	0	-
+function	lo_lseek	int4,int4,int4	0	-
+function	lo_lseek64	int4,int8,int4	0	-
+function	lo_open	oid,int4	0	-
+function	lo_put	oid,int8,bytea	0	-
+function	lo_tell	int4	0	-
+function	lo_tell64	int4	0	-
+function	lo_truncate	int4,int4	0	-
+function	lo_truncate64	int4,int8	0	-
+function	lo_unlink	oid	0	-
+function	log	float8	0	-
+function	log	numeric	0	-
+function	log	numeric,numeric	0	-
+function	log10	float8	0	-
+function	log10	numeric	0	-
+function	loread	int4,int4	0	-
+function	lower	anymultirange	0	-
+function	lower	anyrange	0	-
+function	lower	text	0	-
+function	lower_inc	anymultirange	0	-
+function	lower_inc	anyrange	0	-
+function	lower_inf	anymultirange	0	-
+function	lower_inf	anyrange	0	-
+function	lowrite	int4,bytea	0	-
+function	lpad	text,int4	0	-
+function	lpad	text,int4,text	0	-
+function	lseg	box	0	-
+function	lseg	point,point	0	-
+function	lseg_center	lseg	0	-
+function	lseg_distance	lseg,lseg	0	-
+function	lseg_eq	lseg,lseg	0	-
+function	lseg_ge	lseg,lseg	0	-
+function	lseg_gt	lseg,lseg	0	-
+function	lseg_horizontal	lseg	0	-
+function	lseg_in	cstring	0	-
+function	lseg_interpt	lseg,lseg	0	-
+function	lseg_intersect	lseg,lseg	0	-
+function	lseg_le	lseg,lseg	0	-
+function	lseg_length	lseg	0	-
+function	lseg_lt	lseg,lseg	0	-
+function	lseg_ne	lseg,lseg	0	-
+function	lseg_out	lseg	0	-
+function	lseg_parallel	lseg,lseg	0	-
+function	lseg_perp	lseg,lseg	0	-
+function	lseg_recv	internal	0	-
+function	lseg_send	lseg	0	-
+function	lseg_vertical	lseg	0	-
+function	ltrim	bytea,bytea	0	-
+function	ltrim	text	0	-
+function	ltrim	text,text	0	-
+function	macaddr	macaddr8	0	-
+function	macaddr8	macaddr	0	-
+function	macaddr8_and	macaddr8,macaddr8	0	-
+function	macaddr8_cmp	macaddr8,macaddr8	0	-
+function	macaddr8_eq	macaddr8,macaddr8	0	-
+function	macaddr8_ge	macaddr8,macaddr8	0	-
+function	macaddr8_gt	macaddr8,macaddr8	0	-
+function	macaddr8_in	cstring	0	-
+function	macaddr8_le	macaddr8,macaddr8	0	-
+function	macaddr8_lt	macaddr8,macaddr8	0	-
+function	macaddr8_ne	macaddr8,macaddr8	0	-
+function	macaddr8_not	macaddr8	0	-
+function	macaddr8_or	macaddr8,macaddr8	0	-
+function	macaddr8_out	macaddr8	0	-
+function	macaddr8_recv	internal	0	-
+function	macaddr8_send	macaddr8	0	-
+function	macaddr8_set7bit	macaddr8	0	-
+function	macaddr_and	macaddr,macaddr	0	-
+function	macaddr_cmp	macaddr,macaddr	0	-
+function	macaddr_eq	macaddr,macaddr	0	-
+function	macaddr_ge	macaddr,macaddr	0	-
+function	macaddr_gt	macaddr,macaddr	0	-
+function	macaddr_in	cstring	0	-
+function	macaddr_le	macaddr,macaddr	0	-
+function	macaddr_lt	macaddr,macaddr	0	-
+function	macaddr_ne	macaddr,macaddr	0	-
+function	macaddr_not	macaddr	0	-
+function	macaddr_or	macaddr,macaddr	0	-
+function	macaddr_out	macaddr	0	-
+function	macaddr_recv	internal	0	-
+function	macaddr_send	macaddr	0	-
+function	macaddr_sortsupport	internal	0	-
+function	make_date	int4,int4,int4	0	-
+function	make_interval	int4,int4,int4,int4,int4,int4,float8	7	-
+function	make_time	int4,int4,float8	0	-
+function	make_timestamp	int4,int4,int4,int4,int4,float8	0	-
+function	make_timestamptz	int4,int4,int4,int4,int4,float8	0	-
+function	make_timestamptz	int4,int4,int4,int4,int4,float8,text	0	-
+function	makeaclitem	oid,oid,text,bool	0	-
+function	masklen	inet	0	-
+function	matchingjoinsel	internal,oid,internal,int2,internal	0	-
+function	matchingsel	internal,oid,internal,int4	0	-
+function	max	anyarray	0	-
+function	max	anyenum	0	-
+function	max	bpchar	0	-
+function	max	bytea	0	-
+function	max	date	0	-
+function	max	float4	0	-
+function	max	float8	0	-
+function	max	inet	0	-
+function	max	int2	0	-
+function	max	int4	0	-
+function	max	int8	0	-
+function	max	interval	0	-
+function	max	money	0	-
+function	max	numeric	0	-
+function	max	oid	0	-
+function	max	pg_lsn	0	-
+function	max	record	0	-
+function	max	text	0	-
+function	max	tid	0	-
+function	max	time	0	-
+function	max	timestamp	0	-
+function	max	timestamptz	0	-
+function	max	timetz	0	-
+function	max	xid8	0	-
+function	md5	bytea	0	-
+function	md5	text	0	-
+function	mic_to_big5	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_euc_cn	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_euc_jp	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_euc_kr	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_euc_tw	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_iso	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_koi8r	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_latin1	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_latin2	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_latin3	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_latin4	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_sjis	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_win1250	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_win1251	int4,int4,cstring,internal,int4,bool	0	-
+function	mic_to_win866	int4,int4,cstring,internal,int4,bool	0	-
+function	min	anyarray	0	-
+function	min	anyenum	0	-
+function	min	bpchar	0	-
+function	min	bytea	0	-
+function	min	date	0	-
+function	min	float4	0	-
+function	min	float8	0	-
+function	min	inet	0	-
+function	min	int2	0	-
+function	min	int4	0	-
+function	min	int8	0	-
+function	min	interval	0	-
+function	min	money	0	-
+function	min	numeric	0	-
+function	min	oid	0	-
+function	min	pg_lsn	0	-
+function	min	record	0	-
+function	min	text	0	-
+function	min	tid	0	-
+function	min	time	0	-
+function	min	timestamp	0	-
+function	min	timestamptz	0	-
+function	min	timetz	0	-
+function	min	xid8	0	-
+function	min_scale	numeric	0	-
+function	mod	int2,int2	0	-
+function	mod	int4,int4	0	-
+function	mod	int8,int8	0	-
+function	mod	numeric,numeric	0	-
+function	mode	anyelement	0	-
+function	mode_final	internal,anyelement	0	-
+function	money	int4	0	-
+function	money	int8	0	-
+function	money	numeric	0	-
+function	mul_d_interval	float8,interval	0	-
+function	multirange	anyrange	0	-
+function	multirange_adjacent_multirange	anymultirange,anymultirange	0	-
+function	multirange_adjacent_range	anymultirange,anyrange	0	-
+function	multirange_after_multirange	anymultirange,anymultirange	0	-
+function	multirange_after_range	anymultirange,anyrange	0	-
+function	multirange_agg_finalfn	internal,anymultirange	0	-
+function	multirange_agg_transfn	internal,anymultirange	0	-
+function	multirange_before_multirange	anymultirange,anymultirange	0	-
+function	multirange_before_range	anymultirange,anyrange	0	-
+function	multirange_cmp	anymultirange,anymultirange	0	-
+function	multirange_contained_by_multirange	anymultirange,anymultirange	0	-
+function	multirange_contained_by_range	anymultirange,anyrange	0	-
+function	multirange_contains_elem	anymultirange,anyelement	0	-
+function	multirange_contains_multirange	anymultirange,anymultirange	0	-
+function	multirange_contains_range	anymultirange,anyrange	0	-
+function	multirange_eq	anymultirange,anymultirange	0	-
+function	multirange_ge	anymultirange,anymultirange	0	-
+function	multirange_gist_compress	internal	0	-
+function	multirange_gist_consistent	internal,anymultirange,int2,oid,internal	0	-
+function	multirange_gt	anymultirange,anymultirange	0	-
+function	multirange_in	cstring,oid,int4	0	-
+function	multirange_intersect	anymultirange,anymultirange	0	-
+function	multirange_intersect_agg_transfn	anymultirange,anymultirange	0	-
+function	multirange_le	anymultirange,anymultirange	0	-
+function	multirange_lt	anymultirange,anymultirange	0	-
+function	multirange_minus	anymultirange,anymultirange	0	-
+function	multirange_ne	anymultirange,anymultirange	0	-
+function	multirange_out	anymultirange	0	-
+function	multirange_overlaps_multirange	anymultirange,anymultirange	0	-
+function	multirange_overlaps_range	anymultirange,anyrange	0	-
+function	multirange_overleft_multirange	anymultirange,anymultirange	0	-
+function	multirange_overleft_range	anymultirange,anyrange	0	-
+function	multirange_overright_multirange	anymultirange,anymultirange	0	-
+function	multirange_overright_range	anymultirange,anyrange	0	-
+function	multirange_recv	internal,oid,int4	0	-
+function	multirange_send	anymultirange	0	-
+function	multirange_typanalyze	internal	0	-
+function	multirange_union	anymultirange,anymultirange	0	-
+function	multirangesel	internal,oid,internal,int4	0	-
+function	mxid_age	xid	0	-
+function	name	bpchar	0	-
+function	name	text	0	-
+function	name	varchar	0	-
+function	nameconcatoid	name,oid	0	-
+function	nameeq	name,name	0	-
+function	nameeqtext	name,text	0	-
+function	namege	name,name	0	-
+function	namegetext	name,text	0	-
+function	namegt	name,name	0	-
+function	namegttext	name,text	0	-
+function	nameiclike	name,text	0	-
+function	nameicnlike	name,text	0	-
+function	nameicregexeq	name,text	0	-
+function	nameicregexne	name,text	0	-
+function	namein	cstring	0	-
+function	namele	name,name	0	-
+function	nameletext	name,text	0	-
+function	namelike	name,text	0	-
+function	namelt	name,name	0	-
+function	namelttext	name,text	0	-
+function	namene	name,name	0	-
+function	namenetext	name,text	0	-
+function	namenlike	name,text	0	-
+function	nameout	name	0	-
+function	namerecv	internal	0	-
+function	nameregexeq	name,text	0	-
+function	nameregexne	name,text	0	-
+function	namesend	name	0	-
+function	neqjoinsel	internal,oid,internal,int2,internal	0	-
+function	neqsel	internal,oid,internal,int4	0	-
+function	netmask	inet	0	-
+function	network	inet	0	-
+function	network_cmp	inet,inet	0	-
+function	network_eq	inet,inet	0	-
+function	network_ge	inet,inet	0	-
+function	network_gt	inet,inet	0	-
+function	network_larger	inet,inet	0	-
+function	network_le	inet,inet	0	-
+function	network_lt	inet,inet	0	-
+function	network_ne	inet,inet	0	-
+function	network_overlap	inet,inet	0	-
+function	network_smaller	inet,inet	0	-
+function	network_sortsupport	internal	0	-
+function	network_sub	inet,inet	0	-
+function	network_subeq	inet,inet	0	-
+function	network_subset_support	internal	0	-
+function	network_sup	inet,inet	0	-
+function	network_supeq	inet,inet	0	-
+function	networkjoinsel	internal,oid,internal,int2,internal	0	-
+function	networksel	internal,oid,internal,int4	0	-
+function	nextval	regclass	0	-
+function	nlikejoinsel	internal,oid,internal,int2,internal	0	-
+function	nlikesel	internal,oid,internal,int4	0	-
+function	normalize	text,text	1	-
+function	notlike	bytea,bytea	0	-
+function	notlike	name,text	0	-
+function	notlike	text,text	0	-
+function	now	-	0	-
+function	npoints	path	0	-
+function	npoints	polygon	0	-
+function	nth_value	anyelement,int4	0	-
+function	ntile	int4	0	-
+function	num_nonnulls	any	0	any
+function	num_nulls	any	0	any
+function	numeric	float4	0	-
+function	numeric	float8	0	-
+function	numeric	int2	0	-
+function	numeric	int4	0	-
+function	numeric	int8	0	-
+function	numeric	jsonb	0	-
+function	numeric	money	0	-
+function	numeric	numeric,int4	0	-
+function	numeric_abs	numeric	0	-
+function	numeric_accum	internal,numeric	0	-
+function	numeric_accum_inv	internal,numeric	0	-
+function	numeric_add	numeric,numeric	0	-
+function	numeric_avg	internal	0	-
+function	numeric_avg_accum	internal,numeric	0	-
+function	numeric_avg_combine	internal,internal	0	-
+function	numeric_avg_deserialize	bytea,internal	0	-
+function	numeric_avg_serialize	internal	0	-
+function	numeric_cmp	numeric,numeric	0	-
+function	numeric_combine	internal,internal	0	-
+function	numeric_deserialize	bytea,internal	0	-
+function	numeric_div	numeric,numeric	0	-
+function	numeric_div_trunc	numeric,numeric	0	-
+function	numeric_eq	numeric,numeric	0	-
+function	numeric_exp	numeric	0	-
+function	numeric_ge	numeric,numeric	0	-
+function	numeric_gt	numeric,numeric	0	-
+function	numeric_in	cstring,oid,int4	0	-
+function	numeric_inc	numeric	0	-
+function	numeric_larger	numeric,numeric	0	-
+function	numeric_le	numeric,numeric	0	-
+function	numeric_ln	numeric	0	-
+function	numeric_log	numeric,numeric	0	-
+function	numeric_lt	numeric,numeric	0	-
+function	numeric_mod	numeric,numeric	0	-
+function	numeric_mul	numeric,numeric	0	-
+function	numeric_ne	numeric,numeric	0	-
+function	numeric_out	numeric	0	-
+function	numeric_pl_pg_lsn	numeric,pg_lsn	0	-
+function	numeric_poly_avg	internal	0	-
+function	numeric_poly_combine	internal,internal	0	-
+function	numeric_poly_deserialize	bytea,internal	0	-
+function	numeric_poly_serialize	internal	0	-
+function	numeric_poly_stddev_pop	internal	0	-
+function	numeric_poly_stddev_samp	internal	0	-
+function	numeric_poly_sum	internal	0	-
+function	numeric_poly_var_pop	internal	0	-
+function	numeric_poly_var_samp	internal	0	-
+function	numeric_power	numeric,numeric	0	-
+function	numeric_recv	internal,oid,int4	0	-
+function	numeric_send	numeric	0	-
+function	numeric_serialize	internal	0	-
+function	numeric_smaller	numeric,numeric	0	-
+function	numeric_sortsupport	internal	0	-
+function	numeric_sqrt	numeric	0	-
+function	numeric_stddev_pop	internal	0	-
+function	numeric_stddev_samp	internal	0	-
+function	numeric_sub	numeric,numeric	0	-
+function	numeric_sum	internal	0	-
+function	numeric_support	internal	0	-
+function	numeric_uminus	numeric	0	-
+function	numeric_uplus	numeric	0	-
+function	numeric_var_pop	internal	0	-
+function	numeric_var_samp	internal	0	-
+function	numerictypmodin	_cstring	0	-
+function	numerictypmodout	int4	0	-
+function	nummultirange	-	0	-
+function	nummultirange	_numrange	0	numrange
+function	nummultirange	numrange	0	-
+function	numnode	tsquery	0	-
+function	numrange	numeric,numeric	0	-
+function	numrange	numeric,numeric,text	0	-
+function	numrange_subdiff	numeric,numeric	0	-
+function	obj_description	oid	0	-
+function	obj_description	oid,name	0	-
+function	octet_length	bit	0	-
+function	octet_length	bpchar	0	-
+function	octet_length	bytea	0	-
+function	octet_length	text	0	-
+function	oid	int8	0	-
+function	oideq	oid,oid	0	-
+function	oidge	oid,oid	0	-
+function	oidgt	oid,oid	0	-
+function	oidin	cstring	0	-
+function	oidlarger	oid,oid	0	-
+function	oidle	oid,oid	0	-
+function	oidlt	oid,oid	0	-
+function	oidne	oid,oid	0	-
+function	oidout	oid	0	-
+function	oidrecv	internal	0	-
+function	oidsend	oid	0	-
+function	oidsmaller	oid,oid	0	-
+function	oidvectoreq	oidvector,oidvector	0	-
+function	oidvectorge	oidvector,oidvector	0	-
+function	oidvectorgt	oidvector,oidvector	0	-
+function	oidvectorin	cstring	0	-
+function	oidvectorle	oidvector,oidvector	0	-
+function	oidvectorlt	oidvector,oidvector	0	-
+function	oidvectorne	oidvector,oidvector	0	-
+function	oidvectorout	oidvector	0	-
+function	oidvectorrecv	internal	0	-
+function	oidvectorsend	oidvector	0	-
+function	oidvectortypes	oidvector	0	-
+function	on_pb	point,box	0	-
+function	on_pl	point,line	0	-
+function	on_ppath	point,path	0	-
+function	on_ps	point,lseg	0	-
+function	on_sb	lseg,box	0	-
+function	on_sl	lseg,line	0	-
+function	ordered_set_transition	internal,any	0	-
+function	ordered_set_transition_multi	internal,any	0	any
+function	overlaps	time,interval,time,interval	0	-
+function	overlaps	time,interval,time,time	0	-
+function	overlaps	time,time,time,interval	0	-
+function	overlaps	time,time,time,time	0	-
+function	overlaps	timestamp,interval,timestamp,interval	0	-
+function	overlaps	timestamp,interval,timestamp,timestamp	0	-
+function	overlaps	timestamp,timestamp,timestamp,interval	0	-
+function	overlaps	timestamp,timestamp,timestamp,timestamp	0	-
+function	overlaps	timestamptz,interval,timestamptz,interval	0	-
+function	overlaps	timestamptz,interval,timestamptz,timestamptz	0	-
+function	overlaps	timestamptz,timestamptz,timestamptz,interval	0	-
+function	overlaps	timestamptz,timestamptz,timestamptz,timestamptz	0	-
+function	overlaps	timetz,timetz,timetz,timetz	0	-
+function	overlay	bit,bit,int4	0	-
+function	overlay	bit,bit,int4,int4	0	-
+function	overlay	bytea,bytea,int4	0	-
+function	overlay	bytea,bytea,int4,int4	0	-
+function	overlay	text,text,int4	0	-
+function	overlay	text,text,int4,int4	0	-
+function	parse_ident	text,bool	1	-
+function	path	polygon	0	-
+function	path_add	path,path	0	-
+function	path_add_pt	path,point	0	-
+function	path_contain_pt	path,point	0	-
+function	path_distance	path,path	0	-
+function	path_div_pt	path,point	0	-
+function	path_in	cstring	0	-
+function	path_inter	path,path	0	-
+function	path_length	path	0	-
+function	path_mul_pt	path,point	0	-
+function	path_n_eq	path,path	0	-
+function	path_n_ge	path,path	0	-
+function	path_n_gt	path,path	0	-
+function	path_n_le	path,path	0	-
+function	path_n_lt	path,path	0	-
+function	path_npoints	path	0	-
+function	path_out	path	0	-
+function	path_recv	internal	0	-
+function	path_send	path	0	-
+function	path_sub_pt	path,point	0	-
+function	pclose	path	0	-
+function	percent_rank	-	0	-
+function	percent_rank	any	0	any
+function	percent_rank_final	internal,any	0	any
+function	percentile_cont	_float8,float8	0	-
+function	percentile_cont	_float8,interval	0	-
+function	percentile_cont	float8,float8	0	-
+function	percentile_cont	float8,interval	0	-
+function	percentile_cont_float8_final	internal,float8	0	-
+function	percentile_cont_float8_multi_final	internal,_float8	0	-
+function	percentile_cont_interval_final	internal,float8	0	-
+function	percentile_cont_interval_multi_final	internal,_float8	0	-
+function	percentile_disc	_float8,anyelement	0	-
+function	percentile_disc	float8,anyelement	0	-
+function	percentile_disc_final	internal,float8,anyelement	0	-
+function	percentile_disc_multi_final	internal,_float8,anyelement	0	-
+function	pg_advisory_lock	int4,int4	0	-
+function	pg_advisory_lock	int8	0	-
+function	pg_advisory_lock_shared	int4,int4	0	-
+function	pg_advisory_lock_shared	int8	0	-
+function	pg_advisory_unlock	int4,int4	0	-
+function	pg_advisory_unlock	int8	0	-
+function	pg_advisory_unlock_all	-	0	-
+function	pg_advisory_unlock_shared	int4,int4	0	-
+function	pg_advisory_unlock_shared	int8	0	-
+function	pg_advisory_xact_lock	int4,int4	0	-
+function	pg_advisory_xact_lock	int8	0	-
+function	pg_advisory_xact_lock_shared	int4,int4	0	-
+function	pg_advisory_xact_lock_shared	int8	0	-
+function	pg_available_extension_versions	-	0	-
+function	pg_available_extensions	-	0	-
+function	pg_available_wal_summaries	-	0	-
+function	pg_backend_pid	-	0	-
+function	pg_backup_start	text,bool	1	-
+function	pg_backup_stop	bool	1	-
+function	pg_basetype	regtype	0	-
+function	pg_blocking_pids	int4	0	-
+function	pg_cancel_backend	int4	0	-
+function	pg_char_to_encoding	name	0	-
+function	pg_clear_attribute_stats	text,text,text,bool	0	-
+function	pg_clear_relation_stats	text,text	0	-
+function	pg_client_encoding	-	0	-
+function	pg_collation_actual_version	oid	0	-
+function	pg_collation_for	any	0	-
+function	pg_collation_is_visible	oid	0	-
+function	pg_column_compression	any	0	-
+function	pg_column_is_updatable	regclass,int2,bool	0	-
+function	pg_column_size	any	0	-
+function	pg_column_toast_chunk_id	any	0	-
+function	pg_conf_load_time	-	0	-
+function	pg_config	-	0	-
+function	pg_control_checkpoint	-	0	-
+function	pg_control_init	-	0	-
+function	pg_control_recovery	-	0	-
+function	pg_control_system	-	0	-
+function	pg_conversion_is_visible	oid	0	-
+function	pg_copy_logical_replication_slot	name,name	0	-
+function	pg_copy_logical_replication_slot	name,name,bool	0	-
+function	pg_copy_logical_replication_slot	name,name,bool,name	0	-
+function	pg_copy_physical_replication_slot	name,name	0	-
+function	pg_copy_physical_replication_slot	name,name,bool	0	-
+function	pg_create_logical_replication_slot	name,name,bool,bool,bool	3	-
+function	pg_create_physical_replication_slot	name,bool,bool	2	-
+function	pg_create_restore_point	text	0	-
+function	pg_current_logfile	-	0	-
+function	pg_current_logfile	text	0	-
+function	pg_current_snapshot	-	0	-
+function	pg_current_wal_flush_lsn	-	0	-
+function	pg_current_wal_insert_lsn	-	0	-
+function	pg_current_wal_lsn	-	0	-
+function	pg_current_xact_id	-	0	-
+function	pg_current_xact_id_if_assigned	-	0	-
+function	pg_cursor	-	0	-
+function	pg_database_collation_actual_version	oid	0	-
+function	pg_database_size	name	0	-
+function	pg_database_size	oid	0	-
+function	pg_ddl_command_in	cstring	0	-
+function	pg_ddl_command_out	pg_ddl_command	0	-
+function	pg_ddl_command_recv	internal	0	-
+function	pg_ddl_command_send	pg_ddl_command	0	-
+function	pg_dependencies_in	cstring	0	-
+function	pg_dependencies_out	pg_dependencies	0	-
+function	pg_dependencies_recv	internal	0	-
+function	pg_dependencies_send	pg_dependencies	0	-
+function	pg_describe_object	oid,oid,int4	0	-
+function	pg_drop_replication_slot	name	0	-
+function	pg_encoding_max_length	int4	0	-
+function	pg_encoding_to_char	int4	0	-
+function	pg_event_trigger_ddl_commands	-	0	-
+function	pg_event_trigger_dropped_objects	-	0	-
+function	pg_event_trigger_table_rewrite_oid	-	0	-
+function	pg_event_trigger_table_rewrite_reason	-	0	-
+function	pg_export_snapshot	-	0	-
+function	pg_extension_config_dump	regclass,text	0	-
+function	pg_extension_update_paths	name	0	-
+function	pg_filenode_relation	oid,oid	0	-
+function	pg_function_is_visible	oid	0	-
+function	pg_get_acl	oid,oid,int4	0	-
+function	pg_get_aios	-	0	-
+function	pg_get_backend_memory_contexts	-	0	-
+function	pg_get_catalog_foreign_keys	-	0	-
+function	pg_get_constraintdef	oid	0	-
+function	pg_get_constraintdef	oid,bool	0	-
+function	pg_get_expr	pg_node_tree,oid	0	-
+function	pg_get_expr	pg_node_tree,oid,bool	0	-
+function	pg_get_function_arg_default	oid,int4	0	-
+function	pg_get_function_arguments	oid	0	-
+function	pg_get_function_identity_arguments	oid	0	-
+function	pg_get_function_result	oid	0	-
+function	pg_get_function_sqlbody	oid	0	-
+function	pg_get_functiondef	oid	0	-
+function	pg_get_indexdef	oid	0	-
+function	pg_get_indexdef	oid,int4,bool	0	-
+function	pg_get_keywords	-	0	-
+function	pg_get_loaded_modules	-	0	-
+function	pg_get_multixact_members	xid	0	-
+function	pg_get_object_address	text,_text,_text	0	-
+function	pg_get_partition_constraintdef	oid	0	-
+function	pg_get_partkeydef	oid	0	-
+function	pg_get_publication_tables	_text	0	text
+function	pg_get_replica_identity_index	regclass	0	-
+function	pg_get_replication_slots	-	0	-
+function	pg_get_ruledef	oid	0	-
+function	pg_get_ruledef	oid,bool	0	-
+function	pg_get_sequence_data	regclass	0	-
+function	pg_get_serial_sequence	text,text	0	-
+function	pg_get_shmem_allocations	-	0	-
+function	pg_get_shmem_allocations_numa	-	0	-
+function	pg_get_statisticsobjdef	oid	0	-
+function	pg_get_statisticsobjdef_columns	oid	0	-
+function	pg_get_statisticsobjdef_expressions	oid	0	-
+function	pg_get_triggerdef	oid	0	-
+function	pg_get_triggerdef	oid,bool	0	-
+function	pg_get_userbyid	oid	0	-
+function	pg_get_viewdef	oid	0	-
+function	pg_get_viewdef	oid,bool	0	-
+function	pg_get_viewdef	oid,int4	0	-
+function	pg_get_viewdef	text	0	-
+function	pg_get_viewdef	text,bool	0	-
+function	pg_get_wait_events	-	0	-
+function	pg_get_wal_replay_pause_state	-	0	-
+function	pg_get_wal_resource_managers	-	0	-
+function	pg_get_wal_summarizer_state	-	0	-
+function	pg_has_role	name,name,text	0	-
+function	pg_has_role	name,oid,text	0	-
+function	pg_has_role	name,text	0	-
+function	pg_has_role	oid,name,text	0	-
+function	pg_has_role	oid,oid,text	0	-
+function	pg_has_role	oid,text	0	-
+function	pg_hba_file_rules	-	0	-
+function	pg_ident_file_mappings	-	0	-
+function	pg_identify_object	oid,oid,int4	0	-
+function	pg_identify_object_as_address	oid,oid,int4	0	-
+function	pg_import_system_collations	regnamespace	0	-
+function	pg_index_column_has_property	regclass,int4,text	0	-
+function	pg_index_has_property	regclass,text	0	-
+function	pg_indexam_has_property	oid,text	0	-
+function	pg_indexam_progress_phasename	oid,int8	0	-
+function	pg_indexes_size	regclass	0	-
+function	pg_input_error_info	text,text	0	-
+function	pg_input_is_valid	text,text	0	-
+function	pg_is_in_recovery	-	0	-
+function	pg_is_other_temp_schema	oid	0	-
+function	pg_is_wal_replay_paused	-	0	-
+function	pg_isolation_test_session_is_blocked	int4,_int4	0	-
+function	pg_jit_available	-	0	-
+function	pg_last_committed_xact	-	0	-
+function	pg_last_wal_receive_lsn	-	0	-
+function	pg_last_wal_replay_lsn	-	0	-
+function	pg_last_xact_replay_timestamp	-	0	-
+function	pg_listening_channels	-	0	-
+function	pg_lock_status	-	0	-
+function	pg_log_backend_memory_contexts	int4	0	-
+function	pg_log_standby_snapshot	-	0	-
+function	pg_logical_emit_message	bool,text,bytea,bool	1	-
+function	pg_logical_emit_message	bool,text,text,bool	1	-
+function	pg_logical_slot_get_binary_changes	name,pg_lsn,int4,_text	1	text
+function	pg_logical_slot_get_changes	name,pg_lsn,int4,_text	1	text
+function	pg_logical_slot_peek_binary_changes	name,pg_lsn,int4,_text	1	text
+function	pg_logical_slot_peek_changes	name,pg_lsn,int4,_text	1	text
+function	pg_ls_archive_statusdir	-	0	-
+function	pg_ls_dir	text	0	-
+function	pg_ls_dir	text,bool,bool	0	-
+function	pg_ls_logdir	-	0	-
+function	pg_ls_logicalmapdir	-	0	-
+function	pg_ls_logicalsnapdir	-	0	-
+function	pg_ls_replslotdir	text	0	-
+function	pg_ls_summariesdir	-	0	-
+function	pg_ls_tmpdir	-	0	-
+function	pg_ls_tmpdir	oid	0	-
+function	pg_ls_waldir	-	0	-
+function	pg_lsn	numeric	0	-
+function	pg_lsn_cmp	pg_lsn,pg_lsn	0	-
+function	pg_lsn_eq	pg_lsn,pg_lsn	0	-
+function	pg_lsn_ge	pg_lsn,pg_lsn	0	-
+function	pg_lsn_gt	pg_lsn,pg_lsn	0	-
+function	pg_lsn_hash	pg_lsn	0	-
+function	pg_lsn_hash_extended	pg_lsn,int8	0	-
+function	pg_lsn_in	cstring	0	-
+function	pg_lsn_larger	pg_lsn,pg_lsn	0	-
+function	pg_lsn_le	pg_lsn,pg_lsn	0	-
+function	pg_lsn_lt	pg_lsn,pg_lsn	0	-
+function	pg_lsn_mi	pg_lsn,pg_lsn	0	-
+function	pg_lsn_mii	pg_lsn,numeric	0	-
+function	pg_lsn_ne	pg_lsn,pg_lsn	0	-
+function	pg_lsn_out	pg_lsn	0	-
+function	pg_lsn_pli	pg_lsn,numeric	0	-
+function	pg_lsn_recv	internal	0	-
+function	pg_lsn_send	pg_lsn	0	-
+function	pg_lsn_smaller	pg_lsn,pg_lsn	0	-
+function	pg_mcv_list_in	cstring	0	-
+function	pg_mcv_list_items	pg_mcv_list	0	-
+function	pg_mcv_list_out	pg_mcv_list	0	-
+function	pg_mcv_list_recv	internal	0	-
+function	pg_mcv_list_send	pg_mcv_list	0	-
+function	pg_my_temp_schema	-	0	-
+function	pg_ndistinct_in	cstring	0	-
+function	pg_ndistinct_out	pg_ndistinct	0	-
+function	pg_ndistinct_recv	internal	0	-
+function	pg_ndistinct_send	pg_ndistinct	0	-
+function	pg_nextoid	regclass,name,regclass	0	-
+function	pg_node_tree_in	cstring	0	-
+function	pg_node_tree_out	pg_node_tree	0	-
+function	pg_node_tree_recv	internal	0	-
+function	pg_node_tree_send	pg_node_tree	0	-
+function	pg_notification_queue_usage	-	0	-
+function	pg_notify	text,text	0	-
+function	pg_numa_available	-	0	-
+function	pg_opclass_is_visible	oid	0	-
+function	pg_operator_is_visible	oid	0	-
+function	pg_opfamily_is_visible	oid	0	-
+function	pg_options_to_table	_text	0	-
+function	pg_partition_ancestors	regclass	0	-
+function	pg_partition_root	regclass	0	-
+function	pg_partition_tree	regclass	0	-
+function	pg_postmaster_start_time	-	0	-
+function	pg_prepared_statement	-	0	-
+function	pg_prepared_xact	-	0	-
+function	pg_promote	bool,int4	2	-
+function	pg_read_binary_file	text	0	-
+function	pg_read_binary_file	text,bool	0	-
+function	pg_read_binary_file	text,int8,int8	0	-
+function	pg_read_binary_file	text,int8,int8,bool	0	-
+function	pg_read_file	text	0	-
+function	pg_read_file	text,bool	0	-
+function	pg_read_file	text,int8,int8	0	-
+function	pg_read_file	text,int8,int8,bool	0	-
+function	pg_relation_filenode	regclass	0	-
+function	pg_relation_filepath	regclass	0	-
+function	pg_relation_is_publishable	regclass	0	-
+function	pg_relation_is_updatable	regclass,bool	0	-
+function	pg_relation_size	regclass	0	-
+function	pg_relation_size	regclass,text	0	-
+function	pg_reload_conf	-	0	-
+function	pg_replication_origin_advance	text,pg_lsn	0	-
+function	pg_replication_origin_create	text	0	-
+function	pg_replication_origin_drop	text	0	-
+function	pg_replication_origin_oid	text	0	-
+function	pg_replication_origin_progress	text,bool	0	-
+function	pg_replication_origin_session_is_setup	-	0	-
+function	pg_replication_origin_session_progress	bool	0	-
+function	pg_replication_origin_session_reset	-	0	-
+function	pg_replication_origin_session_setup	text	0	-
+function	pg_replication_origin_xact_reset	-	0	-
+function	pg_replication_origin_xact_setup	pg_lsn,timestamptz	0	-
+function	pg_replication_slot_advance	name,pg_lsn	0	-
+function	pg_restore_attribute_stats	any	0	any
+function	pg_restore_relation_stats	any	0	any
+function	pg_rotate_logfile	-	0	-
+function	pg_safe_snapshot_blocking_pids	int4	0	-
+function	pg_sequence_last_value	regclass	0	-
+function	pg_sequence_parameters	oid	0	-
+function	pg_settings_get_flags	text	0	-
+function	pg_show_all_file_settings	-	0	-
+function	pg_show_all_settings	-	0	-
+function	pg_show_replication_origin_status	-	0	-
+function	pg_size_bytes	text	0	-
+function	pg_size_pretty	int8	0	-
+function	pg_size_pretty	numeric	0	-
+function	pg_sleep	float8	0	-
+function	pg_sleep_for	interval	0	-
+function	pg_sleep_until	timestamptz	0	-
+function	pg_snapshot_in	cstring	0	-
+function	pg_snapshot_out	pg_snapshot	0	-
+function	pg_snapshot_recv	internal	0	-
+function	pg_snapshot_send	pg_snapshot	0	-
+function	pg_snapshot_xip	pg_snapshot	0	-
+function	pg_snapshot_xmax	pg_snapshot	0	-
+function	pg_snapshot_xmin	pg_snapshot	0	-
+function	pg_split_walfile_name	text	0	-
+function	pg_stat_clear_snapshot	-	0	-
+function	pg_stat_file	text	0	-
+function	pg_stat_file	text,bool	0	-
+function	pg_stat_force_next_flush	-	0	-
+function	pg_stat_get_activity	int4	0	-
+function	pg_stat_get_analyze_count	oid	0	-
+function	pg_stat_get_archiver	-	0	-
+function	pg_stat_get_autoanalyze_count	oid	0	-
+function	pg_stat_get_autovacuum_count	oid	0	-
+function	pg_stat_get_backend_activity	int4	0	-
+function	pg_stat_get_backend_activity_start	int4	0	-
+function	pg_stat_get_backend_client_addr	int4	0	-
+function	pg_stat_get_backend_client_port	int4	0	-
+function	pg_stat_get_backend_dbid	int4	0	-
+function	pg_stat_get_backend_idset	-	0	-
+function	pg_stat_get_backend_io	int4	0	-
+function	pg_stat_get_backend_pid	int4	0	-
+function	pg_stat_get_backend_start	int4	0	-
+function	pg_stat_get_backend_subxact	int4	0	-
+function	pg_stat_get_backend_userid	int4	0	-
+function	pg_stat_get_backend_wait_event	int4	0	-
+function	pg_stat_get_backend_wait_event_type	int4	0	-
+function	pg_stat_get_backend_wal	int4	0	-
+function	pg_stat_get_backend_xact_start	int4	0	-
+function	pg_stat_get_bgwriter_buf_written_clean	-	0	-
+function	pg_stat_get_bgwriter_maxwritten_clean	-	0	-
+function	pg_stat_get_bgwriter_stat_reset_time	-	0	-
+function	pg_stat_get_blocks_fetched	oid	0	-
+function	pg_stat_get_blocks_hit	oid	0	-
+function	pg_stat_get_buf_alloc	-	0	-
+function	pg_stat_get_checkpointer_buffers_written	-	0	-
+function	pg_stat_get_checkpointer_num_performed	-	0	-
+function	pg_stat_get_checkpointer_num_requested	-	0	-
+function	pg_stat_get_checkpointer_num_timed	-	0	-
+function	pg_stat_get_checkpointer_restartpoints_performed	-	0	-
+function	pg_stat_get_checkpointer_restartpoints_requested	-	0	-
+function	pg_stat_get_checkpointer_restartpoints_timed	-	0	-
+function	pg_stat_get_checkpointer_slru_written	-	0	-
+function	pg_stat_get_checkpointer_stat_reset_time	-	0	-
+function	pg_stat_get_checkpointer_sync_time	-	0	-
+function	pg_stat_get_checkpointer_write_time	-	0	-
+function	pg_stat_get_db_active_time	oid	0	-
+function	pg_stat_get_db_blk_read_time	oid	0	-
+function	pg_stat_get_db_blk_write_time	oid	0	-
+function	pg_stat_get_db_blocks_fetched	oid	0	-
+function	pg_stat_get_db_blocks_hit	oid	0	-
+function	pg_stat_get_db_checksum_failures	oid	0	-
+function	pg_stat_get_db_checksum_last_failure	oid	0	-
+function	pg_stat_get_db_conflict_all	oid	0	-
+function	pg_stat_get_db_conflict_bufferpin	oid	0	-
+function	pg_stat_get_db_conflict_lock	oid	0	-
+function	pg_stat_get_db_conflict_logicalslot	oid	0	-
+function	pg_stat_get_db_conflict_snapshot	oid	0	-
+function	pg_stat_get_db_conflict_startup_deadlock	oid	0	-
+function	pg_stat_get_db_conflict_tablespace	oid	0	-
+function	pg_stat_get_db_deadlocks	oid	0	-
+function	pg_stat_get_db_idle_in_transaction_time	oid	0	-
+function	pg_stat_get_db_numbackends	oid	0	-
+function	pg_stat_get_db_parallel_workers_launched	oid	0	-
+function	pg_stat_get_db_parallel_workers_to_launch	oid	0	-
+function	pg_stat_get_db_session_time	oid	0	-
+function	pg_stat_get_db_sessions	oid	0	-
+function	pg_stat_get_db_sessions_abandoned	oid	0	-
+function	pg_stat_get_db_sessions_fatal	oid	0	-
+function	pg_stat_get_db_sessions_killed	oid	0	-
+function	pg_stat_get_db_stat_reset_time	oid	0	-
+function	pg_stat_get_db_temp_bytes	oid	0	-
+function	pg_stat_get_db_temp_files	oid	0	-
+function	pg_stat_get_db_tuples_deleted	oid	0	-
+function	pg_stat_get_db_tuples_fetched	oid	0	-
+function	pg_stat_get_db_tuples_inserted	oid	0	-
+function	pg_stat_get_db_tuples_returned	oid	0	-
+function	pg_stat_get_db_tuples_updated	oid	0	-
+function	pg_stat_get_db_xact_commit	oid	0	-
+function	pg_stat_get_db_xact_rollback	oid	0	-
+function	pg_stat_get_dead_tuples	oid	0	-
+function	pg_stat_get_function_calls	oid	0	-
+function	pg_stat_get_function_self_time	oid	0	-
+function	pg_stat_get_function_total_time	oid	0	-
+function	pg_stat_get_ins_since_vacuum	oid	0	-
+function	pg_stat_get_io	-	0	-
+function	pg_stat_get_last_analyze_time	oid	0	-
+function	pg_stat_get_last_autoanalyze_time	oid	0	-
+function	pg_stat_get_last_autovacuum_time	oid	0	-
+function	pg_stat_get_last_vacuum_time	oid	0	-
+function	pg_stat_get_lastscan	oid	0	-
+function	pg_stat_get_live_tuples	oid	0	-
+function	pg_stat_get_mod_since_analyze	oid	0	-
+function	pg_stat_get_numscans	oid	0	-
+function	pg_stat_get_progress_info	text	0	-
+function	pg_stat_get_recovery_prefetch	-	0	-
+function	pg_stat_get_replication_slot	text	0	-
+function	pg_stat_get_slru	-	0	-
+function	pg_stat_get_snapshot_timestamp	-	0	-
+function	pg_stat_get_subscription	oid	0	-
+function	pg_stat_get_subscription_stats	oid	0	-
+function	pg_stat_get_total_analyze_time	oid	0	-
+function	pg_stat_get_total_autoanalyze_time	oid	0	-
+function	pg_stat_get_total_autovacuum_time	oid	0	-
+function	pg_stat_get_total_vacuum_time	oid	0	-
+function	pg_stat_get_tuples_deleted	oid	0	-
+function	pg_stat_get_tuples_fetched	oid	0	-
+function	pg_stat_get_tuples_hot_updated	oid	0	-
+function	pg_stat_get_tuples_inserted	oid	0	-
+function	pg_stat_get_tuples_newpage_updated	oid	0	-
+function	pg_stat_get_tuples_returned	oid	0	-
+function	pg_stat_get_tuples_updated	oid	0	-
+function	pg_stat_get_vacuum_count	oid	0	-
+function	pg_stat_get_wal	-	0	-
+function	pg_stat_get_wal_receiver	-	0	-
+function	pg_stat_get_wal_senders	-	0	-
+function	pg_stat_get_xact_blocks_fetched	oid	0	-
+function	pg_stat_get_xact_blocks_hit	oid	0	-
+function	pg_stat_get_xact_function_calls	oid	0	-
+function	pg_stat_get_xact_function_self_time	oid	0	-
+function	pg_stat_get_xact_function_total_time	oid	0	-
+function	pg_stat_get_xact_numscans	oid	0	-
+function	pg_stat_get_xact_tuples_deleted	oid	0	-
+function	pg_stat_get_xact_tuples_fetched	oid	0	-
+function	pg_stat_get_xact_tuples_hot_updated	oid	0	-
+function	pg_stat_get_xact_tuples_inserted	oid	0	-
+function	pg_stat_get_xact_tuples_newpage_updated	oid	0	-
+function	pg_stat_get_xact_tuples_returned	oid	0	-
+function	pg_stat_get_xact_tuples_updated	oid	0	-
+function	pg_stat_have_stats	text,oid,int8	0	-
+function	pg_stat_reset	-	0	-
+function	pg_stat_reset_backend_stats	int4	0	-
+function	pg_stat_reset_replication_slot	text	0	-
+function	pg_stat_reset_shared	text	1	-
+function	pg_stat_reset_single_function_counters	oid	0	-
+function	pg_stat_reset_single_table_counters	oid	0	-
+function	pg_stat_reset_slru	text	1	-
+function	pg_stat_reset_subscription_stats	oid	0	-
+function	pg_statistics_obj_is_visible	oid	0	-
+function	pg_stop_making_pinned_objects	-	0	-
+function	pg_switch_wal	-	0	-
+function	pg_sync_replication_slots	-	0	-
+function	pg_table_is_visible	oid	0	-
+function	pg_table_size	regclass	0	-
+function	pg_tablespace_databases	oid	0	-
+function	pg_tablespace_location	oid	0	-
+function	pg_tablespace_size	name	0	-
+function	pg_tablespace_size	oid	0	-
+function	pg_terminate_backend	int4,int8	1	-
+function	pg_timezone_abbrevs_abbrevs	-	0	-
+function	pg_timezone_abbrevs_zone	-	0	-
+function	pg_timezone_names	-	0	-
+function	pg_total_relation_size	regclass	0	-
+function	pg_trigger_depth	-	0	-
+function	pg_try_advisory_lock	int4,int4	0	-
+function	pg_try_advisory_lock	int8	0	-
+function	pg_try_advisory_lock_shared	int4,int4	0	-
+function	pg_try_advisory_lock_shared	int8	0	-
+function	pg_try_advisory_xact_lock	int4,int4	0	-
+function	pg_try_advisory_xact_lock	int8	0	-
+function	pg_try_advisory_xact_lock_shared	int4,int4	0	-
+function	pg_try_advisory_xact_lock_shared	int8	0	-
+function	pg_ts_config_is_visible	oid	0	-
+function	pg_ts_dict_is_visible	oid	0	-
+function	pg_ts_parser_is_visible	oid	0	-
+function	pg_ts_template_is_visible	oid	0	-
+function	pg_type_is_visible	oid	0	-
+function	pg_typeof	any	0	-
+function	pg_visible_in_snapshot	xid8,pg_snapshot	0	-
+function	pg_wal_lsn_diff	pg_lsn,pg_lsn	0	-
+function	pg_wal_replay_pause	-	0	-
+function	pg_wal_replay_resume	-	0	-
+function	pg_wal_summary_contents	int8,pg_lsn,pg_lsn	0	-
+function	pg_walfile_name	pg_lsn	0	-
+function	pg_walfile_name_offset	pg_lsn	0	-
+function	pg_xact_commit_timestamp	xid	0	-
+function	pg_xact_commit_timestamp_origin	xid	0	-
+function	pg_xact_status	xid8	0	-
+function	phraseto_tsquery	regconfig,text	0	-
+function	phraseto_tsquery	text	0	-
+function	pi	-	0	-
+function	plainto_tsquery	regconfig,text	0	-
+function	plainto_tsquery	text	0	-
+function	plpgsql_call_handler	-	0	-
+function	plpgsql_inline_handler	internal	0	-
+function	plpgsql_validator	oid	0	-
+function	point	box	0	-
+function	point	circle	0	-
+function	point	float8,float8	0	-
+function	point	lseg	0	-
+function	point	polygon	0	-
+function	point_above	point,point	0	-
+function	point_add	point,point	0	-
+function	point_below	point,point	0	-
+function	point_distance	point,point	0	-
+function	point_div	point,point	0	-
+function	point_eq	point,point	0	-
+function	point_horiz	point,point	0	-
+function	point_in	cstring	0	-
+function	point_left	point,point	0	-
+function	point_mul	point,point	0	-
+function	point_ne	point,point	0	-
+function	point_out	point	0	-
+function	point_recv	internal	0	-
+function	point_right	point,point	0	-
+function	point_send	point	0	-
+function	point_sub	point,point	0	-
+function	point_vert	point,point	0	-
+function	poly_above	polygon,polygon	0	-
+function	poly_below	polygon,polygon	0	-
+function	poly_center	polygon	0	-
+function	poly_contain	polygon,polygon	0	-
+function	poly_contain_pt	polygon,point	0	-
+function	poly_contained	polygon,polygon	0	-
+function	poly_distance	polygon,polygon	0	-
+function	poly_in	cstring	0	-
+function	poly_left	polygon,polygon	0	-
+function	poly_npoints	polygon	0	-
+function	poly_out	polygon	0	-
+function	poly_overabove	polygon,polygon	0	-
+function	poly_overbelow	polygon,polygon	0	-
+function	poly_overlap	polygon,polygon	0	-
+function	poly_overleft	polygon,polygon	0	-
+function	poly_overright	polygon,polygon	0	-
+function	poly_recv	internal	0	-
+function	poly_right	polygon,polygon	0	-
+function	poly_same	polygon,polygon	0	-
+function	poly_send	polygon	0	-
+function	polygon	box	0	-
+function	polygon	circle	0	-
+function	polygon	int4,circle	0	-
+function	polygon	path	0	-
+function	popen	path	0	-
+function	position	bit,bit	0	-
+function	position	bytea,bytea	0	-
+function	position	text,text	0	-
+function	positionjoinsel	internal,oid,internal,int2,internal	0	-
+function	positionsel	internal,oid,internal,int4	0	-
+function	postgresql_fdw_validator	_text,oid	0	-
+function	pow	float8,float8	0	-
+function	pow	numeric,numeric	0	-
+function	power	float8,float8	0	-
+function	power	numeric,numeric	0	-
+function	prefixjoinsel	internal,oid,internal,int2,internal	0	-
+function	prefixsel	internal,oid,internal,int4	0	-
+function	prsd_end	internal	0	-
+function	prsd_headline	internal,internal,tsquery	0	-
+function	prsd_lextype	internal	0	-
+function	prsd_nexttoken	internal,internal,internal	0	-
+function	prsd_start	internal,int4	0	-
+function	pt_contained_circle	point,circle	0	-
+function	pt_contained_poly	point,polygon	0	-
+function	query_to_xml	text,bool,bool,text	0	-
+function	query_to_xml_and_xmlschema	text,bool,bool,text	0	-
+function	query_to_xmlschema	text,bool,bool,text	0	-
+function	querytree	tsquery	0	-
+function	quote_ident	text	0	-
+function	quote_literal	anyelement	0	-
+function	quote_literal	text	0	-
+function	quote_nullable	anyelement	0	-
+function	quote_nullable	text	0	-
+function	radians	float8	0	-
+function	radius	circle	0	-
+function	random	-	0	-
+function	random	int4,int4	0	-
+function	random	int8,int8	0	-
+function	random	numeric,numeric	0	-
+function	random_normal	float8,float8	2	-
+function	range_adjacent	anyrange,anyrange	0	-
+function	range_adjacent_multirange	anyrange,anymultirange	0	-
+function	range_after	anyrange,anyrange	0	-
+function	range_after_multirange	anyrange,anymultirange	0	-
+function	range_agg	anymultirange	0	-
+function	range_agg	anyrange	0	-
+function	range_agg_finalfn	internal,anyrange	0	-
+function	range_agg_transfn	internal,anyrange	0	-
+function	range_before	anyrange,anyrange	0	-
+function	range_before_multirange	anyrange,anymultirange	0	-
+function	range_cmp	anyrange,anyrange	0	-
+function	range_contained_by	anyrange,anyrange	0	-
+function	range_contained_by_multirange	anyrange,anymultirange	0	-
+function	range_contains	anyrange,anyrange	0	-
+function	range_contains_elem	anyrange,anyelement	0	-
+function	range_contains_elem_support	internal	0	-
+function	range_contains_multirange	anyrange,anymultirange	0	-
+function	range_eq	anyrange,anyrange	0	-
+function	range_ge	anyrange,anyrange	0	-
+function	range_gist_consistent	internal,anyrange,int2,oid,internal	0	-
+function	range_gist_penalty	internal,internal,internal	0	-
+function	range_gist_picksplit	internal,internal	0	-
+function	range_gist_same	anyrange,anyrange,internal	0	-
+function	range_gist_union	internal,internal	0	-
+function	range_gt	anyrange,anyrange	0	-
+function	range_in	cstring,oid,int4	0	-
+function	range_intersect	anyrange,anyrange	0	-
+function	range_intersect_agg	anymultirange	0	-
+function	range_intersect_agg	anyrange	0	-
+function	range_intersect_agg_transfn	anyrange,anyrange	0	-
+function	range_le	anyrange,anyrange	0	-
+function	range_lt	anyrange,anyrange	0	-
+function	range_merge	anymultirange	0	-
+function	range_merge	anyrange,anyrange	0	-
+function	range_minus	anyrange,anyrange	0	-
+function	range_ne	anyrange,anyrange	0	-
+function	range_out	anyrange	0	-
+function	range_overlaps	anyrange,anyrange	0	-
+function	range_overlaps_multirange	anyrange,anymultirange	0	-
+function	range_overleft	anyrange,anyrange	0	-
+function	range_overleft_multirange	anyrange,anymultirange	0	-
+function	range_overright	anyrange,anyrange	0	-
+function	range_overright_multirange	anyrange,anymultirange	0	-
+function	range_recv	internal,oid,int4	0	-
+function	range_send	anyrange	0	-
+function	range_sortsupport	internal	0	-
+function	range_typanalyze	internal	0	-
+function	range_union	anyrange,anyrange	0	-
+function	rangesel	internal,oid,internal,int4	0	-
+function	rank	-	0	-
+function	rank	any	0	any
+function	rank_final	internal,any	0	any
+function	raw_array_subscript_handler	internal	0	-
+function	record_eq	record,record	0	-
+function	record_ge	record,record	0	-
+function	record_gt	record,record	0	-
+function	record_image_eq	record,record	0	-
+function	record_image_ge	record,record	0	-
+function	record_image_gt	record,record	0	-
+function	record_image_le	record,record	0	-
+function	record_image_lt	record,record	0	-
+function	record_image_ne	record,record	0	-
+function	record_in	cstring,oid,int4	0	-
+function	record_larger	record,record	0	-
+function	record_le	record,record	0	-
+function	record_lt	record,record	0	-
+function	record_ne	record,record	0	-
+function	record_out	record	0	-
+function	record_recv	internal,oid,int4	0	-
+function	record_send	record	0	-
+function	record_smaller	record,record	0	-
+function	regclass	text	0	-
+function	regclassin	cstring	0	-
+function	regclassout	regclass	0	-
+function	regclassrecv	internal	0	-
+function	regclasssend	regclass	0	-
+function	regcollationin	cstring	0	-
+function	regcollationout	regcollation	0	-
+function	regcollationrecv	internal	0	-
+function	regcollationsend	regcollation	0	-
+function	regconfigin	cstring	0	-
+function	regconfigout	regconfig	0	-
+function	regconfigrecv	internal	0	-
+function	regconfigsend	regconfig	0	-
+function	regdictionaryin	cstring	0	-
+function	regdictionaryout	regdictionary	0	-
+function	regdictionaryrecv	internal	0	-
+function	regdictionarysend	regdictionary	0	-
+function	regexeqjoinsel	internal,oid,internal,int2,internal	0	-
+function	regexeqsel	internal,oid,internal,int4	0	-
+function	regexnejoinsel	internal,oid,internal,int2,internal	0	-
+function	regexnesel	internal,oid,internal,int4	0	-
+function	regexp_count	text,text	0	-
+function	regexp_count	text,text,int4	0	-
+function	regexp_count	text,text,int4,text	0	-
+function	regexp_instr	text,text	0	-
+function	regexp_instr	text,text,int4	0	-
+function	regexp_instr	text,text,int4,int4	0	-
+function	regexp_instr	text,text,int4,int4,int4	0	-
+function	regexp_instr	text,text,int4,int4,int4,text	0	-
+function	regexp_instr	text,text,int4,int4,int4,text,int4	0	-
+function	regexp_like	text,text	0	-
+function	regexp_like	text,text,text	0	-
+function	regexp_match	text,text	0	-
+function	regexp_match	text,text,text	0	-
+function	regexp_matches	text,text	0	-
+function	regexp_matches	text,text,text	0	-
+function	regexp_replace	text,text,text	0	-
+function	regexp_replace	text,text,text,int4	0	-
+function	regexp_replace	text,text,text,int4,int4	0	-
+function	regexp_replace	text,text,text,int4,int4,text	0	-
+function	regexp_replace	text,text,text,text	0	-
+function	regexp_split_to_array	text,text	0	-
+function	regexp_split_to_array	text,text,text	0	-
+function	regexp_split_to_table	text,text	0	-
+function	regexp_split_to_table	text,text,text	0	-
+function	regexp_substr	text,text	0	-
+function	regexp_substr	text,text,int4	0	-
+function	regexp_substr	text,text,int4,int4	0	-
+function	regexp_substr	text,text,int4,int4,text	0	-
+function	regexp_substr	text,text,int4,int4,text,int4	0	-
+function	regnamespacein	cstring	0	-
+function	regnamespaceout	regnamespace	0	-
+function	regnamespacerecv	internal	0	-
+function	regnamespacesend	regnamespace	0	-
+function	regoperatorin	cstring	0	-
+function	regoperatorout	regoperator	0	-
+function	regoperatorrecv	internal	0	-
+function	regoperatorsend	regoperator	0	-
+function	regoperin	cstring	0	-
+function	regoperout	regoper	0	-
+function	regoperrecv	internal	0	-
+function	regopersend	regoper	0	-
+function	regprocedurein	cstring	0	-
+function	regprocedureout	regprocedure	0	-
+function	regprocedurerecv	internal	0	-
+function	regproceduresend	regprocedure	0	-
+function	regprocin	cstring	0	-
+function	regprocout	regproc	0	-
+function	regprocrecv	internal	0	-
+function	regprocsend	regproc	0	-
+function	regr_avgx	float8,float8	0	-
+function	regr_avgy	float8,float8	0	-
+function	regr_count	float8,float8	0	-
+function	regr_intercept	float8,float8	0	-
+function	regr_r2	float8,float8	0	-
+function	regr_slope	float8,float8	0	-
+function	regr_sxx	float8,float8	0	-
+function	regr_sxy	float8,float8	0	-
+function	regr_syy	float8,float8	0	-
+function	regrolein	cstring	0	-
+function	regroleout	regrole	0	-
+function	regrolerecv	internal	0	-
+function	regrolesend	regrole	0	-
+function	regtypein	cstring	0	-
+function	regtypeout	regtype	0	-
+function	regtyperecv	internal	0	-
+function	regtypesend	regtype	0	-
+function	repeat	text,int4	0	-
+function	replace	text,text,text	0	-
+function	reverse	bytea	0	-
+function	reverse	text	0	-
+function	right	text,int4	0	-
+function	round	float8	0	-
+function	round	numeric	0	-
+function	round	numeric,int4	0	-
+function	row_number	-	0	-
+function	row_security_active	oid	0	-
+function	row_security_active	text	0	-
+function	row_to_json	record	0	-
+function	row_to_json	record,bool	0	-
+function	rpad	text,int4	0	-
+function	rpad	text,int4,text	0	-
+function	rtrim	bytea,bytea	0	-
+function	rtrim	text	0	-
+function	rtrim	text,text	0	-
+function	satisfies_hash_partition	oid,int4,int4,any	0	any
+function	scalargejoinsel	internal,oid,internal,int2,internal	0	-
+function	scalargesel	internal,oid,internal,int4	0	-
+function	scalargtjoinsel	internal,oid,internal,int2,internal	0	-
+function	scalargtsel	internal,oid,internal,int4	0	-
+function	scalarlejoinsel	internal,oid,internal,int2,internal	0	-
+function	scalarlesel	internal,oid,internal,int4	0	-
+function	scalarltjoinsel	internal,oid,internal,int2,internal	0	-
+function	scalarltsel	internal,oid,internal,int4	0	-
+function	scale	numeric	0	-
+function	schema_to_xml	name,bool,bool,text	0	-
+function	schema_to_xml_and_xmlschema	name,bool,bool,text	0	-
+function	schema_to_xmlschema	name,bool,bool,text	0	-
+function	session_user	-	0	-
+function	set_bit	bit,int4,int4	0	-
+function	set_bit	bytea,int8,int4	0	-
+function	set_byte	bytea,int4,int4	0	-
+function	set_config	text,text,bool	0	-
+function	set_masklen	cidr,int4	0	-
+function	set_masklen	inet,int4	0	-
+function	setseed	float8	0	-
+function	setval	regclass,int8	0	-
+function	setval	regclass,int8,bool	0	-
+function	setweight	tsvector,char	0	-
+function	setweight	tsvector,char,_text	0	-
+function	sha224	bytea	0	-
+function	sha256	bytea	0	-
+function	sha384	bytea	0	-
+function	sha512	bytea	0	-
+function	shell_in	cstring	0	-
+function	shell_out	void	0	-
+function	shift_jis_2004_to_euc_jis_2004	int4,int4,cstring,internal,int4,bool	0	-
+function	shift_jis_2004_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	shobj_description	oid,name	0	-
+function	sign	float8	0	-
+function	sign	numeric	0	-
+function	similar_escape	text,text	0	-
+function	similar_to_escape	text	0	-
+function	similar_to_escape	text,text	0	-
+function	sin	float8	0	-
+function	sind	float8	0	-
+function	sinh	float8	0	-
+function	sjis_to_euc_jp	int4,int4,cstring,internal,int4,bool	0	-
+function	sjis_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	sjis_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	slope	point,point	0	-
+function	spg_bbox_quad_config	internal,internal	0	-
+function	spg_box_quad_choose	internal,internal	0	-
+function	spg_box_quad_config	internal,internal	0	-
+function	spg_box_quad_inner_consistent	internal,internal	0	-
+function	spg_box_quad_leaf_consistent	internal,internal	0	-
+function	spg_box_quad_picksplit	internal,internal	0	-
+function	spg_kd_choose	internal,internal	0	-
+function	spg_kd_config	internal,internal	0	-
+function	spg_kd_inner_consistent	internal,internal	0	-
+function	spg_kd_picksplit	internal,internal	0	-
+function	spg_poly_quad_compress	polygon	0	-
+function	spg_quad_choose	internal,internal	0	-
+function	spg_quad_config	internal,internal	0	-
+function	spg_quad_inner_consistent	internal,internal	0	-
+function	spg_quad_leaf_consistent	internal,internal	0	-
+function	spg_quad_picksplit	internal,internal	0	-
+function	spg_range_quad_choose	internal,internal	0	-
+function	spg_range_quad_config	internal,internal	0	-
+function	spg_range_quad_inner_consistent	internal,internal	0	-
+function	spg_range_quad_leaf_consistent	internal,internal	0	-
+function	spg_range_quad_picksplit	internal,internal	0	-
+function	spg_text_choose	internal,internal	0	-
+function	spg_text_config	internal,internal	0	-
+function	spg_text_inner_consistent	internal,internal	0	-
+function	spg_text_leaf_consistent	internal,internal	0	-
+function	spg_text_picksplit	internal,internal	0	-
+function	spghandler	internal	0	-
+function	split_part	text,text,int4	0	-
+function	sqrt	float8	0	-
+function	sqrt	numeric	0	-
+function	starts_with	text,text	0	-
+function	statement_timestamp	-	0	-
+function	stddev	float4	0	-
+function	stddev	float8	0	-
+function	stddev	int2	0	-
+function	stddev	int4	0	-
+function	stddev	int8	0	-
+function	stddev	numeric	0	-
+function	stddev_pop	float4	0	-
+function	stddev_pop	float8	0	-
+function	stddev_pop	int2	0	-
+function	stddev_pop	int4	0	-
+function	stddev_pop	int8	0	-
+function	stddev_pop	numeric	0	-
+function	stddev_samp	float4	0	-
+function	stddev_samp	float8	0	-
+function	stddev_samp	int2	0	-
+function	stddev_samp	int4	0	-
+function	stddev_samp	int8	0	-
+function	stddev_samp	numeric	0	-
+function	string_agg	bytea,bytea	0	-
+function	string_agg	text,text	0	-
+function	string_agg_combine	internal,internal	0	-
+function	string_agg_deserialize	bytea,internal	0	-
+function	string_agg_finalfn	internal	0	-
+function	string_agg_serialize	internal	0	-
+function	string_agg_transfn	internal,text,text	0	-
+function	string_to_array	text,text	0	-
+function	string_to_array	text,text,text	0	-
+function	string_to_table	text,text	0	-
+function	string_to_table	text,text,text	0	-
+function	strip	tsvector	0	-
+function	strpos	text,text	0	-
+function	substr	bytea,int4	0	-
+function	substr	bytea,int4,int4	0	-
+function	substr	text,int4	0	-
+function	substr	text,int4,int4	0	-
+function	substring	bit,int4	0	-
+function	substring	bit,int4,int4	0	-
+function	substring	bytea,int4	0	-
+function	substring	bytea,int4,int4	0	-
+function	substring	text,int4	0	-
+function	substring	text,int4,int4	0	-
+function	substring	text,text	0	-
+function	substring	text,text,text	0	-
+function	sum	float4	0	-
+function	sum	float8	0	-
+function	sum	int2	0	-
+function	sum	int4	0	-
+function	sum	int8	0	-
+function	sum	interval	0	-
+function	sum	money	0	-
+function	sum	numeric	0	-
+function	suppress_redundant_updates_trigger	-	0	-
+function	system	internal	0	-
+function	system_user	-	0	-
+function	table_am_handler_in	cstring	0	-
+function	table_am_handler_out	table_am_handler	0	-
+function	table_to_xml	regclass,bool,bool,text	0	-
+function	table_to_xml_and_xmlschema	regclass,bool,bool,text	0	-
+function	table_to_xmlschema	regclass,bool,bool,text	0	-
+function	tan	float8	0	-
+function	tand	float8	0	-
+function	tanh	float8	0	-
+function	text	bool	0	-
+function	text	bpchar	0	-
+function	text	char	0	-
+function	text	inet	0	-
+function	text	name	0	-
+function	text	xml	0	-
+function	text_ge	text,text	0	-
+function	text_gt	text,text	0	-
+function	text_larger	text,text	0	-
+function	text_le	text,text	0	-
+function	text_lt	text,text	0	-
+function	text_pattern_ge	text,text	0	-
+function	text_pattern_gt	text,text	0	-
+function	text_pattern_le	text,text	0	-
+function	text_pattern_lt	text,text	0	-
+function	text_smaller	text,text	0	-
+function	text_starts_with_support	internal	0	-
+function	textanycat	text,anynonarray	0	-
+function	textcat	text,text	0	-
+function	texteq	text,text	0	-
+function	texteqname	text,name	0	-
+function	textgename	text,name	0	-
+function	textgtname	text,name	0	-
+function	texticlike	text,text	0	-
+function	texticlike_support	internal	0	-
+function	texticnlike	text,text	0	-
+function	texticregexeq	text,text	0	-
+function	texticregexeq_support	internal	0	-
+function	texticregexne	text,text	0	-
+function	textin	cstring	0	-
+function	textlen	text	0	-
+function	textlename	text,name	0	-
+function	textlike	text,text	0	-
+function	textlike_support	internal	0	-
+function	textltname	text,name	0	-
+function	textne	text,text	0	-
+function	textnename	text,name	0	-
+function	textnlike	text,text	0	-
+function	textout	text	0	-
+function	textrecv	internal	0	-
+function	textregexeq	text,text	0	-
+function	textregexeq_support	internal	0	-
+function	textregexne	text,text	0	-
+function	textsend	text	0	-
+function	thesaurus_init	internal	0	-
+function	thesaurus_lexize	internal,internal,internal,internal	0	-
+function	tideq	tid,tid	0	-
+function	tidge	tid,tid	0	-
+function	tidgt	tid,tid	0	-
+function	tidin	cstring	0	-
+function	tidlarger	tid,tid	0	-
+function	tidle	tid,tid	0	-
+function	tidlt	tid,tid	0	-
+function	tidne	tid,tid	0	-
+function	tidout	tid	0	-
+function	tidrecv	internal	0	-
+function	tidsend	tid	0	-
+function	tidsmaller	tid,tid	0	-
+function	time	interval	0	-
+function	time	time,int4	0	-
+function	time	timestamp	0	-
+function	time	timestamptz	0	-
+function	time	timetz	0	-
+function	time_cmp	time,time	0	-
+function	time_eq	time,time	0	-
+function	time_ge	time,time	0	-
+function	time_gt	time,time	0	-
+function	time_hash	time	0	-
+function	time_hash_extended	time,int8	0	-
+function	time_in	cstring,oid,int4	0	-
+function	time_larger	time,time	0	-
+function	time_le	time,time	0	-
+function	time_lt	time,time	0	-
+function	time_mi_interval	time,interval	0	-
+function	time_mi_time	time,time	0	-
+function	time_ne	time,time	0	-
+function	time_out	time	0	-
+function	time_pl_interval	time,interval	0	-
+function	time_recv	internal,oid,int4	0	-
+function	time_send	time	0	-
+function	time_smaller	time,time	0	-
+function	time_support	internal	0	-
+function	timedate_pl	time,date	0	-
+function	timeofday	-	0	-
+function	timestamp	date	0	-
+function	timestamp	date,time	0	-
+function	timestamp	timestamp,int4	0	-
+function	timestamp	timestamptz	0	-
+function	timestamp_cmp	timestamp,timestamp	0	-
+function	timestamp_cmp_date	timestamp,date	0	-
+function	timestamp_cmp_timestamptz	timestamp,timestamptz	0	-
+function	timestamp_eq	timestamp,timestamp	0	-
+function	timestamp_eq_date	timestamp,date	0	-
+function	timestamp_eq_timestamptz	timestamp,timestamptz	0	-
+function	timestamp_ge	timestamp,timestamp	0	-
+function	timestamp_ge_date	timestamp,date	0	-
+function	timestamp_ge_timestamptz	timestamp,timestamptz	0	-
+function	timestamp_gt	timestamp,timestamp	0	-
+function	timestamp_gt_date	timestamp,date	0	-
+function	timestamp_gt_timestamptz	timestamp,timestamptz	0	-
+function	timestamp_hash	timestamp	0	-
+function	timestamp_hash_extended	timestamp,int8	0	-
+function	timestamp_in	cstring,oid,int4	0	-
+function	timestamp_larger	timestamp,timestamp	0	-
+function	timestamp_le	timestamp,timestamp	0	-
+function	timestamp_le_date	timestamp,date	0	-
+function	timestamp_le_timestamptz	timestamp,timestamptz	0	-
+function	timestamp_lt	timestamp,timestamp	0	-
+function	timestamp_lt_date	timestamp,date	0	-
+function	timestamp_lt_timestamptz	timestamp,timestamptz	0	-
+function	timestamp_mi	timestamp,timestamp	0	-
+function	timestamp_mi_interval	timestamp,interval	0	-
+function	timestamp_ne	timestamp,timestamp	0	-
+function	timestamp_ne_date	timestamp,date	0	-
+function	timestamp_ne_timestamptz	timestamp,timestamptz	0	-
+function	timestamp_out	timestamp	0	-
+function	timestamp_pl_interval	timestamp,interval	0	-
+function	timestamp_recv	internal,oid,int4	0	-
+function	timestamp_send	timestamp	0	-
+function	timestamp_skipsupport	internal	0	-
+function	timestamp_smaller	timestamp,timestamp	0	-
+function	timestamp_sortsupport	internal	0	-
+function	timestamp_support	internal	0	-
+function	timestamptypmodin	_cstring	0	-
+function	timestamptypmodout	int4	0	-
+function	timestamptz	date	0	-
+function	timestamptz	date,time	0	-
+function	timestamptz	date,timetz	0	-
+function	timestamptz	timestamp	0	-
+function	timestamptz	timestamptz,int4	0	-
+function	timestamptz_cmp	timestamptz,timestamptz	0	-
+function	timestamptz_cmp_date	timestamptz,date	0	-
+function	timestamptz_cmp_timestamp	timestamptz,timestamp	0	-
+function	timestamptz_eq	timestamptz,timestamptz	0	-
+function	timestamptz_eq_date	timestamptz,date	0	-
+function	timestamptz_eq_timestamp	timestamptz,timestamp	0	-
+function	timestamptz_ge	timestamptz,timestamptz	0	-
+function	timestamptz_ge_date	timestamptz,date	0	-
+function	timestamptz_ge_timestamp	timestamptz,timestamp	0	-
+function	timestamptz_gt	timestamptz,timestamptz	0	-
+function	timestamptz_gt_date	timestamptz,date	0	-
+function	timestamptz_gt_timestamp	timestamptz,timestamp	0	-
+function	timestamptz_hash	timestamptz	0	-
+function	timestamptz_hash_extended	timestamptz,int8	0	-
+function	timestamptz_in	cstring,oid,int4	0	-
+function	timestamptz_larger	timestamptz,timestamptz	0	-
+function	timestamptz_le	timestamptz,timestamptz	0	-
+function	timestamptz_le_date	timestamptz,date	0	-
+function	timestamptz_le_timestamp	timestamptz,timestamp	0	-
+function	timestamptz_lt	timestamptz,timestamptz	0	-
+function	timestamptz_lt_date	timestamptz,date	0	-
+function	timestamptz_lt_timestamp	timestamptz,timestamp	0	-
+function	timestamptz_mi	timestamptz,timestamptz	0	-
+function	timestamptz_mi_interval	timestamptz,interval	0	-
+function	timestamptz_ne	timestamptz,timestamptz	0	-
+function	timestamptz_ne_date	timestamptz,date	0	-
+function	timestamptz_ne_timestamp	timestamptz,timestamp	0	-
+function	timestamptz_out	timestamptz	0	-
+function	timestamptz_pl_interval	timestamptz,interval	0	-
+function	timestamptz_recv	internal,oid,int4	0	-
+function	timestamptz_send	timestamptz	0	-
+function	timestamptz_smaller	timestamptz,timestamptz	0	-
+function	timestamptztypmodin	_cstring	0	-
+function	timestamptztypmodout	int4	0	-
+function	timetypmodin	_cstring	0	-
+function	timetypmodout	int4	0	-
+function	timetz	time	0	-
+function	timetz	timestamptz	0	-
+function	timetz	timetz,int4	0	-
+function	timetz_cmp	timetz,timetz	0	-
+function	timetz_eq	timetz,timetz	0	-
+function	timetz_ge	timetz,timetz	0	-
+function	timetz_gt	timetz,timetz	0	-
+function	timetz_hash	timetz	0	-
+function	timetz_hash_extended	timetz,int8	0	-
+function	timetz_in	cstring,oid,int4	0	-
+function	timetz_larger	timetz,timetz	0	-
+function	timetz_le	timetz,timetz	0	-
+function	timetz_lt	timetz,timetz	0	-
+function	timetz_mi_interval	timetz,interval	0	-
+function	timetz_ne	timetz,timetz	0	-
+function	timetz_out	timetz	0	-
+function	timetz_pl_interval	timetz,interval	0	-
+function	timetz_recv	internal,oid,int4	0	-
+function	timetz_send	timetz	0	-
+function	timetz_smaller	timetz,timetz	0	-
+function	timetzdate_pl	timetz,date	0	-
+function	timetztypmodin	_cstring	0	-
+function	timetztypmodout	int4	0	-
+function	timezone	interval,timestamp	0	-
+function	timezone	interval,timestamptz	0	-
+function	timezone	interval,timetz	0	-
+function	timezone	text,timestamp	0	-
+function	timezone	text,timestamptz	0	-
+function	timezone	text,timetz	0	-
+function	timezone	timestamp	0	-
+function	timezone	timestamptz	0	-
+function	timezone	timetz	0	-
+function	to_ascii	text	0	-
+function	to_ascii	text,int4	0	-
+function	to_ascii	text,name	0	-
+function	to_bin	int4	0	-
+function	to_bin	int8	0	-
+function	to_char	float4,text	0	-
+function	to_char	float8,text	0	-
+function	to_char	int4,text	0	-
+function	to_char	int8,text	0	-
+function	to_char	interval,text	0	-
+function	to_char	numeric,text	0	-
+function	to_char	timestamp,text	0	-
+function	to_char	timestamptz,text	0	-
+function	to_date	text,text	0	-
+function	to_hex	int4	0	-
+function	to_hex	int8	0	-
+function	to_json	anyelement	0	-
+function	to_jsonb	anyelement	0	-
+function	to_number	text,text	0	-
+function	to_oct	int4	0	-
+function	to_oct	int8	0	-
+function	to_regclass	text	0	-
+function	to_regcollation	text	0	-
+function	to_regnamespace	text	0	-
+function	to_regoper	text	0	-
+function	to_regoperator	text	0	-
+function	to_regproc	text	0	-
+function	to_regprocedure	text	0	-
+function	to_regrole	text	0	-
+function	to_regtype	text	0	-
+function	to_regtypemod	text	0	-
+function	to_timestamp	float8	0	-
+function	to_timestamp	text,text	0	-
+function	to_tsquery	regconfig,text	0	-
+function	to_tsquery	text	0	-
+function	to_tsvector	json	0	-
+function	to_tsvector	jsonb	0	-
+function	to_tsvector	regconfig,json	0	-
+function	to_tsvector	regconfig,jsonb	0	-
+function	to_tsvector	regconfig,text	0	-
+function	to_tsvector	text	0	-
+function	transaction_timestamp	-	0	-
+function	translate	text,text,text	0	-
+function	trigger_in	cstring	0	-
+function	trigger_out	trigger	0	-
+function	trim_array	anyarray,int4	0	-
+function	trim_scale	numeric	0	-
+function	trunc	float8	0	-
+function	trunc	macaddr	0	-
+function	trunc	macaddr8	0	-
+function	trunc	numeric	0	-
+function	trunc	numeric,int4	0	-
+function	ts_debug	regconfig,text	0	-
+function	ts_debug	text	0	-
+function	ts_delete	tsvector,_text	0	-
+function	ts_delete	tsvector,text	0	-
+function	ts_filter	tsvector,_char	0	-
+function	ts_headline	json,tsquery	0	-
+function	ts_headline	json,tsquery,text	0	-
+function	ts_headline	jsonb,tsquery	0	-
+function	ts_headline	jsonb,tsquery,text	0	-
+function	ts_headline	regconfig,json,tsquery	0	-
+function	ts_headline	regconfig,json,tsquery,text	0	-
+function	ts_headline	regconfig,jsonb,tsquery	0	-
+function	ts_headline	regconfig,jsonb,tsquery,text	0	-
+function	ts_headline	regconfig,text,tsquery	0	-
+function	ts_headline	regconfig,text,tsquery,text	0	-
+function	ts_headline	text,tsquery	0	-
+function	ts_headline	text,tsquery,text	0	-
+function	ts_lexize	regdictionary,text	0	-
+function	ts_match_qv	tsquery,tsvector	0	-
+function	ts_match_tq	text,tsquery	0	-
+function	ts_match_tt	text,text	0	-
+function	ts_match_vq	tsvector,tsquery	0	-
+function	ts_parse	oid,text	0	-
+function	ts_parse	text,text	0	-
+function	ts_rank	_float4,tsvector,tsquery	0	-
+function	ts_rank	_float4,tsvector,tsquery,int4	0	-
+function	ts_rank	tsvector,tsquery	0	-
+function	ts_rank	tsvector,tsquery,int4	0	-
+function	ts_rank_cd	_float4,tsvector,tsquery	0	-
+function	ts_rank_cd	_float4,tsvector,tsquery,int4	0	-
+function	ts_rank_cd	tsvector,tsquery	0	-
+function	ts_rank_cd	tsvector,tsquery,int4	0	-
+function	ts_rewrite	tsquery,text	0	-
+function	ts_rewrite	tsquery,tsquery,tsquery	0	-
+function	ts_stat	text	0	-
+function	ts_stat	text,text	0	-
+function	ts_token_type	oid	0	-
+function	ts_token_type	text	0	-
+function	ts_typanalyze	internal	0	-
+function	tsm_handler_in	cstring	0	-
+function	tsm_handler_out	tsm_handler	0	-
+function	tsmatchjoinsel	internal,oid,internal,int2,internal	0	-
+function	tsmatchsel	internal,oid,internal,int4	0	-
+function	tsmultirange	-	0	-
+function	tsmultirange	_tsrange	0	tsrange
+function	tsmultirange	tsrange	0	-
+function	tsq_mcontained	tsquery,tsquery	0	-
+function	tsq_mcontains	tsquery,tsquery	0	-
+function	tsquery_and	tsquery,tsquery	0	-
+function	tsquery_cmp	tsquery,tsquery	0	-
+function	tsquery_eq	tsquery,tsquery	0	-
+function	tsquery_ge	tsquery,tsquery	0	-
+function	tsquery_gt	tsquery,tsquery	0	-
+function	tsquery_le	tsquery,tsquery	0	-
+function	tsquery_lt	tsquery,tsquery	0	-
+function	tsquery_ne	tsquery,tsquery	0	-
+function	tsquery_not	tsquery	0	-
+function	tsquery_or	tsquery,tsquery	0	-
+function	tsquery_phrase	tsquery,tsquery	0	-
+function	tsquery_phrase	tsquery,tsquery,int4	0	-
+function	tsqueryin	cstring	0	-
+function	tsqueryout	tsquery	0	-
+function	tsqueryrecv	internal	0	-
+function	tsquerysend	tsquery	0	-
+function	tsrange	timestamp,timestamp	0	-
+function	tsrange	timestamp,timestamp,text	0	-
+function	tsrange_subdiff	timestamp,timestamp	0	-
+function	tstzmultirange	-	0	-
+function	tstzmultirange	_tstzrange	0	tstzrange
+function	tstzmultirange	tstzrange	0	-
+function	tstzrange	timestamptz,timestamptz	0	-
+function	tstzrange	timestamptz,timestamptz,text	0	-
+function	tstzrange_subdiff	timestamptz,timestamptz	0	-
+function	tsvector_cmp	tsvector,tsvector	0	-
+function	tsvector_concat	tsvector,tsvector	0	-
+function	tsvector_eq	tsvector,tsvector	0	-
+function	tsvector_ge	tsvector,tsvector	0	-
+function	tsvector_gt	tsvector,tsvector	0	-
+function	tsvector_le	tsvector,tsvector	0	-
+function	tsvector_lt	tsvector,tsvector	0	-
+function	tsvector_ne	tsvector,tsvector	0	-
+function	tsvector_to_array	tsvector	0	-
+function	tsvector_update_trigger	-	0	-
+function	tsvector_update_trigger_column	-	0	-
+function	tsvectorin	cstring	0	-
+function	tsvectorout	tsvector	0	-
+function	tsvectorrecv	internal	0	-
+function	tsvectorsend	tsvector	0	-
+function	txid_current	-	0	-
+function	txid_current_if_assigned	-	0	-
+function	txid_current_snapshot	-	0	-
+function	txid_snapshot_in	cstring	0	-
+function	txid_snapshot_out	txid_snapshot	0	-
+function	txid_snapshot_recv	internal	0	-
+function	txid_snapshot_send	txid_snapshot	0	-
+function	txid_snapshot_xip	txid_snapshot	0	-
+function	txid_snapshot_xmax	txid_snapshot	0	-
+function	txid_snapshot_xmin	txid_snapshot	0	-
+function	txid_status	int8	0	-
+function	txid_visible_in_snapshot	int8,txid_snapshot	0	-
+function	uhc_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	unicode_assigned	text	0	-
+function	unicode_version	-	0	-
+function	unique_key_recheck	-	0	-
+function	unistr	text	0	-
+function	unknownin	cstring	0	-
+function	unknownout	unknown	0	-
+function	unknownrecv	internal	0	-
+function	unknownsend	unknown	0	-
+function	unnest	anyarray	0	-
+function	unnest	anymultirange	0	-
+function	unnest	tsvector	0	-
+function	upper	anymultirange	0	-
+function	upper	anyrange	0	-
+function	upper	text	0	-
+function	upper_inc	anymultirange	0	-
+function	upper_inc	anyrange	0	-
+function	upper_inf	anymultirange	0	-
+function	upper_inf	anyrange	0	-
+function	utf8_to_big5	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_euc_cn	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_euc_jis_2004	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_euc_jp	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_euc_kr	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_euc_tw	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_gb18030	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_gbk	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_iso8859	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_iso8859_1	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_johab	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_koi8r	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_koi8u	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_shift_jis_2004	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_sjis	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_uhc	int4,int4,cstring,internal,int4,bool	0	-
+function	utf8_to_win	int4,int4,cstring,internal,int4,bool	0	-
+function	uuid_cmp	uuid,uuid	0	-
+function	uuid_eq	uuid,uuid	0	-
+function	uuid_extract_timestamp	uuid	0	-
+function	uuid_extract_version	uuid	0	-
+function	uuid_ge	uuid,uuid	0	-
+function	uuid_gt	uuid,uuid	0	-
+function	uuid_hash	uuid	0	-
+function	uuid_hash_extended	uuid,int8	0	-
+function	uuid_in	cstring	0	-
+function	uuid_le	uuid,uuid	0	-
+function	uuid_lt	uuid,uuid	0	-
+function	uuid_ne	uuid,uuid	0	-
+function	uuid_out	uuid	0	-
+function	uuid_recv	internal	0	-
+function	uuid_send	uuid	0	-
+function	uuid_skipsupport	internal	0	-
+function	uuid_sortsupport	internal	0	-
+function	uuidv4	-	0	-
+function	uuidv7	-	0	-
+function	uuidv7	interval	0	-
+function	var_pop	float4	0	-
+function	var_pop	float8	0	-
+function	var_pop	int2	0	-
+function	var_pop	int4	0	-
+function	var_pop	int8	0	-
+function	var_pop	numeric	0	-
+function	var_samp	float4	0	-
+function	var_samp	float8	0	-
+function	var_samp	int2	0	-
+function	var_samp	int4	0	-
+function	var_samp	int8	0	-
+function	var_samp	numeric	0	-
+function	varbit	varbit,int4,bool	0	-
+function	varbit_in	cstring,oid,int4	0	-
+function	varbit_out	varbit	0	-
+function	varbit_recv	internal,oid,int4	0	-
+function	varbit_send	varbit	0	-
+function	varbit_support	internal	0	-
+function	varbitcmp	varbit,varbit	0	-
+function	varbiteq	varbit,varbit	0	-
+function	varbitge	varbit,varbit	0	-
+function	varbitgt	varbit,varbit	0	-
+function	varbitle	varbit,varbit	0	-
+function	varbitlt	varbit,varbit	0	-
+function	varbitne	varbit,varbit	0	-
+function	varbittypmodin	_cstring	0	-
+function	varbittypmodout	int4	0	-
+function	varchar	name	0	-
+function	varchar	varchar,int4,bool	0	-
+function	varchar_support	internal	0	-
+function	varcharin	cstring,oid,int4	0	-
+function	varcharout	varchar	0	-
+function	varcharrecv	internal,oid,int4	0	-
+function	varcharsend	varchar	0	-
+function	varchartypmodin	_cstring	0	-
+function	varchartypmodout	int4	0	-
+function	variance	float4	0	-
+function	variance	float8	0	-
+function	variance	int2	0	-
+function	variance	int4	0	-
+function	variance	int8	0	-
+function	variance	numeric	0	-
+function	version	-	0	-
+function	void_in	cstring	0	-
+function	void_out	void	0	-
+function	void_recv	internal	0	-
+function	void_send	void	0	-
+function	websearch_to_tsquery	regconfig,text	0	-
+function	websearch_to_tsquery	text	0	-
+function	width	box	0	-
+function	width_bucket	anycompatible,anycompatiblearray	0	-
+function	width_bucket	float8,float8,float8,int4	0	-
+function	width_bucket	numeric,numeric,numeric,int4	0	-
+function	win1250_to_latin2	int4,int4,cstring,internal,int4,bool	0	-
+function	win1250_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	win1251_to_iso	int4,int4,cstring,internal,int4,bool	0	-
+function	win1251_to_koi8r	int4,int4,cstring,internal,int4,bool	0	-
+function	win1251_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	win1251_to_win866	int4,int4,cstring,internal,int4,bool	0	-
+function	win866_to_iso	int4,int4,cstring,internal,int4,bool	0	-
+function	win866_to_koi8r	int4,int4,cstring,internal,int4,bool	0	-
+function	win866_to_mic	int4,int4,cstring,internal,int4,bool	0	-
+function	win866_to_win1251	int4,int4,cstring,internal,int4,bool	0	-
+function	win_to_utf8	int4,int4,cstring,internal,int4,bool	0	-
+function	window_cume_dist_support	internal	0	-
+function	window_dense_rank_support	internal	0	-
+function	window_ntile_support	internal	0	-
+function	window_percent_rank_support	internal	0	-
+function	window_rank_support	internal	0	-
+function	window_row_number_support	internal	0	-
+function	xid	xid8	0	-
+function	xid8_larger	xid8,xid8	0	-
+function	xid8_smaller	xid8,xid8	0	-
+function	xid8cmp	xid8,xid8	0	-
+function	xid8eq	xid8,xid8	0	-
+function	xid8ge	xid8,xid8	0	-
+function	xid8gt	xid8,xid8	0	-
+function	xid8in	cstring	0	-
+function	xid8le	xid8,xid8	0	-
+function	xid8lt	xid8,xid8	0	-
+function	xid8ne	xid8,xid8	0	-
+function	xid8out	xid8	0	-
+function	xid8recv	internal	0	-
+function	xid8send	xid8	0	-
+function	xideq	xid,xid	0	-
+function	xideqint4	xid,int4	0	-
+function	xidin	cstring	0	-
+function	xidneq	xid,xid	0	-
+function	xidneqint4	xid,int4	0	-
+function	xidout	xid	0	-
+function	xidrecv	internal	0	-
+function	xidsend	xid	0	-
+function	xml	text	0	-
+function	xml_in	cstring	0	-
+function	xml_is_well_formed	text	0	-
+function	xml_is_well_formed_content	text	0	-
+function	xml_is_well_formed_document	text	0	-
+function	xml_out	xml	0	-
+function	xml_recv	internal	0	-
+function	xml_send	xml	0	-
+function	xmlagg	xml	0	-
+function	xmlcomment	text	0	-
+function	xmlconcat2	xml,xml	0	-
+function	xmlexists	text,xml	0	-
+function	xmltext	text	0	-
+function	xmlvalidate	xml,text	0	-
+function	xpath	text,xml	0	-
+function	xpath	text,xml,_text	0	-
+function	xpath_exists	text,xml	0	-
+function	xpath_exists	text,xml,_text	0	-
+operator	!!	-	tsquery
+operator	!~	bpchar	text
+operator	!~	name	text
+operator	!~	text	text
+operator	!~*	bpchar	text
+operator	!~*	name	text
+operator	!~*	text	text
+operator	!~~	bpchar	text
+operator	!~~	bytea	bytea
+operator	!~~	name	text
+operator	!~~	text	text
+operator	!~~*	bpchar	text
+operator	!~~*	name	text
+operator	!~~*	text	text
+operator	#	-	path
+operator	#	-	polygon
+operator	#	bit	bit
+operator	#	box	box
+operator	#	int2	int2
+operator	#	int4	int4
+operator	#	int8	int8
+operator	#	line	line
+operator	#	lseg	lseg
+operator	##	line	lseg
+operator	##	lseg	box
+operator	##	lseg	lseg
+operator	##	point	box
+operator	##	point	line
+operator	##	point	lseg
+operator	#-	jsonb	_text
+operator	#>	json	_text
+operator	#>	jsonb	_text
+operator	#>>	json	_text
+operator	#>>	jsonb	_text
+operator	%	int2	int2
+operator	%	int4	int4
+operator	%	int8	int8
+operator	%	numeric	numeric
+operator	&	bit	bit
+operator	&	inet	inet
+operator	&	int2	int2
+operator	&	int4	int4
+operator	&	int8	int8
+operator	&	macaddr	macaddr
+operator	&	macaddr8	macaddr8
+operator	&&	anyarray	anyarray
+operator	&&	anymultirange	anymultirange
+operator	&&	anymultirange	anyrange
+operator	&&	anyrange	anymultirange
+operator	&&	anyrange	anyrange
+operator	&&	box	box
+operator	&&	circle	circle
+operator	&&	inet	inet
+operator	&&	polygon	polygon
+operator	&&	tsquery	tsquery
+operator	&<	anymultirange	anymultirange
+operator	&<	anymultirange	anyrange
+operator	&<	anyrange	anymultirange
+operator	&<	anyrange	anyrange
+operator	&<	box	box
+operator	&<	circle	circle
+operator	&<	polygon	polygon
+operator	&<|	box	box
+operator	&<|	circle	circle
+operator	&<|	polygon	polygon
+operator	&>	anymultirange	anymultirange
+operator	&>	anymultirange	anyrange
+operator	&>	anyrange	anymultirange
+operator	&>	anyrange	anyrange
+operator	&>	box	box
+operator	&>	circle	circle
+operator	&>	polygon	polygon
+operator	*	anymultirange	anymultirange
+operator	*	anyrange	anyrange
+operator	*	box	point
+operator	*	circle	point
+operator	*	float4	float4
+operator	*	float4	float8
+operator	*	float4	money
+operator	*	float8	float4
+operator	*	float8	float8
+operator	*	float8	interval
+operator	*	float8	money
+operator	*	int2	int2
+operator	*	int2	int4
+operator	*	int2	int8
+operator	*	int2	money
+operator	*	int4	int2
+operator	*	int4	int4
+operator	*	int4	int8
+operator	*	int4	money
+operator	*	int8	int2
+operator	*	int8	int4
+operator	*	int8	int8
+operator	*	int8	money
+operator	*	interval	float8
+operator	*	money	float4
+operator	*	money	float8
+operator	*	money	int2
+operator	*	money	int4
+operator	*	money	int8
+operator	*	numeric	numeric
+operator	*	path	point
+operator	*	point	point
+operator	*<	record	record
+operator	*<=	record	record
+operator	*<>	record	record
+operator	*=	record	record
+operator	*>	record	record
+operator	*>=	record	record
+operator	+	-	float4
+operator	+	-	float8
+operator	+	-	int2
+operator	+	-	int4
+operator	+	-	int8
+operator	+	-	numeric
+operator	+	_aclitem	aclitem
+operator	+	anymultirange	anymultirange
+operator	+	anyrange	anyrange
+operator	+	box	point
+operator	+	circle	point
+operator	+	date	int4
+operator	+	date	interval
+operator	+	date	time
+operator	+	date	timetz
+operator	+	float4	float4
+operator	+	float4	float8
+operator	+	float8	float4
+operator	+	float8	float8
+operator	+	inet	int8
+operator	+	int2	int2
+operator	+	int2	int4
+operator	+	int2	int8
+operator	+	int4	date
+operator	+	int4	int2
+operator	+	int4	int4
+operator	+	int4	int8
+operator	+	int8	inet
+operator	+	int8	int2
+operator	+	int8	int4
+operator	+	int8	int8
+operator	+	interval	date
+operator	+	interval	interval
+operator	+	interval	time
+operator	+	interval	timestamp
+operator	+	interval	timestamptz
+operator	+	interval	timetz
+operator	+	money	money
+operator	+	numeric	numeric
+operator	+	numeric	pg_lsn
+operator	+	path	path
+operator	+	path	point
+operator	+	pg_lsn	numeric
+operator	+	point	point
+operator	+	time	date
+operator	+	time	interval
+operator	+	timestamp	interval
+operator	+	timestamptz	interval
+operator	+	timetz	date
+operator	+	timetz	interval
+operator	-	-	float4
+operator	-	-	float8
+operator	-	-	int2
+operator	-	-	int4
+operator	-	-	int8
+operator	-	-	interval
+operator	-	-	numeric
+operator	-	_aclitem	aclitem
+operator	-	anymultirange	anymultirange
+operator	-	anyrange	anyrange
+operator	-	box	point
+operator	-	circle	point
+operator	-	date	date
+operator	-	date	int4
+operator	-	date	interval
+operator	-	float4	float4
+operator	-	float4	float8
+operator	-	float8	float4
+operator	-	float8	float8
+operator	-	inet	inet
+operator	-	inet	int8
+operator	-	int2	int2
+operator	-	int2	int4
+operator	-	int2	int8
+operator	-	int4	int2
+operator	-	int4	int4
+operator	-	int4	int8
+operator	-	int8	int2
+operator	-	int8	int4
+operator	-	int8	int8
+operator	-	interval	interval
+operator	-	jsonb	_text
+operator	-	jsonb	int4
+operator	-	jsonb	text
+operator	-	money	money
+operator	-	numeric	numeric
+operator	-	path	point
+operator	-	pg_lsn	numeric
+operator	-	pg_lsn	pg_lsn
+operator	-	point	point
+operator	-	time	interval
+operator	-	time	time
+operator	-	timestamp	interval
+operator	-	timestamp	timestamp
+operator	-	timestamptz	interval
+operator	-	timestamptz	timestamptz
+operator	-	timetz	interval
+operator	->	json	int4
+operator	->	json	text
+operator	->	jsonb	int4
+operator	->	jsonb	text
+operator	->>	json	int4
+operator	->>	json	text
+operator	->>	jsonb	int4
+operator	->>	jsonb	text
+operator	-|-	anymultirange	anymultirange
+operator	-|-	anymultirange	anyrange
+operator	-|-	anyrange	anymultirange
+operator	-|-	anyrange	anyrange
+operator	/	box	point
+operator	/	circle	point
+operator	/	float4	float4
+operator	/	float4	float8
+operator	/	float8	float4
+operator	/	float8	float8
+operator	/	int2	int2
+operator	/	int2	int4
+operator	/	int2	int8
+operator	/	int4	int2
+operator	/	int4	int4
+operator	/	int4	int8
+operator	/	int8	int2
+operator	/	int8	int4
+operator	/	int8	int8
+operator	/	interval	float8
+operator	/	money	float4
+operator	/	money	float8
+operator	/	money	int2
+operator	/	money	int4
+operator	/	money	int8
+operator	/	money	money
+operator	/	numeric	numeric
+operator	/	path	point
+operator	/	point	point
+operator	<	anyarray	anyarray
+operator	<	anyenum	anyenum
+operator	<	anymultirange	anymultirange
+operator	<	anyrange	anyrange
+operator	<	bit	bit
+operator	<	bool	bool
+operator	<	box	box
+operator	<	bpchar	bpchar
+operator	<	bytea	bytea
+operator	<	char	char
+operator	<	circle	circle
+operator	<	date	date
+operator	<	date	timestamp
+operator	<	date	timestamptz
+operator	<	float4	float4
+operator	<	float4	float8
+operator	<	float8	float4
+operator	<	float8	float8
+operator	<	inet	inet
+operator	<	int2	int2
+operator	<	int2	int4
+operator	<	int2	int8
+operator	<	int4	int2
+operator	<	int4	int4
+operator	<	int4	int8
+operator	<	int8	int2
+operator	<	int8	int4
+operator	<	int8	int8
+operator	<	interval	interval
+operator	<	jsonb	jsonb
+operator	<	lseg	lseg
+operator	<	macaddr	macaddr
+operator	<	macaddr8	macaddr8
+operator	<	money	money
+operator	<	name	name
+operator	<	name	text
+operator	<	numeric	numeric
+operator	<	oid	oid
+operator	<	oidvector	oidvector
+operator	<	path	path
+operator	<	pg_lsn	pg_lsn
+operator	<	record	record
+operator	<	text	name
+operator	<	text	text
+operator	<	tid	tid
+operator	<	time	time
+operator	<	timestamp	date
+operator	<	timestamp	timestamp
+operator	<	timestamp	timestamptz
+operator	<	timestamptz	date
+operator	<	timestamptz	timestamp
+operator	<	timestamptz	timestamptz
+operator	<	timetz	timetz
+operator	<	tsquery	tsquery
+operator	<	tsvector	tsvector
+operator	<	uuid	uuid
+operator	<	varbit	varbit
+operator	<	xid8	xid8
+operator	<->	box	box
+operator	<->	box	lseg
+operator	<->	box	point
+operator	<->	circle	circle
+operator	<->	circle	point
+operator	<->	circle	polygon
+operator	<->	line	line
+operator	<->	line	lseg
+operator	<->	line	point
+operator	<->	lseg	box
+operator	<->	lseg	line
+operator	<->	lseg	lseg
+operator	<->	lseg	point
+operator	<->	path	path
+operator	<->	path	point
+operator	<->	point	box
+operator	<->	point	circle
+operator	<->	point	line
+operator	<->	point	lseg
+operator	<->	point	path
+operator	<->	point	point
+operator	<->	point	polygon
+operator	<->	polygon	circle
+operator	<->	polygon	point
+operator	<->	polygon	polygon
+operator	<->	tsquery	tsquery
+operator	<<	anymultirange	anymultirange
+operator	<<	anymultirange	anyrange
+operator	<<	anyrange	anymultirange
+operator	<<	anyrange	anyrange
+operator	<<	bit	int4
+operator	<<	box	box
+operator	<<	circle	circle
+operator	<<	inet	inet
+operator	<<	int2	int4
+operator	<<	int4	int4
+operator	<<	int8	int4
+operator	<<	point	point
+operator	<<	polygon	polygon
+operator	<<=	inet	inet
+operator	<<|	box	box
+operator	<<|	circle	circle
+operator	<<|	point	point
+operator	<<|	polygon	polygon
+operator	<=	anyarray	anyarray
+operator	<=	anyenum	anyenum
+operator	<=	anymultirange	anymultirange
+operator	<=	anyrange	anyrange
+operator	<=	bit	bit
+operator	<=	bool	bool
+operator	<=	box	box
+operator	<=	bpchar	bpchar
+operator	<=	bytea	bytea
+operator	<=	char	char
+operator	<=	circle	circle
+operator	<=	date	date
+operator	<=	date	timestamp
+operator	<=	date	timestamptz
+operator	<=	float4	float4
+operator	<=	float4	float8
+operator	<=	float8	float4
+operator	<=	float8	float8
+operator	<=	inet	inet
+operator	<=	int2	int2
+operator	<=	int2	int4
+operator	<=	int2	int8
+operator	<=	int4	int2
+operator	<=	int4	int4
+operator	<=	int4	int8
+operator	<=	int8	int2
+operator	<=	int8	int4
+operator	<=	int8	int8
+operator	<=	interval	interval
+operator	<=	jsonb	jsonb
+operator	<=	lseg	lseg
+operator	<=	macaddr	macaddr
+operator	<=	macaddr8	macaddr8
+operator	<=	money	money
+operator	<=	name	name
+operator	<=	name	text
+operator	<=	numeric	numeric
+operator	<=	oid	oid
+operator	<=	oidvector	oidvector
+operator	<=	path	path
+operator	<=	pg_lsn	pg_lsn
+operator	<=	record	record
+operator	<=	text	name
+operator	<=	text	text
+operator	<=	tid	tid
+operator	<=	time	time
+operator	<=	timestamp	date
+operator	<=	timestamp	timestamp
+operator	<=	timestamp	timestamptz
+operator	<=	timestamptz	date
+operator	<=	timestamptz	timestamp
+operator	<=	timestamptz	timestamptz
+operator	<=	timetz	timetz
+operator	<=	tsquery	tsquery
+operator	<=	tsvector	tsvector
+operator	<=	uuid	uuid
+operator	<=	varbit	varbit
+operator	<=	xid8	xid8
+operator	<>	anyarray	anyarray
+operator	<>	anyenum	anyenum
+operator	<>	anymultirange	anymultirange
+operator	<>	anyrange	anyrange
+operator	<>	bit	bit
+operator	<>	bool	bool
+operator	<>	bpchar	bpchar
+operator	<>	bytea	bytea
+operator	<>	char	char
+operator	<>	circle	circle
+operator	<>	date	date
+operator	<>	date	timestamp
+operator	<>	date	timestamptz
+operator	<>	float4	float4
+operator	<>	float4	float8
+operator	<>	float8	float4
+operator	<>	float8	float8
+operator	<>	inet	inet
+operator	<>	int2	int2
+operator	<>	int2	int4
+operator	<>	int2	int8
+operator	<>	int4	int2
+operator	<>	int4	int4
+operator	<>	int4	int8
+operator	<>	int8	int2
+operator	<>	int8	int4
+operator	<>	int8	int8
+operator	<>	interval	interval
+operator	<>	jsonb	jsonb
+operator	<>	lseg	lseg
+operator	<>	macaddr	macaddr
+operator	<>	macaddr8	macaddr8
+operator	<>	money	money
+operator	<>	name	name
+operator	<>	name	text
+operator	<>	numeric	numeric
+operator	<>	oid	oid
+operator	<>	oidvector	oidvector
+operator	<>	pg_lsn	pg_lsn
+operator	<>	point	point
+operator	<>	record	record
+operator	<>	text	name
+operator	<>	text	text
+operator	<>	tid	tid
+operator	<>	time	time
+operator	<>	timestamp	date
+operator	<>	timestamp	timestamp
+operator	<>	timestamp	timestamptz
+operator	<>	timestamptz	date
+operator	<>	timestamptz	timestamp
+operator	<>	timestamptz	timestamptz
+operator	<>	timetz	timetz
+operator	<>	tsquery	tsquery
+operator	<>	tsvector	tsvector
+operator	<>	uuid	uuid
+operator	<>	varbit	varbit
+operator	<>	xid	int4
+operator	<>	xid	xid
+operator	<>	xid8	xid8
+operator	<@	anyarray	anyarray
+operator	<@	anyelement	anymultirange
+operator	<@	anyelement	anyrange
+operator	<@	anymultirange	anymultirange
+operator	<@	anymultirange	anyrange
+operator	<@	anyrange	anymultirange
+operator	<@	anyrange	anyrange
+operator	<@	box	box
+operator	<@	circle	circle
+operator	<@	jsonb	jsonb
+operator	<@	lseg	box
+operator	<@	lseg	line
+operator	<@	point	box
+operator	<@	point	circle
+operator	<@	point	line
+operator	<@	point	lseg
+operator	<@	point	path
+operator	<@	point	polygon
+operator	<@	polygon	polygon
+operator	<@	tsquery	tsquery
+operator	<^	box	box
+operator	<^	point	point
+operator	=	aclitem	aclitem
+operator	=	anyarray	anyarray
+operator	=	anyenum	anyenum
+operator	=	anymultirange	anymultirange
+operator	=	anyrange	anyrange
+operator	=	bit	bit
+operator	=	bool	bool
+operator	=	box	box
+operator	=	bpchar	bpchar
+operator	=	bytea	bytea
+operator	=	char	char
+operator	=	cid	cid
+operator	=	circle	circle
+operator	=	date	date
+operator	=	date	timestamp
+operator	=	date	timestamptz
+operator	=	float4	float4
+operator	=	float4	float8
+operator	=	float8	float4
+operator	=	float8	float8
+operator	=	inet	inet
+operator	=	int2	int2
+operator	=	int2	int4
+operator	=	int2	int8
+operator	=	int4	int2
+operator	=	int4	int4
+operator	=	int4	int8
+operator	=	int8	int2
+operator	=	int8	int4
+operator	=	int8	int8
+operator	=	interval	interval
+operator	=	jsonb	jsonb
+operator	=	line	line
+operator	=	lseg	lseg
+operator	=	macaddr	macaddr
+operator	=	macaddr8	macaddr8
+operator	=	money	money
+operator	=	name	name
+operator	=	name	text
+operator	=	numeric	numeric
+operator	=	oid	oid
+operator	=	oidvector	oidvector
+operator	=	path	path
+operator	=	pg_lsn	pg_lsn
+operator	=	record	record
+operator	=	text	name
+operator	=	text	text
+operator	=	tid	tid
+operator	=	time	time
+operator	=	timestamp	date
+operator	=	timestamp	timestamp
+operator	=	timestamp	timestamptz
+operator	=	timestamptz	date
+operator	=	timestamptz	timestamp
+operator	=	timestamptz	timestamptz
+operator	=	timetz	timetz
+operator	=	tsquery	tsquery
+operator	=	tsvector	tsvector
+operator	=	uuid	uuid
+operator	=	varbit	varbit
+operator	=	xid	int4
+operator	=	xid	xid
+operator	=	xid8	xid8
+operator	>	anyarray	anyarray
+operator	>	anyenum	anyenum
+operator	>	anymultirange	anymultirange
+operator	>	anyrange	anyrange
+operator	>	bit	bit
+operator	>	bool	bool
+operator	>	box	box
+operator	>	bpchar	bpchar
+operator	>	bytea	bytea
+operator	>	char	char
+operator	>	circle	circle
+operator	>	date	date
+operator	>	date	timestamp
+operator	>	date	timestamptz
+operator	>	float4	float4
+operator	>	float4	float8
+operator	>	float8	float4
+operator	>	float8	float8
+operator	>	inet	inet
+operator	>	int2	int2
+operator	>	int2	int4
+operator	>	int2	int8
+operator	>	int4	int2
+operator	>	int4	int4
+operator	>	int4	int8
+operator	>	int8	int2
+operator	>	int8	int4
+operator	>	int8	int8
+operator	>	interval	interval
+operator	>	jsonb	jsonb
+operator	>	lseg	lseg
+operator	>	macaddr	macaddr
+operator	>	macaddr8	macaddr8
+operator	>	money	money
+operator	>	name	name
+operator	>	name	text
+operator	>	numeric	numeric
+operator	>	oid	oid
+operator	>	oidvector	oidvector
+operator	>	path	path
+operator	>	pg_lsn	pg_lsn
+operator	>	record	record
+operator	>	text	name
+operator	>	text	text
+operator	>	tid	tid
+operator	>	time	time
+operator	>	timestamp	date
+operator	>	timestamp	timestamp
+operator	>	timestamp	timestamptz
+operator	>	timestamptz	date
+operator	>	timestamptz	timestamp
+operator	>	timestamptz	timestamptz
+operator	>	timetz	timetz
+operator	>	tsquery	tsquery
+operator	>	tsvector	tsvector
+operator	>	uuid	uuid
+operator	>	varbit	varbit
+operator	>	xid8	xid8
+operator	>=	anyarray	anyarray
+operator	>=	anyenum	anyenum
+operator	>=	anymultirange	anymultirange
+operator	>=	anyrange	anyrange
+operator	>=	bit	bit
+operator	>=	bool	bool
+operator	>=	box	box
+operator	>=	bpchar	bpchar
+operator	>=	bytea	bytea
+operator	>=	char	char
+operator	>=	circle	circle
+operator	>=	date	date
+operator	>=	date	timestamp
+operator	>=	date	timestamptz
+operator	>=	float4	float4
+operator	>=	float4	float8
+operator	>=	float8	float4
+operator	>=	float8	float8
+operator	>=	inet	inet
+operator	>=	int2	int2
+operator	>=	int2	int4
+operator	>=	int2	int8
+operator	>=	int4	int2
+operator	>=	int4	int4
+operator	>=	int4	int8
+operator	>=	int8	int2
+operator	>=	int8	int4
+operator	>=	int8	int8
+operator	>=	interval	interval
+operator	>=	jsonb	jsonb
+operator	>=	lseg	lseg
+operator	>=	macaddr	macaddr
+operator	>=	macaddr8	macaddr8
+operator	>=	money	money
+operator	>=	name	name
+operator	>=	name	text
+operator	>=	numeric	numeric
+operator	>=	oid	oid
+operator	>=	oidvector	oidvector
+operator	>=	path	path
+operator	>=	pg_lsn	pg_lsn
+operator	>=	record	record
+operator	>=	text	name
+operator	>=	text	text
+operator	>=	tid	tid
+operator	>=	time	time
+operator	>=	timestamp	date
+operator	>=	timestamp	timestamp
+operator	>=	timestamp	timestamptz
+operator	>=	timestamptz	date
+operator	>=	timestamptz	timestamp
+operator	>=	timestamptz	timestamptz
+operator	>=	timetz	timetz
+operator	>=	tsquery	tsquery
+operator	>=	tsvector	tsvector
+operator	>=	uuid	uuid
+operator	>=	varbit	varbit
+operator	>=	xid8	xid8
+operator	>>	anymultirange	anymultirange
+operator	>>	anymultirange	anyrange
+operator	>>	anyrange	anymultirange
+operator	>>	anyrange	anyrange
+operator	>>	bit	int4
+operator	>>	box	box
+operator	>>	circle	circle
+operator	>>	inet	inet
+operator	>>	int2	int4
+operator	>>	int4	int4
+operator	>>	int8	int4
+operator	>>	point	point
+operator	>>	polygon	polygon
+operator	>>=	inet	inet
+operator	>^	box	box
+operator	>^	point	point
+operator	?	jsonb	text
+operator	?#	box	box
+operator	?#	line	box
+operator	?#	line	line
+operator	?#	lseg	box
+operator	?#	lseg	line
+operator	?#	lseg	lseg
+operator	?#	path	path
+operator	?&	jsonb	_text
+operator	?-	-	line
+operator	?-	-	lseg
+operator	?-	point	point
+operator	?-|	line	line
+operator	?-|	lseg	lseg
+operator	?|	-	line
+operator	?|	-	lseg
+operator	?|	jsonb	_text
+operator	?|	point	point
+operator	?||	line	line
+operator	?||	lseg	lseg
+operator	@	-	float4
+operator	@	-	float8
+operator	@	-	int2
+operator	@	-	int4
+operator	@	-	int8
+operator	@	-	numeric
+operator	@-@	-	lseg
+operator	@-@	-	path
+operator	@>	_aclitem	aclitem
+operator	@>	anyarray	anyarray
+operator	@>	anymultirange	anyelement
+operator	@>	anymultirange	anymultirange
+operator	@>	anymultirange	anyrange
+operator	@>	anyrange	anyelement
+operator	@>	anyrange	anymultirange
+operator	@>	anyrange	anyrange
+operator	@>	box	box
+operator	@>	box	point
+operator	@>	circle	circle
+operator	@>	circle	point
+operator	@>	jsonb	jsonb
+operator	@>	path	point
+operator	@>	polygon	point
+operator	@>	polygon	polygon
+operator	@>	tsquery	tsquery
+operator	@?	jsonb	jsonpath
+operator	@@	-	box
+operator	@@	-	circle
+operator	@@	-	lseg
+operator	@@	-	polygon
+operator	@@	jsonb	jsonpath
+operator	@@	text	text
+operator	@@	text	tsquery
+operator	@@	tsquery	tsvector
+operator	@@	tsvector	tsquery
+operator	@@@	tsquery	tsvector
+operator	@@@	tsvector	tsquery
+operator	^	float8	float8
+operator	^	numeric	numeric
+operator	^@	text	text
+operator	|	bit	bit
+operator	|	inet	inet
+operator	|	int2	int2
+operator	|	int4	int4
+operator	|	int8	int8
+operator	|	macaddr	macaddr
+operator	|	macaddr8	macaddr8
+operator	|&>	box	box
+operator	|&>	circle	circle
+operator	|&>	polygon	polygon
+operator	|/	-	float8
+operator	|>>	box	box
+operator	|>>	circle	circle
+operator	|>>	point	point
+operator	|>>	polygon	polygon
+operator	||	anycompatible	anycompatiblearray
+operator	||	anycompatiblearray	anycompatible
+operator	||	anycompatiblearray	anycompatiblearray
+operator	||	anynonarray	text
+operator	||	bytea	bytea
+operator	||	jsonb	jsonb
+operator	||	text	anynonarray
+operator	||	text	text
+operator	||	tsquery	tsquery
+operator	||	tsvector	tsvector
+operator	||	varbit	varbit
+operator	||/	-	float8
+operator	~	-	bit
+operator	~	-	inet
+operator	~	-	int2
+operator	~	-	int4
+operator	~	-	int8
+operator	~	-	macaddr
+operator	~	-	macaddr8
+operator	~	bpchar	text
+operator	~	name	text
+operator	~	text	text
+operator	~*	bpchar	text
+operator	~*	name	text
+operator	~*	text	text
+operator	~<=~	bpchar	bpchar
+operator	~<=~	text	text
+operator	~<~	bpchar	bpchar
+operator	~<~	text	text
+operator	~=	box	box
+operator	~=	circle	circle
+operator	~=	point	point
+operator	~=	polygon	polygon
+operator	~>=~	bpchar	bpchar
+operator	~>=~	text	text
+operator	~>~	bpchar	bpchar
+operator	~>~	text	text
+operator	~~	bpchar	text
+operator	~~	bytea	bytea
+operator	~~	name	text
+operator	~~	text	text
+operator	~~*	bpchar	text
+operator	~~*	name	text
+operator	~~*	text	text
+type	aclitem	U
+type	bit	V
+type	bool	B
+type	box	G
+type	bpchar	S
+type	bytea	U
+type	char	Z
+type	cid	U
+type	cidr	I
+type	circle	G
+type	date	D
+type	datemultirange	R
+type	daterange	R
+type	float4	N
+type	float8	N
+type	gtsvector	U
+type	inet	I
+type	int2	N
+type	int4	N
+type	int4multirange	R
+type	int4range	R
+type	int8	N
+type	int8multirange	R
+type	int8range	R
+type	interval	T
+type	json	U
+type	jsonb	U
+type	jsonpath	U
+type	line	G
+type	lseg	G
+type	macaddr	U
+type	macaddr8	U
+type	money	N
+type	name	S
+type	numeric	N
+type	nummultirange	R
+type	numrange	R
+type	oid	N
+type	path	G
+type	pg_brin_bloom_summary	Z
+type	pg_brin_minmax_multi_summary	Z
+type	pg_dependencies	Z
+type	pg_lsn	U
+type	pg_mcv_list	Z
+type	pg_ndistinct	Z
+type	pg_node_tree	Z
+type	pg_snapshot	U
+type	point	G
+type	polygon	G
+type	refcursor	U
+type	regclass	N
+type	regcollation	N
+type	regconfig	N
+type	regdictionary	N
+type	regnamespace	N
+type	regoper	N
+type	regoperator	N
+type	regproc	N
+type	regprocedure	N
+type	regrole	N
+type	regtype	N
+type	text	S
+type	tid	U
+type	time	D
+type	timestamp	D
+type	timestamptz	D
+type	timetz	D
+type	tsmultirange	R
+type	tsquery	U
+type	tsrange	R
+type	tstzmultirange	R
+type	tstzrange	R
+type	tsvector	U
+type	txid_snapshot	U
+type	uuid	U
+type	varbit	V
+type	varchar	S
+type	xid	U
+type	xid8	U
+type	xml	U

@@ -182,9 +182,10 @@ class WindowPlanTest extends TestHelper {
     assertState("SELECT pid FROM person WHERE row_number() OVER () = 1", "42P20");
     assertState("SELECT pid FROM person GROUP BY pid, row_number() OVER ()", "42P20");
     // no such window function
-    assertState("SELECT rank(1) OVER () FROM person", "42883");
+    assertState("SELECT row_number(1) OVER () FROM person", "42883");
     assertState("SELECT nope() OVER () FROM person", "42883");
-    // what PostgreSQL has and the prototype does not
+    // what PostgreSQL has and the prototype does not: rank(1) is its hypothetical-set aggregate
+    assertState("SELECT rank(1) OVER () FROM person", "0A000");
     assertState("SELECT count(DISTINCT pid) OVER () FROM person", "0A000");
     assertState("SELECT sum(age) OVER (ORDER BY pid ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM person", "0A000");
     assertState("SELECT sum(age) OVER (ORDER BY pid ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM person", "0A000");

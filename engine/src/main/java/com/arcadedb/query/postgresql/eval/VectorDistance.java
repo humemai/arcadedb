@@ -41,7 +41,8 @@ import java.util.regex.Pattern;
  * <p>An operand is a {@code vector}, or a constant that is text or of unknown type (a string literal, a text parameter), which is
  * read with the input syntax of the type: pgvector resolves the unknown literal of {@code embedding <-> '[1,0,0]'} to
  * {@code vector} the same way, and a Java caller that passes the query vector as a {@code String} parameter gets the same
- * reading. Any other operand is {@code 42883}.
+ * reading. Any other operand is no operator: {@code 42883}, or {@code 0A000} when PostgreSQL itself has the operator for the
+ * operands, as it has {@code <->} for its geometric types.
  *
  * <p>The planner reads {@link #operator()}, {@link #left()} and {@link #right()} to find an ordered nearest-neighbour search.
  */
@@ -64,8 +65,8 @@ public final class VectorDistance implements Evaluable {
   /**
    * The expression for {@code left operator right}.
    *
-   * @throws PostgreSQLEvaluationException {@code 42883} when an operand cannot be a vector, {@code 22P02} for a constant that is
-   *                                       not the text of a vector
+   * @throws PostgreSQLEvaluationException {@code 42883} or {@code 0A000} when an operand cannot be a vector, {@code 22P02} for a
+   *                                       constant that is not the text of a vector
    */
   public static VectorDistance of(final Expression.BinaryOperator operator, final Evaluable left, final Evaluable right) {
     if (left.type() != PgType.VECTOR && right.type() != PgType.VECTOR)

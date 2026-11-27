@@ -118,12 +118,12 @@ final class WindowStage {
     case "rank":
     case "dense_rank":
       if (call.star() || !call.args().isEmpty())
-        throw PostgreSQLEvaluationException.noFunction(name);
+        throw PostgreSQLEvaluationException.noFunction(name, input.argumentTypes(call));
       return new Call(name, PgType.INT8, PgType.INT8.typeName(), partition, orderKeys, orderings, null, null, null, null, null);
     case "lag":
     case "lead": {
       if (call.star() || call.args().isEmpty() || call.args().size() > 3)
-        throw PostgreSQLEvaluationException.noFunction(name);
+        throw PostgreSQLEvaluationException.noFunction(name, input.argumentTypes(call));
       final Evaluable argument = input.resolveOutput(input.compile(call.args().get(0)));
       Evaluable offset = null;
       if (call.args().size() > 1) {
@@ -155,7 +155,7 @@ final class WindowStage {
     case "first_value":
     case "last_value": {
       if (call.star() || call.args().size() != 1)
-        throw PostgreSQLEvaluationException.noFunction(name);
+        throw PostgreSQLEvaluationException.noFunction(name, input.argumentTypes(call));
       final Evaluable argument = input.resolveOutput(input.compile(call.args().get(0)));
       return new Call(name, argument.type(), argument.typeName(), partition, orderKeys, orderings, argument, null, null, null, null);
     }
@@ -171,7 +171,7 @@ final class WindowStage {
     default:
       if (OTHER_WINDOW_FUNCTIONS.contains(name) || name.equals("string_agg"))
         throw new PostgreSQLFeatureNotSupportedException("The window function " + name + " is not supported");
-      throw PostgreSQLEvaluationException.noFunction(name);
+      throw PostgreSQLEvaluationException.noFunction(name, input.argumentTypes(call));
     }
   }
 

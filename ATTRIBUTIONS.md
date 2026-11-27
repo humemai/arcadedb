@@ -85,9 +85,11 @@ This document provides detailed attribution information for third-party software
 
 ---
 
-### 3. PostgreSQL Regression Test Statements
+### 3. PostgreSQL Regression Test Statements and Catalog List
 
 The syntax corpus of the `postgresql` language (`engine/src/test/resources/postgresql/corpus/syntax.tsv`) contains statements copied from the regression tests of [PostgreSQL](https://www.postgresql.org/) `REL_18_7` (`src/test/regress/sql`), with values first read from the expected output of the same tests. They are the entries with an id of the form `<test>:<line>`. The page [`docs/postgresql-regression.md`](docs/postgresql-regression.md) quotes the statements of the same tests that the language answers wrong, and its result file `e2e/src/test/resources/pgregress/result/wrong.tsv` holds them. None of these copies is part of the shipped artifacts.
+
+The engine does ship one list: `engine/src/main/resources/com/arcadedb/query/postgresql/eval/postgresql-18-catalog.tsv` holds the names and argument types of the functions and operators, the implicit casts, and the type names of the system catalog of a PostgreSQL 18.7 server. The script `.github/scripts/pg_catalog_list.sh` writes it from such a server, and the file carries the notice below.
 
 - **License:** PostgreSQL License
 

@@ -54,12 +54,13 @@ import java.util.function.Function;
  * a string constant that meets a type is read by the input function of that type at once, so {@code age = 'x'} is
  * {@code 22P02} before any row is read. An {@code unknown} that nothing resolves is {@code text}.</li>
  * <li>An operator needs both operands in one type: two numbers go to the type of {@link Numbers#common}, two strings to
- * {@code text}, a date and a timestamp to {@code timestamp}. Anything else is {@code 42883}.</li>
+ * {@code text}, a date and a timestamp to {@code timestamp}. Anything else is no operator, see below.</li>
  * <li>{@code AND}, {@code OR}, {@code NOT} and the {@code WHERE} condition need {@code boolean}: {@code 42804} otherwise.</li>
  * <li>{@code CASE}, {@code COALESCE}, {@code GREATEST} and {@code LEAST} give their branches one type: the widest numeric type,
  * {@code text} for strings, {@code timestamp} for dates and timestamps ({@code 42804} when they cannot be matched).</li>
  * </ul>
- * A function or a type outside the subset is {@code 0A000} or {@code 42883}, never a silent different answer.
+ * A type, a function or an operator outside the subset is {@code 0A000}, and one that PostgreSQL does not have either is
+ * {@code 42883} ({@link PostgreSQLBuiltins}), never a silent different answer.
  */
 public final class ExpressionCompiler {
 
@@ -957,8 +958,13 @@ public final class ExpressionCompiler {
 
   private Evaluable like(final Expression.Like e) {
     final String operator = (e.negated() ? "!~~" : "~~") + (e.ignoreCase() ? "*" : "");
-    final Evaluable operand = likeOperand(compile(e.operand()), operator);
-    final Evaluable pattern = likeOperand(compile(e.pattern()), operator);
+    final Evaluable left = compile(e.operand());
+    final Evaluable right = compile(e.pattern());
+    final Evaluable operand = implicit(left, PgType.TEXT);
+    final Evaluable pattern = implicit(right, PgType.TEXT);
+    // the error names both operands as they are: PostgreSQL has this operator for bytea, so the pair decides the code
+    if (operand == null || pattern == null)
+      throw PostgreSQLEvaluationException.noOperator(operator, left.type(), right.type());
     final Evaluable escape = e.escape() == null ? null : likeOperand(compile(e.escape()), operator);
     final boolean negated = e.negated();
     final boolean ignoreCase = e.ignoreCase();
@@ -1190,6 +1196,11 @@ public final class ExpressionCompiler {
 
   // ---- functions ----
 
+  /** The types of the arguments of a call, for the error of a call that the language cannot type. */
+  public PgType[] argumentTypes(final Expression.FunctionCall call) {
+    return types(compileArguments(call.args()));
+  }
+
   private Evaluable[] compileArguments(final List<Expression> arguments) {
     final Evaluable[] out = new Evaluable[arguments.size()];
     for (int i = 0; i < out.length; i++)
@@ -1210,7 +1221,7 @@ public final class ExpressionCompiler {
     }, arguments);
   }
 
-  /** The arguments converted to the given types, one each; a call with other arguments is {@code 42883}. */
+  /** The arguments converted to the given types, one each; a call with other arguments is no function of the language. */
   private static Evaluable[] arguments(final String name, final Evaluable[] arguments, final PgType... types) {
     if (arguments.length != types.length)
       throw PostgreSQLEvaluationException.noFunction(name, types(arguments));
@@ -1232,7 +1243,7 @@ public final class ExpressionCompiler {
     if (UNSUPPORTED_AGGREGATES.contains(name))
       throw PostgreSQLEvaluationException.unsupported("The aggregate function " + name + " is not supported");
     if (call.distinct() || call.star())
-      throw PostgreSQLEvaluationException.noFunction(name);
+      throw PostgreSQLEvaluationException.noFunction(name, argumentTypes(call));
     final Evaluable[] args = compileArguments(call.args());
     final PgType text = PgType.TEXT;
     final PgType int4 = PgType.INT4;
