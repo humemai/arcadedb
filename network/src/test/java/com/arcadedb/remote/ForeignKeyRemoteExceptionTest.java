@@ -18,6 +18,7 @@
  */
 package com.arcadedb.remote;
 
+import com.arcadedb.exception.CheckConstraintException;
 import com.arcadedb.exception.ForeignKeyException;
 import com.arcadedb.exception.ValidationException;
 import com.arcadedb.serializer.json.JSONObject;
@@ -63,6 +64,19 @@ class ForeignKeyRemoteExceptionTest {
   @Test
   void anAnswerWithoutAStateIsAViolatedKey() {
     assertRebuilt(component.manageException(400, body().toString(), "command"), "23503");
+  }
+
+  @Test
+  void aCheckConstraintKeepsItsStateToo() {
+    final JSONObject sent = body().put("exception", CheckConstraintException.class.getName());
+
+    final Exception withoutState = component.manageException(400, sent.toString(), "command");
+    final Exception withState = component.manageException(400, sent.put("sqlState", "22012").toString(), "command");
+
+    assertThat(withoutState).isExactlyInstanceOf(CheckConstraintException.class);
+    assertThat(((CheckConstraintException) withoutState).getSqlState()).isEqualTo("23514");
+    assertThat(withState).isExactlyInstanceOf(CheckConstraintException.class);
+    assertThat(((CheckConstraintException) withState).getSqlState()).isEqualTo("22012");
   }
 
   private static JSONObject body() {

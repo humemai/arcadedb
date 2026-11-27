@@ -18,6 +18,7 @@
  */
 package com.arcadedb.remote;
 
+import com.arcadedb.exception.CheckConstraintException;
 import com.arcadedb.exception.ForeignKeyException;
 import com.arcadedb.exception.TransactionException;
 import com.arcadedb.server.BaseGraphServerTest;
@@ -53,6 +54,17 @@ class RemoteForeignKeyExceptionIT extends BaseGraphServerTest {
     assertThatThrownBy(
         () -> remote.transaction(() -> remote.command("sql", "INSERT INTO child SET id = 4, pid = 99").close())).isExactlyInstanceOf(
         TransactionException.class).satisfies(e -> assertForeignKey(e.getCause(), "23503"));
+  }
+
+  /** A check constraint (fork issue #227) crosses the driver the same way, with a state of its own for each refusal. */
+  @Test
+  void aRefusedCheckConstraintKeepsItsTypeAndStateOverTheDriver() {
+    remote.command("postgresql", "CREATE TABLE priced (id int PRIMARY KEY, price int CHECK (100 / price > 0))");
+
+    assertThatThrownBy(() -> remote.command("sql", "INSERT INTO priced SET id = 1, price = 500").close()).isExactlyInstanceOf(
+        CheckConstraintException.class).satisfies(e -> assertThat(((CheckConstraintException) e).getSqlState()).isEqualTo("23514"));
+    assertThatThrownBy(() -> remote.command("sql", "INSERT INTO priced SET id = 2, price = 0").close()).isExactlyInstanceOf(
+        CheckConstraintException.class).satisfies(e -> assertThat(((CheckConstraintException) e).getSqlState()).isEqualTo("22012"));
   }
 
   private static void assertRefused(final ThrowingCallable write, final String sqlState) {

@@ -24,10 +24,10 @@ import com.arcadedb.exception.DatabaseNotAvailableException;
 import com.arcadedb.exception.DatabaseOperationInProgressException;
 import com.arcadedb.exception.DuplicatedKeyException;
 import com.arcadedb.exception.ErrorCategory;
-import com.arcadedb.exception.ForeignKeyException;
 import com.arcadedb.exception.NeedRetryException;
 import com.arcadedb.exception.QueryTerminatedException;
 import com.arcadedb.exception.SchemaException;
+import com.arcadedb.exception.SqlStateValidationException;
 import com.arcadedb.exception.ValidationException;
 import com.arcadedb.log.LogManager;
 import com.arcadedb.network.binary.ServerIsNotTheLeaderException;
@@ -103,8 +103,8 @@ public final class GrpcErrorMapper {
   public static final Metadata.Key<String> VALIDATION_KIND_KEY = Metadata.Key.of("arcadedb-validation-kind",
       Metadata.ASCII_STRING_MARSHALLER);
   /**
-   * Trailer carrying the SQLSTATE of a {@link ForeignKeyException} (fork issue #228): what the HTTP body carries in
-   * {@code sqlState}, so the client rebuilds the exception with it. Five ASCII characters, never content.
+   * Trailer carrying the SQLSTATE of a {@link SqlStateValidationException} (fork issues #227 and #228): what the HTTP body
+   * carries in {@code sqlState}, so the client rebuilds the exception with it. Five ASCII characters, never content.
    */
   public static final Metadata.Key<String> SQL_STATE_KEY = Metadata.Key.of("arcadedb-sql-state",
       Metadata.ASCII_STRING_MARSHALLER);
@@ -246,8 +246,8 @@ public final class GrpcErrorMapper {
         null;
     if (refused != null && refused.getKind() != null)
       trailers.put(VALIDATION_KIND_KEY, refused.getKind().name());
-    if (refused instanceof ForeignKeyException foreignKey)
-      trailers.put(SQL_STATE_KEY, foreignKey.getSqlState());
+    if (refused instanceof SqlStateValidationException constraint)
+      trailers.put(SQL_STATE_KEY, constraint.getSqlState());
 
     final Status.Code code;
     String redirect = null;

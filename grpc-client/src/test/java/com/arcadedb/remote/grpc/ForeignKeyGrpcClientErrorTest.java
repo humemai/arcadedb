@@ -41,6 +41,16 @@ class ForeignKeyGrpcClientErrorTest {
   }
 
   @Test
+  void theStateOfACheckConstraintCrossesTheWire() {
+    final RuntimeException rebuilt = GrpcClientErrorMapper.toException(GrpcErrorMapper.toStatusRuntimeException(
+        new com.arcadedb.exception.CheckConstraintException("22012", "division by zero"), null));
+
+    assertThat(rebuilt).isExactlyInstanceOf(com.arcadedb.exception.CheckConstraintException.class)
+        .hasMessageContaining("division by zero");
+    assertThat(((com.arcadedb.exception.CheckConstraintException) rebuilt).getSqlState()).isEqualTo("22012");
+  }
+
+  @Test
   void aServerThatSendsNoStateRebuildsAViolatedKey() {
     final io.grpc.Metadata trailers = new io.grpc.Metadata();
     trailers.put(GrpcClientErrorMapper.EXCEPTION_CLASS_KEY, ForeignKeyException.class.getName());

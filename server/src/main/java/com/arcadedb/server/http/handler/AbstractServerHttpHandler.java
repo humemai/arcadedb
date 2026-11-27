@@ -1144,7 +1144,7 @@ public abstract class AbstractServerHttpHandler implements HttpHandler {
     final ErrorClassification classification = classifyByType(e);
     // The SQLSTATE of an error of the postgresql language, read off the whole chain because the throwable reported is not always
     // the language's: a duplicate key is reported as the DuplicatedKeyException it carries. For every other failure the arm that
-    // classified it decides, and only the one of a foreign key names a state
+    // classified it decides, and only the one of a foreign key or a check constraint names a state
     final String sqlState = PostgreSQLErrors.sqlState(e);
     return sqlState == null ? classification : classification.withSqlState(sqlState);
   }
@@ -1596,8 +1596,9 @@ public abstract class AbstractServerHttpHandler implements HttpHandler {
       final ErrorClassification refused = new ErrorClassification(400,
           kind != null ? "Constraint violated (" + kind.name() + ")" : "Validation error", invalid,
           kind != null ? kind.name() : null, ErrorLogKind.USER);
-      // A foreign key says in its SQLSTATE which refusal it is, whatever the language of the statement (fork issue #228)
-      return invalid instanceof ForeignKeyException foreignKey ? refused.withSqlState(foreignKey.getSqlState()) : refused;
+      // A foreign key or a check constraint says in its SQLSTATE which refusal it is, whatever the language of the statement
+      // (fork issues #227 and #228)
+      return invalid instanceof SqlStateValidationException constraint ? refused.withSqlState(constraint.getSqlState()) : refused;
     }
 
     // A statement of the postgresql language refused while it was typed, evaluated or written - a division by zero, a missing
@@ -1766,8 +1767,8 @@ public abstract class AbstractServerHttpHandler implements HttpHandler {
    * {@code error} field), the throwable reported on the wire contract's {@code exception} field (not always the
    * one raised: a {@code TransactionException} is reported as its cause), the structured {@code exceptionArgs},
    * how the failure is logged, the {@code Retry-After} header to send with it, or null for none, and the SQLSTATE
-   * of an error of the {@code postgresql} language or of a foreign key (the body's {@code sqlState} field), null for every
-   * other failure.
+   * of an error of the {@code postgresql} language or of a {@link SqlStateValidationException} (the body's {@code sqlState}
+   * field), null for every other failure.
    */
   protected record ErrorClassification(int status, String message, Throwable reported, String exceptionArgs,
                                        ErrorLogKind logKind, String retryAfter, String sqlState) {

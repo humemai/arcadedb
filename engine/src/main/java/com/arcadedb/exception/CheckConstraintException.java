@@ -23,15 +23,8 @@ package com.arcadedb.exception;
  * record that does not meet the constraint, the code of the error when the expression fails for the record ({@code 22012} for a
  * division by zero), and {@code 55000} for a constraint that cannot be checked.
  */
-public class CheckConstraintException extends ValidationException {
-  private final String sqlState;
-
+public class CheckConstraintException extends SqlStateValidationException {
   public CheckConstraintException(final String sqlState, final String message) {
-    super(Kind.CHECK, message);
-    this.sqlState = sqlState;
-  }
-
-  public String getSqlState() {
-    return sqlState;
+    super(Kind.CHECK, sqlState, message);
   }
 }
