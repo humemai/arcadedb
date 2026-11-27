@@ -85,9 +85,9 @@ public final class CreateTablePlan {
       ColumnType.NUMERIC, ColumnType.FLOAT4, ColumnType.FLOAT8, ColumnType.TEXT, ColumnType.VARCHAR, ColumnType.DATE,
       ColumnType.TIMESTAMP, ColumnType.TIMESTAMPTZ);
 
-  /** The types a column with a default can have. */
+  /** The types a column with a default can have, and every array type. */
   private static final Set<ColumnType> DEFAULT_TYPES = Set.of(ColumnType.BOOL, ColumnType.INT2, ColumnType.INT4, ColumnType.INT8,
-      ColumnType.NUMERIC, ColumnType.FLOAT4, ColumnType.FLOAT8, ColumnType.TEXT, ColumnType.VARCHAR);
+      ColumnType.NUMERIC, ColumnType.FLOAT4, ColumnType.FLOAT8, ColumnType.TEXT, ColumnType.VARCHAR, ColumnType.JSONB);
 
   /** The most dimensions pgvector allows a {@code vector}. */
   private static final int MAX_DIMENSIONS = 16000;
@@ -753,15 +753,19 @@ public final class CreateTablePlan {
       readClockDefault(spec, clock);
       return;
     }
+    final ColumnType type = spec.mapped.type();
     // 'text'::the_type_of_the_column says what the bare string says
     if (literal instanceof Expression.Cast cast && cast.operand() instanceof Expression.StringLiteral operand
-        && cast.type().modifiers().isEmpty() && type(cast.type()).type() == spec.mapped.type())
+        && cast.type().modifiers().isEmpty() && type(cast.type()).type() == type)
       literal = operand;
+    if (ContainerDefaults.isEmptyArray(literal)) {
+      readEmptyArrayDefault(spec, (Expression.Cast) literal);
+      return;
+    }
     if (!(literal instanceof Expression.StringLiteral || literal instanceof Expression.IntegerLiteral
         || literal instanceof Expression.DecimalLiteral || literal instanceof Expression.BooleanLiteral))
       throw unsupported("A DEFAULT that is not a constant", literal.position());
-    final ColumnType type = spec.mapped.type();
-    if (!DEFAULT_TYPES.contains(type))
+    if (!DEFAULT_TYPES.contains(type) && !type.isArray())
       throw unsupported("A DEFAULT on a column of type " + type, literal.position());
 
     final Column column = Column.declaration(spec.name, type);
@@ -777,6 +781,13 @@ public final class CreateTablePlan {
         throw e;
       throw unsupported("A DEFAULT that does not fit the column", literal.position());
     }
+    if (type == ColumnType.JSONB || type.isArray()) {
+      ContainerDefaults.requireStorable(type, value, literal.position());
+      spec.hasDefault = true;
+      spec.defaultValue = value;
+      spec.defaultText = ContainerDefaults.text(type, value);
+      return;
+    }
     if (value instanceof Double number && !Double.isFinite(number) || value instanceof Float real && !Float.isFinite(real))
       throw unsupported("A DEFAULT that is not a finite number", literal.position());
     // the schema keeps a number as a double when it is read back
@@ -785,6 +796,21 @@ public final class CreateTablePlan {
     spec.hasDefault = true;
     spec.defaultValue = value;
     spec.defaultText = defaultText(literal, type, value);
+  }
+
+  /** {@code DEFAULT ARRAY[]::text[]}, whose type has to be the one of the column. */
+  private static void readEmptyArrayDefault(final Spec spec, final Expression.Cast cast) {
+    final ColumnType type = spec.mapped.type();
+    final Mapped written = type(cast.type());
+    if (written.type() != type) {
+      if (!type.isArray())
+        throw PostgreSQLEvaluationException.mismatch("column \"" + spec.name + "\" is of type " + ContainerDefaults.typeName(type)
+            + " but default expression is of type " + ContainerDefaults.typeName(written.type()));
+      throw unsupported("A DEFAULT of another array type than the column", cast.position());
+    }
+    spec.hasDefault = true;
+    spec.defaultValue = List.of();
+    spec.defaultText = "ARRAY[]::" + ContainerDefaults.typeName(type);
   }
 
   /** The default of the clock that {@code expression} is, {@code null} for any other expression (fork issue #222). */
@@ -860,16 +886,7 @@ public final class CreateTablePlan {
       return text;
     if (type == ColumnType.NUMERIC && Character.isDigit(text.charAt(0)) && text.indexOf('.') >= 0)
       return text;
-    final String name = switch (type) {
-      case INT2 -> "smallint";
-      case INT4 -> "integer";
-      case INT8 -> "bigint";
-      case FLOAT4 -> "real";
-      case FLOAT8 -> "double precision";
-      case VARCHAR -> "character varying";
-      default -> type.typeName().toLowerCase(Locale.ROOT);
-    };
-    return "'" + text.replace("'", "''") + "'::" + name;
+    return ContainerDefaults.quoted(text) + "::" + ContainerDefaults.typeName(type);
   }
 
   // ------------------------------------------------------------------------------------------------ the schema
@@ -990,18 +1007,17 @@ public final class CreateTablePlan {
     if (spec.clock)
       // an expression of the sql language, which reads the clock for each record that another language creates
       property.setDefaultValue(ClockDefault.SCHEMA_DEFAULT);
+    else if (spec.hasDefault && (mapped.type() == ColumnType.JSONB || mapped.type().isArray()))
+      ContainerDefaults.set(property, mapped.type(), spec.defaultValue, spec.literal.position());
     else if (spec.hasDefault) {
       // a default that is a string is an expression of the sql language: it is written as a literal of that language
-      final Object value = spec.defaultValue instanceof String text ? sqlLiteral(text) : spec.defaultValue;
+      final Object value =
+          spec.defaultValue instanceof String text ? ContainerDefaults.sqlLiteral(text) : spec.defaultValue;
       property.setDefaultValue(value);
       if (spec.defaultValue instanceof String text && !Objects.equals(text, property.getDefaultValue()))
         throw unsupported("This text as a DEFAULT", spec.literal.position());
     }
     return property;
-  }
-
-  private static String sqlLiteral(final String text) {
-    return "'" + text.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "\\r") + "'";
   }
 
   // ------------------------------------------------------------------------------------------------ errors
