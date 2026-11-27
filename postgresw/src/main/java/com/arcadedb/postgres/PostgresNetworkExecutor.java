@@ -219,6 +219,8 @@ public class PostgresNetworkExecutor extends Thread {
   private static final Pattern                                        SET_KEYWORD_FORM   = Pattern.compile(
       "(?is)^(?:(SESSION|LOCAL)\\s+)?(SESSION\\s+AUTHORIZATION|ROLE|NAMES|SCHEMA|SESSION\\s+CHARACTERISTICS\\s+AS\\s+TRANSACTION|TRANSACTION|CONSTRAINTS)\\s+(?!=|TO\\s)(.+)$");
   private static final Pattern                                        SET_CONSTRAINTS_MODE = Pattern.compile("(?is)^(.+?)\\s+(DEFERRED|IMMEDIATE)$");
+  private static final Pattern                                        SET_SEARCH_PATH      = Pattern.compile(
+      "(?is)^SET\\s+(?:(SESSION|LOCAL)\\s+)?(?:search_path(?:\\s*=|\\s+TO(?=[\\s'\"]))|SCHEMA(?=\\s*'))\\s*(.*?)\\s*;?\\s*$");
   private static final Pattern                                        TRANSACTION_MODE_SEPARATOR = Pattern.compile("[\\s,]+");
 
   private final ArcadeDBServer              server;
@@ -1641,7 +1643,7 @@ public class PostgresNetworkExecutor extends Thread {
       if (isSettingCommand(upperCaseText)) {
         // Throws for a SET this server cannot parse or cannot honour, which the catch arms below answer with an
         // ErrorResponse: a CommandComplete SET is only ever sent for a SET that did what it asked (issue #8392)
-        applySettingCommand(query.query);
+        sessionSettings.apply(resolveSetCommand(query.language, query.query));
         answersNoRows = true;
         resultSet = new IteratorResultSet(Collections.emptyIterator());
       } else if (PostgresQueryLanguages.isWireLanguage(query.language) && PostgresSessionCommand.isSessionCommand(upperCaseText)) {
@@ -4188,7 +4190,7 @@ public class PostgresNetworkExecutor extends Thread {
         // A SET this server cannot parse is refused HERE, at Parse, where PostgreSQL reports a malformed statement:
         // it used to be logged and registered anyway, and its Execute answered CommandComplete SET having applied
         // nothing (issue #8392). The catch arms below answer the ErrorResponse and register no statement.
-        portal.setting = resolveSetCommand(portal.query);
+        portal.setting = resolveSetCommand(portal.language, portal.query);
         portal.ignoreExecution = true;
       } else if (PostgresQueryLanguages.isWireLanguage(portal.language) && PostgresSessionCommand.isSessionCommand(upperCaseText)) {
         // Parsed here, applied at Execute like a SET (issue #9328). The text becomes the command tag, which is what
@@ -4425,8 +4427,24 @@ public class PostgresNetworkExecutor extends Thread {
     return new PostgresSessionSettings.Assignment(paramName, value, local);
   }
 
-  private void applySettingCommand(final String query) {
-    sessionSettings.apply(resolveSetCommand(query));
+  /**
+   * {@link #resolveSetCommand(String)} for a statement of a language. A {@code search_path} of the {@code postgresql} language is
+   * kept as it is written, because which of its names are quoted says how PostgreSQL reads them and shows them.
+   */
+  static PostgresSessionSettings.Assignment resolveSetCommand(final String language, final String query) {
+    if (PostgresQueryLanguages.POSTGRESQL.equals(language)) {
+      final Matcher path = SET_SEARCH_PATH.matcher(query.trim());
+      if (path.matches()) {
+        final String value = path.group(2);
+        final boolean local = "LOCAL".equalsIgnoreCase(path.group(1));
+        if ("DEFAULT".equalsIgnoreCase(value))
+          return new PostgresSessionSettings.Assignment(PostgresSessionSettings.SEARCH_PATH, null, local);
+        // a value that cannot be read is left to the parser of every language, which reports it
+        if (!value.isEmpty() && PostgresSessionSettings.searchPathNames(value) != null)
+          return new PostgresSessionSettings.Assignment(PostgresSessionSettings.SEARCH_PATH, value, local);
+      }
+    }
+    return resolveSetCommand(query);
   }
 
   /**

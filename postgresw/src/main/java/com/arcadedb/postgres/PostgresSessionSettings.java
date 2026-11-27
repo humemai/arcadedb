@@ -43,6 +43,7 @@ import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * The run-time parameters of ONE Postgres wire connection: what its {@code SET}/{@code RESET} commands and its startup
@@ -516,7 +517,8 @@ final class PostgresSessionSettings {
       case "default_transaction_isolation" -> isolationName(defaultIsolation.get());
       case "transaction_read_only" -> transactionReadOnly ? "on" : "off";
       case "default_transaction_read_only" -> "off";
-      case SEARCH_PATH -> currentSchema;
+      // sql resolves names in the database whatever the client named (issue #9329); the postgresql language answers as PostgreSQL
+      case SEARCH_PATH -> usesPostgreSqlLanguage() ? postgreSqlSearchPath() : currentSchema;
       case "server_version_num" -> SERVER_VERSION_NUM;
       default -> {
         final String limit = SERVER_LIMITS.get(key);
@@ -786,25 +788,85 @@ final class PostgresSessionSettings {
     return !"off".equals(current(STANDARD_CONFORMING_STRINGS));
   }
 
-  /** The {@code search_path} the session asked for, or null when it asked for none; {@code SHOW} does not answer it. */
+  /** The {@code search_path} the session asked for, or null when it asked for none, as it is kept. */
   String requestedSearchPath() {
     return current(SEARCH_PATH);
   }
 
   /**
-   * True when the session asked for a {@code search_path} that names neither {@code schema} nor the schema {@code SHOW}
-   * answers. Quotes are taken off each entry, and case is ignored.
+   * True when the session asked for a {@code search_path} that names neither {@code schema} nor the database, as
+   * {@link #searchPathNames} reads the names.
    */
   boolean searchPathLeavesOut(final String schema) {
     final String path = requestedSearchPath();
     if (path == null)
       return false;
-    for (final String entry : path.split(",")) {
-      final String name = entry.replace("\"", "").replace("'", "").trim();
-      if (name.equalsIgnoreCase(schema) || name.equalsIgnoreCase(currentSchema))
+    final List<String> names = searchPathNames(path);
+    if (names == null)
+      return true;
+    for (final String name : names)
+      if (name.equals(schema) || name.equalsIgnoreCase(currentSchema))
         return false;
-    }
     return true;
+  }
+
+  /**
+   * What {@code SHOW search_path} answers a connection of the {@code postgresql} language, as PostgreSQL does: the names that
+   * the session set, each quoted where it has to be, else the default of PostgreSQL.
+   */
+  private String postgreSqlSearchPath() {
+    final String path = requestedSearchPath();
+    final List<String> names = path == null ? null : searchPathNames(path);
+    if (names == null)
+      return path == null ? "\"$user\", public" : path;
+    if (names.isEmpty())
+      return "\"\"";
+    return names.stream().map(PostgresCatalogIndexes::quoteIdentifier).collect(Collectors.joining(", "));
+  }
+
+  /**
+   * The schema names of the value of a {@code search_path} as it was written: a list separated by commas, whose names in single
+   * or double quotes are taken as they are, and whose other names are folded to lower case. {@code null} for a value with a
+   * quote that nothing closes, or with text after a closing quote.
+   */
+  static List<String> searchPathNames(final String value) {
+    final List<String> names = new ArrayList<>();
+    final int length = value.length();
+    int i = 0;
+    while (i < length) {
+      while (i < length && Character.isWhitespace(value.charAt(i)))
+        ++i;
+      if (i == length)
+        break;
+      final char first = value.charAt(i);
+      final StringBuilder name = new StringBuilder();
+      if (first == '\'' || first == '"' || first == '`') {
+        boolean closed = false;
+        for (++i; i < length && !closed; ++i) {
+          final char c = value.charAt(i);
+          if (c != first)
+            name.append(c);
+          else if (i + 1 < length && value.charAt(i + 1) == first)
+            name.append(value.charAt(i++));
+          else
+            closed = true;
+        }
+        while (i < length && Character.isWhitespace(value.charAt(i)))
+          ++i;
+        if (!closed || i < length && value.charAt(i) != ',')
+          return null;
+        names.add(name.toString());
+      } else {
+        while (i < length && value.charAt(i) != ',')
+          name.append(value.charAt(i++));
+        final String bare = name.toString().trim();
+        if (!bare.isEmpty())
+          names.add(bare.toLowerCase(Locale.ENGLISH));
+      }
+      // past the comma
+      ++i;
+    }
+    return names;
   }
 
   private String current(final String key) {

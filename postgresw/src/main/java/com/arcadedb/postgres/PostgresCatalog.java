@@ -26,6 +26,7 @@ import com.arcadedb.postgres.PostgresCatalogSyntax.Join;
 import com.arcadedb.postgres.PostgresCatalogSyntax.SetOperation;
 import com.arcadedb.postgres.PostgresCatalogSyntax.Statement;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
+import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.query.postgresql.catalog.Table;
 import com.arcadedb.query.sql.parser.FromItem;
 import com.arcadedb.query.sql.parser.SelectStatement;
@@ -834,6 +835,8 @@ public class PostgresCatalog {
     // the information_schema of a statement of the language is the language's own, one source for the columns and the keys
     if (relational && namesInformationSchema(tokens))
       return null;
+    if (relational)
+      requireRelations(tokens, database, userName, settings);
 
     if (!catalogNamed) {
       // Reached only for being a set operation: anything this catalog cannot evaluate is the SQL engine's to
@@ -895,6 +898,37 @@ public class PostgresCatalog {
   private static Context context(final Database database, final String userName, final PostgresSessionSettings settings,
       final boolean relational) {
     return new Context(database, userName, settings != null ? settings : new PostgresSessionSettings(), relational);
+  }
+
+  /**
+   * PostgreSQL reads {@code 'name'::regclass} when it reads the statement and fails for a name that no relation has
+   * ({@code 42P01}), whether or not a row is ever compared with it. A statement of the {@code postgresql} language answers the
+   * same, and not with the empty result that reads as "the table has no such rows".
+   */
+  private static void requireRelations(final List<PostgresCatalogToken> tokens, final Database database, final String userName,
+      final PostgresSessionSettings settings) {
+    Context context = null;
+    for (int i = 0; i < tokens.size(); i++) {
+      if (tokens.get(i).type != PostgresCatalogToken.Type.STRING)
+        continue;
+      final boolean cast = i + 1 < tokens.size() && tokens.get(i + 1).isSymbol("::") && isRegclass(tokens, i + 2);
+      final boolean function = i >= 2 && tokens.get(i - 2).isKeyword("CAST") && tokens.get(i - 1).isSymbol("(")
+          && i + 1 < tokens.size() && tokens.get(i + 1).isKeyword("AS") && isRegclass(tokens, i + 2);
+      if (cast || function) {
+        if (context == null)
+          context = context(database, userName, settings, true);
+        RowResolver.regClass(List.of(tokens.get(i).text), context, true);
+      }
+    }
+  }
+
+  /** Whether the tokens from {@code start} name the type {@code regclass}, bare or in {@code pg_catalog}, and no array of it. */
+  private static boolean isRegclass(final List<PostgresCatalogToken> tokens, final int start) {
+    int i = start;
+    if (i + 2 < tokens.size() && tokens.get(i).isKeyword("pg_catalog") && tokens.get(i + 1).isSymbol("."))
+      i += 2;
+    return i < tokens.size() && tokens.get(i).isKeyword("regclass")
+        && (i + 1 >= tokens.size() || !tokens.get(i + 1).isSymbol("["));
   }
 
   /**
@@ -4166,7 +4200,8 @@ public class PostgresCatalog {
         // PostgreSQL's OID-alias types, reached either as a cast ('Article'::regclass) or as the function
         // spelling of the same lookup (to_regclass('Article')). See regClass for which direction each
         // argument type means.
-        case "regclass", "to_regclass" -> regClass(arguments, context);
+        case "regclass" -> regClass(arguments, context, true);
+        case "to_regclass" -> regClass(arguments, context, false);
         case "regtype", "to_regtype" -> regType(arguments, context);
         // The one expression this catalog stores is a column default, whose text pg_attrdef.adbin holds
         // (issue #10228). Anything else - a partition bound, a policy - has no ArcadeDB equivalent, and NULL is
@@ -4341,8 +4376,11 @@ public class PostgresCatalog {
      * raises in PostgreSQL. That matters for the WHERE clause: NULL makes the equality false and the query
      * selects nothing, which is the honest answer to "describe the table that is not there", whereas
      * declining to read the cast would leave the permissive-filter rule describing <b>every</b> table.
+     * <p>
+     * A statement of the {@code postgresql} language resolves the name of an index too, and its cast ({@code required})
+     * fails as PostgreSQL's does, with {@code 42P01}, for a name that neither PostgreSQL's catalog nor the database has.
      */
-    private static Object regClass(final List<Object> arguments, final Context context) {
+    private static Object regClass(final List<Object> arguments, final Context context, final boolean required) {
       if (arguments.size() != 1)
         return PostgresCatalogExpression.UNKNOWN;
 
@@ -4369,8 +4407,33 @@ public class PostgresCatalog {
       final Integer systemCatalog = SYSTEM_CATALOG_OIDS.get(name);
       if (systemCatalog != null && (written.equals(name) || written.toLowerCase(Locale.ENGLISH).equals("pg_catalog." + name)))
         return systemCatalog;
-      final DocumentType type = context.typeNamed(name);
-      return type == null ? null : oidOf(type.getName());
+      if (!context.relational) {
+        final DocumentType type = context.typeNamed(name);
+        return type == null ? null : oidOf(type.getName());
+      }
+      final String qualified = written.replace("\"", "").toLowerCase(Locale.ENGLISH);
+      final String folded = name.toLowerCase(Locale.ENGLISH);
+      if (qualified.equals(folded) || qualified.equals(context.schema() + "." + folded)) {
+        // a quoted name is itself; one that is not quoted finds a relation in another case too, as the language does
+        final boolean quoted = written.indexOf('"') >= 0;
+        final DocumentType type = context.typeNamed(name);
+        if (type != null && (!quoted || type.getName().equals(name)))
+          return oidOf(type.getName());
+        for (final PostgresCatalogIndexes.Info index : context.indexes())
+          if (quoted ? index.name().equals(name) : index.name().equalsIgnoreCase(name))
+            return index.oid();
+      }
+      // a relation of PostgreSQL's own catalog that this one gives no OID
+      final boolean ofPostgreSQL = qualified.startsWith("information_schema.") ? RELATIONS.containsKey(qualified)
+          : (qualified.equals(folded) || qualified.equals("pg_catalog." + folded)) && RELATIONS.containsKey(folded);
+      if (required && !ofPostgreSQL) {
+        // the name as PostgreSQL reads it: lower case where it is not quoted
+        final String read = written.indexOf('"') >= 0 ? written.replace("\"", "") : written.toLowerCase(Locale.ENGLISH);
+        throw PostgreSQLEvaluationException.withHint("42P01", "relation \"" + read + "\" does not exist",
+            "List the tables with SELECT table_name FROM information_schema.tables, or write to_regclass('" + read.replace("'", "''")
+                + "'), which answers NULL for a relation that does not exist");
+      }
+      return null;
     }
 
     /**
