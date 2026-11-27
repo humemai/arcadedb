@@ -203,17 +203,18 @@ class PostgresErrorClassificationTest {
    *
    * @author Luca Garulli (l.garulli@arcadedata.com)
    */
-  private static final Map<ValidationException.Kind, String> EXPECTED = new EnumMap<>(Map.of(//
-      ValidationException.Kind.MANDATORY, "23502", //
-      ValidationException.Kind.NOT_NULL, "23502", //
-      ValidationException.Kind.MIN, "23514", //
-      ValidationException.Kind.MAX, "23514", //
-      ValidationException.Kind.REGEXP, "23514", //
-      ValidationException.Kind.READONLY, "23514", //
-      ValidationException.Kind.MAX_LENGTH, "22001", //
-      ValidationException.Kind.TYPE, "42804", //
-      ValidationException.Kind.ENCODING, "22021", //
-      ValidationException.Kind.FOREIGN_KEY, "23503"));
+  private static final Map<ValidationException.Kind, String> EXPECTED = new EnumMap<>(Map.ofEntries( //
+      Map.entry(ValidationException.Kind.MANDATORY, "23502"), //
+      Map.entry(ValidationException.Kind.NOT_NULL, "23502"), //
+      Map.entry(ValidationException.Kind.MIN, "23514"), //
+      Map.entry(ValidationException.Kind.MAX, "23514"), //
+      Map.entry(ValidationException.Kind.REGEXP, "23514"), //
+      Map.entry(ValidationException.Kind.READONLY, "23514"), //
+      Map.entry(ValidationException.Kind.MAX_LENGTH, "22001"), //
+      Map.entry(ValidationException.Kind.TYPE, "42804"), //
+      Map.entry(ValidationException.Kind.ENCODING, "22021"), //
+      Map.entry(ValidationException.Kind.FOREIGN_KEY, "23503"), //
+      Map.entry(ValidationException.Kind.CHECK, "23514"));
 
   // Regression: #11314
   @Test
