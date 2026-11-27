@@ -65,7 +65,7 @@ ABOUT = ("side under test", "PostgreSQL", "regression files", "engine", "CI run"
 # how many reasons the page lists; the rest is one row, so that each table adds up
 TOP = {"refused_0a000": 25, "refused_other": 20, "missing_function": 25, "blocked": 20}
 # the three reasons of the rules for an entry of the out-of-scope list
-SCOPE_REASONS = {"1": "PostgreSQL answers differently in two runs", "2": "PostgreSQL internals", "3": "server administration"}
+SCOPE_REASONS = {"1": "PostgreSQL does not fix the answer", "2": "PostgreSQL internals", "3": "server administration"}
 # the entries of the list for the C code of the suite, whose library the harness does not build
 C_ENTRIES = ("c-function", "c-function-call")
 C_COLUMNS = ("file", "statements", "defines", "calls", "wrong", "postgresql_errors", "expected_errors")
@@ -134,6 +134,9 @@ def reason_of(kind, reason):
         # the first thing the copy lacks, without the name of its column
         text = re.sub(r"^the copy does not carry (a default, identity or generated column|[^,]+).*",
                       r"for a write: the copy does not carry \1", text)
+        text = re.sub(r"^a write is not judged: the table has (a default, identity or generated column|[^,]+).*",
+                      r"for a write: a table of the language has \1", text)
+        text = re.sub(r"^(a query of information_schema about an object that differs between the sides): .*", r"\1", text)
     else:
         text = re.split(r" \(line \d+, column \d+\)", text)[0]
         text = text.split(". Hint:")[0]
@@ -405,7 +408,7 @@ def render():
                "| refused | an error where PostgreSQL succeeds, or `0A000` where PostgreSQL raises another error |\n"
                "| wrong | another result or other table contents, success where PostgreSQL raises an error, another code than "
                "PostgreSQL (`0A000` aside), a crash, or a timeout |\n"
-               "| blocked | not judged: a table it uses differs between the two sides and cannot be copied |\n"
+               "| blocked | not judged: the two sides cannot be made to agree on what the statement uses or depends on |\n"
                "| out of scope | one of the entries of a closed list |\n\n")
     judged = sum(total[key] for key in ("passed", "refused_0a000", "refused_other", "wrong"))
     out.append(f"{number(judged)} statements were judged, and {number(total['on_copied_table'])} of them on a table that the "
@@ -454,7 +457,7 @@ def render():
     typed = {name: sum(int(row["statements"]) for row in reasons
                        if row["kind"] == "blocked" and row["reason"] == f"a column of type {name} cannot be held")
              for name in ("name", "character(n)")}
-    out.append("## Why statements are blocked\n\nA statement that uses several tables of this kind is counted under the first "
+    out.append("## Why statements are blocked\n\nA statement with several reasons is counted under the first "
                f"one. {number(typed['name'])} statements are blocked first by a column of type `name`, and "
                f"{number(typed['character(n)'])} by a column of type `char(n)`; whether the language gets the two types is "
                f"[open]({FORK}/issues/119).\n\n")

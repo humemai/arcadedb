@@ -156,6 +156,14 @@ Limits:
 | Date and timestamp text | read as year-month-day with an optional time (`2026-03-09 10:11:12`). Another form that PostgreSQL may read is refused (`0A000`): `1/8/1999`, `08-Jan-99`, `19990108`, a time zone, `infinity`, `today`, a date BC, a year above 9999. A text that PostgreSQL reads in no way is `22007`, and a date that it does not have is `22008`, with the month before the day as in its default `DateStyle`, `ISO, MDY` (fork issue [#200](https://github.com/humemai/arcadedb/issues/200)) |
 | Interval text | pairs of a number and a unit up to `millennium`, and a time. `infinity`, `1-2`, the ISO 8601 form, and a fraction of a day or of a larger unit are refused (`0A000`). A unit given twice is `22007`, a field that does not fit is `22015`, and years and months that do not fit together are `22008`. A sum with a date or a timestamp outside PostgreSQL's range is `22008`, and one before the year 1 or after 9999 is refused |
 
+## Kept differences
+
+These answer differently from PostgreSQL and stay so, by decision. The [regression page](postgresql-regression.md) counts their statements as wrong, in a row of their own.
+
+| case | difference |
+| --- | --- |
+| Privileges and roles | `CREATE ROLE`, `GRANT`, `SET ROLE`, and `SET SESSION AUTHORIZATION` are refused (`0A000`). The statements after them are not checked against that role or that grant, so one that PostgreSQL refuses with `42501` can succeed (fork issue [#176](https://github.com/humemai/arcadedb/issues/176)) |
+
 ## Known wrong answers
 
 These should match PostgreSQL and do not yet.
