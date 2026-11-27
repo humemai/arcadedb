@@ -616,8 +616,11 @@ public final class ExpressionCompiler {
       throw PostgreSQLEvaluationException.noOperator(operator, a, b);
     final PgType first = declaredElement(left);
     final PgType second = declaredElement(right);
-    if (first != null && second != null && textual(first) != textual(second))
-      throw PostgreSQLEvaluationException.noOperator(operator, a, b);
+    if (first != null && second != null && textual(first) != textual(second)) {
+      // noOperator cannot say this: it sees two arrays, for which PostgreSQL has the operator, and not their element types
+      throw new PostgreSQLEvaluationException("42883", "operator does not exist: " + first.displayName() + "[] " + operator + " "
+          + second.displayName() + "[]. Hint: No operator matches the given name and argument types. You might need to add explicit type casts.");
+    }
     PgType element = first != null ? textual(first) : second != null ? textual(second) : null;
     if (element == null) {
       if (a == PgType.UNKNOWN && b == PgType.UNKNOWN)
