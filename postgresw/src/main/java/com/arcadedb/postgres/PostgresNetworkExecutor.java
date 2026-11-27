@@ -49,6 +49,7 @@ import com.arcadedb.graph.Vertex;
 import com.arcadedb.log.LogManager;
 import com.arcadedb.network.binary.ChannelBinaryServer;
 import com.arcadedb.network.binary.ServerIsNotTheLeaderException;
+import com.arcadedb.query.QueryEngine;
 import com.arcadedb.query.RunningQuery;
 import com.arcadedb.query.postgresql.PostgreSQLErrors;
 import com.arcadedb.query.postgresql.PostgreSQLQueryEngine;
@@ -912,6 +913,8 @@ public class PostgresNetworkExecutor extends Thread {
    */
   private ResultSet runPortalQuery(final PostgresPortal portal) {
     publishStatementTimeout();
+    if (!portal.catalogQuery)
+      checkReadOnlyBlock(portal.language, portal.query);
     if (portal.catalogQuery) {
       // Deferred from parseCommand because the query's filters are bound parameters (issue #6412).
       final CatalogAnswer catalogAnswer = handleCatalogQuery(portal.language, portal.query, getParams(portal));
@@ -1618,12 +1621,14 @@ public class PostgresNetworkExecutor extends Thread {
             createResultSet(systemQuery.columnName, systemQueryValue(systemQuery.function)).iterator());
       else if (upperCaseText.startsWith("SHOW "))
         resultSet = new IteratorResultSet(showResultSet(query.query.substring(5)).iterator());
-      else if ((transactionStatement = PostgresTransactionStatement.parse(upperCaseText)) != null) {
+      else if ((transactionStatement = parseTransactionStatement(query.language, upperCaseText)) != null) {
         // PostgreSQL's own spellings - START TRANSACTION, ABORT, BEGIN <modes>, AND [NO] CHAIN - none of which the SQL
         // grammar parses (issue #9631). One it cannot honor (READ ONLY, SERIALIZABLE, AND CHAIN) is refused with 0A000
         // before anything moves
-        transactionStatement.checkSupported();
+        checkSupported(query.language, transactionStatement);
         applyTransactionControl(transactionStatement.control, transactionStatement.isolation);
+        if (transactionStatement.readOnly)
+          sessionSettings.transactionReadOnly = true;
         commandTag = transactionStatement.tag;
         answersNoRows = true;
         resultSet = new IteratorResultSet(Collections.emptyIterator());
@@ -1645,6 +1650,7 @@ public class PostgresNetworkExecutor extends Thread {
             answersNoRows = true;
             resultSet = new IteratorResultSet(Collections.emptyIterator());
           } else {
+            checkReadOnlyBlock(query.language, query.query);
             beginSimpleQueryBlock();
             admission = QueryAdmissionGate.getInstance().admit();
             statement = startStatement(query.language, query.query);
@@ -4136,11 +4142,12 @@ public class PostgresNetworkExecutor extends Thread {
 
           case "postgresql": {
             // PostgreSQL's own statements are the wire's, as for SQL: transaction control is recognized here and applied at Execute
-            final PostgresTransactionStatement languageTransaction = PostgresTransactionStatement.parse(upperCaseText);
+            final PostgresTransactionStatement languageTransaction = PostgresTransactionStatement.parseOfLanguage(upperCaseText);
             if (languageTransaction != null) {
-              languageTransaction.checkSupported();
+              checkSupported(portal.language, languageTransaction);
               portal.transactionControl = languageTransaction.control;
               portal.isolationLevel = languageTransaction.isolation;
+              portal.transactionReadOnly = languageTransaction.readOnly;
               portal.query = languageTransaction.tag;
               portal.ignoreExecution = true;
             } else
@@ -5718,6 +5725,8 @@ public class PostgresNetworkExecutor extends Thread {
       return false;
 
     applyTransactionControl(portal.transactionControl, portal.isolationLevel);
+    if (portal.transactionControl == PostgresPortal.TransactionControl.BEGIN && portal.transactionReadOnly)
+      sessionSettings.transactionReadOnly = true;
     portal.transactionControl = null;
     return true;
   }
@@ -5829,7 +5838,7 @@ public class PostgresNetworkExecutor extends Thread {
       // Not a transaction-end statement: refused with 25P02 like any other statement of the aborted block
       return null;
     }
-    return "sql".equalsIgnoreCase(query.language) ? transactionControlOf(parseStatement(query.query)) : null;
+    return transactionControlOf(query.language, query.query);
   }
 
   /**
@@ -5837,7 +5846,55 @@ public class PostgresNetworkExecutor extends Thread {
    * block is aborted.
    */
   private PostgresPortal.TransactionControl parsedTransactionControl(final PostgresPortal portal) {
-    return "sql".equalsIgnoreCase(portal.language) ? transactionControlOf(parseStatement(portal.query)) : null;
+    return transactionControlOf(portal.language, portal.query);
+  }
+
+  /** The transaction-control statement that the exact matchers missed: a spelling of the language's own grammar. */
+  private PostgresPortal.TransactionControl transactionControlOf(final String language, final String text) {
+    if (PostgresQueryLanguages.POSTGRESQL.equals(language)) {
+      final PostgresTransactionStatement statement = PostgresTransactionStatement.parseOfLanguage(
+          normalizeStatementText(text).toUpperCase(Locale.ENGLISH));
+      return statement != null && statement.endsBlock() ? statement.control : null;
+    }
+    return "sql".equalsIgnoreCase(language) ? transactionControlOf(parseStatement(text)) : null;
+  }
+
+  private static PostgresTransactionStatement parseTransactionStatement(final String language, final String upperCaseText) {
+    return PostgresQueryLanguages.POSTGRESQL.equals(language) ?
+        PostgresTransactionStatement.parseOfLanguage(upperCaseText) :
+        PostgresTransactionStatement.parse(upperCaseText);
+  }
+
+  /**
+   * Throws the refusal of a transaction statement this server cannot honour. A refused {@code BEGIN} or {@code START
+   * TRANSACTION} of the {@code postgresql} language first opens a block, which the error then fails (fork issue #236): the
+   * client meant the statements that follow to be one transaction, and in autocommit each of them would be committed, a write
+   * that the script goes on to roll back included. Every statement is {@code 25P02} until {@code ROLLBACK} or {@code COMMIT}.
+   */
+  private void checkSupported(final String language, final PostgresTransactionStatement statement) {
+    final PostgresSessionSettings.SettingException refusal = statement.refusal();
+    if (refusal != null && statement.control == PostgresPortal.TransactionControl.BEGIN
+        && PostgresQueryLanguages.POSTGRESQL.equals(language)) {
+      explicitTransactionStarted = true;
+      throw new PostgresSessionSettings.SettingException(refusal.getMessage()
+          + ". The transaction block has failed: send ROLLBACK, then BEGIN ISOLATION LEVEL REPEATABLE READ", refusal.sqlState);
+    }
+    statement.checkSupported();
+  }
+
+  /**
+   * Refuses a statement that can write inside a block that {@code BEGIN READ ONLY} opened, with PostgreSQL's SQLSTATE (fork
+   * issue #236). The engine of the statement's language says whether it writes.
+   *
+   * @throws PostgresSessionSettings.SettingException {@code 25006} read_only_sql_transaction
+   */
+  private void checkReadOnlyBlock(final String language, final String text) {
+    if (!sessionSettings.transactionReadOnly)
+      return;
+    final QueryEngine.AnalyzedQuery analyzed = database.getQueryEngine(language).analyze(toEngineText(language, text));
+    if (!analyzed.isIdempotent() && !analyzed.isTransactionControl())
+      throw new PostgresSessionSettings.SettingException(
+          "cannot execute a statement that writes in a read-only transaction: send ROLLBACK, then BEGIN without READ ONLY", "25006");
   }
 
   /**
@@ -5872,6 +5929,7 @@ public class PostgresNetworkExecutor extends Thread {
    * to is over, so the statements the client sends next belong to a new one.
    */
   private void endTransactionBlockState() {
+    sessionSettings.transactionReadOnly = false;
     explicitTransactionStarted = false;
     errorInTransaction = false;
     skipUntilSync = false;

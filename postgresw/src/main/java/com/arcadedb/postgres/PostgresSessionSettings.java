@@ -159,6 +159,8 @@ final class PostgresSessionSettings {
     }
   }
 
+  // True inside a block that BEGIN READ ONLY opened (fork issue #236), which the executor reports
+  boolean transactionReadOnly = false;
   // What the startup packet named: the value SET ... TO DEFAULT and RESET restore, as in PostgreSQL.
   private final Map<String, String> resetValues    = new HashMap<>();
   // What the session-scoped SETs established, including those of the transaction still open.
@@ -477,7 +479,8 @@ final class PostgresSessionSettings {
       case "session_authorization" -> sessionUser;
       case "transaction_isolation" -> isolationName(currentIsolation.get());
       case "default_transaction_isolation" -> isolationName(defaultIsolation.get());
-      case "transaction_read_only", "default_transaction_read_only" -> "off";
+      case "transaction_read_only" -> transactionReadOnly ? "on" : "off";
+      case "default_transaction_read_only" -> "off";
       case SEARCH_PATH -> currentSchema;
       case "server_version_num" -> SERVER_VERSION_NUM;
       default -> {
