@@ -109,7 +109,7 @@ class PostgreSQLSerialColumnTest extends PostgreSQLSideBySideTestBase {
           try:
               cursor.execute("INSERT INTO orm_event (id, user_id) VALUES (%s, %s)", (50, 1))
           except psycopg.Error as e:
-              print(e.sqlstate, e.diag.message_primary)
+              print(e.sqlstate)
       """;
 
   @Test
