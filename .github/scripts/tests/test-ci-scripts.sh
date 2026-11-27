@@ -2805,11 +2805,10 @@ if grep -qE '^  merge_group:' .github/workflows/mvn-test.yml; then
 else
     fail "mvn-test.yml runs on merge_group so a merge queue tests the merge result (#9850)" "no merge_group trigger"
 fi
-# Fork only: besides pull requests, the pushes to the PostgreSQL prototype branch cancel their superseded runs.
-if grep -qF "cancel-in-progress: \${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/feat/postgresql-prototype') }}" .github/workflows/mvn-test.yml; then
+if grep -qF "cancel-in-progress: \${{ github.event_name == 'pull_request' }}" .github/workflows/mvn-test.yml; then
     pass "merge_group runs are never cancelled in progress (#9850)"
 else
-    fail "merge_group runs are never cancelled in progress (#9850)" "cancel-in-progress is not limited to pull_request and the prototype branch"
+    fail "merge_group runs are never cancelled in progress (#9850)" "cancel-in-progress is not limited to pull_request"
 fi
 
 echo

@@ -1,19 +1,17 @@
 name: Java CI - test
 
 on:
+  # Fork only (humemai/arcadedb#14): on the long-lived branch of the PostgreSQL-style SQL prototype the full suite runs only
+  # when it is started by hand (workflow_dispatch on that branch), at least once a day when the branch moved and before
+  # anything goes upstream. It takes about an hour on many runners, too much for every merge. Pull requests into that branch
+  # and merges to it get the fast PostgreSQL workflows. Drop this comment when anything goes upstream.
   workflow_dispatch:
-  # Fork only (humemai/arcadedb#1, question 4): the long-lived branch of the PostgreSQL-style SQL prototype gets the
-  # full suite on every merge into it (push). Its pull requests get the fast loop (pg-prototype-engine-tests.yml) and REUSE,
-  # not the full suite: the `unit-tests (engine, engine, 2)` shard fails on a different timing test on every run, also
-  # on the branch before any prototype code existed, and `coverage-report` needs a token that the fork does not have, so a
-  # full run on a pull request is red whatever the change is. Drop this commit when anything goes upstream.
   pull_request:
     branches:
       - main
   push:
     branches:
       - main
-      - feat/postgresql-prototype
   # A GitHub merge queue tests the merge result (the PR rebased onto the current main plus every
   # entry queued ahead of it), not the branch, so two PRs that are each green against a base lacking
   # the other cannot land into a red main (#9850). Without this trigger the queue's required checks
@@ -31,13 +29,9 @@ permissions:
 # share a group - each merge keeps its own complete run, and a red main still points at one commit.
 # (A shared main group would not do: GitHub keeps one pending run per group and silently cancels
 # the one it replaces, so merges landing close together would skip their middle commits.)
-# Fork only: the long-lived branch of the PostgreSQL-style SQL prototype is the exception. Its pushes share one group per
-# branch and a newer merge cancels the run of the older one, because merges land close together there and a pile of full
-# runs holds back the checks of everything else. Only the head of that branch needs a full result. Drop this when anything
-# goes upstream.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.ref == 'refs/heads/feat/postgresql-prototype' && github.ref) || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/feat/postgresql-prototype') }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Repo/workflow hygiene only: formatting, the meta-checks below, and the CI scripts' own self-test.
