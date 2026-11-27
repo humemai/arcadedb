@@ -1,0 +1,630 @@
+script	id	set	class	volatile	verdict	postgresql_18	language	next_step	hint_field	statement	postgresql_18_answer	language_answer	message
+memory	M01	agent	schema	no	refused	00000	0A000	yes	yes	CREATE EXTENSION IF NOT EXISTS vector	-	-	CREATE EXTENSION is not supported by the postgresql language
+memory	M02	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE IF NOT EXISTS entities (     id BIGSERIAL PRIMARY KEY,     name TEXT NOT NULL UNIQUE,     type TEXT NOT NULL,     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),     updated_at TIMESTAMPTZ NOT NULL DEFAULT now() )	-	-	A column of type bigserial is not supported by the postgresql language
+memory	M03	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE IF NOT EXISTS facts (     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,     entity_id BIGINT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,     content TEXT NOT NULL,     confidence REAL DEFAULT 1.0 CHECK (confidence BETWEEN 0 AND 1),     source TEXT,     embedding vector(3),     tags TEXT[] DEFAULT '{}',     created_at TIMESTAMPTZ DEFAULT now() )	-	-	This column option (CHECK, GENERATED, COLLATE, storage, a deferrable or unenforced constraint and the like) is not supported by the postgresql language
+memory	M04	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE IF NOT EXISTS relations (     id SERIAL PRIMARY KEY,     source_id BIGINT NOT NULL REFERENCES entities(id),     target_id BIGINT NOT NULL REFERENCES entities(id),     relation_type TEXT NOT NULL,     weight DOUBLE PRECISION DEFAULT 1,     created_at TIMESTAMPTZ DEFAULT now(),     UNIQUE (source_id, target_id, relation_type) )	-	-	A column of type serial is not supported by the postgresql language
+memory	M05	agent	schema	no	follows	00000	42P01	no	no	CREATE INDEX IF NOT EXISTS idx_facts_entity ON facts (entity_id)	-	-	relation "facts" does not exist
+memory	M06	agent	schema	no	follows	00000	42P01	no	no	CREATE INDEX IF NOT EXISTS idx_facts_embedding ON facts USING hnsw (embedding vector_cosine_ops)	-	-	relation "facts" does not exist
+memory	M07	agent	schema	no	follows	00000	42P01	no	no	CREATE INDEX IF NOT EXISTS idx_entities_metadata ON entities USING gin (metadata)	-	-	relation "entities" does not exist
+memory	M08	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE IF NOT EXISTS entities (id bigserial PRIMARY KEY, name text)	-	-	A column of type bigserial is not supported by the postgresql language
+memory	M09	agent	write	no	follows	00000	42P01	no	no	INSERT INTO entities (name, type, metadata) VALUES ('Alice', 'person', '{"role": "engineer", "city": "Berlin", "address": {"city": "Berlin", "zip": "10115"}, "aliases": ["Al", "Ally"]}') RETURNING id	-	-	relation "entities" does not exist
+memory	M10	agent	write	no	follows	00000	42P01	no	no	INSERT INTO entities (name, type, metadata) VALUES ('Bob', 'person', '{"role": "designer"}'), ('Acme', 'organization', '{"industry": "software", "size": 120}') RETURNING id, name	-	-	relation "entities" does not exist
+memory	M11	agent	write	no	follows	00000	42P01	no	no	INSERT INTO facts (entity_id, content, confidence, source, embedding, tags) VALUES (1, 'Alice prefers dark mode', 0.9, 'chat', '[0.1,0.2,0.3]', ARRAY['preference', 'ui'])	-	-	relation "facts" does not exist
+memory	M12	agent	write	no	follows	00000	42P01	no	no	INSERT INTO facts (entity_id, content, confidence, source, embedding, tags) VALUES (1, 'Alice lives in Berlin', 0.8, 'profile', '[0.9,0.1,0.0]', '{location}'), (2, 'Bob likes coffee', 0.6, 'chat', '[0.2,0.8,0.1]', '{preference,food}'), (3, 'Acme was founded in 2012', 0.2, NULL, NULL, '{}') RETURNING id, entity_id	-	-	relation "facts" does not exist
+memory	M13	agent	write	yes	follows	00000	42P01	no	no	INSERT INTO facts (entity_id, content) VALUES (2, 'Bob dislikes meetings') RETURNING *	-	-	relation "facts" does not exist
+memory	M14	agent	write	no	follows	00000	42P01	no	no	INSERT INTO relations (source_id, target_id, relation_type) VALUES (1, 3, 'works_at'), (2, 3, 'works_at'), (1, 2, 'knows') RETURNING id, source_id, target_id	-	-	relation "relations" does not exist
+memory	M15	agent	write	no	follows	00000	42P01	no	no	INSERT INTO entities (name, type, metadata) VALUES ('Alice', 'person', '{"team": "platform"}') ON CONFLICT (name) DO UPDATE SET metadata = entities.metadata || EXCLUDED.metadata, updated_at = now() RETURNING id, name, metadata	-	-	relation "entities" does not exist
+memory	M16	agent	write	no	follows	00000	42P01	no	no	INSERT INTO relations (source_id, target_id, relation_type) VALUES (1, 2, 'knows') ON CONFLICT DO NOTHING	-	-	relation "relations" does not exist
+memory	M17	agent	write	no	follows	00000	42P01	no	no	INSERT INTO relations (source_id, target_id, relation_type, weight) VALUES (1, 2, 'knows', 0.5) ON CONFLICT (source_id, target_id, relation_type) DO UPDATE SET weight = relations.weight + EXCLUDED.weight RETURNING weight	-	-	relation "relations" does not exist
+memory	M18	agent	read	no	refused	00000	0A000	yes	yes	SELECT id, name, metadata->>'role' AS role FROM entities WHERE type = 'person' ORDER BY id	-	-	The operator ->> is not supported by the postgresql language
+memory	M19	agent	read	no	follows	00000	42P01	no	no	SELECT name FROM entities WHERE metadata @> '{"role": "engineer"}'	-	-	relation "entities" does not exist
+memory	M20	agent	read	no	refused	00000	0A000	yes	yes	SELECT name FROM entities WHERE metadata ? 'city' ORDER BY name	-	-	The operator ? is not supported by the postgresql language
+memory	M21	agent	read	no	refused	00000	0A000	yes	yes	SELECT name, metadata->'city' AS city FROM entities ORDER BY name	-	-	The operator -> is not supported by the postgresql language
+memory	M22	agent	read	no	refused	00000	0A000	yes	yes	SELECT name FROM entities WHERE (metadata->>'size')::int > 100	-	-	The operator ->> is not supported by the postgresql language
+memory	M23	agent	read	no	refused	00000	0A000	yes	yes	SELECT name, metadata->'address'->>'zip' AS zip, metadata#>>'{address,city}' AS address_city FROM entities WHERE name = 'Alice'	-	-	The operator ->> is not supported by the postgresql language
+memory	M24	agent	write	no	refused	00000	0A000	yes	yes	UPDATE entities SET metadata = jsonb_set(metadata, '{city}', '"Munich"') WHERE name = 'Alice' RETURNING metadata->>'city' AS city	-	-	The operator ->> is not supported by the postgresql language
+memory	M25	agent	write	no	follows	00000	42P01	no	no	UPDATE entities SET metadata = metadata || '{"verified": true}'::jsonb WHERE name = 'Bob' RETURNING metadata	-	-	relation "entities" does not exist
+memory	M26	agent	write	no	follows	00000	42P01	no	no	UPDATE entities SET metadata = metadata - 'verified' WHERE name = 'Bob'	-	-	relation "entities" does not exist
+memory	M27	agent	read	no	follows	00000	42P01	no	no	SELECT content FROM facts WHERE 'preference' = ANY(tags) ORDER BY id	-	-	relation "facts" does not exist
+memory	M28	agent	read	no	follows	00000	42P01	no	no	SELECT content FROM facts WHERE tags @> ARRAY['ui'] ORDER BY id	-	-	relation "facts" does not exist
+memory	M29	agent	read	no	follows	00000	42P01	no	no	SELECT content FROM facts WHERE tags && ARRAY['ui', 'food'] ORDER BY id	-	-	relation "facts" does not exist
+memory	M30	agent	read	no	follows	00000	42P01	no	no	SELECT name FROM entities WHERE id = ANY(ARRAY[1, 2]) ORDER BY id	-	-	relation "entities" does not exist
+memory	M31	agent	read	no	follows	00000	42P01	no	no	SELECT name FROM entities WHERE id = ANY('{1,3}'::bigint[]) ORDER BY id	-	-	relation "entities" does not exist
+memory	M32	agent	read	no	follows	00000	42P01	no	no	SELECT name FROM entities WHERE name IN ('Alice', 'Bob') ORDER BY name	-	-	relation "entities" does not exist
+memory	M33	agent	read	no	follows	00000	42P01	no	no	SELECT content FROM facts WHERE content ILIKE '%DARK%'	-	-	relation "facts" does not exist
+memory	M34	agent	read	no	follows	00000	42P01	no	no	SELECT content, embedding <=> '[0.1,0.2,0.25]' AS distance FROM facts WHERE embedding IS NOT NULL ORDER BY embedding <=> '[0.1,0.2,0.25]' LIMIT 3	-	-	relation "facts" does not exist
+memory	M35	agent	read	no	follows	00000	42P01	no	no	SELECT content, 1 - (embedding <=> '[0.1,0.2,0.3]'::vector) AS similarity FROM facts WHERE embedding IS NOT NULL ORDER BY similarity DESC LIMIT 2	-	-	relation "facts" does not exist
+memory	M36	agent	read	no	follows	00000	42P01	no	no	SELECT e.name, f.content FROM facts f JOIN entities e ON e.id = f.entity_id WHERE f.embedding IS NOT NULL AND e.type = 'person' ORDER BY f.embedding <-> '[0.2,0.8,0.1]' LIMIT 2	-	-	relation "facts" does not exist
+memory	M37	agent	read	no	follows	00000	42P01	no	no	SELECT e.name, f.content FROM facts f JOIN entities e ON e.id = f.entity_id ORDER BY f.id	-	-	relation "facts" does not exist
+memory	M38	agent	read	no	follows	00000	42P01	no	no	SELECT t.name, r.relation_type FROM relations r JOIN entities s ON s.id = r.source_id JOIN entities t ON t.id = r.target_id WHERE s.name = 'Alice' ORDER BY t.name	-	-	relation "relations" does not exist
+memory	M39	agent	read	no	follows	00000	42P01	no	no	SELECT DISTINCT t.name FROM entities s JOIN relations r1 ON r1.source_id = s.id JOIN relations r2 ON r2.source_id = r1.target_id JOIN entities t ON t.id = r2.target_id WHERE s.name = 'Alice'	-	-	relation "entities" does not exist
+memory	M40	agent	read	no	follows	00000	42P01	no	no	SELECT CASE WHEN r.source_id = e.id THEN r.target_id ELSE r.source_id END AS neighbor_id, r.relation_type FROM relations r JOIN entities e ON e.id IN (r.source_id, r.target_id) WHERE e.name = 'Acme' ORDER BY neighbor_id	-	-	relation "relations" does not exist
+memory	M41	agent	read	no	follows	00000	42P01	no	no	SELECT id, name FROM entities WHERE id IN (SELECT target_id FROM relations WHERE source_id = 1) ORDER BY id	-	-	relation "entities" does not exist
+memory	M42	agent	read	no	refused	00000	0A000	yes	yes	WITH RECURSIVE reachable AS (SELECT target_id, 1 AS depth FROM relations WHERE source_id = 1 UNION SELECT r.target_id, reachable.depth + 1 FROM relations r JOIN reachable ON r.source_id = reachable.target_id WHERE reachable.depth < 3) SELECT DISTINCT e.name FROM reachable JOIN entities e ON e.id = reachable.target_id ORDER BY e.name	-	-	WITH RECURSIVE is not supported by the postgresql language
+memory	M43	agent	read	no	follows	00000	42P01	no	no	SELECT e.name, count(f.id) AS fact_count FROM entities e LEFT JOIN facts f ON f.entity_id = e.id GROUP BY e.id ORDER BY fact_count DESC, e.name	-	-	relation "entities" does not exist
+memory	M44	agent	read	no	refused	00000	0A000	yes	no way	SELECT e.name, array_agg(f.content ORDER BY f.id) AS facts FROM entities e JOIN facts f ON f.entity_id = e.id GROUP BY e.name ORDER BY e.name	-	-	ORDER BY inside a function call is not supported by the postgresql language
+memory	M45	agent	read	no	refused	00000	0A000	yes	no way	SELECT e.name, json_agg(json_build_object('content', f.content, 'confidence', f.confidence) ORDER BY f.id) AS facts FROM entities e JOIN facts f ON f.entity_id = e.id GROUP BY e.name ORDER BY e.name	-	-	ORDER BY inside a function call is not supported by the postgresql language
+memory	M46	agent	read	no	follows	00000	42P01	no	no	SELECT jsonb_build_object('name', name, 'meta', metadata) AS doc FROM entities WHERE name = 'Bob'	-	-	relation "entities" does not exist
+memory	M47	agent	read	no	follows	00000	42P01	no	no	SELECT row_to_json(t) FROM (SELECT id, name, type FROM entities WHERE name = 'Bob') t	-	-	relation "entities" does not exist
+memory	M48	agent	read	no	follows	00000	42P01	no	no	SELECT json_agg(t) FROM (SELECT name, type FROM entities ORDER BY name) t	-	-	relation "entities" does not exist
+memory	M49	agent	read	no	refused	00000	0A000	yes	yes	SELECT type, count(*) FILTER (WHERE metadata ? 'role') AS with_role, count(*) AS total FROM entities GROUP BY type ORDER BY type	-	-	FILTER is not supported by the postgresql language
+memory	M50	agent	read	no	follows	00000	42P01	no	no	SELECT unnest(tags) AS tag, count(*) FROM facts GROUP BY tag ORDER BY count(*) DESC, tag	-	-	relation "facts" does not exist
+memory	M51	agent	read	no	follows	00000	42P01	no	no	SELECT content FROM facts WHERE created_at > now() - interval '7 days' ORDER BY id	-	-	relation "facts" does not exist
+memory	M52	agent	read	yes	follows	00000	42P01	no	no	SELECT date_trunc('day', created_at) AS day, count(*) FROM facts GROUP BY 1 ORDER BY 1	-	-	relation "facts" does not exist
+memory	M53	agent	read	no	refused	00000	0A000	yes	yes	SELECT DISTINCT ON (entity_id) entity_id, content FROM facts ORDER BY entity_id, confidence DESC, id	-	-	DISTINCT ON is not supported by the postgresql language
+memory	M54	agent	read	no	follows	00000	42P01	no	no	SELECT entity_id, content, row_number() OVER (PARTITION BY entity_id ORDER BY confidence DESC, id) AS rn FROM facts ORDER BY entity_id, rn	-	-	relation "facts" does not exist
+memory	M55	agent	read	no	follows	00000	42P01	no	no	WITH ranked AS (SELECT entity_id, content, row_number() OVER (PARTITION BY entity_id ORDER BY confidence DESC, id) AS rn FROM facts) SELECT e.name, r.content FROM ranked r JOIN entities e ON e.id = r.entity_id WHERE r.rn = 1 ORDER BY e.name	-	-	relation "facts" does not exist
+memory	M56	agent	read	no	follows	00000	42P01	no	no	SELECT id, content, count(*) OVER () AS total FROM facts ORDER BY id LIMIT 2 OFFSET 2	-	-	relation "facts" does not exist
+memory	M57	agent	read	no	refused	00000	0A000	yes	yes	SELECT id, content FROM facts WHERE (confidence, id) < (0.85, 100) ORDER BY confidence DESC, id DESC LIMIT 2	-	-	A row constructor is not supported by the postgresql language
+memory	M58	agent	read	no	refused	00000	0A000	yes	yes	SELECT id, content FROM facts ORDER BY id FETCH FIRST 2 ROWS ONLY	-	-	FETCH FIRST is not supported by the postgresql language
+memory	M59	agent	read	no	follows	00000	42P01	no	no	SELECT coalesce(source, 'unknown') AS source, count(*) FROM facts GROUP BY 1 ORDER BY 1	-	-	relation "facts" does not exist
+memory	M60	agent	read	no	follows	00000	42P01	no	no	SELECT EXISTS (SELECT 1 FROM entities WHERE name = 'Alice') AS found	-	-	relation "entities" does not exist
+memory	M61	agent	read	yes	follows	00000	42P01	no	no	SELECT * FROM entities WHERE name = 'Bob'	-	-	relation "entities" does not exist
+memory	M62	agent	read	yes	follows	00000	42P01	no	no	SELECT * FROM relations ORDER BY id	-	-	relation "relations" does not exist
+memory	M63	agent	read	no	refused	00000	0A000	yes	no way	SELECT content FROM facts WHERE to_tsvector('english', content) @@ plainto_tsquery('english', 'dark') ORDER BY id	-	-	The operator @@ is not supported by the postgresql language
+memory	M64	agent	read	no	refused	00000	0A000	yes	yes	SELECT e.name, f.content FROM entities e CROSS JOIN LATERAL (SELECT content FROM facts WHERE entity_id = e.id ORDER BY id DESC LIMIT 1) f ORDER BY e.name	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+memory	M65	agent	read	no	refused	00000	0A000	yes	no way	SELECT e.name, string_agg(f.content, '; ' ORDER BY f.id) AS summary FROM entities e JOIN facts f ON f.entity_id = e.id GROUP BY e.name ORDER BY e.name	-	-	ORDER BY inside a function call is not supported by the postgresql language
+memory	M66	agent	read	no	refused	00000	0A000	yes	no way	SELECT jsonb_agg(name ORDER BY name) AS names FROM entities	-	-	ORDER BY inside a function call is not supported by the postgresql language
+memory	M67	agent	read	no	follows	00000	42P01	no	no	SELECT jsonb_object_agg(name, type) AS types FROM entities	-	-	relation "entities" does not exist
+memory	M68	agent	read	no	refused	00000	0A000	yes	yes	SELECT key, value FROM entities, jsonb_each_text(metadata) WHERE name = 'Bob' ORDER BY key	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+memory	M69	agent	read	no	follows	00000	42P01	no	no	SELECT DISTINCT jsonb_object_keys(metadata) AS key FROM entities ORDER BY key	-	-	relation "entities" does not exist
+memory	M70	agent	read	no	refused	00000	0A000	yes	yes	SELECT jsonb_array_elements_text(metadata->'aliases') AS alias FROM entities WHERE name = 'Alice'	-	-	The operator -> is not supported by the postgresql language
+memory	M71	agent	write	no	follows	00000	42P01	no	no	UPDATE facts SET confidence = confidence + 0.05 WHERE entity_id = (SELECT id FROM entities WHERE name = 'Bob') AND confidence < 0.9 RETURNING id	-	-	relation "facts" does not exist
+memory	M72	agent	write	no	follows	00000	42P01	no	no	UPDATE facts f SET source = e.type FROM entities e WHERE e.id = f.entity_id AND f.source IS NULL RETURNING f.id, f.source	-	-	relation "facts" does not exist
+memory	M73	agent	write	no	follows	00000	42P01	no	no	DELETE FROM facts WHERE confidence < 0.3 RETURNING id, content	-	-	relation "facts" does not exist
+memory	M74	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE IF NOT EXISTS facts_archive (LIKE facts INCLUDING ALL)	-	-	LIKE in CREATE TABLE is not supported by the postgresql language
+memory	M75	agent	write	no	refused	00000	0A000	yes	yes	WITH moved AS (DELETE FROM facts WHERE source = 'profile' RETURNING id, content) SELECT count(*) FROM moved	-	-	A data-modifying statement in WITH is not supported by the postgresql language
+memory	M76	agent	write	no	follows	23503	42P01	no	no	DELETE FROM entities WHERE name = 'Alice'	-	-	relation "entities" does not exist
+memory	M77	agent	write	no	follows	00000	42P01	no	no	DELETE FROM relations WHERE source_id = 2 OR target_id = 2	-	-	relation "relations" does not exist
+memory	M78	agent	write	no	follows	00000	42P01	no	no	DELETE FROM entities WHERE name = 'Bob' RETURNING id, name	-	-	relation "entities" does not exist
+memory	M79	agent	read	no	follows	00000	42P01	no	no	SELECT count(*) AS facts_left FROM facts	-	-	relation "facts" does not exist
+memory	M80	agent	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE facts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ	-	-	ALTER is not supported by the postgresql language
+memory	M81	agent	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE entities ADD COLUMN importance INTEGER NOT NULL DEFAULT 0	-	-	ALTER is not supported by the postgresql language
+memory	M82	agent	write	no	follows	00000	42P01	no	no	UPDATE entities SET importance = 5 WHERE name = 'Alice' RETURNING name, importance	-	-	relation "entities" does not exist
+memory	M83	agent	read	no	follows	00000	42P01	no	no	SELECT name, importance FROM entities ORDER BY importance DESC, name	-	-	relation "entities" does not exist
+memory	M84	agent	write	no	follows	00000	42P01	no	no	INSERT INTO facts (entity_id, content, embedding) VALUES ((SELECT id FROM entities WHERE name = 'Acme'), 'Acme ships a CLI', '[0.3,0.3,0.4]') RETURNING entity_id, content	-	-	relation "facts" does not exist
+web	W01	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE users (     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),     email text NOT NULL UNIQUE,     full_name varchar(100),     is_active boolean NOT NULL DEFAULT true,     created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP )	-	-	A column of type uuid is not supported by the postgresql language
+web	W02	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE products (     id serial PRIMARY KEY,     sku varchar(32) NOT NULL UNIQUE,     name text NOT NULL,     price numeric(10,2) NOT NULL CHECK (price >= 0),     stock integer NOT NULL DEFAULT 0 )	-	-	This column option (CHECK, GENERATED, COLLATE, storage, a deferrable or unenforced constraint and the like) is not supported by the postgresql language
+web	W03	agent	schema	no	refused	00000	0A000	yes	no way	CREATE TYPE order_status AS ENUM ('pending', 'paid', 'shipped', 'cancelled')	-	-	CREATE TYPE is not supported by the postgresql language
+web	W04	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE orders (     id bigserial PRIMARY KEY,     user_id uuid NOT NULL REFERENCES users(id),     status order_status NOT NULL DEFAULT 'pending',     total numeric(12,2) NOT NULL DEFAULT 0,     created_at timestamptz NOT NULL DEFAULT now() )	-	-	A column of type bigserial is not supported by the postgresql language
+web	W05	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE order_items (     order_id bigint NOT NULL REFERENCES orders(id) ON DELETE CASCADE,     product_id integer NOT NULL REFERENCES products(id),     quantity integer NOT NULL CHECK (quantity > 0),     unit_price numeric(10,2) NOT NULL,     PRIMARY KEY (order_id, product_id) )	-	-	This column option (CHECK, GENERATED, COLLATE, storage, a deferrable or unenforced constraint and the like) is not supported by the postgresql language
+web	W06	agent	schema	no	follows	00000	42P01	no	no	CREATE INDEX idx_orders_user_id ON orders(user_id)	-	-	relation "orders" does not exist
+web	W07	agent	schema	no	refused	00000	0A000	yes	yes	CREATE UNIQUE INDEX users_email_lower_idx ON users (lower(email))	-	-	An index on an expression is not supported by the postgresql language
+web	W08	agent	schema	no	refused	00000	0A000	yes	yes	CREATE VIEW active_users AS SELECT id, email, full_name FROM users WHERE is_active	-	-	CREATE VIEW is not supported by the postgresql language
+web	W09	agent	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login timestamptz	-	-	ALTER is not supported by the postgresql language
+web	W10	agent	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE products ADD COLUMN description text	-	-	ALTER is not supported by the postgresql language
+web	W11	agent	schema	no	refused	00000	0A000	yes	no way	ALTER TABLE products ALTER COLUMN price TYPE numeric(12,2)	-	-	ALTER is not supported by the postgresql language
+web	W12	agent	schema	no	refused	00000	0A000	yes	no way	ALTER TABLE products ALTER COLUMN stock SET DEFAULT 0	-	-	ALTER is not supported by the postgresql language
+web	W13	agent	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE users ADD COLUMN nickname text	-	-	ALTER is not supported by the postgresql language
+web	W14	agent	schema	no	refused	00000	0A000	yes	no way	ALTER TABLE users RENAME COLUMN nickname TO handle	-	-	ALTER is not supported by the postgresql language
+web	W15	agent	schema	no	refused	00000	0A000	no	no way	ALTER TABLE orders ADD CONSTRAINT orders_total_positive CHECK (total >= 0)	-	-	ALTER is not supported by the postgresql language
+web	W16	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE audit_log (     id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,     user_id uuid,     action text NOT NULL,     payload jsonb,     at timestamp NOT NULL DEFAULT now() )	-	-	This column option (CHECK, GENERATED, COLLATE, storage, a deferrable or unenforced constraint and the like) is not supported by the postgresql language
+web	W17	agent	schema	no	refused	00000	0A000	no	no way	ALTER TABLE audit_log ADD CONSTRAINT audit_log_user_fk FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL	-	-	ALTER is not supported by the postgresql language
+web	W18	agent	schema	no	same	00000	00000	-	-	CREATE TABLE IF NOT EXISTS audit_log (id bigint)	-	-	-
+web	W19	agent	schema	no	refused	00000	0A000	no	no way	COMMENT ON TABLE users IS 'Application users'	-	-	COMMENT is not supported by the postgresql language
+web	W20	agent	schema	no	refused	00000	0A000	yes	yes	CREATE TEMP TABLE tmp_import (sku text, qty int)	-	-	A temporary or unlogged table is not supported by the postgresql language
+web	W21	agent	schema	no	refused	00000	0A000	yes	yes	DROP TABLE IF EXISTS tmp_import	-	-	DROP is not supported by the postgresql language
+web	W22	agent	schema	no	refused	00000	0A000	yes	no way	CREATE OR REPLACE FUNCTION set_last_login() RETURNS trigger AS $$ BEGIN NEW.last_login = now(); RETURN NEW; END; $$ LANGUAGE plpgsql	-	-	CREATE OR is not supported by the postgresql language
+web	W23	agent	write	no	follows	00000	42P01	no	no	INSERT INTO users (id, email, full_name) VALUES ('11111111-1111-1111-1111-111111111111', 'ann@example.com', 'Ann Lee') RETURNING id, email, is_active	-	-	relation "users" does not exist
+web	W24	agent	write	yes	follows	00000	42P01	no	no	INSERT INTO users (email, full_name) VALUES ('ben@example.com', 'Ben Ode') RETURNING id	-	-	relation "users" does not exist
+web	W25	agent	write	no	follows	00000	42P01	no	no	INSERT INTO users (id, email, full_name, is_active) VALUES ('33333333-3333-3333-3333-333333333333', 'cy@example.org', NULL, false)	-	-	relation "users" does not exist
+web	W26	agent	write	no	follows	00000	42P01	no	no	INSERT INTO products (sku, name, price, stock) VALUES ('A-1', 'Keyboard', 49.90, 10), ('B-2', 'Mouse', 19.50, 25), ('C-3', 'Monitor', 229.00, 5) RETURNING id, sku	-	-	relation "products" does not exist
+web	W27	agent	write	no	follows	00000	42P01	no	no	INSERT INTO orders (user_id) VALUES ('11111111-1111-1111-1111-111111111111') RETURNING id, status, total	-	-	relation "orders" does not exist
+web	W28	agent	write	no	follows	00000	42P01	no	no	INSERT INTO order_items (order_id, product_id, quantity, unit_price) SELECT 1, id, 2, price FROM products WHERE sku = 'A-1'	-	-	relation "order_items" does not exist
+web	W29	agent	write	no	follows	00000	42P01	no	no	INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (1, 2, 1, 19.50) RETURNING *	-	-	relation "order_items" does not exist
+web	W30	agent	write	no	follows	00000	42P01	no	no	INSERT INTO orders (user_id, status) VALUES ((SELECT id FROM users WHERE email = 'ben@example.com'), 'paid') RETURNING id	-	-	relation "orders" does not exist
+web	W31	agent	write	no	follows	00000	42P01	no	no	INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (2, 3, 1, 229.00), (2, 2, 3, 18.00)	-	-	relation "order_items" does not exist
+web	W32	agent	write	no	follows	00000	42P01	no	no	UPDATE orders o SET total = (SELECT coalesce(sum(i.quantity * i.unit_price), 0) FROM order_items i WHERE i.order_id = o.id) WHERE o.id = 1 RETURNING total	-	-	relation "orders" does not exist
+web	W33	agent	write	no	follows	00000	42P01	no	no	UPDATE orders SET total = s.total FROM (SELECT order_id, sum(quantity * unit_price) AS total FROM order_items GROUP BY order_id) s WHERE orders.id = s.order_id RETURNING orders.id, orders.total	-	-	relation "orders" does not exist
+web	W34	agent	write	no	follows	00000	42P01	no	no	UPDATE products p SET stock = p.stock - i.quantity FROM order_items i WHERE i.product_id = p.id AND i.order_id = 1	-	-	relation "products" does not exist
+web	W35	agent	write	no	follows	00000	42P01	no	no	UPDATE orders SET status = 'shipped' WHERE id = 2 AND status = 'paid' RETURNING id, status	-	-	relation "orders" does not exist
+web	W36	agent	write	no	follows	00000	42P01	no	no	UPDATE users SET last_login = now() WHERE email = 'ann@example.com'	-	-	relation "users" does not exist
+web	W37	agent	read	no	follows	00000	42P01	no	no	SELECT u.email, count(o.id) AS orders, coalesce(sum(o.total), 0) AS revenue FROM users u LEFT JOIN orders o ON o.user_id = u.id GROUP BY u.email ORDER BY revenue DESC, u.email	-	-	relation "users" does not exist
+web	W38	agent	read	no	follows	00000	42P01	no	no	SELECT p.name, sum(i.quantity) AS sold FROM order_items i JOIN products p ON p.id = i.product_id GROUP BY p.id, p.name ORDER BY sold DESC, p.name LIMIT 5	-	-	relation "order_items" does not exist
+web	W39	agent	read	no	follows	00000	42P01	no	no	SELECT o.id AS order_id, u.email, p.name, i.quantity, i.quantity * i.unit_price AS line_total FROM orders o JOIN users u ON u.id = o.user_id JOIN order_items i ON i.order_id = o.id JOIN products p ON p.id = i.product_id ORDER BY o.id, p.name	-	-	relation "orders" does not exist
+web	W40	agent	read	yes	follows	00000	42P01	no	no	SELECT to_char(created_at, 'YYYY-MM') AS month, sum(total) FROM orders GROUP BY month ORDER BY month	-	-	relation "orders" does not exist
+web	W41	agent	read	yes	follows	00000	42P01	no	no	SELECT date_trunc('month', created_at)::date AS month, count(*) FROM orders GROUP BY 1 ORDER BY 1	-	-	relation "orders" does not exist
+web	W42	agent	read	yes	follows	00000	42P01	no	no	SELECT EXTRACT(YEAR FROM created_at) AS y, count(*) FROM orders GROUP BY y	-	-	relation "orders" does not exist
+web	W43	agent	read	no	follows	00000	42P01	no	no	SELECT name FROM products p WHERE NOT EXISTS (SELECT 1 FROM order_items i WHERE i.product_id = p.id) ORDER BY name	-	-	relation "products" does not exist
+web	W44	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM users WHERE id NOT IN (SELECT user_id FROM orders) ORDER BY email	-	-	relation "users" does not exist
+web	W45	agent	read	no	follows	00000	42P01	no	no	SELECT name, price, price * 1.19 AS gross, round(price * 1.19, 2) AS gross_rounded FROM products ORDER BY price DESC	-	-	relation "products" does not exist
+web	W46	agent	read	no	follows	00000	42P01	no	no	SELECT name, CASE WHEN stock = 0 THEN 'out' WHEN stock < 10 THEN 'low' ELSE 'ok' END AS level FROM products ORDER BY name	-	-	relation "products" does not exist
+web	W47	agent	read	no	follows	00000	42P01	no	no	SELECT avg(price)::numeric(10,2) AS avg_price, min(price), max(price), count(*) FROM products	-	-	relation "products" does not exist
+web	W48	agent	read	no	follows	00000	42P01	no	no	SELECT sku, price FROM products WHERE price BETWEEN 10 AND 100 ORDER BY price	-	-	relation "products" does not exist
+web	W49	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM users WHERE email ILIKE '%@EXAMPLE.COM' ORDER BY email	-	-	relation "users" does not exist
+web	W50	agent	read	no	follows	00000	42P01	no	no	SELECT lower(email), upper(full_name), length(full_name), split_part(email, '@', 2) AS domain FROM users ORDER BY 1	-	-	relation "users" does not exist
+web	W51	agent	read	no	follows	00000	42P01	no	no	SELECT concat(coalesce(full_name, 'unknown'), ' <', email, '>') AS label FROM users ORDER BY 1	-	-	relation "users" does not exist
+web	W52	agent	read	no	follows	00000	42P01	no	no	SELECT full_name || ' (' || id || ')' AS label FROM users WHERE email = 'ann@example.com'	-	-	relation "users" does not exist
+web	W53	agent	read	yes	refused	00000	0A000	yes	yes	SELECT d::date AS day, count(o.id) FROM generate_series(current_date - 6, current_date, interval '1 day') AS d LEFT JOIN orders o ON o.created_at::date = d::date GROUP BY 1 ORDER BY 1	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+web	W54	agent	read	no	refused	00000	0A000	yes	yes	SELECT * FROM generate_series(1, 5) AS n	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+web	W55	agent	read	no	refused	00000	0A000	yes	yes	SELECT count(*) AS total, count(*) FILTER (WHERE status = 'paid') AS paid, count(*) FILTER (WHERE status = 'shipped') AS shipped FROM orders	-	-	FILTER is not supported by the postgresql language
+web	W56	agent	read	no	follows	00000	42P01	no	no	SELECT status, count(*) FROM orders GROUP BY status ORDER BY status	-	-	relation "orders" does not exist
+web	W57	agent	read	no	follows	00000	42P01	no	no	SELECT rank() OVER (ORDER BY price DESC) AS rank, name FROM products ORDER BY rank	-	-	relation "products" does not exist
+web	W58	agent	read	no	follows	00000	42P01	no	no	SELECT name, price, sum(price) OVER (ORDER BY price) AS running_total FROM products ORDER BY price	-	-	relation "products" does not exist
+web	W59	agent	read	no	follows	00000	42P01	no	no	SELECT id, total, lag(total) OVER (PARTITION BY user_id ORDER BY id) AS previous_total FROM orders ORDER BY id	-	-	relation "orders" does not exist
+web	W60	agent	read	no	refused	00000	0A000	yes	no way	SELECT user_id, json_agg(json_build_object('id', id, 'total', total) ORDER BY id) AS orders FROM orders GROUP BY user_id ORDER BY user_id	-	-	ORDER BY inside a function call is not supported by the postgresql language
+web	W61	agent	read	no	refused	00000	0A000	yes	no way	SELECT u.email, coalesce(json_agg(o.id ORDER BY o.id) FILTER (WHERE o.id IS NOT NULL), '[]') AS order_ids FROM users u LEFT JOIN orders o ON o.user_id = u.id GROUP BY u.email ORDER BY u.email	-	-	ORDER BY inside a function call is not supported by the postgresql language
+web	W62	agent	read	no	follows	00000	42P01	no	no	SELECT u.email, array_agg(DISTINCT p.sku) AS skus FROM users u JOIN orders o ON o.user_id = u.id JOIN order_items i ON i.order_id = o.id JOIN products p ON p.id = i.product_id GROUP BY u.email ORDER BY u.email	-	-	relation "users" does not exist
+web	W63	agent	read	no	follows	00000	42P01	no	no	WITH spend AS (SELECT user_id, sum(total) AS spent FROM orders GROUP BY user_id) SELECT u.email, s.spent FROM spend s JOIN users u ON u.id = s.user_id ORDER BY s.spent DESC	-	-	relation "orders" does not exist
+web	W64	agent	read	yes	follows	00000	42P01	no	no	SELECT * FROM orders ORDER BY created_at DESC LIMIT 10 OFFSET 0	-	-	relation "orders" does not exist
+web	W65	agent	read	no	follows	00000	42P01	no	no	SELECT count(*) OVER () AS full_count, id, sku FROM products ORDER BY id LIMIT 2 OFFSET 2	-	-	relation "products" does not exist
+web	W66	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM users WHERE id = '11111111-1111-1111-1111-111111111111'::uuid	-	-	relation "users" does not exist
+web	W67	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM users WHERE id::text LIKE '3333%'	-	-	relation "users" does not exist
+web	W68	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM users WHERE id = ANY(ARRAY['11111111-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333']::uuid[]) ORDER BY email	-	-	relation "users" does not exist
+web	W69	agent	write	no	follows	00000	42P01	no	no	INSERT INTO users (email, full_name) VALUES ('ann@example.com', 'Ann B. Lee') ON CONFLICT (email) DO UPDATE SET full_name = EXCLUDED.full_name RETURNING email, full_name, (xmax = 0) AS inserted	-	-	relation "users" does not exist
+web	W70	agent	write	no	refused	00000	0A000	yes	yes	INSERT INTO products (sku, name, price) VALUES ('A-1', 'Keyboard', 59.90) ON CONFLICT ON CONSTRAINT products_sku_key DO UPDATE SET price = EXCLUDED.price RETURNING sku, price	-	-	ON CONFLICT ON CONSTRAINT is not supported by the postgresql language
+web	W71	agent	write	no	follows	00000	42P01	no	no	INSERT INTO products AS p (sku, name, price, stock) VALUES ('B-2', 'Mouse', 19.50, 5) ON CONFLICT (sku) DO UPDATE SET stock = p.stock + EXCLUDED.stock RETURNING sku, stock	-	-	relation "products" does not exist
+web	W72	agent	write	no	follows	00000	42P01	no	no	DELETE FROM orders WHERE id = 999 RETURNING *	-	-	relation "orders" does not exist
+web	W73	agent	write	no	refused	00000	0A000	yes	yes	DELETE FROM order_items USING orders o WHERE order_items.order_id = o.id AND o.status = 'cancelled'	-	-	DELETE with USING is not supported by the postgresql language
+web	W74	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM active_users ORDER BY email	-	-	relation "active_users" does not exist
+web	W75	agent	read	no	refused	00000	0A000	yes	yes	SELECT u.email, latest.id AS latest_order FROM users u LEFT JOIN LATERAL (SELECT id FROM orders o WHERE o.user_id = u.id ORDER BY id DESC LIMIT 1) latest ON true ORDER BY u.email	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+web	W76	agent	read	no	follows	00000	42P01	no	no	SELECT user_id, count(*) AS n FROM orders GROUP BY user_id HAVING count(*) >= 1 ORDER BY n DESC, user_id	-	-	relation "orders" does not exist
+web	W77	agent	read	no	follows	00000	42P01	no	no	SELECT DISTINCT status FROM orders ORDER BY status	-	-	relation "orders" does not exist
+web	W78	agent	read	no	refused	00000	0A000	no	no way	SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY price) AS median_price FROM products	-	-	WITHIN GROUP is not supported by the postgresql language
+web	W79	agent	read	no	follows	00000	42P01	no	no	SELECT name, greatest(stock, 10) AS restock_to, least(price, 100) AS capped FROM products ORDER BY name	-	-	relation "products" does not exist
+web	W80	agent	read	no	follows	00000	42P01	no	no	SELECT count(*) FROM orders WHERE created_at + interval '30 days' > now()	-	-	relation "orders" does not exist
+web	W81	agent	read	yes	follows	00000	42P01	no	no	SELECT email, age(now(), created_at) AS account_age FROM users ORDER BY email	-	-	relation "users" does not exist
+web	W82	agent	read	no	follows	00000	42P01	no	no	SELECT email, coalesce(nullif(trim(full_name), ''), split_part(email, '@', 1)) AS display FROM users ORDER BY email	-	-	relation "users" does not exist
+web	W83	agent	read	no	follows	00000	42P01	no	no	SELECT 'user' AS kind, email AS label FROM users UNION ALL SELECT 'product', sku FROM products ORDER BY kind, label	-	-	relation "users" does not exist
+web	W84	agent	read	no	follows	00000	42P01	no	no	SELECT t.sku, t.sold FROM (SELECT p.sku, coalesce(sum(i.quantity), 0) AS sold FROM products p LEFT JOIN order_items i ON i.product_id = p.id GROUP BY p.sku) t WHERE t.sold > 0 ORDER BY t.sold DESC, t.sku	-	-	relation "products" does not exist
+web	W85	agent	write	no	follows	00000	42P01	no	no	INSERT INTO products (sku, name, price) SELECT 'D-4', 'Cable', 5.00 WHERE NOT EXISTS (SELECT 1 FROM products WHERE sku = 'D-4') RETURNING id, sku, stock	-	-	relation "products" does not exist
+web	W86	agent	write	no	follows	00000	42703	yes	yes	INSERT INTO audit_log (user_id, action, payload) VALUES ('11111111-1111-1111-1111-111111111111', 'login', jsonb_build_object('ip', '10.0.0.1', 'ok', true))	-	-	column "user_id" of relation "audit_log" does not exist
+web	W87	agent	read	no	refused	00000	0A000	yes	yes	SELECT action, payload->>'ip' AS ip, (payload->>'ok')::boolean AS ok FROM audit_log ORDER BY id	-	-	The operator ->> is not supported by the postgresql language
+web	W88	agent	read	yes	silent	00000	00000	-	-	SELECT version()	1 row: (PostgreSQL 18.7 (Debian 18.7-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit)	1 row: (PostgreSQL 12.0 (ArcadeDB 26.12.1-SNAPSHOT))	-
+web	W89	agent	read	yes	refused	00000	0A000	no	no way	SELECT current_user, current_database(), current_schema()	-	-	CURRENT_USER is not supported by the postgresql language
+web	W90	agent	read	no	same	00000	00000	-	-	SELECT now()::date = current_date AS same_day	-	-	-
+web	W91	agent	read	no	follows	00000	42P01	no	no	SELECT p.sku, (SELECT count(*) FROM order_items i WHERE i.product_id = p.id) AS times_ordered FROM products p ORDER BY p.sku	-	-	relation "products" does not exist
+web	W92	agent	read	no	follows	00000	42P01	no	no	SELECT a.sku AS a, b.sku AS b FROM order_items x JOIN order_items y ON x.order_id = y.order_id AND x.product_id < y.product_id JOIN products a ON a.id = x.product_id JOIN products b ON b.id = y.product_id ORDER BY 1, 2	-	-	relation "order_items" does not exist
+web	T01	agent	transaction	no	same	00000	00000	-	-	BEGIN	-	-	-
+web	T02	agent	transaction	no	follows	00000	42P01	no	no	INSERT INTO orders (user_id, total) VALUES ('11111111-1111-1111-1111-111111111111', 19.50) RETURNING id	-	-	relation "orders" does not exist
+web	T03	agent	transaction	no	follows	00000	25P02	no	no	UPDATE products SET stock = stock - 1 WHERE sku = 'B-2' AND stock > 0 RETURNING stock	-	-	current transaction is aborted, commands ignored until end of transaction block
+web	T04	agent	transaction	no	same	00000	00000	-	-	COMMIT	-	-	-
+web	T05	agent	transaction	no	same	00000	00000	-	-	BEGIN	-	-	-
+web	T06	agent	transaction	no	same	00000	00000	-	-	SAVEPOINT before_item	-	-	-
+web	T07	agent	transaction	no	follows	00000	42P01	no	no	INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (3, 1, 1, 49.90)	-	-	relation "order_items" does not exist
+web	T08	agent	transaction	no	refused	00000	0A000	yes	yes	ROLLBACK TO SAVEPOINT before_item	-	-	ROLLBACK TO SAVEPOINT is not supported by this server: it cannot discard the writes made since the savepoint
+web	T09	agent	transaction	no	follows	00000	25P02	no	no	RELEASE SAVEPOINT before_item	-	-	current transaction is aborted, commands ignored until end of transaction block
+web	T10	agent	transaction	no	same	00000	00000	-	-	COMMIT	-	-	-
+web	T11	agent	transaction	no	refused	00000	0A000	yes	no	BEGIN ISOLATION LEVEL SERIALIZABLE	-	-	Error on parsing query: transaction isolation level "serializable" is not supported by this server: transactions run at "read committed" or "repeatable read". The transaction block has failed: send ROLLBACK, then BEGIN ISOLATION LEVEL REPEATABLE READ
+web	T12	agent	transaction	no	follows	00000	25P02	no	no	SELECT stock FROM products WHERE sku = 'A-1' FOR UPDATE	-	-	current transaction is aborted, commands ignored until end of transaction block
+web	T13	agent	transaction	no	same	00000	00000	-	-	ROLLBACK	-	-	-
+web	T14	agent	transaction	no	same	00000	00000	-	-	START TRANSACTION	-	-	-
+web	T15	agent	transaction	no	refused	00000	0A000	yes	yes	SELECT id FROM orders WHERE status = 'pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED	-	-	A locking clause (FOR UPDATE and the others) is not supported by the postgresql language
+web	T16	agent	transaction	no	same	00000	00000	-	-	ROLLBACK	-	-	-
+web	T17	agent	transaction	no	same	00000	00000	-	-	BEGIN	-	-	-
+web	T18	agent	transaction	no	same	22012	22012	no	no	SELECT 1/0	-	-	division by zero
+web	T19	agent	transaction	no	same	25P02	25P02	no	no	SELECT 1	-	-	current transaction is aborted, commands ignored until end of transaction block
+web	T20	agent	transaction	no	same	00000	00000	-	-	ROLLBACK	-	-	-
+web	T21	agent	transaction	no	same	00000	00000	-	-	SET statement_timeout = '5s'	-	-	-
+web	T22	agent	transaction	no	same	00000	00000	-	-	SET search_path TO public	-	-	-
+web	T23	agent	transaction	no	same	00000	00000	-	-	SET TIME ZONE 'UTC'	-	-	-
+web	T24	agent	transaction	no	refused	00000	0A000	yes	yes	TRUNCATE TABLE audit_log RESTART IDENTITY	-	-	TRUNCATE is not supported by the postgresql language
+web	T25	agent	transaction	no	same	00000	00000	-	-	SELECT count(*) FROM audit_log	-	-	-
+web	C01	agent	discovery	no	follows	00000	00000	-	-	SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name	-	-	-
+web	C02	agent	discovery	no	follows	00000	00000	-	-	SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') ORDER BY 1, 2	-	-	-
+web	C03	agent	discovery	no	follows	00000	00000	-	-	SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' ORDER BY ordinal_position	-	-	-
+web	C04	agent	discovery	no	follows	00000	00000	-	-	SELECT table_name, column_name, data_type, udt_name FROM information_schema.columns WHERE table_schema = 'public' ORDER BY table_name, ordinal_position	-	-	-
+web	C05	agent	discovery	no	follows	00000	00000	-	-	SELECT tc.table_name, kcu.column_name, ccu.table_name AS foreign_table_name, ccu.column_name AS foreign_column_name FROM information_schema.table_constraints AS tc JOIN information_schema.key_column_usage AS kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema JOIN information_schema.constraint_column_usage AS ccu ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public' ORDER BY 1, 2	-	-	-
+web	C06	agent	discovery	no	follows	00000	00000	-	-	SELECT kcu.column_name FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage kcu USING (constraint_name, table_schema) WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_name = 'order_items' ORDER BY kcu.ordinal_position	-	-	-
+web	C07	agent	discovery	no	follows	00000	00000	-	-	SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename	-	-	-
+web	C08	agent	discovery	no	follows	00000	00000	-	-	SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'products' ORDER BY indexname	-	-	-
+web	C09	agent	discovery	no	follows	00000	00000	-	-	SELECT c.relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY 1	-	-	-
+web	C10	agent	discovery	no	refused	00000	0A000	no	no	SELECT a.attname, format_type(a.atttypid, a.atttypmod) AS type, a.attnotnull FROM pg_attribute a WHERE a.attrelid = 'products'::regclass AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum	-	-	Error on parsing query: This catalog query has a shape this server does not support
+web	C11	agent	discovery	no	refused	00000	0A000	yes	no way	SELECT to_regclass('public.users') IS NOT NULL AS users_exists, to_regclass('public.nope') IS NOT NULL AS nope_exists	-	-	The function to_regclass(unknown) is not supported by the postgresql language
+web	C12	agent	discovery	no	refused	00000	0A000	yes	yes	SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users')	-	-	A select list with no item is not supported by the postgresql language
+web	C13	agent	discovery	no	silent	00000	00000	-	-	SELECT conname, contype, pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'order_items'::regclass ORDER BY conname	8 rows: (order_items_order_id_fkey, f, FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE) (order_items_order_id_not_null, n, NOT NULL ord ...	no rows (conname, contype, pg_get_constraintdef)	-
+web	C14	agent	discovery	no	same	00000	00000	-	-	SELECT schema_name FROM information_schema.schemata WHERE schema_name NOT LIKE 'pg_%' ORDER BY 1	-	-	-
+web	C15	agent	discovery	no	follows	00000	00000	-	-	SELECT t.typname, e.enumlabel FROM pg_type t JOIN pg_enum e ON t.oid = e.enumtypid ORDER BY t.typname, e.enumsortorder	-	-	-
+web	C16	agent	discovery	yes	refused	00000	0A000	no	no	SELECT extname FROM pg_extension ORDER BY 1	-	-	Error on parsing query: The catalog relation "pg_extension" is not supported by this server
+web	C17	agent	discovery	no	refused	00000	0A000	yes	yes	SELECT obj_description('public.users'::regclass) AS comment	-	-	The type regclass is not supported by the postgresql language
+web	C18	agent	discovery	yes	refused	00000	0A000	yes	no way	SELECT pg_size_pretty(pg_total_relation_size('products'))	-	-	The function pg_total_relation_size(unknown) is not supported by the postgresql language
+web	C19	agent	discovery	yes	follows	00000	00000	-	-	SELECT relname, reltuples::bigint AS estimate FROM pg_class WHERE relname = 'products'	-	-	-
+web	C20	agent	discovery	yes	silent	00000	00000	-	-	SHOW server_version	1 row: (18.7 (Debian 18.7-1.pgdg12+2))	1 row: (12.0)	-
+web	C21	agent	discovery	yes	silent	00000	00000	-	-	SHOW search_path	1 row: (public)	1 row: (postgresdb)	-
+web	C22	agent	discovery	no	follows	00000	00000	-	-	SELECT pg_catalog.pg_class.relname FROM pg_catalog.pg_class JOIN pg_catalog.pg_namespace ON pg_catalog.pg_namespace.oid = pg_catalog.pg_class.relnamespace WHERE pg_catalog.pg_class.relkind = ANY (ARRAY['r', 'p']) AND pg_catalog.pg_class.relpersistence != 't' AND pg_catalog.pg_table_is_visible(pg_catalog.pg_class.oid) AND pg_catalog.pg_namespace.nspname != 'pg_catalog' ORDER BY 1	-	-	-
+web	C23	agent	discovery	no	follows	00000	00000	-	-	SELECT n.nspname AS table_schema, c.relname AS table_name, CASE WHEN c.relkind = 'r' THEN 'table' WHEN c.relkind = 'v' THEN 'view' WHEN c.relkind = 'm' THEN 'materialized_view' END AS type, c.relrowsecurity AS rls_enabled FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r', 'v', 'm') AND n.nspname = 'public' ORDER BY 2	-	-	-
+web	C24	agent	discovery	no	follows	00000	00000	-	-	SELECT tbl.relname AS table_name, namespace.nspname AS namespace, (tbl.relhassubclass AND tbl.relkind = 'p') AS is_partition, tbl.relrowsecurity AS has_row_level_security, obj_description(tbl.oid, 'pg_class') AS description FROM pg_class AS tbl INNER JOIN pg_namespace AS namespace ON namespace.oid = tbl.relnamespace WHERE tbl.relkind IN ('r', 'p') AND namespace.nspname = ANY (ARRAY['public']) ORDER BY namespace, table_name	-	-	-
+web	C25	agent	discovery	no	follows	00000	00000	-	-	SELECT i.relname AS index_name, ix.indisunique, a.attname AS column_name FROM pg_class t, pg_class i, pg_index ix, pg_attribute a WHERE t.oid = ix.indrelid AND i.oid = ix.indexrelid AND a.attrelid = t.oid AND a.attnum = ANY(ix.indkey) AND t.relkind = 'r' AND t.relname = 'products' ORDER BY i.relname, a.attname	-	-	-
+web	C26	agent	discovery	no	refused	00000	42P01	no	no	SELECT info.table_name, info.column_name, format_type(att.atttypid, att.atttypmod) AS formatted_type, info.data_type, info.udt_name, pg_get_expr(attdef.adbin, attdef.adrelid) AS column_default, info.is_nullable, info.is_identity, info.character_maximum_length FROM information_schema.columns info JOIN pg_attribute att ON att.attname = info.column_name AND att.attrelid = (quote_ident(info.table_schema) || '.' || quote_ident(info.table_name))::regclass LEFT OUTER JOIN pg_attrdef attdef ON attdef.adrelid = att.attrelid AND attdef.adnum = att.attnum WHERE info.table_schema = 'public' AND info.table_name = 'users' ORDER BY info.ordinal_position	-	-	relation "pg_attribute" does not exist
+web	C27	agent	discovery	no	follows	00000	00000	-	-	SELECT rc.constraint_name, rc.delete_rule, rc.update_rule FROM information_schema.referential_constraints rc ORDER BY 1	-	-	-
+web	C28	agent	discovery	no	follows	00000	00000	-	-	SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'users' AND constraint_type <> 'CHECK' ORDER BY 1	-	-	-
+web	C29	agent	discovery	no	follows	00000	00000	-	-	SELECT c.oid IS NOT NULL AS found, n.nspname, c.relname FROM pg_catalog.pg_class c LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relname OPERATOR(pg_catalog.~) '^(users)$' COLLATE pg_catalog.default AND pg_catalog.pg_table_is_visible(c.oid) ORDER BY 2, 3	-	-	-
+web	C30	agent	discovery	no	same	00000	00000	-	-	SELECT column_name FROM information_schema.columns WHERE table_name = 'no_such_table'	-	-	-
+web	C31	agent	discovery	yes	refused	00000	0A000	yes	no way	SELECT current_setting('server_version_num')::int >= 120000 AS modern	-	-	The function current_setting(unknown) is not supported by the postgresql language
+web	C32	agent	discovery	no	follows	00000	00000	-	-	SELECT table_name, count(*) AS columns FROM information_schema.columns WHERE table_schema = 'public' GROUP BY table_name ORDER BY table_name	-	-	-
+web	E01	agent	read	no	follows	42703	42P01	no	no	SELECT nme FROM products	-	-	relation "products" does not exist
+web	E02	agent	read	no	follows	42703	42P01	no	no	SELECT p.nam FROM products p	-	-	relation "products" does not exist
+web	E03	agent	read	no	same	42P01	42P01	no	no	SELECT * FROM usr	-	-	relation "usr" does not exist
+web	E04	agent	read	no	refused	00000	42601	no	no	SELECT * FROM user	-	-	syntax error at or near "user"
+web	E05	agent	read	no	follows	42883	42P01	no	no	SELECT email FROM users WHERE id = 1	-	-	relation "users" does not exist
+web	E06	agent	read	no	follows	22P02	42P01	no	no	SELECT sku FROM products WHERE price = 'cheap'	-	-	relation "products" does not exist
+web	E07	agent	read	no	follows	42703	42P01	no	no	SELECT sku FROM products WHERE name = "Mouse"	-	-	relation "products" does not exist
+web	E08	agent	read	no	same	42601	42601	yes	yes	SELECT `name` FROM products	-	-	syntax error at or near "`"
+web	E09	agent	read	no	follows	42803	42P01	no	no	SELECT name, count(*) FROM products	-	-	relation "products" does not exist
+web	E10	agent	read	no	follows	42702	42P01	no	no	SELECT id FROM users, orders	-	-	relation "users" does not exist
+web	E11	agent	read	no	follows	42883	42P01	no	no	SELECT IFNULL(full_name, '') FROM users	-	-	relation "users" does not exist
+web	E12	agent	read	no	same	42883	42883	yes	yes	SELECT GETDATE()	-	-	function getdate() does not exist
+web	E13	agent	read	no	same	42601	42601	no	no	SELECT id FROM orders WHERE created_at > NOW() - INTERVAL 7 DAY	-	-	syntax error at or near "7"
+web	E14	agent	read	no	follows	42883	42P01	no	no	SELECT id FROM orders WHERE created_at > DATE_SUB(NOW(), INTERVAL '7 days')	-	-	relation "orders" does not exist
+web	E15	agent	read	no	same	42601	42601	yes	yes	SELECT sku FROM products ORDER BY id LIMIT 1, 2	-	-	LIMIT #,# syntax is not supported
+web	E16	agent	write	no	follows	23505	42P01	no	no	INSERT INTO products (sku, name, price) VALUES ('A-1', 'Duplicate', 1)	-	-	relation "products" does not exist
+web	E17	agent	write	no	follows	23503	42P01	no	no	INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES (9999, 1, 1, 1)	-	-	relation "order_items" does not exist
+web	E18	agent	write	no	follows	23502	42P01	no	no	INSERT INTO products (name, price) VALUES ('No sku', 1)	-	-	relation "products" does not exist
+web	E19	agent	write	no	follows	23514	42P01	no	no	INSERT INTO products (sku, name, price) VALUES ('Z-9', 'Negative', -1)	-	-	relation "products" does not exist
+web	E20	agent	write	no	follows	42703	42P01	no	no	INSERT INTO products (sku, name, price, color) VALUES ('Y-8', 'Colored', 1, 'red')	-	-	relation "products" does not exist
+web	E21	agent	write	no	follows	42601	42P01	no	no	INSERT INTO products (sku, name, price) VALUES ('X-7', 'Short')	-	-	relation "products" does not exist
+web	E22	agent	read	no	same	22P02	22P02	no	no	SELECT 'abc'::int	-	-	invalid input syntax for type integer: "abc"
+web	E23	agent	read	no	follows	00000	42P01	no	no	SELECT sku FROM products WHERE stock > '5' ORDER BY sku	-	-	relation "products" does not exist
+web	E24	agent	read	no	follows	42883	42P01	no	no	SELECT sum(name) FROM products	-	-	relation "products" does not exist
+web	E25	agent	read	no	follows	42703	42P01	no	no	SELECT sku FROM products ORDER BY nme	-	-	relation "products" does not exist
+web	E26	agent	write	no	follows	42703	42P01	no	no	UPDATE products SET prise = 1 WHERE id = 1	-	-	relation "products" does not exist
+web	E27	agent	read	no	follows	42703	42P01	no	no	SELECT "Name" FROM products	-	-	relation "products" does not exist
+web	E28	agent	read	no	follows	00000	42P01	no	no	SELECT Name FROM Products ORDER BY SKU LIMIT 1	-	-	relation "products" does not exist
+web	E29	agent	write	no	follows	23502	42P01	no	no	INSERT INTO users (email) VALUES (NULL)	-	-	relation "users" does not exist
+web	E30	agent	read	no	same	42601	42601	no	no	SELECT * FROM public.products WHERE sku = 'A-1' AND	-	-	syntax error at or near "AND"
+web	E31	agent	read	no	follows	22P02	42P01	no	no	SELECT sku FROM products WHERE id = 'abc'	-	-	relation "products" does not exist
+web	E32	agent	write	no	follows	22P02	42P01	no	no	INSERT INTO orders (user_id, status) VALUES ('11111111-1111-1111-1111-111111111111', 'refunded')	-	-	relation "orders" does not exist
+web	E33	agent	read	no	follows	42703	42P01	no	no	SELECT u.email FROM users u JOIN orders o ON o.userid = u.id	-	-	relation "users" does not exist
+web	E34	agent	write	no	follows	23503	42P01	no	no	DELETE FROM users WHERE email = 'ann@example.com'	-	-	relation "users" does not exist
+ddl-probes	P01	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p01 (id serial PRIMARY KEY, v text)	-	-	A column of type serial is not supported by the postgresql language
+ddl-probes	P02	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p02 (id bigserial PRIMARY KEY, v text)	-	-	A column of type bigserial is not supported by the postgresql language
+ddl-probes	P03	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p03 (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, v text)	-	-	This column option (CHECK, GENERATED, COLLATE, storage, a deferrable or unenforced constraint and the like) is not supported by the postgresql language
+ddl-probes	P04	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p04 (id int GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, v text)	-	-	This column option (CHECK, GENERATED, COLLATE, storage, a deferrable or unenforced constraint and the like) is not supported by the postgresql language
+ddl-probes	P05	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p05 (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), v text)	-	-	A column of type uuid is not supported by the postgresql language
+ddl-probes	P06	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p06 (id int PRIMARY KEY, at timestamptz DEFAULT now())	-	-	-
+ddl-probes	P07	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p07 (id int PRIMARY KEY, at timestamp DEFAULT CURRENT_TIMESTAMP)	-	-	-
+ddl-probes	P08	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p08 (id int PRIMARY KEY, meta jsonb DEFAULT '{}')	-	-	A DEFAULT on a column of type jsonb is not supported by the postgresql language
+ddl-probes	P09	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p09 (id int PRIMARY KEY, tags text[] DEFAULT '{}')	-	-	A DEFAULT on a column of type text[] is not supported by the postgresql language
+ddl-probes	P10	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p10 (id int PRIMARY KEY, active boolean NOT NULL DEFAULT true, n int NOT NULL DEFAULT 0, s text DEFAULT 'x', price numeric DEFAULT 0)	-	-	-
+ddl-probes	P11	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p11 (id int PRIMARY KEY, name varchar(255))	-	-	A type modifier on a column of type varchar is not supported by the postgresql language
+ddl-probes	P12	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p12 (id int PRIMARY KEY, price numeric(10,2))	-	-	A type modifier on a column of type numeric is not supported by the postgresql language
+ddl-probes	P13	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p13 (id int PRIMARY KEY, n int CHECK (n > 0))	-	-	This column option (CHECK, GENERATED, COLLATE, storage, a deferrable or unenforced constraint and the like) is not supported by the postgresql language
+ddl-probes	P14	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p14 (id int PRIMARY KEY, a int, b int, CHECK (a < b))	-	-	This table constraint (CHECK, EXCLUDE, NOT NULL, NULLS NOT DISTINCT or USING INDEX) is not supported by the postgresql language
+ddl-probes	P15	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p15 (id int PRIMARY KEY, a int, b int, UNIQUE (a, b))	-	-	-
+ddl-probes	P16	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p16 (a int, b int, PRIMARY KEY (a, b))	-	-	-
+ddl-probes	P17	probes	schema	no	same	00000	00000	-	-	CREATE TABLE parent (id bigint PRIMARY KEY, name text)	-	-	-
+ddl-probes	P18	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p18 (id int PRIMARY KEY, parent_id bigint REFERENCES parent(id))	-	-	A foreign key other than the two ends of an edge table (source_id and target_id, each text NOT NULL REFERENCES a table (rid) ON DELETE CASCADE) is not supported by the postgresql language
+ddl-probes	P19	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p19 (id int PRIMARY KEY, parent_id bigint, FOREIGN KEY (parent_id) REFERENCES parent(id) ON DELETE CASCADE)	-	-	A foreign key other than the two ends of an edge table (source_id and target_id, each text NOT NULL REFERENCES a table (rid) ON DELETE CASCADE) is not supported by the postgresql language
+ddl-probes	P20	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p20 (source_id bigint NOT NULL REFERENCES parent(id), target_id bigint NOT NULL REFERENCES parent(id))	-	-	A foreign key other than the two ends of an edge table (source_id and target_id, each text NOT NULL REFERENCES a table (rid) ON DELETE CASCADE) is not supported by the postgresql language
+ddl-probes	P21	probes	schema	no	other-code	42703	0A000	yes	yes	CREATE TABLE p21 (source_id bigint NOT NULL REFERENCES parent(rid) ON DELETE CASCADE, target_id bigint NOT NULL REFERENCES parent(rid) ON DELETE CASCADE)	-	-	A foreign key other than the two ends of an edge table (source_id and target_id, each text NOT NULL REFERENCES a table (rid) ON DELETE CASCADE) is not supported by the postgresql language
+ddl-probes	P22	probes	schema	no	other-code	42703	0A000	yes	yes	CREATE TABLE p22 (source_id text NOT NULL REFERENCES parent(rid), target_id text NOT NULL REFERENCES parent(rid))	-	-	A foreign key other than the two ends of an edge table (source_id and target_id, each text NOT NULL REFERENCES a table (rid) ON DELETE CASCADE) is not supported by the postgresql language
+ddl-probes	P23	probes	schema	no	other-code	42703	0A000	yes	yes	CREATE TABLE p23 (follower_id text NOT NULL REFERENCES parent(rid) ON DELETE CASCADE, followee_id text NOT NULL REFERENCES parent(rid) ON DELETE CASCADE)	-	-	A foreign key other than the two ends of an edge table (source_id and target_id, each text NOT NULL REFERENCES a table (rid) ON DELETE CASCADE) is not supported by the postgresql language
+ddl-probes	P24	probes	schema	no	silent	42703	00000	-	-	CREATE TABLE p24 (source_id text NOT NULL REFERENCES parent(rid) ON DELETE CASCADE, target_id text NOT NULL REFERENCES parent(rid) ON DELETE CASCADE, PRIMARY KEY (source_id, target_id))	42703 column "rid" referenced in foreign key constraint does not exist	success, count 0	-
+ddl-probes	P25	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p25 (name text)	-	-	-
+ddl-probes	P26	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p26 (user_id bigint PRIMARY KEY, name text)	-	-	-
+ddl-probes	P27	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p27 (id int PRIMARY KEY, doc json)	-	-	A column of type json is not supported by the postgresql language
+ddl-probes	P28	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p28 (id int PRIMARY KEY, u uuid)	-	-	A column of type uuid is not supported by the postgresql language
+ddl-probes	P29	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p29 (id int PRIMARY KEY, at timestamptz)	-	-	-
+ddl-probes	P30	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p30 (id int PRIMARY KEY, at timestamp with time zone)	-	-	-
+ddl-probes	P31	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p31 (id int PRIMARY KEY, t time)	-	-	A column of type time is not supported by the postgresql language
+ddl-probes	P32	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p32 (id int PRIMARY KEY, d date, ts timestamp without time zone)	-	-	-
+ddl-probes	P33	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p33 (id int PRIMARY KEY, i interval)	-	-	A column of type interval is not supported by the postgresql language
+ddl-probes	P34	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p34 (id int PRIMARY KEY, c char(2))	-	-	A type modifier on a column of type bpchar is not supported by the postgresql language
+ddl-probes	P35	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p35 (id int PRIMARY KEY, a double precision, b real, c smallint, d integer, e bigint, f decimal, g boolean, h bytea)	-	-	-
+ddl-probes	P36	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p36 (id int PRIMARY KEY, a int[], b bigint[], c numeric[])	-	-	-
+ddl-probes	P37	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p37 (id int PRIMARY KEY, a int, b int GENERATED ALWAYS AS (a * 2) STORED)	-	-	This column option (CHECK, GENERATED, COLLATE, storage, a deferrable or unenforced constraint and the like) is not supported by the postgresql language
+ddl-probes	P38	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE p38 AS SELECT * FROM parent	-	-	This form of CREATE TABLE (OF, PARTITION OF, AS or a table option) is not supported by the postgresql language
+ddl-probes	P39	probes	schema	no	refused	00000	0A000	yes	yes	CREATE SCHEMA app	-	-	CREATE SCHEMA is not supported by the postgresql language
+ddl-probes	P40	probes	schema	no	refused	00000	0A000	yes	no way	CREATE SEQUENCE order_seq	-	-	CREATE SEQUENCE is not supported by the postgresql language
+ddl-probes	P41	probes	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE parent ADD COLUMN extra text	-	-	ALTER is not supported by the postgresql language
+ddl-probes	P42	probes	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE parent DROP COLUMN IF EXISTS extra	-	-	ALTER is not supported by the postgresql language
+ddl-probes	P43	probes	schema	no	refused	00000	0A000	yes	yes	DROP TABLE p25	-	-	DROP is not supported by the postgresql language
+ddl-probes	P44	probes	schema	no	refused	00000	0A000	yes	yes	DROP TABLE IF EXISTS no_such_table	-	-	DROP is not supported by the postgresql language
+ddl-probes	P45	probes	schema	no	refused	00000	0A000	yes	yes	CREATE EXTENSION IF NOT EXISTS pgcrypto	-	-	CREATE EXTENSION is not supported by the postgresql language
+ddl-probes	P46	probes	schema	no	refused	00000	0A000	yes	yes	CREATE EXTENSION IF NOT EXISTS "uuid-ossp"	-	-	CREATE EXTENSION is not supported by the postgresql language
+ddl-probes	P47	probes	write	no	same	23502	23502	no	no	INSERT INTO p26 DEFAULT VALUES	-	-	null value in column "user_id" of relation "p26" violates not-null constraint
+ddl-probes	P48	probes	schema	no	same	00000	00000	-	-	CREATE TABLE IF NOT EXISTS public.p48 (id int PRIMARY KEY)	-	-	-
+ddl-probes	P49	probes	schema	no	same	00000	00000	-	-	CREATE TABLE "User" (id int PRIMARY KEY, "createdAt" timestamp)	-	-	-
+ddl-probes	P50	probes	schema	no	same	00000	00000	-	-	CREATE TABLE p50 (id int PRIMARY KEY, name text NOT NULL, CONSTRAINT p50_name_key UNIQUE (name))	-	-	-
+ddl-probes	P51	probes	schema	no	refused	00000	0A000	yes	yes	ALTER TABLE parent ADD CONSTRAINT parent_name_key UNIQUE (name)	-	-	ALTER is not supported by the postgresql language
+ddl-probes	P52	probes	schema	no	refused	00000	0A000	yes	yes	DROP INDEX IF EXISTS some_index	-	-	DROP is not supported by the postgresql language
+ddl-probes	P53	probes	schema	no	same	0A000	0A000	yes	yes	TRUNCATE parent	-	-	TRUNCATE is not supported by the postgresql language
+ddl-probes	P54	probes	write	no	refused	00000	0A000	yes	yes	MERGE INTO parent p USING (VALUES (1, 'a')) AS v(id, name) ON p.id = v.id WHEN NOT MATCHED THEN INSERT (id, name) VALUES (v.id, v.name)	-	-	MERGE is not supported by the postgresql language
+ddl-probes	P55	probes	schema	no	refused	00000	0A000	yes	no way	DO $$ BEGIN RAISE NOTICE 'hi'; END $$	-	-	DO is not supported by the postgresql language
+features	F00	probes	schema	no	same	00000	00000	-	-	CREATE TABLE f (id bigint PRIMARY KEY, name text, n int, price numeric, at timestamp, meta jsonb, tags text[], emb vector(3))	-	-	-
+features	F01	probes	write	no	same	00000	00000	-	-	INSERT INTO f (id, name, n, price, at, meta, tags, emb) VALUES (1, 'ann', 10, 1.50, '2026-01-05 10:00:00', '{"a": 1, "b": {"c": "x"}, "l": ["p", "q"]}', '{red,blue}', '[1,0,0]'), (2, 'bob', 20, 2.25, '2026-02-10 11:30:00', '{"a": 2}', '{blue}', '[0,1,0]'), (3, 'cy', NULL, NULL, NULL, NULL, NULL, NULL)	-	-	-
+features	F02	probes	read	no	refused	00000	0A000	yes	no way	SELECT array_agg(name ORDER BY id) FROM f	-	-	ORDER BY inside a function call is not supported by the postgresql language
+features	F03	probes	read	no	refused	00000	0A000	yes	no way	SELECT json_agg(name ORDER BY id) FROM f	-	-	ORDER BY inside a function call is not supported by the postgresql language
+features	F04	probes	read	no	refused	00000	0A000	yes	no way	SELECT jsonb_agg(n) FROM f	-	-	The aggregate function jsonb_agg is not supported
+features	F05	probes	read	no	refused	00000	0A000	yes	no way	SELECT json_build_object('id', id, 'name', name) FROM f ORDER BY id	-	-	The function json_build_object(unknown, bigint, unknown, text) is not supported by the postgresql language
+features	F06	probes	read	no	refused	00000	0A000	yes	no way	SELECT jsonb_build_object('id', id) FROM f ORDER BY id	-	-	The function jsonb_build_object(unknown, bigint) is not supported by the postgresql language
+features	F07	probes	read	no	refused	00000	42703	yes	yes	SELECT row_to_json(t) FROM (SELECT id, name FROM f ORDER BY id) t	-	-	column "t" does not exist
+features	F08	probes	read	no	refused	00000	0A000	yes	no way	SELECT to_jsonb(name) FROM f ORDER BY id	-	-	The function to_jsonb(text) is not supported by the postgresql language
+features	F09	probes	read	no	refused	00000	0A000	yes	yes	SELECT meta->>'a' FROM f ORDER BY id	-	-	The operator ->> is not supported by the postgresql language
+features	F10	probes	read	no	refused	00000	0A000	yes	yes	SELECT meta->'b' FROM f ORDER BY id	-	-	The operator -> is not supported by the postgresql language
+features	F11	probes	read	no	refused	00000	0A000	yes	yes	SELECT meta#>>'{b,c}' FROM f ORDER BY id	-	-	The operator #>> is not supported by the postgresql language
+features	F12	probes	read	no	refused	00000	0A000	yes	yes	SELECT id FROM f WHERE meta @> '{"a": 1}'	-	-	The operator jsonb @> unknown is not supported by the postgresql language
+features	F13	probes	read	no	refused	00000	0A000	yes	yes	SELECT id FROM f WHERE meta ? 'b'	-	-	The operator ? is not supported by the postgresql language
+features	F14	probes	read	no	refused	00000	0A000	yes	yes	SELECT id FROM f WHERE meta['a'] = '1'	-	-	A subscript is not supported by the postgresql language
+features	F15	probes	read	no	refused	00000	0A000	yes	no way	SELECT jsonb_set(meta, '{a}', '5') FROM f WHERE id = 1	-	-	The function jsonb_set(jsonb, unknown, unknown) is not supported by the postgresql language
+features	F16	probes	read	no	refused	00000	0A000	yes	no way	SELECT meta || '{"z": 1}'::jsonb FROM f WHERE id = 1	-	-	The operator jsonb || jsonb is not supported by the postgresql language
+features	F17	probes	read	no	refused	00000	0A000	yes	no way	SELECT meta - 'a' FROM f WHERE id = 1	-	-	The operator jsonb - unknown is not supported by the postgresql language
+features	F18	probes	read	no	refused	00000	0A000	yes	no way	SELECT jsonb_typeof(meta) FROM f ORDER BY id	-	-	The function jsonb_typeof(jsonb) is not supported by the postgresql language
+features	F19	probes	read	no	refused	00000	0A000	yes	yes	SELECT id, k.key, k.value FROM f, jsonb_each(meta) k WHERE id = 2	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+features	F20	probes	read	no	refused	00000	0A000	yes	no way	SELECT jsonb_object_keys(meta) FROM f WHERE id = 1 ORDER BY 1	-	-	The function jsonb_object_keys(jsonb) is not supported by the postgresql language
+features	F21	probes	read	no	refused	00000	0A000	yes	yes	SELECT jsonb_array_elements_text(meta->'l') FROM f WHERE id = 1	-	-	The operator -> is not supported by the postgresql language
+features	F22	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE id = ANY(ARRAY[1, 2]) ORDER BY id	-	-	-
+features	F23	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE 'red' = ANY(tags) ORDER BY id	-	-	-
+features	F24	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE id <> ALL(ARRAY[1, 2]) ORDER BY id	-	-	-
+features	F25	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE tags @> ARRAY['red'] ORDER BY id	-	-	-
+features	F26	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE tags && ARRAY['red', 'green'] ORDER BY id	-	-	-
+features	F27	probes	read	no	refused	00000	0A000	yes	no way	SELECT unnest(tags) FROM f WHERE id = 1	-	-	The function unnest(anyarray) is not supported by the postgresql language
+features	F28	probes	read	no	refused	00000	0A000	yes	yes	SELECT t.x FROM unnest(ARRAY[1, 2, 3]) AS t(x)	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+features	F29	probes	read	no	refused	00000	0A000	yes	no way	SELECT array_length(tags, 1), cardinality(tags) FROM f ORDER BY id	-	-	The function array_length(anyarray, integer) is not supported by the postgresql language
+features	F30	probes	read	no	refused	00000	0A000	yes	yes	SELECT tags[1] FROM f ORDER BY id	-	-	A subscript is not supported by the postgresql language
+features	F31	probes	read	no	refused	00000	0A000	yes	no way	SELECT array_to_string(tags, ',') FROM f ORDER BY id	-	-	The function array_to_string(anyarray, unknown) is not supported by the postgresql language
+features	F32	probes	read	no	refused	00000	0A000	yes	no way	SELECT string_to_array('a,b', ',')	-	-	The function string_to_array(unknown, unknown) is not supported by the postgresql language
+features	F33	probes	read	no	refused	00000	0A000	yes	no way	SELECT string_agg(name, ',' ORDER BY name) FROM f	-	-	ORDER BY inside a function call is not supported by the postgresql language
+features	F34	probes	read	yes	same	00000	00000	-	-	SELECT string_agg(name, ',') FROM f	-	-	-
+features	F35	probes	read	no	same	00000	00000	-	-	SELECT now() - interval '7 days' < now()	-	-	-
+features	F36	probes	read	yes	same	00000	00000	-	-	SELECT now()	-	-	-
+features	F37	probes	read	yes	same	00000	00000	-	-	SELECT CURRENT_TIMESTAMP	-	-	-
+features	F38	probes	read	yes	same	00000	00000	-	-	SELECT LOCALTIMESTAMP, current_date	-	-	-
+features	F39	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE at > now() - interval '3650 days' ORDER BY id	-	-	-
+features	F40	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE at > LOCALTIMESTAMP - interval '3650 days' ORDER BY id	-	-	-
+features	F41	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE at > current_date - interval '3650 days' ORDER BY id	-	-	-
+features	F42	probes	read	no	refused	00000	0A000	yes	yes	SELECT date_trunc('month', at) FROM f ORDER BY id	-	-	The function date_trunc(unknown, timestamp without time zone) is not supported by the postgresql language
+features	F43	probes	read	no	same	00000	00000	-	-	SELECT EXTRACT(YEAR FROM at), date_part('month', at) FROM f ORDER BY id	-	-	-
+features	F44	probes	read	no	refused	00000	0A000	yes	yes	SELECT to_char(at, 'YYYY-MM-DD HH24:MI') FROM f ORDER BY id	-	-	The function to_char(timestamp without time zone, unknown) is not supported by the postgresql language
+features	F45	probes	read	no	refused	00000	0A000	yes	yes	SELECT at::date, at::time FROM f ORDER BY id	-	-	The type time is not supported by the postgresql language
+features	F46	probes	read	no	same	00000	00000	-	-	SELECT current_date - at::date FROM f WHERE id = 99	-	-	-
+features	F47	probes	read	no	refused	00000	0A000	yes	yes	SELECT make_interval(days => 3)	-	-	A named argument is not supported by the postgresql language
+features	F48	probes	read	no	refused	00000	0A000	yes	yes	SELECT age(timestamp '2026-03-01', at) FROM f WHERE id = 1	-	-	The function age(timestamp without time zone, timestamp without time zone) is not supported by the postgresql language
+features	F49	probes	read	no	same	00000	00000	-	-	SELECT '2026-03-01T10:00:00Z'::timestamptz	-	-	-
+features	F50	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE at >= '2026-01-01T00:00:00Z' ORDER BY id	-	-	-
+features	F51	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE at BETWEEN '2026-01-01' AND '2026-01-31' ORDER BY id	-	-	-
+features	F52	probes	read	no	refused	00000	0A000	yes	yes	SELECT DISTINCT ON (n > 0) n FROM f ORDER BY n > 0, n	-	-	DISTINCT ON is not supported by the postgresql language
+features	F53	probes	read	no	refused	00000	0A000	yes	yes	SELECT id FROM f WHERE (n, id) < (20, 5) ORDER BY id	-	-	A row constructor is not supported by the postgresql language
+features	F54	probes	read	no	refused	00000	0A000	yes	yes	SELECT id FROM f ORDER BY id FETCH FIRST 2 ROWS ONLY	-	-	FETCH FIRST is not supported by the postgresql language
+features	F55	probes	read	no	refused	00000	0A000	yes	yes	SELECT count(*) FILTER (WHERE n > 10) FROM f	-	-	FILTER is not supported by the postgresql language
+features	F56	probes	read	no	refused	00000	0A000	yes	yes	SELECT sum(n) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) FROM f	-	-	OVER is not supported by the postgresql language
+features	F57	probes	read	no	refused	00000	0A000	yes	no way	SELECT ntile(2) OVER (ORDER BY id) FROM f	-	-	The window function ntile is not supported
+features	F58	probes	read	no	refused	00000	0A000	yes	yes	SELECT id, count(*) OVER (), row_number() OVER w FROM f WINDOW w AS (ORDER BY id)	-	-	OVER W is not supported by the postgresql language
+features	F59	probes	read	no	refused	00000	0A000	yes	yes	SELECT name, rank() OVER (ORDER BY sum(n)) FROM f GROUP BY name ORDER BY name	-	-	A window function in a query with GROUP BY, HAVING or an aggregate is not supported
+features	F60	probes	read	no	refused	00000	0A000	yes	yes	WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM t WHERE x < 3) SELECT x FROM t	-	-	WITH RECURSIVE is not supported by the postgresql language
+features	F61	probes	read	no	refused	00000	0A000	yes	yes	SELECT * FROM generate_series(1, 3) g(x)	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+features	F62	probes	read	no	refused	00000	0A000	yes	yes	SELECT d::date FROM generate_series('2026-01-01'::timestamp, '2026-01-03'::timestamp, interval '1 day') d	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+features	F63	probes	read	no	refused	00000	0A000	yes	yes	SELECT f.id, x.m FROM f, LATERAL (SELECT f.n * 2 AS m) x ORDER BY f.id	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+features	F64	probes	read	no	refused	00000	0A000	yes	no way	SELECT bool_or(n > 10), bool_and(n > 0) FROM f	-	-	The aggregate function bool_or is not supported
+features	F65	probes	read	no	refused	00000	0A000	no	no way	SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY n), stddev(n) FROM f	-	-	WITHIN GROUP is not supported by the postgresql language
+features	F66	probes	read	no	same	00000	00000	-	-	SELECT round(avg(price), 2), round(2.5), ceil(1.2), floor(1.8), abs(-3), mod(7, 3), power(2, 10), sqrt(16) FROM f	-	-	-
+features	F67	probes	read	no	refused	00000	0A000	yes	no way	SELECT lower(name), upper(name), length(name), substr(name, 1, 2), substring(name FROM 1 FOR 2), position('o' IN name), strpos(name, 'o'), replace(name, 'o', '0'), trim('  x '), left(name, 1), right(name, 1), lpad(name, 5, '*'), initcap(name), reverse(name) FROM f ORDER BY id	-	-	The function lpad(text, integer, unknown) is not supported by the postgresql language
+features	F68	probes	read	no	refused	00000	0A000	yes	no way	SELECT concat(name, '-', n), concat_ws(', ', name, n), format('%s=%s', name, n), name || '-' || n FROM f ORDER BY id	-	-	The function format(unknown, text, integer) is not supported by the postgresql language
+features	F69	probes	read	no	refused	00000	0A000	yes	no way	SELECT split_part('a@b.com', '@', 2), regexp_replace('a1b2', '[0-9]', '', 'g'), starts_with(name, 'a'), left(md5(name), 6) FROM f WHERE id = 1	-	-	The function split_part(unknown, unknown, integer) is not supported by the postgresql language
+features	F70	probes	read	no	refused	00000	0A000	yes	yes	SELECT id FROM f WHERE name ~* '^A'	-	-	The operator ~* is not supported by the postgresql language
+features	F71	probes	read	no	refused	00000	0A000	yes	yes	SELECT id FROM f WHERE name SIMILAR TO 'a%'	-	-	SIMILAR TO is not supported by the postgresql language
+features	F72	probes	read	no	same	00000	00000	-	-	SELECT coalesce(n, 0), nullif(n, 10), greatest(n, 15), least(n, 15) FROM f ORDER BY id	-	-	-
+features	F73	probes	read	no	same	00000	00000	-	-	SELECT n::text, '42'::int, price::int, CAST(id AS varchar), 1.5::numeric(10,1) FROM f ORDER BY id	-	-	-
+features	F74	probes	read	no	same	00000	00000	-	-	SELECT gen_random_uuid() IS NOT NULL	-	-	-
+features	F75	probes	read	no	refused	00000	0A000	yes	yes	SELECT 'a3bb189e-8bf9-3888-9912-ace4e6543002'::uuid	-	-	The type uuid is not supported by the postgresql language
+features	F76	probes	read	no	refused	00000	0A000	yes	no way	SELECT to_tsvector('english', 'dark modes') @@ plainto_tsquery('english', 'mode')	-	-	The operator @@ is not supported by the postgresql language
+features	F77	probes	read	no	same	42883	42883	yes	yes	SELECT similarity('abc', 'abd')	-	-	function similarity(unknown, unknown) does not exist
+features	F78	probes	read	no	same	00000	00000	-	-	SELECT id, emb <=> '[1,0,0]' FROM f WHERE emb IS NOT NULL ORDER BY 2, 1	-	-	-
+features	F79	probes	read	no	same	00000	00000	-	-	SELECT id FROM f ORDER BY emb <=> '[1,0,0]'::vector LIMIT 2	-	-	-
+features	F80	probes	read	no	refused	00000	42883	yes	yes	SELECT l2_distance(emb, '[1,0,0]'), cosine_distance(emb, '[1,0,0]') FROM f WHERE id = 1	-	-	function l2_distance(vector, unknown) does not exist
+features	F81	probes	read	no	refused	00000	42883	yes	yes	SELECT avg(emb) FROM f	-	-	function avg(vector) does not exist
+features	F82	probes	read	no	same	00000	00000	-	-	SELECT id FROM f ORDER BY n NULLS FIRST, id	-	-	-
+features	F83	probes	read	no	same	00000	00000	-	-	SELECT n FROM f ORDER BY n DESC NULLS LAST	-	-	-
+features	F84	probes	read	no	same	00000	00000	-	-	SELECT count(DISTINCT n), count(n), count(*) FROM f	-	-	-
+features	F85	probes	read	no	refused	00000	0A000	yes	no way	SELECT version() LIKE 'PostgreSQL%'	-	-	The function version() is not supported by the postgresql language
+features	F86	probes	read	yes	refused	00000	0A000	no	no way	SELECT current_user, current_database(), current_schema(), current_schema, session_user	-	-	CURRENT_USER is not supported by the postgresql language
+features	F87	probes	read	yes	silent	00000	00000	-	-	SHOW server_version_num	1 row: (180007)	1 row: (120000)	-
+features	F88	probes	read	no	same	00000	00000	-	-	SHOW TIME ZONE	-	-	-
+features	F89	probes	read	no	refused	00000	0A000	yes	no way	SELECT set_config('app.user', 'x', false)	-	-	The function set_config(unknown, unknown, boolean) is not supported by the postgresql language
+features	F90	probes	read	no	refused	00000	0A000	yes	no way	SELECT pg_advisory_lock(1)	-	-	The function pg_advisory_lock(integer) is not supported by the postgresql language
+features	F91	probes	read	no	other-code	42P01	0A000	yes	no way	SELECT nextval('f_id_seq')	-	-	The function nextval(unknown) is not supported by the postgresql language
+features	F92	probes	read	no	refused	00000	0A000	yes	no way	SELECT currval(pg_get_serial_sequence('f', 'id'))	-	-	The function pg_get_serial_sequence(unknown, unknown) is not supported by the postgresql language
+features	F93	probes	read	no	refused	00000	0A000	yes	yes	SELECT * FROM f WHERE id = 1 FOR UPDATE	-	-	A locking clause (FOR UPDATE and the others) is not supported by the postgresql language
+features	F94	probes	read	no	refused	00000	0A000	yes	yes	SELECT * FROM f WHERE id = 1 FOR SHARE	-	-	A locking clause (FOR UPDATE and the others) is not supported by the postgresql language
+features	F95	probes	read	no	same	00000	00000	-	-	EXPLAIN SELECT * FROM f WHERE id = 1	-	-	-
+features	F96	probes	read	yes	refused	00000	0A000	yes	yes	EXPLAIN ANALYZE SELECT * FROM f WHERE id = 1	-	-	EXPLAIN with an option is not supported by the postgresql language
+features	F97	probes	read	no	refused	00000	0A000	yes	yes	SELECT * FROM f NATURAL JOIN f g	-	-	NATURAL JOIN is not supported by the postgresql language
+features	F98	probes	read	no	same	00000	00000	-	-	SELECT t.id FROM f AS t WHERE EXISTS (SELECT 1 FROM f u WHERE u.id = t.id AND u.n > 10) ORDER BY t.id	-	-	-
+features	F99	probes	read	no	refused	00000	0A000	yes	no way	SELECT (SELECT array_agg(g.name) FROM f g) AS names	-	-	The aggregate function array_agg is not supported
+features	F100	probes	read	no	refused	00000	0A000	no	no way	SELECT ARRAY(SELECT name FROM f ORDER BY id)	-	-	ARRAY is not supported by the postgresql language
+features	F101	probes	read	no	refused	00000	42703	yes	yes	SELECT f FROM f WHERE id = 1	-	-	column "f" does not exist
+features	F102	probes	read	no	same	00000	00000	-	-	SELECT 1 AS one WHERE NOT EXISTS (SELECT 1 FROM f WHERE id = 100)	-	-	-
+features	F103	probes	write	no	same	00000	00000	-	-	INSERT INTO f (id, name) VALUES (10, 'x') ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name || '!' RETURNING id, name	-	-	-
+features	F104	probes	write	no	same	00000	00000	-	-	INSERT INTO f (id, name) VALUES (10, 'x') ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name || '!' RETURNING id, name	-	-	-
+features	F105	probes	write	no	same	00000	00000	-	-	INSERT INTO f (id, name) VALUES (11, 'y') RETURNING *	-	-	-
+features	F106	probes	write	no	same	00000	00000	-	-	UPDATE f SET n = COALESCE(n, 0) + 1 WHERE id = 3 RETURNING id, n	-	-	-
+features	F107	probes	write	no	same	00000	00000	-	-	UPDATE f SET meta = '{"k": 1}' WHERE id = 3 RETURNING meta	-	-	-
+features	F108	probes	write	no	refused	00000	0A000	yes	no way	UPDATE f SET tags = array_append(tags, 'new') WHERE id = 2 RETURNING tags	-	-	The function array_append(anyarray, unknown) is not supported by the postgresql language
+features	F109	probes	write	no	refused	00000	0A000	yes	no way	UPDATE f SET tags = tags || ARRAY['more'] WHERE id = 2 RETURNING tags	-	-	The operator anyarray || anyarray is not supported by the postgresql language
+features	F110	probes	write	no	same	00000	00000	-	-	UPDATE f SET at = now() WHERE id = 3	-	-	-
+features	F111	probes	write	no	same	00000	00000	-	-	INSERT INTO f (id, name, at) VALUES (12, 'z', '2026-03-01T10:00:00Z')	-	-	-
+features	F112	probes	write	no	same	00000	00000	-	-	INSERT INTO f (id, name, at) VALUES (13, 'z', '2026-03-01 10:00:00+09')	-	-	-
+features	F113	probes	write	no	refused	00000	0A000	yes	yes	INSERT INTO f (id, name, meta) VALUES (14, 'z', '[1, 2]')	-	-	This value cannot be written to the column "meta" of type jsonb yet: it holds a MAP: only a JSON object can be stored in it, not an array
+features	F114	probes	write	no	same	00000	00000	-	-	DELETE FROM f WHERE id = ANY(ARRAY[10, 11]) RETURNING id	-	-	-
+features	F115	probes	write	no	follows	00000	00000	-	-	DELETE FROM f WHERE id IN (10, 11, 12, 13, 14) RETURNING id	-	-	-
+features	F116	probes	read	no	same	00000	00000	-	-	SELECT name FROM f WHERE id = ?	-	-	-
+features	F117	probes	read	no	same	00000	00000	-	-	SELECT name FROM f WHERE id = ANY(?) ORDER BY id	-	-	-
+features	F118	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE name IN (?, ?) ORDER BY id	-	-	-
+features	F119	probes	read	no	same	00000	00000	-	-	SELECT id FROM f ORDER BY id LIMIT ? OFFSET ?	-	-	-
+features	F120	probes	read	no	same	00000	00000	-	-	SELECT id FROM f ORDER BY emb <=> ?::vector LIMIT 1	-	-	-
+features	F121	probes	write	no	same	00000	00000	-	-	INSERT INTO f (id, name, meta) VALUES (?, ?, ?::jsonb) RETURNING id, name, meta	-	-	-
+features	F122	probes	write	no	same	00000	00000	-	-	INSERT INTO f (id, name, meta) VALUES (?, ?, ?) RETURNING id, meta	-	-	-
+features	F123	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE at > ? ORDER BY id	-	-	-
+features	F124	probes	read	no	refused	00000	0A000	yes	yes	SELECT id FROM f WHERE meta @> ?::jsonb	-	-	The operator jsonb @> jsonb is not supported by the postgresql language
+features	F125	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE name ILIKE '%' || ? || '%' ORDER BY id	-	-	-
+features	F126	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE ? = ANY(tags) ORDER BY id	-	-	-
+design	D01	probes	schema	no	same	00000	00000	-	-	CREATE TABLE person (id bigint PRIMARY KEY, name text)	-	-	-
+design	D02	probes	schema	no	same	00000	00000	-	-	CREATE TABLE knows (source_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE, target_id text NOT NULL REFERENCES person (rid) ON DELETE CASCADE, since int)	-	-	-
+design	D03	probes	write	no	same	00000	00000	-	-	INSERT INTO person (id, name) VALUES (1, 'Ada'), (2, 'Bo'), (3, 'Cy')	-	-	-
+design	D04	probes	write	no	refused	00000	23503	no	no	INSERT INTO knows (source_id, target_id, since) VALUES (1, 2, 2022)	-	-	insert or update on table "knows" violates foreign key constraint on column "source_id": the value "1" is not a vertex of the table person
+design	D05	probes	write	no	refused	00000	23503	no	no	INSERT INTO knows (source_id, target_id, since) VALUES ('1', '2', 2022)	-	-	insert or update on table "knows" violates foreign key constraint on column "source_id": the value "1" is not a vertex of the table person
+design	D06	probes	write	no	same	00000	00000	-	-	INSERT INTO knows (source_id, target_id, since) SELECT a.rid, b.rid, 2022 FROM person a, person b WHERE a.id = 1 AND b.id = 2	-	-	-
+design	D07	probes	write	no	silent	00000	00000	-	-	INSERT INTO knows (source_id, target_id, since) VALUES ((SELECT rid FROM person WHERE id = 2), (SELECT rid FROM person WHERE id = 3), 2023) RETURNING source_id, target_id	1 row: (2, 3)	1 row: (#4:0, #1:1)	-
+design	D08	probes	read	no	refused	00000	42883	yes	yes	SELECT q.name FROM person p JOIN knows k ON k.source_id = p.id JOIN person q ON q.id = k.target_id	-	-	operator does not exist: text = bigint
+design	D09	probes	read	no	follows	00000	00000	-	-	SELECT q.name FROM person p JOIN knows k ON k.source_id = p.rid JOIN person q ON q.rid = k.target_id ORDER BY q.name	-	-	-
+design	D10	probes	read	no	silent	00000	00000	-	-	SELECT * FROM knows ORDER BY since	4 rows: (1, 2, 2022) (1, 2, 2022) (1, 2, 2022) ...	2 rows: (#1:0, #4:0, 2022) (#4:0, #1:1, 2023)	-
+design	D11	probes	read	no	silent	00000	00000	-	-	SELECT rid, id, name FROM person ORDER BY id	3 rows: (1, 1, Ada) (2, 2, Bo) (3, 3, Cy)	3 rows: (#1:0, 1, Ada) (#4:0, 2, Bo) (#1:1, 3, Cy)	-
+design	D12	probes	read	no	silent	00000	00000	-	-	SELECT * FROM person ORDER BY id	3 rows: (1, 1, Ada) (2, 2, Bo) (3, 3, Cy)	3 rows: (1, Ada) (2, Bo) (3, Cy)	-
+design	D13	probes	read	no	refused	00000	42883	yes	yes	SELECT name FROM person WHERE rid = 1	-	-	operator does not exist: text = integer
+design	D14	probes	read	no	silent	00000	00000	-	-	SELECT name FROM person WHERE rid = '1'	1 row: (Ada)	no rows (name)	-
+design	D15	probes	read	no	refused	00000	42883	yes	yes	SELECT source_id, count(*) FROM knows WHERE source_id IN (SELECT id FROM person) GROUP BY source_id	-	-	operator does not exist: text = bigint
+design	D16	probes	read	no	refused	00000	42883	yes	yes	SELECT p.name FROM person p WHERE p.id IN (SELECT source_id FROM knows)	-	-	operator does not exist: bigint = text
+design	D17	probes	schema	no	same	00000	00000	-	-	CREATE TABLE tag (label text)	-	-	-
+design	D18	probes	write	no	same	00000	00000	-	-	INSERT INTO tag (label) VALUES ('t01'), ('t02'), ('t03'), ('t04'), ('t05'), ('t06'), ('t07'), ('t08'), ('t09'), ('t10'), ('t11'), ('t12'), ('t13'), ('t14'), ('t15'), ('t16'), ('t17'), ('t18'), ('t19'), ('t20'), ('t21'), ('t22'), ('t23'), ('t24'), ('t25'), ('t26'), ('t27'), ('t28'), ('t29'), ('t30')	-	-	-
+design	D19	probes	read	no	silent	00000	00000	-	-	SELECT id, label FROM tag ORDER BY id LIMIT 8	8 rows: (1, t01) (2, t02) (3, t03) ...	8 rows: (#11:0, t01) (#11:1, t03) (#11:10, t21) ...	-
+design	D20	probes	read	no	silent	00000	00000	-	-	SELECT id, label FROM tag ORDER BY id DESC LIMIT 3	3 rows: (30, t30) (29, t29) (28, t28)	3 rows: (#14:9, t20) (#14:8, t18) (#14:7, t16)	-
+design	D21	probes	read	no	silent	00000	00000	-	-	SELECT max(id), min(id) FROM tag	1 row: (30, 1)	1 row: (#14:9, #11:0)	-
+design	D22	probes	read	no	silent	00000	00000	-	-	SELECT * FROM tag ORDER BY label LIMIT 2	2 rows: (1, t01) (2, t02)	2 rows: (t01) (t02)	-
+design	D23	probes	write	no	same	428C9	428C9	yes	yes	INSERT INTO tag (id, label) VALUES (100, 'x')	-	-	cannot insert a non-DEFAULT value into column "id". Detail: Column "id" is an identity column defined as GENERATED ALWAYS
+design	D24	probes	read	no	refused	00000	42883	yes	yes	SELECT label FROM tag WHERE id = 5	-	-	operator does not exist: text = integer
+design	D25	probes	write	no	silent	00000	00000	-	-	INSERT INTO tag (label) VALUES ('late') RETURNING id	1 row: (31)	1 row: (#11:15)	-
+design	D26	probes	schema	no	same	00000	00000	-	-	CREATE TABLE noted (id bigint, label text)	-	-	-
+design	D27	probes	write	no	same	00000	00000	-	-	INSERT INTO noted (label) VALUES ('no id given') RETURNING id, label	-	-	-
+design	D30	setup	schema	no	setup	00000	00000	-	-	CREATE VERTEX TYPE City	-	-	-
+design	D31	setup	schema	no	setup	00000	00000	-	-	CREATE PROPERTY City.zip STRING	-	-	-
+design	D32	setup	write	no	setup	00000	00000	-	-	INSERT INTO City SET name = 'Delft', zip = '2611'	-	-	-
+design	D33	probes	read	no	refused	00000	42703	yes	yes	SELECT name FROM City	-	-	column "name" does not exist
+design	D34	probes	read	no	silent	00000	00000	-	-	SELECT * FROM City	1 row: (2611, Delft)	1 row: (#23:0, 2611)	-
+design	D35	probes	write	no	refused	00000	42703	yes	yes	INSERT INTO City (zip, name) VALUES ('1012', 'Amsterdam')	-	-	column "name" of relation "City" does not exist
+design	D36	probes	read	no	refused	00000	42P01	no	no	SELECT zip FROM "city" ORDER BY zip	-	-	relation "city" does not exist
+design	D40	setup	schema	no	setup	00000	00000	-	-	CREATE DOCUMENT TYPE memo	-	-	-
+design	D41	setup	schema	no	setup	00000	00000	-	-	CREATE PROPERTY memo.title STRING	-	-	-
+design	D42	setup	schema	no	setup	00000	00000	-	-	CREATE PROPERTY memo.author LINK OF person	-	-	-
+design	D43	probes	write	no	same	00000	00000	-	-	INSERT INTO memo (title, author) VALUES ('hello', (SELECT rid FROM person WHERE id = 3))	-	-	-
+design	D44	probes	write	no	silent	23503	00000	-	-	DELETE FROM person WHERE id = 3	23503 update or delete on table "person" violates foreign key constraint "memo_author_fkey" on table "memo". Key (rid)=(3) is still referenced from ta ...	success, count 1	-
+design	D45	probes	write	no	silent	00000	00000	-	-	INSERT INTO person (id, name) VALUES (4, 'Dee') RETURNING rid, id, name	1 row: (4, 4, Dee)	1 row: (#4:1, 4, Dee)	-
+design	D46	probes	read	no	silent	00000	00000	-	-	SELECT m.title, p.name FROM memo m LEFT JOIN person p ON p.rid = m.author	1 row: (hello, Cy)	1 row: (hello, NULL)	-
+design	D47	probes	read	no	silent	00000	00000	-	-	SELECT count(*) FROM knows	1 row: (4)	1 row: (1)	-
+design	D48	probes	discovery	no	silent	00000	00000	-	-	SELECT constraint_name, table_name, enforced FROM information_schema.table_constraints WHERE constraint_type = 'FOREIGN KEY' ORDER BY 1	3 rows: (knows_source_id_fkey, knows, YES) (knows_target_id_fkey, knows, YES) (memo_author_fkey, memo, YES)	3 rows: (knows_source_id_fkey, knows, YES) (knows_target_id_fkey, knows, YES) (memo_author_fkey, memo, NO)	-
+design	D50	probes	write	no	refused	00000	0A000	yes	yes	UPDATE knows SET target_id = (SELECT rid FROM person WHERE id = 1)	-	-	UPDATE of the column target_id of the edge table knows is not supported: delete the edge and insert it again
+design	D51	probes	discovery	no	silent	00000	00000	-	-	SELECT column_name, data_type, is_nullable, column_default, is_identity FROM information_schema.columns WHERE table_name = 'person' ORDER BY ordinal_position	3 rows: (rid, bigint, NO, NULL, YES) (id, bigint, NO, NULL, NO) (name, text, YES, NULL, NO)	3 rows: (id, bigint, NO, NULL, NO) (name, text, YES, NULL, NO) (rid, text, NO, NULL, YES)	-
+design	D60	probes	schema	no	same	00000	00000	-	-	CREATE TABLE acct (id bigint PRIMARY KEY, v text)	-	-	-
+design	D61	probes	write	no	same	00000	00000	-	-	INSERT INTO acct (id, v) VALUES (1, 'a')	-	-	-
+design	D62	probes	transaction	no	same	00000	00000	-	-	BEGIN	-	-	-
+design	D63	probes	write	no	same	00000	00000	-	-	INSERT INTO acct (id, v) VALUES (2, 'b')	-	-	-
+design	D64	probes	transaction	no	same	00000	00000	-	-	SAVEPOINT sp1	-	-	-
+design	D65	probes	write	no	same	23505	23505	no	no	INSERT INTO acct (id, v) VALUES (1, 'dup')	-	-	duplicate key value violates unique constraint "acct[id]": the key already exists in acct
+design	D66	probes	transaction	no	refused	00000	0A000	yes	yes	ROLLBACK TO SAVEPOINT sp1	-	-	ROLLBACK TO SAVEPOINT is not supported by this server: it cannot discard the writes made since the savepoint
+design	D67	probes	write	no	follows	00000	25P02	no	no	INSERT INTO acct (id, v) VALUES (3, 'c')	-	-	current transaction is aborted, commands ignored until end of transaction block
+design	D68	probes	transaction	no	same	00000	00000	-	-	COMMIT	-	-	-
+design	D69	probes	read	no	follows	00000	00000	-	-	SELECT id, v FROM acct ORDER BY id	-	-	-
+design	D70	probes	transaction	no	same	00000	00000	-	-	BEGIN	-	-	-
+design	D71	probes	transaction	no	same	00000	00000	-	-	SAVEPOINT sp2	-	-	-
+design	D72	probes	write	no	same	00000	00000	-	-	INSERT INTO acct (id, v) VALUES (4, 'd')	-	-	-
+design	D73	probes	transaction	no	refused	00000	0A000	yes	yes	ROLLBACK TO SAVEPOINT sp2	-	-	ROLLBACK TO SAVEPOINT is not supported by this server: it cannot discard the writes made since the savepoint
+design	D74	probes	transaction	no	same	00000	00000	-	-	COMMIT	-	-	-
+design	D75	probes	read	no	follows	00000	00000	-	-	SELECT id, v FROM acct ORDER BY id	-	-	-
+followups	G00	probes	schema	no	same	00000	00000	-	-	CREATE TABLE t (id bigint PRIMARY KEY, name text, n int, at timestamp, meta jsonb, tags text[])	-	-	-
+followups	G01	probes	write	no	same	00000	00000	-	-	INSERT INTO t (id, name, n, at, meta, tags) VALUES (1, 'ann', 10, '2026-01-05 10:00:00', '{"a": 1}', '{red,blue}'), (2, 'bob', 20, '2026-02-10 11:30:00', '{"a": 2}', '{blue}')	-	-	-
+followups	G02	probes	read	yes	same	00000	00000	-	-	SELECT now()	-	-	-
+followups	G03	probes	read	yes	same	00000	00000	-	-	SELECT CURRENT_TIMESTAMP	-	-	-
+followups	G04	probes	read	yes	same	00000	00000	-	-	SELECT LOCALTIMESTAMP	-	-	-
+followups	G05	probes	read	yes	same	00000	00000	-	-	SELECT current_date	-	-	-
+followups	G06	probes	read	yes	same	00000	00000	-	-	SELECT now() AS server_time	-	-	-
+followups	G07	probes	read	yes	refused	00000	0A000	yes	no way	SELECT clock_timestamp()	-	-	The function clock_timestamp() is not supported by the postgresql language
+followups	G08	probes	read	yes	same	00000	00000	-	-	SELECT current_database()	-	-	-
+followups	G09	probes	read	yes	same	00000	00000	-	-	SELECT current_schema()	-	-	-
+followups	G10	probes	read	yes	same	00000	00000	-	-	SELECT current_user	-	-	-
+followups	G11	probes	read	yes	silent	00000	00000	-	-	SELECT version()	1 row: (PostgreSQL 18.7 (Debian 18.7-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit)	1 row: (PostgreSQL 12.0 (ArcadeDB 26.12.1-SNAPSHOT))	-
+followups	G12	probes	read	yes	refused	00000	0A000	yes	no way	SELECT current_database(), count(*) FROM t	-	-	The function current_database() is not supported by the postgresql language
+followups	G13	probes	write	no	same	00000	00000	-	-	INSERT INTO t (id, at) VALUES (10, '2026-03-01T10:00:00')	-	-	-
+followups	G14	probes	write	no	same	00000	00000	-	-	INSERT INTO t (id, at) VALUES (11, '2026-03-01T10:00:00.000Z')	-	-	-
+followups	G15	probes	write	no	same	00000	00000	-	-	INSERT INTO t (id, at) VALUES (12, '2026-03-01T10:00:00+00:00')	-	-	-
+followups	G16	probes	write	no	same	00000	00000	-	-	INSERT INTO t (id, at) VALUES (13, '2026-03-01 10:00:00.123456')	-	-	-
+followups	G17	probes	read	no	same	00000	00000	-	-	SELECT id FROM t WHERE at > '2026-01-31T00:00:00Z' ORDER BY id	-	-	-
+followups	G20	probes	read	no	refused	00000	0A000	yes	no way	SELECT jsonb_extract_path_text(meta, 'a') FROM t ORDER BY id	-	-	The function jsonb_extract_path_text(jsonb, unknown) is not supported by the postgresql language
+followups	G21	probes	read	no	refused	00000	42846	no	no	SELECT id, meta::text FROM t WHERE meta IS NOT NULL ORDER BY id	-	-	cannot cast type jsonb to text
+followups	G22	probes	read	no	refused	00000	42846	no	no	SELECT id FROM t WHERE meta::text LIKE '%"a"%' ORDER BY id	-	-	cannot cast type jsonb to text
+followups	G23	probes	read	no	refused	00000	0A000	yes	yes	SELECT json_extract_path_text(meta::json, 'a') FROM t ORDER BY id	-	-	The type json is not supported by the postgresql language
+followups	G24	probes	read	no	same	00000	00000	-	-	SELECT id, meta FROM t ORDER BY id	-	-	-
+followups	G25	probes	read	no	refused	00000	0A000	yes	no way	SELECT id FROM t WHERE array_position(tags, 'red') IS NOT NULL	-	-	The function array_position(anyarray, unknown) is not supported by the postgresql language
+followups	G26	probes	read	no	refused	00000	42846	no	no	SELECT id FROM t WHERE tags::text LIKE '%red%' ORDER BY id	-	-	cannot cast type anyarray to text
+followups	G27	probes	read	no	refused	00000	0A000	yes	no way	SELECT id FROM t WHERE 'red' IN (SELECT unnest(tags))	-	-	The function unnest(anyarray) is not supported by the postgresql language
+followups	G28	probes	read	no	same	00000	00000	-	-	SELECT id FROM t WHERE tags = '{blue}'	-	-	-
+followups	G30	probes	read	no	refused	00000	42703	yes	yes	SELECT n > 10 AS big, count(*) FROM t GROUP BY big ORDER BY big	-	-	column "big" does not exist
+followups	G31	probes	read	no	same	00000	00000	-	-	SELECT n > 10 AS big, count(*) FROM t GROUP BY 1 ORDER BY 1	-	-	-
+followups	G32	probes	read	no	same	00000	00000	-	-	SELECT n > 10 AS big, count(*) FROM t GROUP BY n > 10 ORDER BY big	-	-	-
+followups	G33	probes	read	no	refused	00000	42803	no	no	SELECT id, name, count(*) FROM t GROUP BY id ORDER BY id	-	-	column "name" must appear in the GROUP BY clause or be used in an aggregate function
+followups	G34	probes	read	no	same	00000	00000	-	-	SELECT name, count(*) AS n FROM t GROUP BY name ORDER BY n DESC, name	-	-	-
+followups	G40	probes	read	no	refused	00000	0A000	yes	yes	SELECT EXISTS (SELECT FROM t WHERE id = 1)	-	-	A select list with no item is not supported by the postgresql language
+followups	G41	probes	read	no	same	00000	00000	-	-	SELECT EXISTS (SELECT 1 FROM t WHERE id = 1)	-	-	-
+followups	G50	probes	transaction	no	same	00000	00000	-	-	BEGIN	-	-	-
+followups	G51	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE mig1 (id bigint PRIMARY KEY)	-	-	CREATE TABLE inside a transaction block is not supported by the postgresql language, because a rollback would not take it back
+followups	G52	probes	transaction	no	same	00000	00000	-	-	ROLLBACK	-	-	-
+followups	G53	probes	transaction	no	same	00000	00000	-	-	BEGIN	-	-	-
+followups	G54	probes	schema	no	refused	00000	0A000	yes	yes	CREATE INDEX t_name_idx ON t (name)	-	-	CREATE INDEX inside a transaction block is not supported by the postgresql language, because a rollback would not take it back
+followups	G55	probes	transaction	no	same	00000	00000	-	-	ROLLBACK	-	-	-
+followups	G56	probes	schema	no	same	00000	00000	-	-	CREATE TABLE mig2 (id bigint PRIMARY KEY); CREATE TABLE mig3 (id bigint PRIMARY KEY)	-	-	-
+followups	G57	probes	discovery	no	same	00000	00000	-	-	SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'mig%' ORDER BY 1	-	-	-
+followups	G60	probes	transaction	no	same	00000	00000	-	-	SET statement_timeout = '5s'	-	-	-
+followups	G61	probes	read	yes	same	00000	00000	-	-	SHOW statement_timeout	-	-	-
+followups	G62	probes	transaction	no	same	00000	00000	-	-	SET TIME ZONE 'Asia/Seoul'	-	-	-
+followups	G63	probes	read	no	same	00000	00000	-	-	SHOW TIME ZONE	-	-	-
+followups	G64	probes	transaction	no	same	00000	00000	-	-	SET search_path TO no_such_schema	-	-	-
+followups	G65	probes	read	no	other-code	42P01	0A000	yes	no	SELECT count(*) FROM t WHERE id < 3	-	-	Error on executing query: the postgresql language reads every table from the schema public, which the search_path "no_such_schema" leaves out: send SET search_path TO public
+followups	G66	probes	transaction	no	same	00000	00000	-	-	SET search_path TO public	-	-	-
+followups	G67	probes	transaction	no	same	42704	42704	no	no	SET no_such_setting = 'x'	-	-	Error on executing query: unrecognized configuration parameter "no_such_setting"
+followups	G68	probes	transaction	no	same	00000	00000	-	-	BEGIN READ ONLY	-	-	-
+followups	G69	probes	write	no	same	25006	25006	yes	no	INSERT INTO t (id, name) VALUES (20, 'written in a read only transaction')	-	-	Error on executing query: cannot execute a statement that writes in a read-only transaction: send ROLLBACK, then BEGIN without READ ONLY
+followups	G70	probes	transaction	no	same	00000	00000	-	-	COMMIT	-	-	-
+followups	G71	probes	read	no	same	00000	00000	-	-	SELECT count(*) FROM t WHERE id = 20	-	-	-
+followups	G72	probes	transaction	no	refused	00000	0A000	no	no	SET default_transaction_read_only = on	-	-	Error on executing query: read-only transactions are not supported by this server: a transaction declared READ ONLY would still accept writes
+followups	G73	probes	write	no	follows	25006	00000	-	-	INSERT INTO t (id, name) VALUES (21, 'written with default read only')	-	-	-
+followups	G74	probes	transaction	no	same	00000	00000	-	-	SET default_transaction_read_only = off	-	-	-
+followups	G75	probes	transaction	no	refused	00000	0A000	no	no	SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL SERIALIZABLE	-	-	Error on executing query: transaction isolation level "serializable" is not supported here: transactions run at "read committed"
+followups	G76	probes	transaction	no	same	00000	00000	-	-	BEGIN ISOLATION LEVEL REPEATABLE READ	-	-	-
+followups	G77	probes	transaction	no	same	00000	00000	-	-	ROLLBACK	-	-	-
+followups	G78	probes	transaction	no	same	00000	00000	-	-	SET CONSTRAINTS ALL DEFERRED	-	-	-
+followups	G80	probes	transaction	no	other-code	25P01	0A000	yes	yes	LOCK TABLE t IN EXCLUSIVE MODE	-	-	LOCK is not supported by the postgresql language
+followups	G81	probes	schema	no	refused	00000	0A000	yes	yes	ANALYZE t	-	-	ANALYZE is not supported by the postgresql language
+followups	G82	probes	schema	no	refused	00000	0A000	yes	yes	VACUUM t	-	-	VACUUM is not supported by the postgresql language
+followups	G83	probes	read	no	refused	00000	0A000	yes	yes	PREPARE q AS SELECT name FROM t WHERE id = $1	-	-	PREPARE is not supported by the postgresql language
+followups	G84	probes	read	no	refused	00000	0A000	yes	yes	EXECUTE q(1)	-	-	EXECUTE is not supported by the postgresql language
+followups	G85	probes	read	no	refused	00000	26000	no	no	DEALLOCATE q	-	-	Error on executing query: prepared statement "q" does not exist
+followups	G86	probes	schema	no	refused	00000	0A000	no	no way	GRANT SELECT ON t TO PUBLIC	-	-	GRANT is not supported by the postgresql language
+followups	G87	probes	write	no	same	0A000	0A000	no	no	COPY t (id, name) TO STDOUT	-	-	COPY is not supported by the postgresql language
+followups	G88	probes	transaction	no	refused	00000	0A000	no	no way	LISTEN events	-	-	LISTEN is not supported by the postgresql language
+followups	G89	probes	transaction	no	same	00000	00000	-	-	DISCARD ALL	-	-	-
+followups	G90	probes	schema	no	same	00000	00000	-	-	CREATE TABLE doc (title text)	-	-	-
+followups	G91	probes	write	no	same	00000	00000	-	-	INSERT INTO doc (title) VALUES ('x'), ('y')	-	-	-
+followups	G92	probes	read	no	silent	42703	00000	-	-	SELECT title FROM doc WHERE id = 'abc'	42703 column "id" does not exist	no rows (title)	-
+followups	G93	probes	read	no	silent	42703	00000	-	-	SELECT title FROM doc WHERE id = '#999:999'	42703 column "id" does not exist	no rows (title)	-
+followups	G94	probes	write	no	silent	42703	00000	-	-	UPDATE doc SET title = 'z' WHERE id = '1'	42703 column "id" does not exist	success, count 0	-
+followups	G95	probes	write	no	silent	42703	00000	-	-	DELETE FROM doc WHERE id = '12'	42703 column "id" does not exist	success, count 0	-
+followups	G96	probes	read	no	silent	42703	00000	-	-	SELECT title FROM doc WHERE id = ANY(ARRAY['#1:0'])	42703 column "id" does not exist	no rows (title)	-
+followups	G97	probes	read	no	other-code	42703	22P02	no	no	SELECT title FROM doc WHERE id::bigint = 1	-	-	invalid input syntax for type bigint: "#25:0"
+followups	G100	probes	schema	no	same	00000	00000	-	-	CREATE TABLE price (id bigint PRIMARY KEY, amount int)	-	-	-
+followups	G101	probes	write	no	same	00000	00000	-	-	INSERT INTO price (id, amount) VALUES (1, 10)	-	-	-
+followups	G102	probes	write	no	same	42703	42703	yes	yes	UPDATE price SET amont = 99 WHERE id = 1	-	-	column "amont" of relation "price" does not exist
+followups	G103	setup	schema	no	setup	00000	00000	-	-	CREATE PROPERTY price.amont INTEGER	-	-	-
+followups	G104	probes	write	no	same	00000	00000	-	-	UPDATE price SET amont = 99 WHERE id = 1	-	-	-
+followups	G105	probes	read	no	same	00000	00000	-	-	SELECT * FROM price	-	-	-
+followups	G110	probes	read	no	same	22P02	22P02	no	no	SELECT * FROM t WHERE name = 'ann' AND n = 'ten'	-	-	invalid input syntax for type integer: "ten"
+followups	G111	probes	read	no	same	42703	42703	yes	yes	SELECT nam, n FROM t	-	-	column "nam" does not exist
+followups	G112	probes	write	no	same	22P02	22P02	no	no	INSERT INTO t (id, n) VALUES (30, 'many')	-	-	invalid input syntax for type integer: "many"
+followups	G113	probes	write	no	same	23505	23505	no	no	INSERT INTO t (id, name) VALUES (1, 'dup')	-	-	duplicate key value violates unique constraint "t[id]": the key already exists in t
+followups	G114	probes	schema	no	same	00000	00000	-	-	CREATE TABLE author (id bigint PRIMARY KEY, name text)	-	-	-
+followups	G115	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE book (id bigint PRIMARY KEY, author_id bigint NOT NULL REFERENCES author (id), title text)	-	-	A foreign key other than the two ends of an edge table (source_id and target_id, each text NOT NULL REFERENCES a table (rid) ON DELETE CASCADE) is not supported by the postgresql language
+followups	G116	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE wrote (source_id bigint REFERENCES author (id), target_id bigint REFERENCES author (id))	-	-	A foreign key other than the two ends of an edge table (source_id and target_id, each text NOT NULL REFERENCES a table (rid) ON DELETE CASCADE) is not supported by the postgresql language
+followups	G117	probes	schema	no	other-code	42703	0A000	yes	yes	CREATE TABLE wrote2 (source_id text REFERENCES author (rid), target_id text REFERENCES author (rid))	-	-	A foreign key other than the two ends of an edge table (source_id and target_id, each text NOT NULL REFERENCES a table (rid) ON DELETE CASCADE) is not supported by the postgresql language
+followups	G118	probes	schema	no	same	00000	00000	-	-	CREATE TABLE auto1 (name text)	-	-	-
+followups	G119	probes	write	no	silent	42703	00000	-	-	INSERT INTO auto1 (name) VALUES ('first') RETURNING id	42703 column "id" does not exist	1 row: (#47:0)	-
+followups	G120	probes	schema	no	same	00000	00000	-	-	CREATE TABLE auto2 (id bigint PRIMARY KEY, name text)	-	-	-
+followups	G121	probes	write	no	same	00000	00000	-	-	INSERT INTO auto2 (id, name) VALUES ((SELECT coalesce(max(id), 0) + 1 FROM auto2), 'first') RETURNING id	-	-	-
+followups	G122	probes	schema	no	refused	00000	0A000	yes	yes	CREATE TABLE auto3 (id text PRIMARY KEY DEFAULT gen_random_uuid(), name text)	-	-	A DEFAULT that is not a constant is not supported by the postgresql language
+followups	G123	probes	schema	no	same	00000	00000	-	-	CREATE TABLE auto4 (id text PRIMARY KEY, name text)	-	-	-
+followups	G124	probes	write	yes	same	00000	00000	-	-	INSERT INTO auto4 (id, name) VALUES (gen_random_uuid()::text, 'first') RETURNING id	-	-	-
+followups2	H00	probes	schema	no	same	00000	00000	-	-	CREATE TABLE acc (id bigint PRIMARY KEY, amount int)	-	-	-
+followups2	H01	probes	write	no	same	00000	00000	-	-	INSERT INTO acc (id, amount) VALUES (1, 100)	-	-	-
+followups2	H02	probes	transaction	no	refused	00000	0A000	yes	no	BEGIN ISOLATION LEVEL SERIALIZABLE	-	-	Error on parsing query: transaction isolation level "serializable" is not supported by this server: transactions run at "read committed" or "repeatable read". The transaction block has failed: send ROLLBACK, then BEGIN ISOLATION LEVEL REPEATABLE READ
+followups2	H03	probes	write	no	follows	00000	25P02	no	no	UPDATE acc SET amount = 0 WHERE id = 1	-	-	current transaction is aborted, commands ignored until end of transaction block
+followups2	H04	probes	transaction	no	same	00000	00000	-	-	ROLLBACK	-	-	-
+followups2	H05	probes	read	no	same	00000	00000	-	-	SELECT amount FROM acc WHERE id = 1	-	-	-
+followups2	H10	probes	transaction	no	same	00000	00000	-	-	SET TIME ZONE 'Asia/Seoul'	-	-	-
+followups2	H11	probes	read	yes	same	00000	00000	-	-	SELECT date_part('hour', LOCALTIMESTAMP) AS local_hour	-	-	-
+followups2	H12	probes	transaction	no	same	00000	00000	-	-	SET TIME ZONE 'UTC'	-	-	-
+followups2	H13	probes	read	yes	same	00000	00000	-	-	SELECT date_part('hour', LOCALTIMESTAMP) AS local_hour	-	-	-
+followups2	H20	probes	schema	no	same	00000	00000	-	-	{sql} CREATE PROPERTY acc.note STRING	-	-	-
+followups2	H21	probes	read	no	same	00000	00000	-	-	SELECT id, amount, note FROM acc	-	-	-
+followups2	H22	probes	schema	no	refused	00000	42601	no	no	{sql} ALTER TABLE acc ADD COLUMN extra text	-	-	Syntax error on parsing query: SQL syntax error at line 1, column 6: no viable alternative at input 'ALTER TABLE' ALTER TABLE acc ADD COLUMN extra text       ^
+followups2	H23	probes	schema	no	same	00000	00000	-	-	{sql} DROP TYPE acc UNSAFE	-	-	-
+followups2	H24	probes	read	no	same	42P01	42P01	no	no	SELECT count(*) FROM acc	-	-	relation "acc" does not exist
+followups2	H30	probes	schema	no	same	00000	00000	-	-	CREATE TABLE js (id bigint PRIMARY KEY, meta jsonb)	-	-	-
+followups2	H31	probes	write	no	same	00000	00000	-	-	INSERT INTO js (id, meta) VALUES (1, '{"a": 1}')	-	-	-
+followups2	H32	probes	read	no	refused	00000	0A000	yes	no way	SELECT id FROM js WHERE meta = '{"a": 1}'	-	-	The operator = is not supported for type jsonb
+followups2	H33	probes	read	no	same	00000	00000	-	-	SELECT id, meta FROM js	-	-	-

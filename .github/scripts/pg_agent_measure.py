@@ -89,10 +89,12 @@ NUMBER_TYPES = {"int2", "int4", "int8", "serial", "bigserial", "float4", "float8
 FLOAT_TYPES = {"float4", "float8"}
 DISTANCE = re.compile(r"<=>|<->|<#>")
 # an error names a next step: a clause of its message starts with one of these verbs, it has a hint, or it asks for a retry
-STEP = re.compile(r"hint:\s*\S|(?:^|[.:;,]\s+)(?:please |then )?(?:use|write|send|cast|declare|retry|run|quote|add|remove|leave"
-                  r"|repeat)\b|please retry", re.IGNORECASE)
-# how a hint starts that says that nothing can be written instead: it is not a next step
+VERBS = "use|write|send|cast|declare|retry|run|quote|add|remove|leave|repeat"
+STEP = re.compile(rf"hint:\s*\S|(?:^|[.:;,]\s+)(?:please |then )?(?:{VERBS})\b|please retry", re.IGNORECASE)
+# how a hint starts that says that nothing can be written instead. It names a next step only when it goes on with something
+# to do, in the program that calls or in other words
 NO_WAY = "There is no way to write this in the postgresql language yet"
+WORKAROUND = re.compile(rf"{re.escape(NO_WAY)}[:.]\s+(?:{VERBS}|select|make|do|compute|check|read)\b", re.IGNORECASE)
 # how many silent answers and messages the page shows in full
 TOP_MESSAGES = 20
 SHOWN = 110
@@ -257,9 +259,10 @@ def names_next_step(outcome):
     hint = " ".join(str(outcome.get("hint") or "").split())
     if hint and not hint.startswith(NO_WAY):
         return True
-    text = " ".join(f"{error_text(outcome)}. {hint}".split())
-    text = re.sub(r"(?:Hint: )?" + re.escape(NO_WAY), "", re.sub(r'"[^"]*"', '"..."', text))
-    return bool(STEP.search(text))
+    text = re.sub(r'"[^"]*"', '"..."', " ".join(f"{error_text(outcome)}. {hint}".split()))
+    if WORKAROUND.search(text):
+        return True
+    return bool(STEP.search(re.sub(r"(?:Hint: )?" + re.escape(NO_WAY), "", text)))
 
 
 def hint_field(outcome):
@@ -484,8 +487,9 @@ def render():
         "transaction blocks. An answer that differs from PostgreSQL's and equals the answer of that database, or an error with "
         "its code, comes from an earlier statement. It does not match in M1, and counts in neither M2 nor M3.\n"
         "- **M2.** The error has a hint field, or its text has `Hint:`, or a clause that starts with use, write, send, cast, "
-        f"declare, retry, run, quote, add, remove, leave, or repeat, or it asks to retry. The words \"{NO_WAY}\" are not a "
-        "next step. The check reads the text only: it does not say that the step works.\n"
+        f"declare, retry, run, quote, add, remove, leave, or repeat, or it asks to retry. A hint that starts with \"{NO_WAY}\" "
+        "counts only when it goes on with something to do, such as to compute the result in the calling program. The check "
+        "reads the text only: it does not say that the step works.\n"
         f"- **Not counted.** {setups} setup steps of the probes run in ArcadeDB `sql`.\n\n"
         "## Write this page again\n\nDownload the artifact `pg-agent-measure` of a run of the workflow "
         "[pg-agent-measure](../.github/workflows/pg-agent-measure.yml) and run:\n\n"
