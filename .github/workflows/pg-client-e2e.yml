@@ -1,0 +1,125 @@
+#
+# Copyright © 2021-present Arcade Data Ltd (info@arcadedata.com)
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-FileCopyrightText: 2021-present Arcade Data Ltd (info@arcadedata.com)
+# SPDX-License-Identifier: Apache-2.0
+#
+
+# Fork only (humemai/arcadedb, PostgreSQL-style SQL prototype): the client suites that talk to the server image over the
+# PostgreSQL protocol (fork issue #282): pgjdbc (JdbcQueriesIT of the e2e module), psycopg, asyncpg and SQLAlchemy (e2e-python),
+# node-postgres (e2e-js), and Npgsql (e2e-csharp). mvn-test.yml runs them with every other suite, but only when it is started by
+# hand. They need the Docker image, a build of the whole tree, so they run after a merge and by hand, and on a pull request only
+# when it changes this file. Drop this file when anything goes upstream.
+name: PostgreSQL prototype - client suites
+
+on:
+  pull_request:
+    branches:
+      - feat/postgresql-prototype
+    paths:
+      - ".github/workflows/pg-client-e2e.yml"
+  push:
+    branches:
+      - feat/postgresql-prototype
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  clients:
+    name: PostgreSQL clients against the server image
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ARCADEDB_DOCKER_IMAGE: arcadedata/arcadedb:latest
+      PGCLIENT_UV_VERSION: "0.13.4"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up JDK 21 and Maven
+        uses: ./.github/actions/pg-maven-setup
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # amd64 only: the package module builds for arm64 too on every unix, which needs QEMU and which no suite here runs
+      - name: Build the tree and the server image
+        id: build
+        run: >-
+          ./mvnw clean install -Pdocker -DskipTests --batch-mode --errors --show-version
+          -Ddocker-maven-plugin.platform=linux/amd64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Every suite runs even when an earlier one failed, so one run names every failure.
+      - name: Java, pgjdbc
+        run: >-
+          ./mvnw verify -Pintegration -DskipTests --batch-mode --errors --show-version -pl e2e -Dit.test=JdbcQueriesIT
+
+      - name: Install uv
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: curl -LsSf "https://astral.sh/uv/${PGCLIENT_UV_VERSION}/install.sh" | sh && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Python, psycopg, asyncpg, and SQLAlchemy
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: e2e-python
+        run: uv run --python 3.13 pytest tests/test_arcadedb.py tests/test_asyncpg.py tests/test_sqlalchemy.py
+
+      - name: Set up Node
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          # as in mvn-test.yml: testcontainers 12 needs Node 24.9 or later
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: "e2e-js/package-lock.json"
+
+      - name: JavaScript, node-postgres
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: e2e-js
+        run: |
+          npm ci
+          npm test -- src/js-pg-e2e.test.js
+
+      - name: Set up .NET
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: "10.0"
+
+      - name: C#, Npgsql
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: e2e-csharp/ArcadeDB.E2ETests
+        run: dotnet test --filter "FullyQualifiedName~PostgresE2ETests"
+
+      - name: Upload the test reports of a red run
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pg-client-reports
+          path: |
+            e2e/target/failsafe-reports/*
+            e2e-js/reports/jest-junit.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Where the Maven files came from
+        if: always()
+        run: bash .github/scripts/pg_maven_report.sh
