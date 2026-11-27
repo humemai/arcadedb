@@ -117,7 +117,7 @@ public final class Column {
 
   /**
    * Whether the catalog views show the column: every column but the record id of a table made by {@code CREATE TABLE} that no
-   * foreign key refers to.
+   * foreign key refers to, and the second name {@code id} that such a record id has beside {@code rid} (fork issue #151).
    */
   public boolean isListed() {
     return listed;

@@ -77,17 +77,19 @@ import java.util.Set;
  * <li>The foreign keys of an edge table come only from the endpoint tables declared on the edge type ({@link EdgeEndpoints}), never
  * from the data. A {@code LINK} property is a many-to-one foreign key to the table of its target type, under the name of the
  * property. Both refer to the record id column of the other table ({@code id}, or {@code rid} when that type has its own
- * {@code id}), since they hold record ids.</li>
+ * {@code id} or was made by {@code CREATE TABLE}), since they hold record ids.</li>
  * <li>Only declared properties are columns. An unknown column is SQLSTATE {@code 42703} with a hint, and an absent property is
  * {@code NULL}.</li>
  * <li>The table of a supertype has the rows of its subtypes, {@code FROM ONLY} has its own.</li>
  * <li>Names are looked up by the rules of {@link Identifier}.</li>
  * <li><b>A table made by {@code CREATE TABLE}</b> (fork issue #118) has a {@link TableDefinition}, and is shown as it declared
  * itself: the columns in the declared order, {@code text} where it said so, its defaults, and the declared primary key and unique
- * constraints under their names, with no primary key when it declared none. Its record id keeps the name that the rules above give
- * it, comes last and is hidden from {@code *} and from an {@code INSERT} without a column list ({@link Column#isHidden()}). The
- * catalog lists it, as a unique key, only when a foreign key refers to it ({@link Column#isListed()}). A type without a definition
- * is shown as before.</li>
+ * constraints under their names, with no primary key when it declared none. Its record id comes last and is hidden from {@code *}
+ * and from an {@code INSERT} without a column list ({@link Column#isHidden()}). The catalog lists it, as a unique key, only when a
+ * foreign key refers to it ({@link Column#isListed()}). It keeps the name that the rules above give it, with one addition (fork
+ * issue #151): in a table that has neither a property {@code id} nor a property {@code rid}, both names read it. {@code rid} is the
+ * one that foreign keys refer to and the catalog lists, so {@code REFERENCES t (rid)} names the record id of every table that
+ * {@code CREATE TABLE} made, and {@code id} reads it too, unlisted. A type without a definition is shown as before.</li>
  * </ul>
  */
 public final class RelationalCatalog {
@@ -276,13 +278,23 @@ public final class RelationalCatalog {
 
     final Map<String, Property> properties = declaredProperties(type);
     final TableDefinition definition = TableDefinition.of(type);
+    // a table that CREATE TABLE made, with neither name taken by a property, reads its record id as rid and as id, see the class
+    // comment. An edge type that statements of another language made lightweight keeps the rules of any other type
+    final boolean bothNames = definition != null && (storage == null || storage == Table.EdgeStorage.REGULAR)
+        && !properties.containsKey(Column.ID) && !properties.containsKey(Column.RID);
     // the id rule and its collision rule, see the class comment: a declared property wins the name it has
-    final String identity = properties.containsKey(Column.ID) ? (properties.containsKey(Column.RID) ? null : Column.RID) : Column.ID;
+    final String identity = bothNames ? Column.RID
+        : properties.containsKey(Column.ID) ? (properties.containsKey(Column.RID) ? null : Column.RID) : Column.ID;
     final List<Column> columns = new ArrayList<>();
     final Set<String> reserved = new HashSet<>();
     if (identity != null && storage != Table.EdgeStorage.LIGHTWEIGHT) {
       columns.add(new Column(identity, ColumnType.TEXT, storage == Table.EdgeStorage.MIXED, Column.Kind.IDENTITY, null, false));
       reserved.add(identity);
+    }
+    if (bothNames) {
+      // the second name: after the first, which is the identity column of the table, and never listed
+      columns.add(new Column(Column.ID, ColumnType.TEXT, false, Column.Kind.IDENTITY, null, false).hide(false));
+      reserved.add(Column.ID);
     }
     if (kind == Table.Kind.EDGE) {
       columns.add(new Column(Column.SOURCE_ID, ColumnType.TEXT, false, Column.Kind.SOURCE, null, false));
@@ -430,7 +442,8 @@ public final class RelationalCatalog {
     List<Table.Key> uniqueKeys = draft.uniqueKeys;
     if (draft.definition != null && draft.referable != null) {
       columns = columns.stream()
-          .map(column -> column.kind() == Column.Kind.IDENTITY ? column.hide(referenced) : column).toList();
+          .map(column -> column.kind() == Column.Kind.IDENTITY
+              ? column.hide(referenced && column.name().equals(draft.referable)) : column).toList();
       if (referenced) {
         uniqueKeys = new ArrayList<>(uniqueKeys);
         uniqueKeys.add(new Table.Key(draft.name + "_" + draft.referable + "_key", List.of(draft.referable)));
