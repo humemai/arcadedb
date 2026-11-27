@@ -32,6 +32,7 @@ import com.arcadedb.log.LogManager;
 import com.arcadedb.query.OperationType;
 import com.arcadedb.query.QueryEngine;
 import com.arcadedb.query.postgresql.ast.AstPrinter;
+import com.arcadedb.query.postgresql.ast.AlterTableStatement;
 import com.arcadedb.query.postgresql.ast.CreateExtensionStatement;
 import com.arcadedb.query.postgresql.ast.CreateIndexStatement;
 import com.arcadedb.query.postgresql.ast.CreateTableStatement;
@@ -57,6 +58,7 @@ import com.arcadedb.query.postgresql.eval.TransactionClock;
 import com.arcadedb.query.postgresql.parser.StatementHints;
 import com.arcadedb.query.postgresql.parser.StatementParser;
 import com.arcadedb.query.postgresql.plan.CreateIndexPlan;
+import com.arcadedb.query.postgresql.plan.AlterTablePlan;
 import com.arcadedb.query.postgresql.plan.CreateTablePlan;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.postgresql.plan.QueryPlan;
@@ -218,6 +220,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       case TransactionStatement ignored -> TRANSACTION;
       case CreateTableStatement ignored -> SCHEMA_CHANGE;
       case CreateIndexStatement ignored -> SCHEMA_CHANGE;
+      case AlterTableStatement ignored -> SCHEMA_CHANGE;
       default -> READ;
     };
   }
@@ -291,7 +294,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
             "current transaction is aborted, commands ignored until end of transaction block");
       }
       if (readOnly && (statement instanceof WriteStatement || statement instanceof TransactionStatement
-          || statement instanceof CreateTableStatement || statement instanceof CreateIndexStatement))
+          || statement instanceof CreateTableStatement || statement instanceof CreateIndexStatement
+          || statement instanceof AlterTableStatement))
         throw new PostgreSQLEvaluationException("25006", "cannot execute " + statementName(statement)
             + " in a read-only query: run it with command (" + statement.position() + ")");
       if (statement instanceof TransactionStatement transaction)
@@ -309,6 +313,13 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       }
       if (statement instanceof CreateIndexStatement create)
         return new CreateIndexPlan(database, catalog(), create).execute(table -> requireTableOfBlock(state, table, create));
+      if (statement instanceof AlterTableStatement alter) {
+        // a rollback could not take a change of the schema back (fork issue #230)
+        if (database.isTransactionActive() && (state.open || !database.getTransaction().isImplicit()))
+          throw new PostgreSQLFeatureNotSupportedException("ALTER TABLE inside a transaction block is not supported by the"
+              + " postgresql language, because a rollback would not take the change back (" + alter.position() + ")");
+        return new AlterTablePlan(database, catalog(), alter, parameters.at(TransactionClock.now(database))).execute();
+      }
       // the time of the transaction, which every clock function and default of the statement answers (fork issue #222)
       final Parameters timed = parameters.at(TransactionClock.now(database));
       if (statement instanceof ExplainWriteStatement explain)
@@ -488,6 +499,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       case ExplainWriteStatement ignored -> "EXPLAIN of a write";
       case CreateTableStatement ignored -> "CREATE TABLE";
       case CreateIndexStatement ignored -> "CREATE INDEX";
+      case AlterTableStatement ignored -> "ALTER TABLE";
       case TransactionStatement transaction -> transaction.kind().name();
       default -> throw new IllegalStateException("Not a write: " + statement);
     };
@@ -601,7 +613,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   /** The columns of a statement planned with described parameters; for {@code EXPLAIN} those of the statement it explains. */
   private List<PostgreSQLResultSet.Column> plannedColumns(final Statement statement, final Parameters parameters) {
     if (statement instanceof TransactionStatement || statement instanceof CreateTableStatement
-        || statement instanceof CreateIndexStatement || statement instanceof CreateExtensionStatement)
+        || statement instanceof CreateIndexStatement || statement instanceof CreateExtensionStatement
+        || statement instanceof AlterTableStatement)
       return List.of();
     if (statement instanceof ExplainWriteStatement explain)
       return new WritePlanner(database, catalog(), parameters).plan(explain.statement()).columns();

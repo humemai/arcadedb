@@ -497,8 +497,8 @@ class StatementParserTest {
   void aStatementOutsideTheLanguageIsToldWhatToWriteInstead() {
     assertThatThrownBy(() -> StatementParser.parse("CREATE VIEW a AS SELECT 1")).hasMessageContaining("Hint: ")
         .hasMessageContaining("WITH clause");
-    assertThatThrownBy(() -> StatementParser.parse("ALTER TABLE t ADD COLUMN c text"))
-        .hasMessageEndingWith("{sql}CREATE PROPERTY `t`.`c` STRING");
+    assertThatThrownBy(() -> StatementParser.parse("ALTER TABLE t DROP COLUMN c"))
+        .hasMessageEndingWith("{sql}DROP PROPERTY `t`.`c` FORCE");
     assertThatThrownBy(() -> StatementParser.parse("DROP TABLE IF EXISTS \"T\""))
         .hasMessageEndingWith("{sql}DROP TYPE `T` IF EXISTS");
     assertThatThrownBy(() -> StatementParser.parse("WITH RECURSIVE x AS (SELECT 1) SELECT 1")).hasMessageNotContaining("{sql}")

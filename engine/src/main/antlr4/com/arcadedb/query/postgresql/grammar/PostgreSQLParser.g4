@@ -61,6 +61,7 @@ stmt
   | createTableStmt SEMI?  # createTableCommand
   | createIndexStmt SEMI?  # createIndexCommand
   | createExtensionStmt SEMI?  # createExtensionCommand
+  | alterTableStmt SEMI?   # alterTableCommand
   | unsupportedTransactionStmt skipRest SEMI?   # unsupportedTransactionCommand
   | unsupportedStatement skipRest SEMI?   # unsupportedCommand
   | SEMI?                  # emptyCommand
@@ -89,7 +90,8 @@ unsupportedExplainOption
 
 // the first words of every other statement of PostgreSQL (WITH, VALUES, TABLE and a parenthesised query start a selectStmt)
 unsupportedStatement
-  : ALTER | ANALYSE | ANALYZE | CALL | CHECKPOINT | CLOSE | CLUSTER | COMMENT | COPY
+  // ALTER of anything but a table, which alterTableStmt reads
+  : ALTER ~TABLE | ANALYSE | ANALYZE | CALL | CHECKPOINT | CLOSE | CLUSTER | COMMENT | COPY
   // CREATE of anything but a table, an index or an extension, which createTableStmt, createIndexStmt and createExtensionStmt
   // read
   | CREATE ~(TABLE | TEMP | TEMPORARY | UNLOGGED | LOCAL | GLOBAL | INDEX | UNIQUE | EXTENSION)
@@ -239,6 +241,37 @@ unsupportedWithoutOverlaps
 
 unsupportedConstraintOption
   : INCLUDE | WITH | USING | DEFERRABLE | NOT | INITIALLY | NO | ENFORCED
+  ;
+
+// ============================================================================
+// ALTER TABLE (AlterTableStmt of gram.y), fork issue #230: adding a column, its default and its NOT NULL
+// ============================================================================
+
+alterTableStmt
+  : ALTER TABLE unsupportedAlterTarget skipRest
+  | ALTER TABLE (IF EXISTS)? ONLY? table=qualifiedName actions+=alterTableAction (COMMA actions+=alterTableAction)*
+  ;
+
+// every table of a tablespace
+unsupportedAlterTarget
+  : ALL
+  ;
+
+alterTableAction
+  : ADD COLUMN? (IF NOT EXISTS)? column=colId typename constraints+=columnOption*   # addColumnAction
+  | ALTER COLUMN? column=colId SET DEFAULT bExpr                                    # setColumnDefaultAction
+  | ALTER COLUMN? column=colId DROP DEFAULT                                         # dropColumnDefaultAction
+  | ALTER COLUMN? column=colId SET NOT NULL                                         # setColumnNotNullAction
+  | ALTER COLUMN? column=colId DROP NOT NULL                                        # dropColumnNotNullAction
+  | unsupportedAlterAction skipRest                                                 # otherAlterAction
+  ;
+
+unsupportedAlterAction
+  : ADD (CONSTRAINT | CHECK | UNIQUE | PRIMARY | FOREIGN)
+  | DROP | RENAME | SET | RESET | OWNER | VALIDATE | ENABLE | DISABLE | ATTACH | DETACH | INHERIT | NO | CLUSTER | REPLICA
+  | FORCE | OF | NOT OF
+  | ALTER CONSTRAINT
+  | ALTER COLUMN? colId (TYPE | SET ~(NOT | DEFAULT) | RESET | ADD | DROP (IDENTITY | EXPRESSION) | RESTART | OPTIONS)
   ;
 
 // ============================================================================

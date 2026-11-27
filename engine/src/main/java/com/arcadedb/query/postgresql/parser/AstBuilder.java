@@ -20,6 +20,7 @@ package com.arcadedb.query.postgresql.parser;
 
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.PostgreSQLInvalidEscapeException;
+import com.arcadedb.query.postgresql.ast.AlterTableStatement;
 import com.arcadedb.query.postgresql.ast.CreateExtensionStatement;
 import com.arcadedb.query.postgresql.ast.CreateIndexStatement;
 import com.arcadedb.query.postgresql.ast.CreateTableStatement;
@@ -94,6 +95,8 @@ final class AstBuilder {
       return createIndex(command.createIndexStmt());
     if (stmt instanceof CreateExtensionCommandContext command)
       return createExtension(command.createExtensionStmt());
+    if (stmt instanceof AlterTableCommandContext command)
+      return alterTable(command.alterTableStmt());
     if (stmt instanceof EmptyCommandContext)
       return new EmptyStatement(position(stmt.getStart()));
     throw new IllegalStateException("A statement the parser did not refuse has no tree: " + stmt.getText());
@@ -123,6 +126,30 @@ final class AstBuilder {
       throw new PostgreSQLFeatureNotSupportedException("CREATE EXTENSION in a schema other than public is not supported by the"
           + " postgresql language (" + position + ")", "Leave SCHEMA out: there is one schema, public");
     return new CreateExtensionStatement(position, extension);
+  }
+
+  // ------------------------------------------------------------------------------------------------ ALTER TABLE
+
+  private AlterTableStatement alterTable(final AlterTableStmtContext context) {
+    final List<AlterTableStatement.Action> actions = new ArrayList<>();
+    for (final AlterTableActionContext action : context.actions) {
+      if (action instanceof AddColumnActionContext add) {
+        final List<CreateTableStatement.Constraint> own = new ArrayList<>();
+        for (final ColumnOptionContext option : add.constraints)
+          own.add(columnConstraint(option));
+        actions.add(new AlterTableStatement.AddColumn(add.EXISTS() != null,
+            new CreateTableStatement.Column(position(add.column.getStart()), name(add.column), typeName(add.typename()), own)));
+      } else if (action instanceof SetColumnDefaultActionContext set)
+        actions.add(new AlterTableStatement.SetDefault(name(set.column), bExpression(set.bExpr())));
+      else if (action instanceof DropColumnDefaultActionContext drop)
+        actions.add(new AlterTableStatement.SetDefault(name(drop.column), null));
+      else if (action instanceof SetColumnNotNullActionContext set)
+        actions.add(new AlterTableStatement.SetNotNull(name(set.column), true));
+      else
+        actions.add(new AlterTableStatement.SetNotNull(name(((DropColumnNotNullActionContext) action).column), false));
+    }
+    return new AlterTableStatement(position(context.getStart()), qualifiedName(context.table, context.table.getStart()),
+        context.EXISTS() != null, actions);
   }
 
   // ------------------------------------------------------------------------------------------------ CREATE TABLE

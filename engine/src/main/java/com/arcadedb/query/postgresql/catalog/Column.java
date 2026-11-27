@@ -128,7 +128,7 @@ public final class Column {
   }
 
   /** The same column with a length, or a precision and a scale (fork issue #226). */
-  Column withModifier(final TypeModifier declared) {
+  public Column withModifier(final TypeModifier declared) {
     return new Column(name, type, nullable, kind, property, link, hidden, listed, defaultText, identity, endKey, declared);
   }
 

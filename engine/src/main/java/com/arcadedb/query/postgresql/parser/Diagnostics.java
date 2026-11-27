@@ -98,6 +98,9 @@ final class Diagnostics {
       Map.entry("unsupportedTableConstraint", "This table constraint (CHECK, EXCLUDE, NOT NULL, NULLS NOT DISTINCT or USING INDEX)"),
       Map.entry("unsupportedConstraintOption", "An option of a table constraint (INCLUDE, WITH, DEFERRABLE and the like)"),
       Map.entry("unsupportedConcurrently", "CREATE INDEX CONCURRENTLY"),
+      Map.entry("unsupportedAlterAction",
+          "This action of ALTER TABLE (DROP, RENAME, ADD of a constraint, a change of a type and the like)"),
+      Map.entry("unsupportedAlterTarget", "ALTER TABLE ALL IN TABLESPACE"),
       Map.entry("unsupportedIndexExpression", "An index on an expression"),
       Map.entry("unsupportedIndexElementOption",
           "This option of an index column (COLLATE, DESC, NULLS, a qualified operator class or its parameters)"),
@@ -146,9 +149,13 @@ final class Diagnostics {
           "PostgreSQL has no backticks: write a name in double quotes, as in \"name\"");
     final String what = DESCRIPTIONS.containsKey(ruleName) ? DESCRIPTIONS.get(ruleName) : words(ruleName, marker);
     final String message = what + " is not supported by the postgresql language (" + position(start) + ")";
-    if ("unsupportedStatement".equals(ruleName)) {
+    // an action of ALTER TABLE has the hint of the whole statement, which names what to write in sql (fork issue #230)
+    if ("unsupportedStatement".equals(ruleName) || "unsupportedAlterAction".equals(ruleName)) {
       final List<String> statement = new ArrayList<>();
-      tokens(marker.getParent() instanceof ParserRuleContext command ? command : marker, statement);
+      ParserRuleContext whole = marker;
+      while (!(whole instanceof PostgreSQLParser.StmtContext) && whole.getParent() instanceof ParserRuleContext parent)
+        whole = parent;
+      tokens(whole, statement);
       return new PostgreSQLFeatureNotSupportedException(message, StatementHints.of(statement, StatementHints.AS_WRITTEN),
           statement);
     }

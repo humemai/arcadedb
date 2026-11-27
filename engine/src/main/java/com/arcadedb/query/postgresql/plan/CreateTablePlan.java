@@ -83,7 +83,7 @@ import java.util.Set;
  * PostgreSQL's SQLSTATEs; what PostgreSQL accepts and the engine cannot keep is {@code 0A000} with its position.
  */
 public final class CreateTablePlan {
-  private static final Set<String> SYSTEM_COLUMNS = Set.of("tableoid", "xmin", "cmin", "xmax", "cmax", "ctid");
+  static final Set<String> SYSTEM_COLUMNS = Set.of("tableoid", "xmin", "cmin", "xmax", "cmax", "ctid");
 
   /** The types a key can be over. */
   private static final Set<ColumnType> KEY_TYPES = Set.of(ColumnType.BOOL, ColumnType.INT2, ColumnType.INT4, ColumnType.INT8,
@@ -121,7 +121,7 @@ public final class CreateTablePlan {
    * The type of a column, in the engine and in the view; {@code dimensions} is 0 unless the column is a {@code vector(n)}, and
    * {@code modifier} is {@code null} unless it is a {@code varchar(n)} or a {@code numeric(p,s)}.
    */
-  private record Mapped(ColumnType type, Type engine, String ofType, int dimensions, TypeModifier modifier) {
+  record Mapped(ColumnType type, Type engine, String ofType, int dimensions, TypeModifier modifier) {
     Mapped(final ColumnType type, final Type engine, final String ofType, final int dimensions) {
       this(type, engine, ofType, dimensions, null);
     }
@@ -133,7 +133,7 @@ public final class CreateTablePlan {
   }
 
   /** A column as it will be made. */
-  private static final class Spec {
+  static final class Spec {
     final String           name;
     final SourcePosition   position;
     final Mapped           mapped;
@@ -445,11 +445,11 @@ public final class CreateTablePlan {
 
   // ------------------------------------------------------------------------------------------------ names
 
-  private static Identifier identifier(final Name name) {
+  static Identifier identifier(final Name name) {
     return new Identifier(name.value(), name.quoted());
   }
 
-  private String tableName(final List<Name> name, final SourcePosition position) {
+  String tableName(final List<Name> name, final SourcePosition position) {
     if (name.size() == 2) {
       final String schema = name.get(0).value();
       if ("information_schema".equals(schema) || "pg_catalog".equals(schema))
@@ -728,7 +728,7 @@ public final class CreateTablePlan {
    * PostgreSQL, the word is no type but a short form of a column definition, which only an unqualified name without a modifier
    * and without {@code []} is.
    */
-  private static Mapped serialType(final TypeName type) {
+  static Mapped serialType(final TypeName type) {
     if (type.name().size() != 1 || !type.modifiers().isEmpty() || type.arrayDimensions() != 0)
       return null;
     return switch (type.name().get(0)) {
@@ -747,7 +747,7 @@ public final class CreateTablePlan {
     return "nextval('" + sequence.replace("'", "''") + "'::regclass)";
   }
 
-  private static Mapped type(final TypeName type) {
+  static Mapped type(final TypeName type) {
     final List<String> parts = type.name();
     final String name = parts.get(parts.size() - 1);
     if (parts.size() > 2 || parts.size() == 2 && !"pg_catalog".equals(parts.get(0)) && !RelationalCatalog.SCHEMA.equals(parts.get(0))
@@ -831,7 +831,7 @@ public final class CreateTablePlan {
   // ------------------------------------------------------------------------------------------------ defaults
 
   /** Reads the constant after {@code DEFAULT} as the value of the column, and as PostgreSQL shows it in the catalog. */
-  private void readDefault(final Spec spec) {
+  void readDefault(final Spec spec) {
     Expression literal = spec.literal;
     if (literal instanceof Expression.NullLiteral)
       return;
@@ -1144,7 +1144,7 @@ public final class CreateTablePlan {
       type.setCustomValue(onUpdateKey, end.onUpdate().sql());
   }
 
-  private Property createProperty(final DocumentType type, final Spec spec) {
+  Property createProperty(final DocumentType type, final Spec spec) {
     final Mapped mapped = spec.mapped;
     final Property property = mapped.ofType() == null ? type.createProperty(spec.name, mapped.engine())
         : type.createProperty(spec.name, mapped.engine(), mapped.ofType());
@@ -1161,6 +1161,13 @@ public final class CreateTablePlan {
     if (mapped.modifier() != null)
       // fork issue #226: the engine applies it to the writes of every language
       property.setCustomValue(TypeModifier.CUSTOM_KEY, mapped.modifier().declaration());
+    setDefault(property, spec);
+    return property;
+  }
+
+  /** The default of the column that {@code spec} read, on its property; nothing for a column without one. */
+  static void setDefault(final Property property, final Spec spec) {
+    final Mapped mapped = spec.mapped;
     if (spec.clock)
       // an expression of the sql language, which reads the clock for each record that another language creates
       property.setDefaultValue(ClockDefault.SCHEMA_DEFAULT);
@@ -1176,7 +1183,6 @@ public final class CreateTablePlan {
       if (spec.defaultValue instanceof String text && !Objects.equals(text, property.getDefaultValue()))
         throw unsupported("This text as a DEFAULT", spec.literal.position());
     }
-    return property;
   }
 
   // ------------------------------------------------------------------------------------------------ errors

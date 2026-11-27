@@ -66,6 +66,28 @@ public final class AstPrinter {
       case CreateTableStatement create -> print(create);
       case CreateIndexStatement create -> print(create);
       case CreateExtensionStatement create -> "CREATE EXTENSION IF NOT EXISTS " + print(create.name());
+      case AlterTableStatement alter -> print(alter);
+    };
+  }
+
+  private static String print(final AlterTableStatement alter) {
+    return "ALTER TABLE " + (alter.ifExists() ? "IF EXISTS " : "") + dotted(alter.table()) + " "
+        + alter.actions().stream().map(AstPrinter::print).collect(Collectors.joining(", "));
+  }
+
+  private static String print(final AlterTableStatement.Action action) {
+    return switch (action) {
+      case AlterTableStatement.AddColumn add -> {
+        final StringBuilder text = new StringBuilder("ADD COLUMN ").append(add.ifNotExists() ? "IF NOT EXISTS " : "")
+            .append(print(add.column().name())).append(' ').append(print(add.column().type()));
+        for (final CreateTableStatement.Constraint constraint : add.column().constraints())
+          text.append(' ').append(print(constraint));
+        yield text.toString();
+      }
+      case AlterTableStatement.SetDefault set -> "ALTER COLUMN " + print(set.column())
+          + (set.value() == null ? " DROP DEFAULT" : " SET DEFAULT (" + print(set.value()) + ")");
+      case AlterTableStatement.SetNotNull set -> "ALTER COLUMN " + print(set.column())
+          + (set.notNull() ? " SET" : " DROP") + " NOT NULL";
     };
   }
 
