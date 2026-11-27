@@ -167,6 +167,11 @@ class CreateTableTest extends TestHelper {
     assertState("INSERT INTO tag (rid, name) VALUES ('#1:0', 'x')", "428C9");
     assertState("INSERT INTO tag (id, name) VALUES ('#1:0', 'x')", "428C9");
     assertState("UPDATE tag SET id = '#1:0'", "428C9");
+    // a record id needs no index under either name: CREATE INDEX keeps the name only (fork issue #125)
+    run("CREATE UNIQUE INDEX tag_by_rid ON tag (rid)");
+    run("CREATE INDEX tag_by_id ON tag (id)");
+    assertState("CREATE INDEX tag_by_id ON tag (rid)", "42P07");
+    assertThat(database.getSchema().getType("tag").getAllIndexes(true)).isEmpty();
 
     run("DELETE FROM tag WHERE name = 'red'");
     assertThat(lines("SELECT count(*) FROM tagged")).containsExactly("0");
@@ -222,14 +227,6 @@ class CreateTableTest extends TestHelper {
         .containsExactly(LocalDateTime.of(2026, 1, 5, 10, 20, 30, 123_456_000));
     assertState("INSERT INTO calendar (cid, moments) VALUES (2, NULL)", "23502");
     assertState("INSERT INTO calendar (cid) VALUES (2)", "23502");
-  }
-
-  @Test
-  void anEdgeTableNeedsTablesWithAColumnId() {
-    run("CREATE TABLE tag (name text)");
-
-    assertState("CREATE TABLE tagged (source_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE,"
-        + " target_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE)", "42703");
   }
 
   @Test
