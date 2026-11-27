@@ -77,7 +77,7 @@ class PostgreSQLAlterTableTest extends PostgreSQLSideBySideTestBase {
           sameError(postgres, arcade, error[0], error[1]);
         sameError(postgres, arcade, "SELECT a FROM facts", "42703");
 
-        sameValues(postgres, arcade, "SELECT id, content, expires_at, importance, note, price::text, code, meta::text, tags::text,"
+        sameValues(postgres, arcade, "SELECT id, content, expires_at, importance, note, price::text, code, meta::text, tags,"
             + " gone FROM facts ORDER BY id");
         // one time of the clock for the rows that existed, and a new uuid for each
         sameValues(postgres, arcade, "SELECT count(DISTINCT created), count(created) FROM facts WHERE id <= 3");
