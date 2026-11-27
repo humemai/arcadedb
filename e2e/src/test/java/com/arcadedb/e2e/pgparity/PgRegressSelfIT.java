@@ -44,7 +44,7 @@ class PgRegressSelfIT {
   private static final String FILE       = "self_test";
   private static final int    STATEMENTS = 27;
   private static final String RULES      = "self_test_rules";
-  private static final int    RULE_STATEMENTS = 36;
+  private static final int    RULE_STATEMENTS = 37;
 
   private static RegressServer first;
   private static RegressServer second;
@@ -191,8 +191,12 @@ class PgRegressSelfIT {
     assertBlocked(line(result, "CREATE TABLE placed"), "the search path");
     assertBlocked(line(result, "missing_column"), "elsewhere.placed");
     assertBlocked(line(result, "SELECT b FROM seen"), "a view");
+    // an identity column, which the language has: the type that holds its counter is no difference between the sides
+    assertThat(line(result, "CREATE TABLE numbered").verdict()).as(RegressReport.line(line(result, "CREATE TABLE numbered")))
+        .isEqualTo(RegressJudge.Verdict.PASSED);
+    assertThat(line(result, "is_identity").verdict()).isEqualTo(RegressJudge.Verdict.PASSED);
     // queries of information_schema about what differs, by the string they write or by what PostgreSQL answers
-    assertBlocked(line(result, "is_identity"), "numbered");
+    assertBlocked(line(result, "table_name = 'seen'"), "seen");
     assertBlocked(line(result, "LIKE 'see%'"), "seen");
     assertBlocked(line(result, "table_schema = 'elsewhere'"), "elsewhere");
     assertJudged(line(result, "table_name = 'ordinary'"));

@@ -27,6 +27,7 @@ import com.arcadedb.event.AfterRecordUpdateListener;
 import com.arcadedb.graph.MutableVertex;
 import com.arcadedb.query.postgresql.PostgreSQLErrors;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
+import com.arcadedb.query.postgresql.catalog.Sequences;
 import com.arcadedb.query.postgresql.catalog.Table;
 import com.arcadedb.query.postgresql.catalog.TableDefinition;
 import com.arcadedb.query.postgresql.corpus.Values;
@@ -125,8 +126,16 @@ final class RegressArcade implements RegressSubject {
   }
 
   private void note(final Record record) {
-    if (record instanceof Document document)
+    if (record instanceof Document document && isTable(document.getTypeName()))
       touched.add(document.getTypeName());
+  }
+
+  /**
+   * Whether the language shows the type as a table: every type but the one that holds the counters of the serial and identity
+   * columns, which PostgreSQL keeps in sequences and which is therefore no difference between the sides.
+   */
+  private static boolean isTable(final String typeName) {
+    return !Sequences.TYPE_NAME.equals(typeName);
   }
 
   /** Runs work of the harness on the engine thread. */
@@ -236,7 +245,8 @@ final class RegressArcade implements RegressSubject {
   private Set<String> typeNames() {
     final Set<String> names = new HashSet<>();
     for (final DocumentType type : database().getSchema().getTypes())
-      names.add(type.getName());
+      if (isTable(type.getName()))
+        names.add(type.getName());
     return names;
   }
 
