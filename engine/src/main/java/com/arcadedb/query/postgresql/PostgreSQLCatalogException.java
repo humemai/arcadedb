@@ -19,8 +19,12 @@
 package com.arcadedb.query.postgresql;
 
 import com.arcadedb.exception.CommandParsingException;
+import com.arcadedb.function.text.TextLevenshteinDistance;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * A name that the relational view does not resolve: an unknown or ambiguous table, column or schema. It carries the SQLSTATE a
@@ -37,6 +41,8 @@ import java.util.List;
  */
 public class PostgreSQLCatalogException extends CommandParsingException {
   private static final int MAX_LISTED_COLUMNS = 40;
+  /** The edits between a name and the column that PostgreSQL still suggests for it ({@code MAX_FUZZY_DISTANCE}). */
+  private static final int MAX_SUGGESTION_DISTANCE = 3;
 
   private final String sqlState;
   private final String hint;
@@ -66,6 +72,41 @@ public class PostgreSQLCatalogException extends CommandParsingException {
     if (columns.size() > MAX_LISTED_COLUMNS)
       out.append(" and ").append(columns.size() - MAX_LISTED_COLUMNS).append(" more");
     return out.toString();
+  }
+
+  /**
+   * The hint of a column that does not exist (fork issue #220): the column that was probably meant, in PostgreSQL's words, when a
+   * name is close to the one written, then the columns the statement can name. It never says how to add a column: a statement
+   * that follows such advice succeeds and leaves the column it meant as it was.
+   * <p>
+   * Close is PostgreSQL's rule: at most three edits, and at most half of the written name. Of the closest names one or two are
+   * suggested, and none when more than two are as close. Case is ignored.
+   *
+   * @param column   the name as the statement wrote it, without its relation
+   * @param columns  the columns the statement can name, by relation; an empty relation name for columns of no relation
+   * @param list     the text that lists those columns ({@link #columnList}), {@code null} when there is nothing to name
+   *
+   * @return the hint, {@code null} when there is nothing to say
+   */
+  public static String unknownColumnHint(final String column, final Map<String, List<String>> columns, final String list) {
+    final String written = column.toLowerCase(Locale.ENGLISH);
+    int closest = Math.min(MAX_SUGGESTION_DISTANCE, written.length() / 2);
+    final List<String> suggestions = new ArrayList<>();
+    for (final Map.Entry<String, List<String>> relation : columns.entrySet())
+      for (final String name : relation.getValue()) {
+        final int distance = TextLevenshteinDistance.levenshteinDistance(written, name.toLowerCase(Locale.ENGLISH));
+        if (distance > closest)
+          continue;
+        if (distance < closest) {
+          closest = distance;
+          suggestions.clear();
+        }
+        suggestions.add(quote(relation.getKey().isEmpty() ? name : relation.getKey() + "." + name));
+      }
+    if (suggestions.isEmpty() || suggestions.size() > 2)
+      return list;
+    final String suggestion = "Perhaps you meant to reference the column " + String.join(" or the column ", suggestions);
+    return list == null ? suggestion : suggestion + "; " + list;
   }
 
   static String quote(final String name) {

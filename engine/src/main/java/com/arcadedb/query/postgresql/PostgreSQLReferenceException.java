@@ -36,13 +36,10 @@ public class PostgreSQLReferenceException extends PostgreSQLCatalogException {
 
   /**
    * @param reference the name as the statement wrote it
-   * @param columns   what the statement can name instead ({@link #columnList}), {@code null} when there is nothing to name
+   * @param hint      what the statement can name instead ({@link #unknownColumnHint}), {@code null} when there is nothing to name
    */
-  public static PostgreSQLReferenceException undefinedColumn(final String reference, final String columns) {
-    return new PostgreSQLReferenceException("42703", "column " + quote(reference) + " does not exist",
-        (columns == null ? "" : columns + "; ")
-            + "a table has the properties its type declares as columns, nothing else: declare the property with CREATE PROPERTY in "
-            + "the sql language");
+  public static PostgreSQLReferenceException undefinedColumn(final String reference, final String hint) {
+    return new PostgreSQLReferenceException("42703", "column " + quote(reference) + " does not exist", hint);
   }
 
   public static PostgreSQLReferenceException missingFromEntry(final String relation) {

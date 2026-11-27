@@ -1088,7 +1088,8 @@ public class SelectPlanner {
       if (position < 0) {
         if (item.expression() instanceof Expression.ColumnRef reference)
           throw PostgreSQLReferenceException.undefinedColumn(reference.column().value(),
-              PostgreSQLCatalogException.columnList("the " + operation + " result", names));
+              PostgreSQLCatalogException.unknownColumnHint(reference.column().value(), Map.of("", names),
+                  PostgreSQLCatalogException.columnList("the " + operation + " result", names)));
         throw new PostgreSQLFeatureNotSupportedException("invalid " + operation + " ORDER BY clause: only result column names "
             + "and positions can be used, not expressions or functions");
       }
