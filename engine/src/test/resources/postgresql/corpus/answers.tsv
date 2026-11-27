@@ -530,3 +530,42 @@ accept-date-plus-month-range	ordered	-	ok	SELECT oid FROM orders WHERE placed >=
 accept-json-column	multiset	-	ok	SELECT address FROM orders WHERE oid = 100	{"columns":["address"],"types":["jsonb"],"rows":[[{"zip":"1000AA","city":"Delft"}]]}
 err-accept-misspelled-column	multiset	-	ok	SELECT nam FROM person	{"error":"42703"}
 err-accept-misspelled-table	multiset	-	ok	SELECT name FROM persons	{"error":"42P01"}
+err-dt-date-before-range	multiset	-	ok	SELECT date '4714-11-23 BC'	pending-server
+err-dt-date-after-range	multiset	-	ok	SELECT date '5874898-01-01'	pending-server
+err-dt-timestamp-before-range	multiset	-	ok	SELECT '4714-11-23 23:59:59 BC'::timestamp	pending-server
+err-dt-timestamp-after-range	multiset	-	ok	SELECT '294277-01-01 00:00:00'::timestamp	pending-server
+err-dt-date-year-zero	multiset	-	ok	SELECT date '0000-01-01'	pending-server
+err-dt-month-name-after-separator	multiset	-	ok	SELECT date '99-08-Jan'	pending-server
+err-dt-month-name-after-separator-long-year	multiset	-	ok	SELECT date '1999-08-Jan'	pending-server
+err-dt-month-name-after-two-numbers	multiset	-	ok	SELECT date '99 08 Jan'	pending-server
+err-dt-large-number-before-month-name	multiset	-	ok	SELECT date '99 Jan 08'	pending-server
+err-dt-epoch-with-a-date	multiset	-	ok	SELECT date '1995-08-06 epoch'	pending-server
+err-dt-infinity-with-a-time	multiset	-	ok	SELECT timestamp 'infinity 01:01:01'	pending-server
+err-dt-two-special-words	multiset	-	ok	SELECT timestamp 'now epoch'	pending-server
+err-dt-julian-twice	multiset	-	ok	SELECT date 'J J 1520447'	pending-server
+err-dt-two-fields	multiset	-	ok	SELECT date '2020-01'	pending-server
+err-dt-one-number	multiset	-	ok	SELECT date '2020'	pending-server
+err-dt-month-name-alone	multiset	-	ok	SELECT date 'January'	pending-server
+err-dt-time-alone	multiset	-	ok	SELECT '12:00:00'::timestamp	pending-server
+err-dt-word	multiset	-	ok	SELECT date 'garbage'	pending-server
+err-dt-unknown-letters	multiset	-	ok	SELECT timestamp 'Y2001M12D27H04M05S06.789'	pending-server
+err-interval-decades-do-not-fit	multiset	-	ok	SELECT interval '2147483647 decades'	pending-server
+err-interval-millennium-does-not-fit	multiset	-	ok	SELECT interval '-2147483648 millennium'	pending-server
+err-interval-century-and-years-do-not-fit	multiset	-	ok	SELECT interval '1 century 2147483647 years'	pending-server
+err-interval-years-do-not-fit-in-months	multiset	-	ok	SELECT interval '2147483647 years'	pending-server
+err-interval-years-field	multiset	-	ok	SELECT interval '2147483648 years'	pending-server
+err-interval-months-field	multiset	-	ok	SELECT interval '2147483648 months'	pending-server
+err-interval-days-field	multiset	-	ok	SELECT interval '2147483648 days'	pending-server
+err-interval-weeks-field	multiset	-	ok	SELECT interval '2147483647 weeks'	pending-server
+err-interval-hours-field	multiset	-	ok	SELECT interval '2562047789:00:00'	pending-server
+err-interval-minutes-of-a-time	multiset	-	ok	SELECT interval '1:70'	pending-server
+err-interval-ago-does-not-fit	multiset	-	ok	SELECT interval '-2147483648 days ago'	pending-server
+err-interval-unit-twice	multiset	-	ok	SELECT interval '1 day 1 day'	pending-server
+err-interval-fraction-and-millisecond	multiset	-	ok	SELECT interval '5.5 seconds 3 milliseconds'	pending-server
+err-interval-time-and-microsecond	multiset	-	ok	SELECT interval '1:20:05 5 microseconds'	pending-server
+err-interval-two-bare-numbers	multiset	-	ok	SELECT interval '123 11'	pending-server
+err-interval-unknown-unit	multiset	-	ok	SELECT interval '@ 30 eons ago'	pending-server
+err-interval-sum-before-range	multiset	-	ok	SELECT timestamp '2000-01-01' - interval '2483590 days'	pending-server
+err-interval-sum-after-range	multiset	-	ok	SELECT date '2000-01-01' + interval '300 millennium'	pending-server
+interval-day-before-a-time	multiset	-	ok	SELECT date '2020-01-01' + interval '1 2:03:04'	pending-server
+interval-units-above-the-year	multiset	-	ok	SELECT date '2000-01-01' + interval '1 millennium 2 centuries 3 decades 4 years'	pending-server

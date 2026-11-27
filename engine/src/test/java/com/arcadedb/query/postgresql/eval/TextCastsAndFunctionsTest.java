@@ -271,7 +271,7 @@ class TextCastsAndFunctionsTest {
     assertThat(value(cast(s("2026-3-9"), "date"))).isEqualTo(LocalDate.of(2026, 3, 9));
     assertThat(sqlState(cast(s("2026-13-01"), "date"))).isEqualTo("22008");
     assertThat(sqlState(cast(s("2026-02-30"), "date"))).isEqualTo("22008");
-    assertThat(sqlState(cast(s("yesterday"), "date"))).isEqualTo("22007");
+    assertThat(sqlState(cast(s("yesterday"), "date"))).as("PostgreSQL reads it").isEqualTo("0A000");
     assertThat(value(cast(s("2026-03-09 10:11:12"), "timestamp"))).isEqualTo(LocalDateTime.of(2026, 3, 9, 10, 11, 12));
     assertThat(value(cast(s("2026-03-09T10:11"), "timestamp"))).isEqualTo(LocalDateTime.of(2026, 3, 9, 10, 11));
     assertThat(value(cast(s("2026-03-09"), "timestamp"))).isEqualTo(LocalDateTime.of(2026, 3, 9, 0, 0));
