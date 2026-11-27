@@ -9,16 +9,16 @@ Statements that an LLM wrote ran on PostgreSQL 18 and on the `postgresql` langua
 | | |
 | --- | --- |
 | PostgreSQL | PostgreSQL 18.7 (Debian 18.7-1.pgdg12+2), `C` collation, time zone UTC |
-| engine | [`ecf76a2f32`](https://github.com/humemai/arcadedb/commit/ecf76a2f32314a7d10fd6c3211c5c8718c8fa3eb) |
-| CI run | [46047484900](https://github.com/humemai/arcadedb/actions/runs/46047484900) |
+| engine | [`d9334e9c69`](https://github.com/humemai/arcadedb/commit/d9334e9c69f62219095f1dfcff2981ba392cbe5b) |
+| CI run | [46066425091](https://github.com/humemai/arcadedb/actions/runs/46066425091) |
 | date | 2026-11-27 (UTC) |
 
 ## Numbers
 
 | number | what it counts | agent scripts | probes | target |
 | --- | --- | ---: | ---: | ---: |
-| M1 | non-volatile statements that match PostgreSQL 18 as written | 29 of 248 (11.7%) | 183 of 331 (55.3%) | not set |
-| M2 | errors of the language's own that name a next step | 54 of 62 (87.1%) | 120 of 134 (89.6%) | 100% |
+| M1 | non-volatile statements that match PostgreSQL 18 as written | 75 of 248 (30.2%) | 196 of 331 (59.2%) | not set |
+| M2 | errors of the language's own that name a next step | 52 of 61 (85.2%) | 105 of 119 (88.2%) | 100% |
 | M3 | silent differences | 0 | 0 | 0 |
 
 ## M1 by class
@@ -27,12 +27,12 @@ One refused `CREATE TABLE` hides every later statement on its table, so the clas
 
 | class | agent scripts | probes |
 | --- | ---: | ---: |
-| schema | 3 of 33 (9.1%) | 45 of 81 (55.6%) |
-| write | 0 of 50 (0.0%) | 41 of 58 (70.7%) |
-| read | 8 of 114 (7.0%) | 71 of 157 (45.2%) |
-| transaction | 16 of 25 (64.0%) | 25 of 32 (78.1%) |
+| schema | 8 of 33 (24.2%) | 52 of 81 (64.2%) |
+| write | 13 of 50 (26.0%) | 41 of 58 (70.7%) |
+| read | 37 of 114 (32.5%) | 77 of 157 (49.0%) |
+| transaction | 15 of 25 (60.0%) | 25 of 32 (78.1%) |
 | discovery | 2 of 26 (7.7%) | 1 of 3 (33.3%) |
-| all | 29 of 248 (11.7%) | 183 of 331 (55.3%) |
+| all | 75 of 248 (30.2%) | 196 of 331 (59.2%) |
 
 ## Every statement, by verdict
 
@@ -40,10 +40,10 @@ Volatile statements are included here.
 
 | verdict | meaning | agent scripts | probes |
 | --- | --- | ---: | ---: |
-| same | the same columns, rows, and count as PostgreSQL, or the same SQLSTATE | 30 | 199 |
-| refused | the language fails where PostgreSQL succeeds | 62 | 126 |
+| same | the same columns, rows, and count as PostgreSQL, or the same SQLSTATE | 78 | 214 |
+| refused | the language fails where PostgreSQL succeeds | 61 | 111 |
 | other code | both fail, with different codes | 0 | 8 |
-| after an earlier failure | differs from PostgreSQL, and equals what PostgreSQL answers after it has run only what the language ran | 173 | 7 |
+| after an earlier failure | differs from PostgreSQL, and equals what PostgreSQL answers after it has run only what the language ran | 126 | 7 |
 | listed difference | succeeds with another answer that the list of kept differences names | 2 | 15 |
 | silent difference | succeeds where PostgreSQL answers otherwise or refuses | 0 | 0 |
 | all | | 267 | 355 |
@@ -78,13 +78,14 @@ Volatile statements are included here.
 
 ## M2: errors that name no next step
 
-22 errors of the language name no next step. Of all 196 errors of its own, 181 use the hint field of the protocol, and 59 of those hints say that there is no way yet. Names and values are taken out of the messages.
+23 errors of the language name no next step. Of all 180 errors of its own, 164 use the hint field of the protocol, and 50 of those hints say that there is no way yet. Names and values are taken out of the messages.
 
 | message | statements |
 | --- | ---: |
 | `ALTER is not supported by the postgresql language` | 2 |
 | `CURRENT_USER is not supported by the postgresql language` | 2 |
 | `WITHIN GROUP is not supported by the postgresql language` | 2 |
+| `column "..." must appear in the GROUP BY clause or be used in an aggregate function` | 2 |
 | `insert or update on table "..." violates foreign key constraint on column "...": the value "..." is not a vertex of the table person` | 2 |
 | `relation "..." does not exist` | 2 |
 | `ARRAY is not supported by the postgresql language` | 1 |
@@ -97,9 +98,8 @@ Volatile statements are included here.
 | `LISTEN is not supported by the postgresql language` | 1 |
 | `Syntax error on parsing query: SQL syntax error at line 1, column 6: no viable alternative at input '...' ALTER TABLE acc ADD COLUMN extra text ^` | 1 |
 | `cannot cast type anyarray to text` | 1 |
-| `column "..." must appear in the GROUP BY clause or be used in an aggregate function` | 1 |
 | `syntax error at or near "..."` | 1 |
-| all | 22 |
+| all | 23 |
 
 ## Rules
 
