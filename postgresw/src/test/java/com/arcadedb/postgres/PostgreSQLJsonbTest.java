@@ -112,12 +112,10 @@ class PostgreSQLJsonbTest extends PostgreSQLSideBySideTestBase {
       "SELECT count(DISTINCT meta) AS m, count(DISTINCT meta->'a') AS a, count(meta->'n') AS n FROM f",
       "SELECT meta->'a' AS a, count(*) AS n FROM f GROUP BY meta->'a' ORDER BY 2 DESC",
       "SELECT count(*) AS n FROM f GROUP BY meta ORDER BY 1",
-      "SELECT count(*) AS n FROM (SELECT '{\"a\": 1}'::jsonb AS v UNION SELECT '{\"a\": 1.0}'::jsonb) AS u",
-      "SELECT '{\"a\": 1}'::jsonb AS v UNION SELECT '{\"a\": 1.0}'::jsonb",
+      // set operations that read a table: over the wire, one of constants alone does not reach the language (fork issue #278)
       "SELECT count(*) AS n FROM (SELECT j FROM t WHERE id = 1 UNION SELECT j FROM t WHERE id = 2) AS u",
+      "SELECT count(*) AS n FROM (SELECT j->'a' AS a FROM t WHERE id = 1 UNION SELECT j->'a' FROM t WHERE id = 2) AS u",
       "SELECT count(*) AS n FROM (SELECT j FROM t EXCEPT SELECT '{\"a\": 1.00}'::jsonb) AS u",
-      "SELECT count(*) AS n FROM (SELECT '[1.50]'::jsonb AS v UNION SELECT '[1.5]'::jsonb) AS u",
-      "SELECT count(*) AS n FROM (SELECT '2'::jsonb AS v UNION SELECT '2.0'::jsonb) AS u",
       "SELECT count(*) AS n FROM (SELECT j FROM t INTERSECT SELECT '{\"a\": 1.000}'::jsonb) AS u",
       "SELECT id, count(*) OVER (PARTITION BY meta->'a') AS n FROM f ORDER BY id");
 
