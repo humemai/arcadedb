@@ -59,8 +59,9 @@ final class UnreadableScope implements ExpressionCompiler.Scope {
     final Name column = reference.column();
     if (qualifier.isEmpty() && around.showsHere(column))
       throw new PostgreSQLFeatureNotSupportedException("Reading the column " + column.value() + " of the query around an EXISTS"
-          + " subquery from a join condition of it, or from a term beside another EXISTS, is not supported by the postgresql"
-          + " language; a column of the subquery is read with its table name before it (" + reference.position() + ")");
+          + " subquery from a join condition of it, from a subquery inside it, or from a term beside another EXISTS is not"
+          + " supported by the postgresql language; a column of the subquery is read with its table name before it ("
+          + reference.position() + ")");
     if (beyond != null)
       return beyond.column(reference);
     // what the subquery's own scope reports for a name that it does not have
