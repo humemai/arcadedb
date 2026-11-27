@@ -2060,7 +2060,8 @@ public enum PostgresType {
     // the elements of the date[], timestamp[] and bytea[] a client binds (issue #10592), and of the temporal, oid and int2vector
     // arrays (issue #12449): read as the scalar is, not as its bytes' text
     if (elemOid == DATE.code || elemOid == TIMESTAMP.code || elemOid == BYTEA.code || elemOid == TIMESTAMPTZ.code || elemOid == TIME.code
-        || elemOid == TIMETZ.code || elemOid == INTERVAL.code || elemOid == OID.code || elemOid == INT2VECTOR.code)
+        || elemOid == TIMETZ.code || elemOid == INTERVAL.code || elemOid == OID.code || elemOid == INT2VECTOR.code
+        || elemOid == UUID.code)
       return deserializeBinary(elemOid, bytes);
     // a jsonb[] element is its json text, as a json[] element and the text format of both read it, after jsonb_send's version byte
     if (elemOid == JSONB.code) {
