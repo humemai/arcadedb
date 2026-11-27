@@ -70,8 +70,10 @@ class PostgreSQLArrayOperatorTest extends PostgreSQLSideBySideTestBase {
       }
       for (final String parameters : List.of("", "?prepareThreshold=-1"))
         try (final Connection postgres = postgres(server, parameters); final Connection arcade = arcade(parameters)) {
+          // the last one binds a text[] against an integer[], which is no operator also when the array has no element
           for (final String query : List.of("SELECT id FROM t WHERE tags @> ? ORDER BY id",
-              "SELECT id FROM t WHERE tags && ? ORDER BY id", "SELECT id FROM t WHERE tags = ? ORDER BY id"))
+              "SELECT id FROM t WHERE tags && ? ORDER BY id", "SELECT id FROM t WHERE tags = ? ORDER BY id",
+              "SELECT id FROM t WHERE nums && ? ORDER BY id"))
             for (final Object[] values : List.of(new Object[] { "blue" }, new Object[] { "red", "blue" }, new Object[0]))
               compare(query + " " + values.length + parameters, bound(postgres, query, values), bound(arcade, query, values));
         }
