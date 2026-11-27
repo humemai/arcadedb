@@ -140,6 +140,27 @@ public final class Functions {
     }
   }
 
+  /**
+   * {@code date_part(field, date or timestamp)}: the field of {@link #extract} as {@code double precision}, computed as
+   * PostgreSQL computes it. PostgreSQL reads a {@code date} here as the {@code timestamp} of its midnight, so the time fields of a
+   * date are zero and not an error.
+   */
+  public static double datePart(final String field, final Object value) {
+    final BigDecimal exact = extract(field, value instanceof LocalDate date ? date.atStartOfDay() : value);
+    return switch (field.toLowerCase(Locale.ROOT)) {
+      // whole seconds and the fraction are added as two doubles, which can differ in the last digit from the exact value
+      case "second" -> {
+        final long micros = exact.movePointRight(6).longValueExact();
+        yield micros / 1_000_000L + micros % 1_000_000L / 1_000_000.0;
+      }
+      case "milliseconds" -> {
+        final long micros = exact.movePointRight(3).longValueExact();
+        yield micros / 1_000_000L * 1000.0 + micros % 1_000_000L / 1000.0;
+      }
+      default -> exact.doubleValue();
+    };
+  }
+
   private static BigDecimal integer(final long value) {
     return BigDecimal.valueOf(value);
   }

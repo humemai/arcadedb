@@ -1992,6 +1992,11 @@ public final class ExpressionCompiler {
     case "round":
       return round(name, args);
     case "trunc": {
+      // toward zero, for the double precision that date_part answers too
+      if (args.length == 1 && args[0].type().isFloat()) {
+        final Evaluable[] a = arguments(name, args, PgType.FLOAT8);
+        return strictCall(PgType.FLOAT8, a, v -> (Double) v[0] < 0 ? Math.ceil((Double) v[0]) : Math.floor((Double) v[0]));
+      }
       final Evaluable[] a = args.length == 1 ? arguments(name, args, PgType.NUMERIC) : arguments(name, args, PgType.NUMERIC, int4);
       return strictCall(PgType.NUMERIC, a,
           v -> Functions.truncate((BigDecimal) v[0], v.length > 1 ? (Integer) v[1] : 0));
@@ -2100,9 +2105,13 @@ public final class ExpressionCompiler {
         || !args[1].type().isDateTime())
       throw PostgreSQLEvaluationException.noFunction(name, types(args));
     final Evaluable value = args[1];
-    return new Evaluable.Node(PgType.NUMERIC, row -> {
+    // EXTRACT answers numeric, date_part the same value as double precision
+    final boolean part = "date_part".equals(name);
+    return new Evaluable.Node(part ? PgType.FLOAT8 : PgType.NUMERIC, row -> {
       final Object v = value.eval(row);
-      return v == null ? null : Functions.extract(unit, v);
+      if (v == null)
+        return null;
+      return part ? (Object) Functions.datePart(unit, v) : Functions.extract(unit, v);
     }, value);
   }
 
