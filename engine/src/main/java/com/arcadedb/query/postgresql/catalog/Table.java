@@ -80,14 +80,44 @@ public final class Table {
   public record Key(String name, List<String> columns) {
   }
 
+  /** What a foreign key does when the row it refers to is deleted, or when the key of that row is changed. */
+  public enum Action {
+    /** Refused while a row refers to it. For a key of the {@code postgresql} language, its writes check it. */
+    NO_ACTION("NO ACTION"),
+    /** As {@link #NO_ACTION} here; PostgreSQL gives the refusal of a delete a SQLSTATE of its own, {@code 23001}. */
+    RESTRICT("RESTRICT"),
+    /** The referring row goes with a delete, and shows the new key after a change of it. */
+    CASCADE("CASCADE");
+
+    private final String sql;
+
+    Action(final String sql) {
+      this.sql = sql;
+    }
+
+    /** The action as a statement and {@code information_schema} write it. */
+    public String sql() {
+      return sql;
+    }
+
+    /** The action that the text names, in any case; {@code null} when it names none of these. */
+    static Action named(final String text) {
+      for (final Action action : values())
+        if (action.sql.equalsIgnoreCase(text))
+          return action;
+      return null;
+    }
+  }
+
   /**
    * A foreign key: the {@code columns} of this table refer to the {@code referencedColumns} of the {@code referencedTable}, which
-   * are a key of that table: the identity column ({@link Table#identityColumn()}, {@code rid}), which is the primary key of a
-   * table that has no property {@code id} of its own and a unique key of one that has. The columns of a foreign key hold record
-   * ids, so it refers to the record id column.
+   * are a key of that table. The ends of an edge and the {@code LINK} columns hold record ids, so they refer to the record id
+   * column ({@link Table#identityColumn()}, {@code rid}), which is the primary key of a table that has no property {@code id} of
+   * its own and a unique key of one that has; an end of an edge that declares it refers to another column that is alone a unique
+   * key ({@code end}). A foreign key that the type declares ({@code declared}) refers to a key over properties.
    */
   public record ForeignKey(String name, List<String> columns, String referencedTable, List<String> referencedColumns, Origin origin,
-      com.arcadedb.schema.ForeignKey declared) {
+      com.arcadedb.schema.ForeignKey declared, EndKey end) {
     public enum Origin {
       /** A {@code LINK} property: a many-to-one reference to the type it links to. */
       LINK_PROPERTY,
@@ -101,22 +131,26 @@ public final class Table {
 
     ForeignKey(final String name, final List<String> columns, final String referencedTable, final List<String> referencedColumns,
         final Origin origin) {
-      this(name, columns, referencedTable, referencedColumns, origin, null);
+      this(name, columns, referencedTable, referencedColumns, origin, null, null);
     }
 
-    /** Whether this is an end of an edge: deleting the vertex it refers to deletes the edge, which is {@code ON DELETE CASCADE}. */
+    /**
+     * Whether this is an end of an edge whose links go with the record they end at, {@code ON DELETE CASCADE}: every end that
+     * holds record ids, and an end that refers to a key unless it declares another rule.
+     */
     public boolean cascadesOnDelete() {
-      return origin == Origin.EDGE_SOURCE || origin == Origin.EDGE_TARGET;
+      return (origin == Origin.EDGE_SOURCE || origin == Origin.EDGE_TARGET) && (end == null || end.onDelete() == Action.CASCADE);
     }
 
     /** The {@code delete_rule} of {@code information_schema.referential_constraints}. */
     public String deleteRule() {
-      return declared != null ? rule(declared.onDelete()) : cascadesOnDelete() ? "CASCADE" : "NO ACTION";
+      return declared != null ? rule(declared.onDelete()) : end != null ? end.onDelete().sql()
+          : cascadesOnDelete() ? "CASCADE" : "NO ACTION";
     }
 
     /** The {@code update_rule} of {@code information_schema.referential_constraints}. */
     public String updateRule() {
-      return declared != null ? rule(declared.onUpdate()) : "NO ACTION";
+      return declared != null ? rule(declared.onUpdate()) : end != null ? end.onUpdate().sql() : "NO ACTION";
     }
 
     private static String rule(final com.arcadedb.schema.ForeignKey.Action action) {
@@ -132,6 +166,19 @@ public final class Table {
     }
   }
 
+  /**
+   * What the ends of an edge table declare beyond the tables they refer to (fork issue #213).
+   *
+   * @param source the key {@code source_id} refers to, {@code null} for the record id
+   * @param target the key {@code target_id} refers to, {@code null} for the record id
+   * @param broken why a declared key cannot be followed, {@code null} when there is no such reason
+   */
+  public record Ends(EndKey source, EndKey target, String broken) {
+    static final Ends NONE = new Ends(null, null, null);
+  }
+
+  private final Ends                ends;
+  private final boolean             referencedByKey;
   private final String              name;
   private final Kind                kind;
   private final DocumentType        documentType;
@@ -150,7 +197,10 @@ public final class Table {
 
   Table(final String name, final Kind kind, final DocumentType documentType, final List<Column> columns, final Key primaryKey,
       final List<Key> uniqueKeys, final List<ForeignKey> foreignKeys, final List<String> superTables, final List<String> subTables,
-      final EdgeStorage edgeStorage, final String sourceTable, final String targetTable, final List<String> walkFromTables) {
+      final EdgeStorage edgeStorage, final String sourceTable, final String targetTable, final List<String> walkFromTables,
+      final Ends ends, final boolean referencedByKey) {
+    this.ends = Objects.requireNonNull(ends);
+    this.referencedByKey = referencedByKey;
     this.name = Objects.requireNonNull(name);
     this.kind = Objects.requireNonNull(kind);
     this.documentType = Objects.requireNonNull(documentType);
@@ -180,7 +230,25 @@ public final class Table {
     if (keys.size() == foreignKeys.size())
       return this;
     return new Table(name, kind, documentType, columns, primaryKey, uniqueKeys, keys, superTables, subTables, edgeStorage,
-        sourceTable, targetTable, walkFromTables);
+        sourceTable, targetTable, walkFromTables, ends, referencedByKey);
+  }
+
+  /** What the ends of an edge table declare about keys; no key and nothing broken for every other table. */
+  public Ends ends() {
+    return ends;
+  }
+
+  /** Whether an end of some edge table refers to a key of this table or of a supertype of it: its rows can be the end of such a link. */
+  public boolean isReferencedByKey() {
+    return referencedByKey;
+  }
+
+  /**
+   * Why a statement cannot read or write this table, {@code null} when it can: a declaration of the key an end refers to that names
+   * no unique column anymore (fork issue #213).
+   */
+  public String broken() {
+    return ends.broken();
   }
 
   /** The name of the table: the name of its type, exactly. */

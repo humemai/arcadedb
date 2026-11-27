@@ -17,7 +17,50 @@ CREATE TABLE knows (rid bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, source_
 SELECT q.id AS qid, q.name AS name, k.since AS since FROM person p JOIN knows k ON k.source_id = p.rid JOIN person q ON k.target_id = q.rid WHERE p.id = 1 ORDER BY since;
 ```
 
-A PostgreSQL schema would usually point `knows.source_id` at `person (id)` and join on `p.id`. In `postgresql` the two ends of an edge hold record ids, so the join is on `rid`, the record id of every table.
+Here the two ends of the edge hold record ids, so the join is on `rid`, the record id of every table. A PostgreSQL schema would usually point `knows.source_id` at `person (id)` and join on `p.id`, which an end that refers to a key allows, as the next section shows.
+
+## Ends that refer to a key
+
+An end of a link table can refer to a column that is alone a unique key of the table at that end, so the link table is declared and joined as in PostgreSQL:
+
+```sql
+CREATE TABLE person (id bigint PRIMARY KEY, name text);
+CREATE TABLE knows (source_id bigint NOT NULL REFERENCES person (id), target_id bigint NOT NULL REFERENCES person, since int);
+INSERT INTO person VALUES (1, 'Ada'), (2, 'Bo');
+INSERT INTO knows VALUES (1, 2, 2022);
+SELECT q.name FROM person p JOIN knows k ON k.source_id = p.id JOIN person q ON q.id = k.target_id WHERE p.id = 1;
+```
+
+`source_id` and `target_id` are the `id` of the two rows, with its type. The key is a primary key, a unique constraint, or the index of `CREATE UNIQUE INDEX`; `REFERENCES person` is the primary key. Each end is chosen on its own, so one can refer to a key and the other to `rid`. The engine still stores a link between the two records, and from a start that a key binds the two joins walk it, as the joins on record ids do.
+
+An edge type made in ArcadeDB `sql` declares the same in its custom metadata:
+
+```sql
+CREATE EDGE TYPE knows CUSTOM source_table = 'person', source_column = 'id', target_table = 'person', target_column = 'id';
+```
+
+| custom entry, for `source_` and for `target_` | values | when it is absent |
+| --- | --- | --- |
+| `source_column`, `target_column` | a column that is alone a unique key | the end holds record ids |
+| `source_on_delete`, `target_on_delete` | `CASCADE`, `NO ACTION`, `RESTRICT` | `CASCADE`, which is what the engine does |
+| `source_on_update`, `target_on_update` | `NO ACTION`, `CASCADE` | `NO ACTION` |
+
+`CREATE TABLE` writes the same entries, with PostgreSQL's default of `NO ACTION` for both rules.
+
+| area | PostgreSQL | `postgresql` |
+| --- | --- | --- |
+| Who holds `ON DELETE` and `ON UPDATE` | every writer | the writes of this language only. `sql` and openCypher do not read the declaration: they delete a linked record together with its links, and a key that they change shows its new value on every link, as `ON UPDATE CASCADE` would |
+| `ON DELETE RESTRICT` | cannot wait for the end of the statement | checked as `NO ACTION`, after what the statement cascades, with PostgreSQL's `23001` |
+| `CREATE TABLE` | | refuses with `0A000` a nullable end, a `DEFAULT` on an end, a reference over several columns, `SET NULL`, `SET DEFAULT`, and `ON UPDATE RESTRICT` |
+| The type of an end | any type that compares with the key's | the type of the key (`text` and `varchar` count as one). Another type that PostgreSQL accepts, such as `int` for a `bigint` key, is `0A000`, and the hint writes the column |
+| A delete that races the insert of a link to the same row | one of the two waits | one of the two commits fails as a conflict (`40001`). Run again, which the server does for a write in autocommit ([write conflicts](#write-conflicts)), it answers from what the other committed: `23503` for the delete and for the insert alike |
+| A change of a key that races the insert of a link to the same row | one of the two waits | both can commit, and the link then shows the new key (from reading the code, not tested) |
+| A one-way (`UNIDIRECTIONAL`) edge type | | the records at its target end do not know their links, so a delete or a key change of such a record reads every link of the type, once for each statement |
+| A link to a record without the key, or of another table | cannot exist | `sql` and openCypher can write one. A statement that reads that end fails with `23503` and names the link; it is never shown as `NULL` or with another table's value. The hint gives the statement of `sql` or openCypher that repairs it |
+| A declared column that is no unique key anymore | the unique index cannot be dropped | every statement on the link table fails with `55000`, whose hint says how to repair it. Record ids are not shown in place of the key |
+| Reading a key end | reads the column | reads the record at that end, so it needs read permission on the referenced table (from reading the code, not tested) |
+| Cost of reading an end | the column is in the row | the record at that end is read, where a record id comes from the link alone. A walk from a bound start reads each far record once; a scan or a hash join over all links reads one record for each link and end that it reads |
+| Join through a supertype of the declared table | | answers on the value, as written, without the walk |
 
 ## From the engine
 
@@ -26,7 +69,7 @@ Changing these means changing the ArcadeDB engine.
 | area | PostgreSQL | `postgresql` |
 | --- | --- | --- |
 | Record ids | none | every record has one, given by the engine and read as the column `rid`; a statement cannot set it (`428C9`). It says nothing about the order in which records were made, so `max()` and `min()` of a column of record ids are `0A000`. A text that a statement writes or binds and compares with such a column has to be a record id, such as `#12:3` (`22P02`) |
-| Deleting a vertex | follows the `ON DELETE` rule of each foreign key | its edges are always deleted, so the foreign keys of an edge table are listed as `ON DELETE CASCADE`, and no other rule can be chosen |
+| Deleting a vertex | follows the `ON DELETE` rule of each foreign key | the engine always deletes its edges, so a foreign key on record ids is listed as `ON DELETE CASCADE` and no other rule can be chosen for it. An end that [refers to a key](#ends-that-refer-to-a-key) can say `NO ACTION` or `RESTRICT`, which the writes of this language check |
 | Two writers on one row | by default the second waits, then writes | neither waits; the commit that comes last fails with `40001` and has to be retried. Over the PostgreSQL protocol a single autocommit write is retried by the server, see [write conflicts](#write-conflicts) |
 | `SERIALIZABLE` | supported | not available. Over the wire, `BEGIN ISOLATION LEVEL SERIALIZABLE` is `0A000` and leaves a failed block, so every statement is `25P02` until `ROLLBACK` and none is committed on its own; write `BEGIN ISOLATION LEVEL REPEATABLE READ`. Through the engine API a refused `BEGIN` opens no block (fork issue [#236](https://github.com/humemai/arcadedb/issues/236)) |
 | `READ ONLY` | a transaction mode, a session default, and a setting | `BEGIN READ ONLY` and `START TRANSACTION READ ONLY` work over the wire, where a statement that writes is `25006`. The other spellings (`SET TRANSACTION READ ONLY`, `SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY`, `default_transaction_read_only`) and `READ ONLY` through the engine API are `0A000` |
@@ -72,8 +115,8 @@ CREATE TABLE knows (
 
 | area | PostgreSQL | `postgresql` |
 | --- | --- | --- |
-| Foreign keys | any columns | checked, see [Foreign keys](#foreign-keys). A table with `REFERENCES` on both `source_id` and `target_id` has to be a link table, written as above; any other form of the two is refused |
-| A table that an edge table refers to | declares a column `rid` itself | declares nothing when `CREATE TABLE` made it: its record id answers to `rid`, a `text`. A table that declares its own column `rid` cannot be referred to (`0A000`). A type that ArcadeDB `sql` made can be referred to in the same way |
+| Foreign keys | any columns | checked, see [Foreign keys](#foreign-keys). A table with `REFERENCES` on both `source_id` and `target_id` is a link table: each end is written as above, or [refers to a key](#ends-that-refer-to-a-key); any other form of the two is refused |
+| A table that an edge table refers to by its record id | declares a column `rid` itself | declares nothing when `CREATE TABLE` made it: its record id answers to `rid`, a `text`. A table that declares its own column `rid` cannot be referred to by record id. A type that ArcadeDB `sql` made can be referred to in the same way |
 | The record id | none | readable by name, as `rid`, and never as `id`: in a table that declares no column `id`, `id` is `42703` as in PostgreSQL, with the hint `no column id: read rid, or declare id bigserial PRIMARY KEY` (fork issue [#240](https://github.com/humemai/arcadedb/issues/240)). A table that declares a column `rid` has no record id column. Left out of `*` and of an `INSERT` without a column list. Once a foreign key refers to the table, the catalog lists it. An unqualified name in one `FROM` reads a column that the catalog lists before a record id that it does not list, so a listed record id and a declared column of the same name are `42702`, as in PostgreSQL (fork issue [#163](https://github.com/humemai/arcadedb/issues/163)) |
 | An end of an edge | any row of the referenced table | checked by writes of this language only: `sql` and openCypher do not read the declaration |
 | Keys over an end of an edge | any | only `(source_id, target_id)`, together |
@@ -106,7 +149,7 @@ INSERT INTO orders VALUES (1, 99);  -- 23503
 | A parent delete or key change against a child insert, in two transactions | the second waits for the first, then `23503` | both statements run, and the commit that comes second fails, normally with `40001` (`23503` when its check had not run before the first commit). Run again, it gets PostgreSQL's answer. Two inserts that refer to one row do not conflict |
 | `DEFERRABLE`, `INITIALLY DEFERRED`, `MATCH`, `NOT ENFORCED` | supported | `0A000` |
 | `SET DEFAULT`, a column list after `SET NULL` | supported | `0A000` |
-| Referenced columns | a primary key, a unique constraint, or a unique index | the same (`42830`). A record id (`rid`) can be referred to only by the two ends of a link table (`0A000`) |
+| Referenced columns | a primary key, a unique constraint, or a unique index | the same (`42830`). A record id (`rid`) can be referred to only by the two ends of a link table (`0A000`). The ends of a link table have rules of their own, [above](#ends-that-refer-to-a-key) |
 | Column types | any pair that compares | the same type, or both of `smallint`, `integer`, and `bigint`, or both of `text` and `varchar`. Other pairs that PostgreSQL accepts are `0A000`, the rest `42804` |
 | Indexes | none over the referring columns | `CREATE TABLE` adds one unless a key covers exactly those columns. `CREATE UNIQUE INDEX` over those columns is then `0A000`: declare `UNIQUE` in `CREATE TABLE` |
 | `ALTER TABLE ... ADD CONSTRAINT` | supported | `0A000` |
@@ -232,7 +275,7 @@ Limits:
 | ---: | --- | --- |
 | 1 | The record id is the column `rid` of every table, and `id` is only a column that the type declares (the primary key when a unique index covers it). The record id of a type without a declared `id` is its primary key, and a type that `sql` or openCypher made lists it in `*` and in the catalog | the record id as `id` in a table that declares no `id` |
 | 2 | A record id is `text`, such as `#12:3` | a number |
-| 3 | `source_id` and `target_id` hold record ids | the key of the vertex they point at, which reads the vertex for each edge row |
+| 3 | `source_id` and `target_id` hold record ids, unless the end declares a unique column of the table at that end, whose value it then shows ([above](#ends-that-refer-to-a-key)) | the key always, which reads the record at the end for each edge row |
 | 4 | Edge ends are declared on the edge type: `CREATE EDGE TYPE knows CUSTOM source_table = 'person', target_table = 'person'`. Foreign keys come only from this and from link properties | a schema feature of the engine, or ends inferred from the data |
 | 5 | Updating an end of an edge is refused; delete the edge and insert it again | replace the edge record behind the statement |
 | 6 | An unquoted name is folded to lower case, and then one name that differs only in case is accepted (`person` finds `Person`) | lower case only, as PostgreSQL does, with quotes for `Person` |

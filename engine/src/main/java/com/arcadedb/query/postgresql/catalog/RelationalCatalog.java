@@ -21,6 +21,7 @@ package com.arcadedb.query.postgresql.catalog;
 import com.arcadedb.database.Database;
 import com.arcadedb.index.TypeIndex;
 import com.arcadedb.query.postgresql.PostgreSQLAmbiguousIdentifierException;
+import com.arcadedb.query.postgresql.PostgreSQLError;
 import com.arcadedb.query.postgresql.PostgreSQLUndefinedSchemaException;
 import com.arcadedb.query.postgresql.PostgreSQLUndefinedTableException;
 import com.arcadedb.schema.DocumentType;
@@ -74,7 +75,10 @@ import java.util.Set;
  * no record id column: see {@link Table.EdgeStorage}.</li>
  * <li>The foreign keys of an edge table come only from the endpoint tables declared on the edge type ({@link EdgeEndpoints}), never
  * from the data. A {@code LINK} property is a many-to-one foreign key to the table of its target type, under the name of the
- * property. Both refer to the record id column {@code rid} of the other table, since they hold record ids.</li>
+ * property. Both refer to the record id column {@code rid} of the other table, since they hold record ids. An end of an edge
+ * table that declares a column of the other table as well (fork issue #213, {@link EndKey}) refers to that column, which has to
+ * be a unique key alone, and has its value and type; the engine still stores the link between the records. A declaration of a
+ * column that cannot be followed leaves the table refused ({@link Table#broken()}) rather than showing record ids.</li>
  * <li>Only declared properties are columns. An unknown column is SQLSTATE {@code 42703} with a hint, and an absent property is
  * {@code NULL}.</li>
  * <li>The table of a supertype has the rows of its subtypes, {@code FROM ONLY} has its own.</li>
@@ -93,6 +97,11 @@ public final class RelationalCatalog {
 
   /** How the text of the default of a {@code serial} column starts. */
   private static final String SEQUENCE_CALL = "nextval(";
+
+  /** The types a column that an end of a link table refers to can have, those of the keys of {@code CREATE TABLE}. */
+  public static final Set<ColumnType> KEY_TYPES = Set.of(ColumnType.BOOL, ColumnType.INT2, ColumnType.INT4, ColumnType.INT8,
+      ColumnType.NUMERIC, ColumnType.FLOAT4, ColumnType.FLOAT8, ColumnType.TEXT, ColumnType.VARCHAR, ColumnType.DATE,
+      ColumnType.TIMESTAMP, ColumnType.TIMESTAMPTZ);
 
   private final String             databaseName;
   private final List<Table>        tables;
@@ -126,12 +135,20 @@ public final class RelationalCatalog {
     for (final DocumentType type : types)
       drafts.put(type.getName(), draft(type, tableNames));
 
-    // the tables that a foreign key refers to: they list their record id, see the class comment
+    // the tables whose record id a foreign key refers to: they list it, see the class comment. And the tables whose key an end of
+    // an edge table refers to
     final Set<String> referenced = new HashSet<>();
+    final Set<String> referencedByKey = new HashSet<>();
+    final Map<String, List<End>> ends = new HashMap<>();
     for (final Draft draft : drafts.values()) {
       if (draft.kind == Table.Kind.EDGE) {
-        referenced.add(declaredVertexTable(EdgeEndpoints.sourceTable((EdgeType) draft.type), drafts));
-        referenced.add(declaredVertexTable(EdgeEndpoints.targetTable((EdgeType) draft.type), drafts));
+        final List<End> pair = List.of(end(draft, Column.Kind.SOURCE, drafts), end(draft, Column.Kind.TARGET, drafts));
+        ends.put(draft.name, pair);
+        for (final End end : pair)
+          if (end.key() != null)
+            referencedByKey.add(end.key().table());
+          else if (end.table() != null)
+            referenced.add(end.table());
       }
       for (final String linkedType : draft.linkTargets.values()) {
         final DocumentType target = schema.getTypeOrNull(linkedType);
@@ -142,8 +159,136 @@ public final class RelationalCatalog {
 
     final List<Table> tables = new ArrayList<>(drafts.size());
     for (final Draft draft : drafts.values())
-      tables.add(table(draft, schema, drafts, referenced.contains(draft.name)));
+      tables.add(table(draft, schema, drafts, referenced.contains(draft.name), ends.get(draft.name),
+          referencedByKey.stream().anyMatch(draft.type::instanceOf)));
     return new RelationalCatalog(database.getName(), tables);
+  }
+
+  /**
+   * Whether the property alone is a unique key of the type: a unique key index (LSM tree or hash) of the type or of a supertype
+   * over exactly this property. Only such a column can be what an end of a link table refers to (fork issue #213).
+   */
+  public static boolean hasUniqueKey(final DocumentType type, final String property) {
+    for (final TypeIndex index : type.getAllIndexes(true)) {
+      try {
+        final Schema.INDEX_TYPE indexType = index.getType();
+        if ((indexType == Schema.INDEX_TYPE.LSM_TREE || indexType == Schema.INDEX_TYPE.HASH) && index.isUniqueIfPresent()
+            && index.getPropertyNames().equals(List.of(property)))
+          return true;
+      } catch (final RuntimeException e) {
+        // an index that a concurrent DDL is creating or dropping is not a key of this snapshot
+      }
+    }
+    return false;
+  }
+
+  /**
+   * What one end of an edge table refers to.
+   *
+   * @param table  the vertex table, {@code null} when none is declared or the declaration cannot be followed
+   * @param key    the key it refers to, {@code null} for the record id
+   * @param column the column of that key as its table shows it, {@code null} for the record id
+   * @param broken why a declaration of a key cannot be followed, {@code null} when it can or there is none
+   */
+  private record End(String table, EndKey key, Column column, String broken) {
+  }
+
+  /** The declaration of one end of an edge table, see {@link EdgeEndpoints}. */
+  private static End end(final Draft draft, final Column.Kind kind, final Map<String, Draft> drafts) {
+    final EdgeType type = (EdgeType) draft.type;
+    final boolean source = kind == Column.Kind.SOURCE;
+    final String declared = source ? EdgeEndpoints.sourceTable(type) : EdgeEndpoints.targetTable(type);
+    final String columnKey = source ? EdgeEndpoints.SOURCE_COLUMN_KEY : EdgeEndpoints.TARGET_COLUMN_KEY;
+    final String named = EdgeEndpoints.declared(type, columnKey);
+    if (named == null)
+      return new End(declaredVertexTable(declared, drafts), null, null, null);
+
+    // a declared key is followed or the table is refused: record ids in its place would be another answer to the same statement
+    final Draft target = declaredType(declared, drafts);
+    if (target == null || target.kind != Table.Kind.VERTEX)
+      return new End(null, null, null, "the edge type " + draft.name + " declares " + columnKey + " = '" + named + "', and "
+          + (source ? EdgeEndpoints.SOURCE_KEY : EdgeEndpoints.TARGET_KEY) + " names no vertex type" + PostgreSQLError.HINT
+          + "Remove the declaration, so that the end shows record ids, in ArcadeDB sql: " + removal(draft, columnKey));
+    final Column column = columnNamed(target, named);
+    if (column != null && column.kind() == Column.Kind.IDENTITY)
+      return new End(target.referable == null ? null : target.name, null, null, null);
+
+    final String deleteKey = source ? EdgeEndpoints.SOURCE_ON_DELETE_KEY : EdgeEndpoints.TARGET_ON_DELETE_KEY;
+    final String updateKey = source ? EdgeEndpoints.SOURCE_ON_UPDATE_KEY : EdgeEndpoints.TARGET_ON_UPDATE_KEY;
+    final String onDelete = EdgeEndpoints.declared(type, deleteKey);
+    final String onUpdate = EdgeEndpoints.declared(type, updateKey);
+    final Table.Action delete = onDelete == null ? Table.Action.CASCADE : Table.Action.named(onDelete);
+    final Table.Action update = onUpdate == null ? Table.Action.NO_ACTION : Table.Action.named(onUpdate);
+    // a rule that is none of these leaves the table refused, and the writes of the referenced table hold the key to NO ACTION
+    final EndKey key = column == null || column.kind() != Column.Kind.PROPERTY ? null
+        : new EndKey(target.name, column.property(), delete == null ? Table.Action.NO_ACTION : delete,
+            update == Table.Action.CASCADE ? Table.Action.CASCADE : Table.Action.NO_ACTION);
+    final boolean referable = key != null && !column.isLink() && KEY_TYPES.contains(column.type());
+    if (!referable || !hasUniqueKey(target.type, column.property()))
+      return new End(null, key, null, "the edge type " + draft.name + " declares " + columnKey + " = '" + named + "', and "
+          + target.name + " (" + named + ") is no column with a unique index of its own" + PostgreSQLError.HINT
+          + (referable ? uniqueIndexRepair(target, column) + ", or remove" : "Remove")
+          + " the declaration, so that the end shows record ids, in ArcadeDB sql: " + removal(draft, columnKey));
+    if (delete == null)
+      return new End(null, key, null, "the edge type " + draft.name + " declares " + deleteKey + " = '" + onDelete
+          + "', which is none of CASCADE, NO ACTION and RESTRICT" + PostgreSQLError.HINT
+          + "Remove it, so that the rule is CASCADE, in ArcadeDB sql: " + removal(draft, deleteKey));
+    if (update == null || update == Table.Action.RESTRICT)
+      return new End(null, key, null, "the edge type " + draft.name + " declares " + updateKey + " = '" + onUpdate
+          + "', which is neither CASCADE nor NO ACTION" + PostgreSQLError.HINT
+          + "Remove it, so that the rule is NO ACTION, in ArcadeDB sql: " + removal(draft, updateKey));
+    return new End(target.name, key, column, null);
+  }
+
+  /**
+   * What makes a column a unique key again, as a part of a hint: the statement of this language, after the removal in {@code sql}
+   * of an index over the column that is not unique, which would stand in its way.
+   */
+  private static String uniqueIndexRepair(final Draft table, final Column column) {
+    final StringBuilder repair = new StringBuilder("Run ");
+    for (final TypeIndex index : table.type.getAllIndexes(true))
+      if (!index.isUnique() && index.getPropertyNames().equals(List.of(column.property())))
+        repair.append("DROP INDEX `").append(index.getName()).append("` in ArcadeDB sql and then ");
+    return repair.append("CREATE UNIQUE INDEX ON ").append(Identifier.written(table.name)).append(" (")
+        .append(Identifier.written(column.name())).append(')').toString();
+  }
+
+  /** The statement of {@code sql} that removes a custom entry of an edge type, as the last part of a hint. */
+  private static String removal(final Draft type, final String key) {
+    return "{sql}ALTER TYPE `" + type.name + "` CUSTOM " + key + " = null";
+  }
+
+  /** The column of a table by the name a declaration wrote: exact first, else the one name that differs only in case. */
+  private static Column columnNamed(final Draft table, final String name) {
+    Column found = null;
+    for (final Column column : table.columns)
+      if (column.name().equals(name))
+        return column;
+    for (final Column column : table.columns)
+      if (column.name().equalsIgnoreCase(name)) {
+        if (found != null)
+          return null;
+        found = column;
+      }
+    return found;
+  }
+
+  /**
+   * Gives the end column of an edge table that refers to a key the type of that key. A table that {@code CREATE TABLE} made says
+   * itself whether a string end is {@code text} or {@code varchar}.
+   */
+  private static void referToKey(final Draft draft, final Column.Kind kind, final End end) {
+    if (end.column() == null)
+      return;
+    for (int i = 0; i < draft.columns.size(); i++) {
+      final Column column = draft.columns.get(i);
+      if (column.kind() != kind)
+        continue;
+      ColumnType type = end.column().type();
+      if ((type == ColumnType.TEXT || type == ColumnType.VARCHAR) && draft.definition != null)
+        type = draft.definition.textColumns().contains(column.name()) ? ColumnType.TEXT : ColumnType.VARCHAR;
+      draft.columns.set(i, column.referringTo(end.key(), type));
+    }
   }
 
   /**
@@ -431,20 +576,31 @@ public final class RelationalCatalog {
     return columns.size() == properties.size() ? columns : null;
   }
 
-  private static Table table(final Draft draft, final Schema schema, final Map<String, Draft> drafts, final boolean referenced) {
+  /** The foreign key of one end of an edge table: to its key, or to the record id, which the engine keeps by deleting the link. */
+  private static Table.ForeignKey endForeignKey(final Draft draft, final Map<String, Draft> drafts, final End end,
+      final String column, final Table.ForeignKey.Origin origin) {
+    return new Table.ForeignKey(foreignKeyName(draft, column), List.of(column), end.table(),
+        List.of(end.column() == null ? drafts.get(end.table()).referable : end.column().name()), origin, null, end.key());
+  }
+
+  private static Table table(final Draft draft, final Schema schema, final Map<String, Draft> drafts, final boolean referenced,
+      final List<End> ends, final boolean referencedByKey) {
     final List<Table.ForeignKey> foreignKeys = new ArrayList<>();
     String sourceTable = null;
     String targetTable = null;
+    Table.Ends declaration = Table.Ends.NONE;
     if (draft.kind == Table.Kind.EDGE) {
-      final EdgeType edgeType = (EdgeType) draft.type;
-      sourceTable = declaredVertexTable(EdgeEndpoints.sourceTable(edgeType), drafts);
-      targetTable = declaredVertexTable(EdgeEndpoints.targetTable(edgeType), drafts);
+      final End source = ends.get(0);
+      final End target = ends.get(1);
+      sourceTable = source.table();
+      targetTable = target.table();
       if (sourceTable != null)
-        foreignKeys.add(new Table.ForeignKey(foreignKeyName(draft, Column.SOURCE_ID), List.of(Column.SOURCE_ID), sourceTable,
-            List.of(drafts.get(sourceTable).referable), Table.ForeignKey.Origin.EDGE_SOURCE));
+        foreignKeys.add(endForeignKey(draft, drafts, source, Column.SOURCE_ID, Table.ForeignKey.Origin.EDGE_SOURCE));
       if (targetTable != null)
-        foreignKeys.add(new Table.ForeignKey(foreignKeyName(draft, Column.TARGET_ID), List.of(Column.TARGET_ID), targetTable,
-            List.of(drafts.get(targetTable).referable), Table.ForeignKey.Origin.EDGE_TARGET));
+        foreignKeys.add(endForeignKey(draft, drafts, target, Column.TARGET_ID, Table.ForeignKey.Origin.EDGE_TARGET));
+      referToKey(draft, Column.Kind.SOURCE, source);
+      referToKey(draft, Column.Kind.TARGET, target);
+      declaration = new Table.Ends(source.key(), target.key(), source.broken() != null ? source.broken() : target.broken());
     }
 
     for (final Column column : draft.columns) {
@@ -469,7 +625,7 @@ public final class RelationalCatalog {
         final List<String> referencedColumns = columnsOf(targetDraft, declared.referencedColumns());
         if (columns != null && referencedColumns != null)
           foreignKeys.add(new Table.ForeignKey(declared.name(), columns, targetDraft.name, referencedColumns,
-              Table.ForeignKey.Origin.DECLARED, declared));
+              Table.ForeignKey.Origin.DECLARED, declared, null));
       }
 
     final List<String> walkFrom = new ArrayList<>();
@@ -495,7 +651,7 @@ public final class RelationalCatalog {
       }
     }
     return new Table(draft.name, draft.kind, draft.type, columns, draft.primaryKey, uniqueKeys, foreignKeys,
-        draft.superTables, draft.subTables, draft.storage, sourceTable, targetTable, walkFrom);
+        draft.superTables, draft.subTables, draft.storage, sourceTable, targetTable, walkFrom, declaration, referencedByKey);
   }
 
   /** The name of the foreign key of an end of an edge table: the declared one, else the one PostgreSQL would give it. */
@@ -510,6 +666,12 @@ public final class RelationalCatalog {
    * the case of a statement still finds {@code Person}; ambiguity is no match, a declaration is never guessed.
    */
   private static String declaredVertexTable(final String declared, final Map<String, Draft> drafts) {
+    final Draft draft = declaredType(declared, drafts);
+    return draft != null && draft.kind == Table.Kind.VERTEX && draft.referable != null ? draft.name : null;
+  }
+
+  /** The type that a declared endpoint names, see {@link #declaredVertexTable}. */
+  private static Draft declaredType(final String declared, final Map<String, Draft> drafts) {
     if (declared == null)
       return null;
     Draft draft = drafts.get(declared);
@@ -521,7 +683,7 @@ public final class RelationalCatalog {
           draft = candidate;
         }
     }
-    return draft != null && draft.kind == Table.Kind.VERTEX && draft.referable != null ? draft.name : null;
+    return draft;
   }
 
   private static Table.EdgeStorage storageOf(final EdgeType type) {

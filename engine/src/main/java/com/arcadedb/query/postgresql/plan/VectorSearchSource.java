@@ -203,9 +203,11 @@ public final class VectorSearchSource implements RelationSource {
 
   private Object[] row(final Document record) {
     final List<Column> columns = table.table().columns();
-    final Object[] values = new Object[types.length];
-    for (int i = 0; i < values.length; i++)
+    // as wide as a row of the table, which can keep the record id after its columns
+    final Object[] values = new Object[table.columns().size()];
+    for (int i = 0; i < types.length; i++)
       values[i] = Casts.fromColumn(columns.get(i).read(record), columns.get(i).type(), types[i]);
+    table.keepRecordId(values, record);
     return values;
   }
 }

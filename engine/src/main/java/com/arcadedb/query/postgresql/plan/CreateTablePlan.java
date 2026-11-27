@@ -60,10 +60,12 @@ import java.util.Set;
 
 /**
  * {@code CREATE TABLE} (fork issue #118). A table is a vertex type. A table that declares both ends of an edge, the columns
- * {@code source_id} and {@code target_id}, each {@code text NOT NULL REFERENCES a_table (rid) ON DELETE CASCADE}, is an edge
- * type. Every other {@code REFERENCES} is a foreign key between columns, which the engine checks for every language (fork issue
- * #228): it needs a primary key or a unique index over the referenced columns, and the table gets an index over the referring ones.
- * A table with {@code REFERENCES} on both {@code source_id} and {@code target_id} in any other form is refused.
+ * {@code source_id} and {@code target_id}, each {@code NOT NULL} with a {@code REFERENCES} to a vertex table, is an edge type. An
+ * end refers to a column that is alone a unique key of that table, with its type (fork issue #213; {@code ON DELETE} NO ACTION,
+ * RESTRICT or CASCADE, {@code ON UPDATE} NO ACTION or CASCADE), or to the record id, as
+ * {@code text NOT NULL REFERENCES a_table (rid) ON DELETE CASCADE}. Every other {@code REFERENCES} is a foreign key between
+ * columns, which the engine checks for every language (fork issue #228): it needs a primary key or a unique index over the
+ * referenced columns, and the table gets an index over the referring ones.
  * <p>
  * What a write has to keep goes into the schema, so it holds for every language: the property types, mandatory and not-null for
  * {@code NOT NULL}, a unique index for each {@code UNIQUE} and {@code PRIMARY KEY} (a unique edge type for a key over the two
@@ -144,6 +146,10 @@ public final class CreateTablePlan {
   private record ForeignKey(List<String> columns, String name, CreateTableStatement.Reference reference) {
   }
 
+  /** What one end of a link table refers to: the vertex table, the column of its key ({@code null} for the record id), the rules. */
+  private record End(String table, String column, Table.Action onDelete, Table.Action onUpdate) {
+  }
+
   private final Database             database;
   private final RelationalCatalog    catalog;
   private final CreateTableStatement statement;
@@ -197,11 +203,16 @@ public final class CreateTablePlan {
     final List<ForeignKey> endKeys = linkTable ?
         foreignKeys.stream().filter(key -> key.columns().size() == 1 && ENDS.contains(key.columns().get(0))).toList() :
         List.of();
-    final Map<String, ForeignKey> ends = linkTable ? ends(table, columns, endKeys) : Map.of();
-    final Map<String, String> endTables = new LinkedHashMap<>();
+    if (linkTable)
+      for (final ForeignKey key : foreignKeys)
+        if (key.columns().size() > 1 && key.columns().stream().anyMatch(ENDS::contains))
+          throw unsupported("A foreign key over several columns, where an end of a link table refers to one column,",
+              key.reference().position());
+    final Map<String, ForeignKey> ends = ends(endKeys);
+    final Map<String, End> endTables = new LinkedHashMap<>();
     for (final String end : ENDS)
       if (ends.containsKey(end))
-        endTables.put(end, referencedTable(table, ends.get(end).reference()));
+        endTables.put(end, referencedEnd(table, columns.get(end), ends.get(end)));
 
     final List<Key> unique = distinctKeys(keys, primary);
     boolean uniqueEnds = false;
@@ -499,49 +510,141 @@ public final class CreateTablePlan {
 
   // ------------------------------------------------------------------------------------------------ the ends of an edge
 
-  /**
-   * The two foreign keys of an edge table, by the column. Any foreign key that is not one of the two ends, as the one accepted
-   * form writes it, refuses the statement.
-   */
-  private static Map<String, ForeignKey> ends(final String table, final Map<String, Spec> columns,
-      final List<ForeignKey> foreignKeys) {
+  /** The two foreign keys of a link table, by the column: each end has one. */
+  private static Map<String, ForeignKey> ends(final List<ForeignKey> endKeys) {
     final Map<String, ForeignKey> ends = new LinkedHashMap<>();
-    for (final ForeignKey key : foreignKeys) {
-      final CreateTableStatement.Reference reference = key.reference();
-      final Spec spec = key.columns().size() == 1 ? columns.get(key.columns().get(0)) : null;
-      if (spec == null || !ENDS.contains(spec.name) || ends.put(spec.name, key) != null || reference.columns().size() != 1
-          || !Column.RID.equals(reference.columns().get(0).value())
-          || reference.onDelete() != CreateTableStatement.Action.CASCADE
-          || reference.onUpdate() != CreateTableStatement.Action.NO_ACTION)
-        throw refusedReference(reference.position());
-      if (spec.mapped.type() != ColumnType.TEXT || !spec.notNull || spec.literal != null)
-        throw refusedReference(reference.position());
-    }
-    if (ends.size() != ENDS.size())
-      throw refusedReference(foreignKeys.get(0).reference().position());
+    for (final ForeignKey key : endKeys)
+      if (ends.put(key.columns().get(0), key) != null)
+        throw refusedReference(key.reference().position());
     return ends;
   }
 
-  /** The vertex table that an end refers to by its record id, as the name of its type. */
-  private String referencedTable(final String table, final CreateTableStatement.Reference reference) {
+  /**
+   * What the foreign key of an end refers to (fork issue #213), checked in PostgreSQL's order and with its SQLSTATEs: the table
+   * ({@code 42P01}), the columns ({@code 42703}, {@code 42704} when none is written and there is no primary key, {@code 42830}
+   * for their number), a unique key ({@code 42830}) and the type ({@code 42804}). What PostgreSQL accepts and the engine cannot
+   * keep is {@code 0A000}, with the column definition to write. A reference to the record id keeps the one form it had.
+   */
+  private End referencedEnd(final String table, final Spec spec, final ForeignKey key) {
+    final CreateTableStatement.Reference reference = key.reference();
     final String name = tableName(reference.table(), reference.position());
     if (name.equals(table))
       throw refusedReference(reference.position());
     final Table referenced = catalog.findTable(identifier(reference.table().get(reference.table().size() - 1)));
     if (referenced == null)
-      throw new PostgreSQLEvaluationException("42P01", "relation \"" + name + "\" does not exist");
-    final Column rid = referenced.findColumn(identifier(reference.columns().get(0)));
-    if (rid == null)
-      throw new PostgreSQLEvaluationException("42703", "column \"rid\" referenced in foreign key constraint does not exist. Hint:"
-          + " rid is the record id of a table whose rows are records");
-    if (referenced.kind() != Table.Kind.VERTEX || rid.kind() != Column.Kind.IDENTITY)
+      throw new PostgreSQLUndefinedTableException(name);
+    final Column column = referencedColumn(referenced, reference);
+    if (referenced.kind() != Table.Kind.VERTEX)
       throw refusedReference(reference.position());
-    return referenced.name();
+    if (column.kind() == Column.Kind.IDENTITY) {
+      if (spec.mapped.type() != ColumnType.TEXT || !spec.notNull || spec.literal != null || spec.counted != null
+          || reference.onDelete() != CreateTableStatement.Action.CASCADE
+          || reference.onUpdate() != CreateTableStatement.Action.NO_ACTION)
+        throw refusedReference(reference.position());
+      return new End(referenced.name(), null, Table.Action.CASCADE, Table.Action.NO_ACTION);
+    }
+    if (column.kind() != Column.Kind.PROPERTY || !RelationalCatalog.hasUniqueKey(referenced.documentType(), column.property()))
+      throw noUniqueKey(referenced.name());
+    if (column.isLink() || !RelationalCatalog.KEY_TYPES.contains(column.type()))
+      throw unsupported("A foreign key to a column of type " + column.type(), reference.position());
+    final ColumnType own = spec.mapped.type();
+    if (own != column.type() && !(TEXTS.contains(own) && TEXTS.contains(column.type()))) {
+      if (!comparable(own, column.type()))
+        throw new PostgreSQLEvaluationException("42804", "foreign key constraint \""
+            + (key.name() != null ? key.name() : table + "_" + spec.name + "_fkey") + "\" cannot be implemented: key columns \""
+            + spec.name + "\" and \"" + column.name() + "\" are of incompatible types: " + typeName(own) + " and "
+            + typeName(column.type()));
+      throw unsupportedEnd("An end of another type than its key", spec, referenced, column, reference);
+    }
+    if (!spec.notNull)
+      throw unsupportedEnd("A nullable end of a link table", spec, referenced, column, reference);
+    if (spec.literal != null || spec.counted != null)
+      throw unsupportedEnd("A DEFAULT on an end of a link table", spec, referenced, column, reference);
+    final Table.Action onDelete = switch (reference.onDelete()) {
+      case NO_ACTION -> Table.Action.NO_ACTION;
+      case RESTRICT -> Table.Action.RESTRICT;
+      case CASCADE -> Table.Action.CASCADE;
+      case SET_NULL, SET_DEFAULT -> throw refusedAction("ON DELETE", reference.onDelete(),
+          "leave ON DELETE out, or write ON DELETE CASCADE or ON DELETE RESTRICT", reference.position());
+    };
+    final Table.Action onUpdate = switch (reference.onUpdate()) {
+      case NO_ACTION -> Table.Action.NO_ACTION;
+      case CASCADE -> Table.Action.CASCADE;
+      case RESTRICT, SET_NULL, SET_DEFAULT -> throw refusedAction("ON UPDATE", reference.onUpdate(),
+          "leave ON UPDATE out, or write ON UPDATE CASCADE", reference.position());
+    };
+    return new End(referenced.name(), column.name(), onDelete, onUpdate);
+  }
+
+  /** The one column that a foreign key refers to: the one written, else the primary key of the table. */
+  private static Column referencedColumn(final Table referenced, final CreateTableStatement.Reference reference) {
+    final List<Column> found = new ArrayList<>();
+    if (reference.columns().isEmpty()) {
+      final Table.Key primary = referenced.primaryKey();
+      if (primary == null)
+        throw noPrimaryKey(referenced.name());
+      for (final String name : primary.columns())
+        found.add(referenced.column(Identifier.quoted(name)));
+    } else
+      for (final Name name : reference.columns()) {
+        final Column column = referenced.findColumn(identifier(name));
+        if (column == null)
+          throw new PostgreSQLEvaluationException("42703", "column \"" + name.value()
+              + "\" referenced in foreign key constraint does not exist. Hint: refer to a column that is alone the primary key"
+              + " or a unique key of the table, or to rid, the record id, with ON DELETE CASCADE");
+        found.add(column);
+      }
+    if (found.size() != 1)
+      throw new PostgreSQLEvaluationException("42830", "number of referencing and referenced columns for foreign key disagree");
+    return found.get(0);
+  }
+
+  /** Whether PostgreSQL accepts a foreign key of a column of type {@code own} to a key of another type {@code key}. */
+  private static boolean comparable(final ColumnType own, final ColumnType key) {
+    return INTEGERS.contains(own) && (INTEGERS.contains(key) || NUMBERS.contains(key))
+        || own == ColumnType.NUMERIC && FLOATS.contains(key) || FLOATS.contains(own) && FLOATS.contains(key)
+        || TIMES.contains(own) && TIMES.contains(key);
+  }
+
+  /** A type as a statement writes it and PostgreSQL's errors name it. */
+  private static String typeName(final ColumnType type) {
+    return switch (type) {
+      case BOOL -> "boolean";
+      case INT2 -> "smallint";
+      case INT4 -> "integer";
+      case INT8 -> "bigint";
+      case FLOAT4 -> "real";
+      case FLOAT8 -> "double precision";
+      default -> type.typeName().toLowerCase(Locale.ROOT);
+    };
+  }
+
+  /** A refusal of an end that refers to a key, whose hint is the column definition the language keeps. */
+  private static PostgreSQLFeatureNotSupportedException unsupportedEnd(final String what, final Spec spec, final Table referenced,
+      final Column column, final CreateTableStatement.Reference reference) {
+    final StringBuilder definition = new StringBuilder(Identifier.written(spec.name)).append(' ').append(typeName(column.type()))
+        .append(" NOT NULL REFERENCES ").append(Identifier.written(referenced.name())).append(" (")
+        .append(Identifier.written(column.name())).append(')');
+    if (reference.onDelete() == CreateTableStatement.Action.CASCADE)
+      definition.append(" ON DELETE CASCADE");
+    else if (reference.onDelete() == CreateTableStatement.Action.RESTRICT)
+      definition.append(" ON DELETE RESTRICT");
+    if (reference.onUpdate() == CreateTableStatement.Action.CASCADE)
+      definition.append(" ON UPDATE CASCADE");
+    return new PostgreSQLFeatureNotSupportedException(what + " is not supported by the postgresql language ("
+        + reference.position() + ")", "Write " + definition);
+  }
+
+  private static PostgreSQLFeatureNotSupportedException refusedAction(final String clause,
+      final CreateTableStatement.Action action, final String instead, final SourcePosition position) {
+    return new PostgreSQLFeatureNotSupportedException(clause + " " + action.name().replace('_', ' ')
+        + " on an end of a link table is not supported by the postgresql language (" + position + ")",
+        Character.toUpperCase(instead.charAt(0)) + instead.substring(1));
   }
 
   private static PostgreSQLFeatureNotSupportedException refusedReference(final SourcePosition position) {
-    return unsupported("A foreign key other than the two ends of an edge table (source_id and target_id, each text NOT NULL"
-        + " REFERENCES a table (rid) ON DELETE CASCADE)", position);
+    return unsupported("A foreign key other than the two ends of an edge table (source_id and target_id, each NOT NULL and"
+        + " referring to a unique column of a table, or text NOT NULL REFERENCES a table (rid) ON DELETE CASCADE)", position);
   }
 
   // ------------------------------------------------------------------------------------------------ types
@@ -816,7 +919,7 @@ public final class CreateTablePlan {
   }
 
   private void create(final String table, final Map<String, Spec> columns, final List<Key> keys,
-      final Map<String, String> endTables, final boolean uniqueEnds, final TableDefinition definition,
+      final Map<String, End> endTables, final boolean uniqueEnds, final TableDefinition definition,
       final List<com.arcadedb.schema.ForeignKey> checked) {
     final Schema schema = database.getSchema();
     final boolean edge = !endTables.isEmpty();
@@ -838,8 +941,10 @@ public final class CreateTablePlan {
         if (key.columns().stream().noneMatch(endTables::containsKey))
           type.createTypeIndex(Schema.INDEX_TYPE.LSM_TREE, true, key.columns().toArray(new String[0]));
       if (edge) {
-        type.setCustomValue(EdgeEndpoints.SOURCE_KEY, endTables.get(Column.SOURCE_ID));
-        type.setCustomValue(EdgeEndpoints.TARGET_KEY, endTables.get(Column.TARGET_ID));
+        declare(type, endTables.get(Column.SOURCE_ID), EdgeEndpoints.SOURCE_KEY, EdgeEndpoints.SOURCE_COLUMN_KEY,
+            EdgeEndpoints.SOURCE_ON_DELETE_KEY, EdgeEndpoints.SOURCE_ON_UPDATE_KEY);
+        declare(type, endTables.get(Column.TARGET_ID), EdgeEndpoints.TARGET_KEY, EdgeEndpoints.TARGET_COLUMN_KEY,
+            EdgeEndpoints.TARGET_ON_DELETE_KEY, EdgeEndpoints.TARGET_ON_UPDATE_KEY);
       }
       type.setCustomValue(TableDefinition.CUSTOM_KEY, definition.toJson());
       createForeignKeys(type, checked);
@@ -852,6 +957,22 @@ public final class CreateTablePlan {
         Sequences.drop(database, counters);
       }
     }
+  }
+
+  /**
+   * Declares one end on the edge type ({@link EdgeEndpoints}): its table, and for an end that refers to a key, the column and the
+   * rules that differ from what an absent entry says.
+   */
+  private static void declare(final DocumentType type, final End end, final String tableKey, final String columnKey,
+      final String onDeleteKey, final String onUpdateKey) {
+    type.setCustomValue(tableKey, end.table());
+    if (end.column() == null)
+      return;
+    type.setCustomValue(columnKey, end.column());
+    if (end.onDelete() != Table.Action.CASCADE)
+      type.setCustomValue(onDeleteKey, end.onDelete().sql());
+    if (end.onUpdate() != Table.Action.NO_ACTION)
+      type.setCustomValue(onUpdateKey, end.onUpdate().sql());
   }
 
   private Property createProperty(final DocumentType type, final Spec spec) {

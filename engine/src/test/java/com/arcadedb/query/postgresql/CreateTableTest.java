@@ -187,8 +187,9 @@ class CreateTableTest extends TestHelper {
   void aTableWithAColumnRidOfItsOwnCannotBeReferredTo() {
     run("CREATE TABLE tag (rid int, name text)");
 
+    // that rid is a column like another, and a key an end refers to has to be unique (fork issue #213)
     assertState("CREATE TABLE tagged (source_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE,"
-        + " target_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE)", "0A000");
+        + " target_id text NOT NULL REFERENCES tag (rid) ON DELETE CASCADE)", "42830");
   }
 
   @Test

@@ -220,7 +220,7 @@ class MissingObjectRefusalCensusTest {
       Map.entry("query/postgresql/eval/PostgreSQLEvaluationException#noOperator", SQLSTATE),
       Map.entry("query/postgresql/plan/CreateIndexPlan#execute", SQLSTATE),
       Map.entry("query/postgresql/plan/CreateTablePlan#readTableConstraint", SQLSTATE),
-      Map.entry("query/postgresql/plan/CreateTablePlan#referencedTable", SQLSTATE),
+      Map.entry("query/postgresql/plan/CreateTablePlan#referencedColumn", SQLSTATE),
       Map.entry("query/postgresql/plan/join/JoinPlanner#usingOutput", SQLSTATE)));
 
   @Test
