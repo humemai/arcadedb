@@ -115,7 +115,7 @@ class PostgreSQLCheckConstraintTest extends PostgreSQLSideBySideTestBase {
 
         for (final String[] error : new String[][] { { "CREATE TABLE e (a int CHECK (sum(a) > 0))", "42803" },
             { "CREATE TABLE e (a int CHECK (a IN (SELECT 1)))", "0A000" }, { "CREATE TABLE e (a int CHECK (a + 1))", "42804" },
-            { "CREATE TABLE e (a int CHECK (nosuch > 0))", "42703" }, 
+            { "CREATE TABLE e (a int CHECK (nosuch > 0))", "42703" },
             { "CREATE TABLE e (a int CHECK (row_number() OVER () > 0))", "42P20" },
             { "CREATE TABLE e (a int CHECK (xmin::text <> ''))", "42P10" },
             { "CREATE TABLE e (a int CHECK (other.a > 0))", "42P01" },

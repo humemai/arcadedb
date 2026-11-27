@@ -23,13 +23,13 @@ import com.arcadedb.exception.ConcurrentModificationException;
 import com.arcadedb.exception.DatabaseNotAvailableException;
 import com.arcadedb.exception.DatabaseNotFoundException;
 import com.arcadedb.exception.DuplicatedKeyException;
-import com.arcadedb.exception.ForeignKeyException;
 import com.arcadedb.exception.ErrorCategory;
 import com.arcadedb.exception.NeedRetryException;
 import com.arcadedb.exception.QueryTerminatedException;
 import com.arcadedb.exception.RecordNotFoundException;
 import com.arcadedb.exception.RecordVetoedException;
 import com.arcadedb.exception.SchemaException;
+import com.arcadedb.exception.SqlStateValidationException;
 import com.arcadedb.exception.TimeoutException;
 import com.arcadedb.exception.TransactionException;
 import com.arcadedb.exception.ValidationException;
@@ -344,9 +344,9 @@ final class GrpcClientErrorMapper {
           new SchemaException(msg);
       // A listener refused the write (issues #10085, #10161): a refusal of the request, typed so it is not read as a fault
       case "com.arcadedb.exception.RecordVetoedException" -> new RecordVetoedException(msg);
-      // a foreign key (fork issue #228), with the SQLSTATE that tells a violated key from a restricted one
-      case "com.arcadedb.exception.ForeignKeyException" ->
-          ForeignKeyException.fromRemote(trailers != null ? trailers.get(SQL_STATE_KEY) : null, msg);
+      // a foreign key or a check constraint (fork issues #227 and #228), with the SQLSTATE that says which refusal it is
+      case "com.arcadedb.exception.ForeignKeyException", "com.arcadedb.exception.CheckConstraintException" ->
+          SqlStateValidationException.fromRemote(exceptionClass, trailers != null ? trailers.get(SQL_STATE_KEY) : null, msg);
       // with the constraint it violates (issue #11314), null from a server that does not send it
       case "com.arcadedb.exception.ValidationException" -> new ValidationException(
           ValidationException.Kind.fromName(trailers != null ? trailers.get(VALIDATION_KIND_KEY) : null), msg);

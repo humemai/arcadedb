@@ -39,7 +39,9 @@ import com.arcadedb.exception.TimeoutException;
 import com.arcadedb.exception.TransactionCommittedRemotelyException;
 import com.arcadedb.exception.TransactionException;
 import com.arcadedb.exception.TypeAlreadyExistsException;
+import com.arcadedb.exception.CheckConstraintException;
 import com.arcadedb.exception.ForeignKeyException;
+import com.arcadedb.exception.SqlStateValidationException;
 import com.arcadedb.exception.ValidationException;
 import com.arcadedb.exception.VertexNotFoundException;
 import com.arcadedb.log.LogManager;
@@ -1473,9 +1475,10 @@ public class RemoteHttpComponent extends RWLockContext {
       } else if (exception.equals(RecordVetoedException.class.getName())) {
         // A LISTENER REFUSED THE WRITE (ISSUES #10085, #10161): ITS OWN TYPE, SO A CALLER CAN TELL A REFUSAL FROM A FAULT
         return new RecordVetoedException(detail);
-      } else if (exception.equals(ForeignKeyException.class.getName())) {
-        // A FOREIGN KEY (FORK ISSUE #228): WITH THE SQLSTATE IN sqlState, WHICH TELLS A VIOLATED KEY FROM A RESTRICTED ONE
-        return ForeignKeyException.fromRemote(sqlState, detail);
+      } else if (exception.equals(ForeignKeyException.class.getName())
+          || exception.equals(CheckConstraintException.class.getName())) {
+        // A FOREIGN KEY OR A CHECK CONSTRAINT (FORK ISSUES #227, #228): WITH THE SQLSTATE IN sqlState, WHICH SAYS WHICH REFUSAL IT IS
+        return SqlStateValidationException.fromRemote(exception, sqlState, detail);
       } else if (exception.equals(ValidationException.class.getName())) {
         // WITH THE CONSTRAINT IT VIOLATES IN exceptionArgs (ISSUE #11314), NULL FROM A SERVER THAT DOES NOT SEND IT
         return new ValidationException(ValidationException.Kind.fromName(exceptionArgs), detail);

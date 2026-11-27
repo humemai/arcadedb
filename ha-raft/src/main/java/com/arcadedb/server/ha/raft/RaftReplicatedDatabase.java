@@ -74,7 +74,7 @@ import com.arcadedb.exception.TransactionOutcomeUnknownException;
 import com.arcadedb.exception.ImplicitTransactionRequiredException;
 import com.arcadedb.exception.ObjectInUseException;
 import com.arcadedb.exception.UnknownFunctionException;
-import com.arcadedb.exception.ForeignKeyException;
+import com.arcadedb.exception.SqlStateValidationException;
 import com.arcadedb.exception.ValidationException;
 import com.arcadedb.function.sql.misc.SQLFunctionEnsureLabelTypes;
 import com.arcadedb.graph.Edge;
@@ -6460,10 +6460,12 @@ public class RaftReplicatedDatabase implements DatabaseInternal, HAReplicatedDat
         && DuplicatedKeyException.fromExceptionArgs(exceptionArgs) instanceof final DuplicatedKeyException duplicatedKey)
       return duplicatedKey;
 
-    // A foreign key the leader refused the forwarded write for (fork issue #228), with its SQLSTATE: as a plain
-    // TransactionException this node would answer a caller's mistake as a server fault
-    if (ForeignKeyException.class.getName().equals(exceptionClass))
-      return ForeignKeyException.fromRemote(sqlState, detail != null ? detail : message);
+    // A foreign key or a check constraint the leader refused the forwarded write for (fork issues #227 and #228), with its
+    // SQLSTATE: as a plain TransactionException this node would answer a caller's mistake as a server fault
+    final SqlStateValidationException constraint = SqlStateValidationException.fromRemote(exceptionClass, sqlState,
+        detail != null ? detail : message);
+    if (constraint != null)
+      return constraint;
 
     // A refused value carries the constraint it violates in exceptionArgs (issue #11314), so this node answers its client with
     // the same kind the leader would have

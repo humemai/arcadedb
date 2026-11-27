@@ -23,23 +23,8 @@ package com.arcadedb.exception;
  * {@code 23503} for a violated key, {@code 23001} for {@code RESTRICT}, {@code 55000} for a key that cannot be checked, and
  * {@code 2BP01} for a schema change that a key depends on.
  */
-public class ForeignKeyException extends ValidationException {
-  private final String sqlState;
-
+public class ForeignKeyException extends SqlStateValidationException {
   public ForeignKeyException(final String sqlState, final String message) {
-    super(Kind.FOREIGN_KEY, message);
-    this.sqlState = sqlState;
-  }
-
-  /**
-   * The refusal a server answered, rebuilt by a client or by a follower that forwarded the write: with the SQLSTATE the server
-   * sent, or the one of a violated key when the answer carries none.
-   */
-  public static ForeignKeyException fromRemote(final String sqlState, final String message) {
-    return new ForeignKeyException(sqlState != null && !sqlState.isEmpty() ? sqlState : "23503", message);
-  }
-
-  public String getSqlState() {
-    return sqlState;
+    super(Kind.FOREIGN_KEY, sqlState, message);
   }
 }

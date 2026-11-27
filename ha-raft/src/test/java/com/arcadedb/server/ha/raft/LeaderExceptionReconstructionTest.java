@@ -536,6 +536,20 @@ class LeaderExceptionReconstructionTest {
     assertThat(ErrorCategory.of(rebuilt)).isEqualTo(ErrorCategory.VALIDATION);
   }
 
+  // Fork issue #227: so does a check constraint, whose state is not always the one of a violated constraint
+  @Test
+  void aCheckConstraintRefusalFromTheLeaderKeepsItsState() {
+    final String body = new JSONObject().put("error", "Constraint violated (CHECK)")
+        .put("exception", com.arcadedb.exception.CheckConstraintException.class.getName())
+        .put("exceptionArgs", ValidationException.Kind.CHECK.name()).put("sqlState", "22012").put("detail", "division by zero")
+        .toString();
+
+    final RuntimeException rebuilt = RaftReplicatedDatabase.reconstructLeaderException(400, body, null);
+
+    assertThat(rebuilt).isExactlyInstanceOf(com.arcadedb.exception.CheckConstraintException.class).hasMessage("division by zero");
+    assertThat(((com.arcadedb.exception.CheckConstraintException) rebuilt).getSqlState()).isEqualTo("22012");
+  }
+
   // Regression for #11314: a leader that names no kind is rebuilt with none
   @Test
   void aLeaderThatNamesNoKindIsRebuiltWithNone() {
