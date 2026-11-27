@@ -21,9 +21,8 @@
 # whole suite, which takes the better part of an hour; this runs only the tests of the postgresql packages: the engine tests (a
 # build of the engine module and a few seconds of tests) and the tests of the same packages in postgresw, which compare the engine
 # with the wire module (a build of the modules postgresw needs). Two jobs, side by side, on every push to a feat/pg-* branch
-# and to the prototype branch, and on every pull request into the prototype branch. The full suite still runs on the pull
-# request through mvn-test.yml, whose modules shard of unit-tests runs the postgresw tests too. Drop this file when anything
-# goes upstream.
+# and to the prototype branch, and on every pull request into the prototype branch. The full suite is started by hand
+# (mvn-test.yml, whose modules shard of unit-tests runs the postgresw tests too). Drop this file when anything goes upstream.
 name: PostgreSQL prototype - engine tests
 
 on:
