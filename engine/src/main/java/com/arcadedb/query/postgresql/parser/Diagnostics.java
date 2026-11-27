@@ -100,6 +100,7 @@ final class Diagnostics {
       Map.entry("unsupportedIndexElementOption",
           "This option of an index column (COLLATE, DESC, NULLS, a qualified operator class or its parameters)"),
       Map.entry("unsupportedIndexParameter", "An index parameter that is not a whole number"),
+      Map.entry("unsupportedParameterNamespace", "An index parameter name with a namespace"),
       Map.entry("unsupportedIndexOption", "This clause of CREATE INDEX (INCLUDE, NULLS NOT DISTINCT, TABLESPACE or WHERE)"));
 
   private static final Set<Integer> NOT_WRITES = Set.of(PostgreSQLParser.WITH, PostgreSQLParser.VALUES, PostgreSQLParser.TABLE,

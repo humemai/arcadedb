@@ -1637,3 +1637,15 @@ values-from-alias-list	ok	inside	-	SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS 
 values-in-list-subquery	ok	inside	-	SELECT name FROM person WHERE pid IN (VALUES (1), (2))	written for the parser	-
 values-with-order-limit	ok	inside	-	VALUES (2), (1) ORDER BY 1 LIMIT 1	written for the parser	-
 values-table-form-stays-out	ok	outside	-	TABLE person	written for the parser	-
+json-cast	ok	inside	-	SELECT '"abc'::json	fork issue #202	22P02
+json-cast-function-form	ok	inside	-	SELECT CAST(NULL AS json)	fork issue #202	-
+json-constant	ok	inside	-	SELECT json_build_object(json '{"a": 1}', 3)	fork issue #202	-
+json-constant-operator	ok	outside	-	SELECT json '{"a": "b"}' -> 'a'	fork issue #202	-
+json-column-name-stays	ok	inside	-	SELECT json FROM (SELECT 1 AS json) t	fork issue #202	-
+whole-row-in-parentheses	ok	outside	-	SELECT (p.*) IS NULL FROM person p	fork issue #202	-
+whole-row-as-a-new-value	ok	outside	-	UPDATE person SET age = c.* FROM company AS c	fork issue #202	42804
+primary-key-without-overlaps	ok	outside	-	CREATE TABLE t (id int, valid_at int4range, PRIMARY KEY (id, valid_at WITHOUT OVERLAPS))	fork issue #202	-
+unique-without-overlaps	ok	outside	-	CREATE TABLE t (id int, valid_at int4range, UNIQUE (id, valid_at WITHOUT OVERLAPS))	fork issue #202	-
+create-table-as-on-commit	ok	outside	-	CREATE TABLE t (col) ON COMMIT DELETE ROWS AS SELECT 1	fork issue #202	-
+coalesce-in-from	ok	outside	-	SELECT * FROM person, coalesce(row(1)) AS (a int, b int)	fork issue #202	-
+index-parameter-with-namespace	ok	outside	-	CREATE INDEX i ON person (pid) WITH (toast.fillfactor = 2)	fork issue #202	-
