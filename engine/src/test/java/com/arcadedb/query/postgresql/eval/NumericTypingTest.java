@@ -161,7 +161,7 @@ class NumericTypingTest {
     // a minus sign binds tighter than ^: -2 ^ 2 is (-2) ^ 2, and the parser folds -2 into the constant
     assertThat(value(bin("^", i(-2), i(2)))).isEqualTo(4.0);
     assertThat(typeOf(bin("^", dec("2.5"), dec("2")))).isEqualTo(PgType.NUMERIC);
-    assertThat(value(bin("^", dec("2.5"), dec("2")))).isEqualTo(new BigDecimal("6.25"));
+    assertThat(value(bin("^", dec("2.5"), dec("2")))).isEqualTo(new BigDecimal("6.2500000000000000"));
     assertThat(sqlState(bin("^", cast(i(0), "float8"), i(-1)))).isEqualTo("2201F");
     assertThat(sqlState(bin("^", cast(i(-8), "float8"), cast(dec("0.5"), "float8")))).isEqualTo("2201F");
   }
