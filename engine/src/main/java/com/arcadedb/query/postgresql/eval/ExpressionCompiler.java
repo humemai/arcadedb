@@ -355,9 +355,22 @@ public final class ExpressionCompiler {
       return new Evaluable.Constant(PgType.UNKNOWN, unknown.text());
     final PgType type = PgType.ofJavaValue(value);
     if (type == null)
-      throw PostgreSQLEvaluationException.unsupported(
-          "The value of parameter $" + reference.index() + " has the unsupported class " + value.getClass().getName());
+      throw PostgreSQLEvaluationException.unsupported("The postgresql language has no type for the value of parameter $"
+          + reference.index() + missingType(value) + ": send it as text");
     return new Evaluable.Constant(type, Casts.fromEngine(value, type));
+  }
+
+  /** The name PostgreSQL gives the type of a value that the language has no type for, in parentheses, when it is known. */
+  private static String missingType(final Object value) {
+    if (value instanceof java.time.LocalTime)
+      return " (time)";
+    if (value instanceof java.time.OffsetTime)
+      return " (time with time zone)";
+    if (value instanceof java.util.UUID)
+      return " (uuid)";
+    if (value instanceof java.time.temporal.TemporalAmount || value instanceof com.arcadedb.query.opencypher.temporal.CypherDuration)
+      return " (interval)";
+    return "";
   }
 
   // ---- implicit casts ----
