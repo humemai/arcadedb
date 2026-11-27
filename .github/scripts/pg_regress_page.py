@@ -60,7 +60,10 @@ TITLES = {
     "blocked": "blocked",
     "out_of_scope": "out of scope",
 }
-FILE_COLUMNS = ("file", "statements", *VERDICTS, "on_copied_table", "psql_commands", "not_sent", "failure")
+# "failure" is empty for most files, so it is not the last column: a line that ends in a tab is white space that the
+# trailing-whitespace hook of the lint job takes away
+FILE_COLUMNS = ("file", "failure", "statements", *VERDICTS, "on_copied_table", "psql_commands", "not_sent")
+COUNT_COLUMNS = FILE_COLUMNS[2:]
 ABOUT = ("side under test", "PostgreSQL", "regression files", "engine", "CI run", "date")
 # how many reasons the page lists; the rest is one row, so that each table adds up
 TOP = {"refused_0a000": 25, "refused_other": 20, "missing_function": 25, "blocked": 20}
@@ -302,7 +305,7 @@ def load():
     about = {row["key"]: row["value"] for row in read_table(RESULT / "run.tsv")}
     files = read_table(RESULT / "files.tsv")
     for record in files:
-        for key in FILE_COLUMNS[1:-1]:
+        for key in COUNT_COLUMNS:
             record[key] = int(record[key])
     wrong = read_table(RESULT / "wrong.tsv")
     reasons = read_table(RESULT / "reasons.tsv")
@@ -372,7 +375,7 @@ def reason_table(out, reasons, kind, total, column):
 
 def render():
     about, files, wrong, reasons, entries, causes, library = load()
-    total = {key: sum(record[key] for record in files) for key in FILE_COLUMNS[1:-1]}
+    total = {key: sum(record[key] for record in files) for key in COUNT_COLUMNS}
     finished = [record for record in files if not record["failure"]]
     unfinished = [record for record in files if record["failure"]]
     statements = total["statements"]
@@ -511,6 +514,12 @@ def render():
 def check():
     _, files, wrong, reasons, entries, causes, _ = load()
     found = problems(files, wrong, reasons, entries, causes)
+    # here, because pull requests run this check and only the full suite runs the lint job
+    for path in sorted(RESULT.glob("*.tsv")):
+        for position, line in enumerate(path.read_text(encoding="utf-8").split("\n"), start=1):
+            if line != line.rstrip():
+                found.append(f"{path.relative_to(ROOT)}, line {position}: it ends in white space, which the lint job refuses")
+                break
     if not found and PAGE.read_text(encoding="utf-8") != render():
         found.append(f"{PAGE.relative_to(ROOT)} is not the page that the result gives: write it again with `write`")
     if found:
