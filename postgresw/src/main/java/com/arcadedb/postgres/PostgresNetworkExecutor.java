@@ -53,6 +53,8 @@ import com.arcadedb.query.QueryEngine;
 import com.arcadedb.query.RunningQuery;
 import com.arcadedb.query.postgresql.PostgreSQLErrors;
 import com.arcadedb.query.postgresql.PostgreSQLQueryEngine;
+import com.arcadedb.query.postgresql.SessionTimeZone;
+import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.eval.UnknownText;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
@@ -913,8 +915,10 @@ public class PostgresNetworkExecutor extends Thread {
    */
   private ResultSet runPortalQuery(final PostgresPortal portal) {
     publishStatementTimeout();
-    if (!portal.catalogQuery)
+    if (!portal.catalogQuery) {
+      applySessionToLanguage(portal.language);
       checkReadOnlyBlock(portal.language, portal.query);
+    }
     if (portal.catalogQuery) {
       // Deferred from parseCommand because the query's filters are bound parameters (issue #6412).
       final CatalogAnswer catalogAnswer = handleCatalogQuery(portal.language, portal.query, getParams(portal));
@@ -1650,6 +1654,7 @@ public class PostgresNetworkExecutor extends Thread {
             answersNoRows = true;
             resultSet = new IteratorResultSet(Collections.emptyIterator());
           } else {
+            applySessionToLanguage(query.language);
             checkReadOnlyBlock(query.language, query.query);
             beginSimpleQueryBlock();
             admission = QueryAdmissionGate.getInstance().admit();
@@ -5880,6 +5885,24 @@ public class PostgresNetworkExecutor extends Thread {
           + ". The transaction block has failed: send ROLLBACK, then BEGIN ISOLATION LEVEL REPEATABLE READ", refusal.sqlState);
     }
     statement.checkSupported();
+  }
+
+  /**
+   * What a statement of the {@code postgresql} language takes from the session before it runs (fork issue #237): its time
+   * zone, and a refusal when its {@code search_path} leaves out the one schema the language reads, where PostgreSQL would find
+   * no table. A setting that this server accepts has an effect, or what depends on it is refused.
+   *
+   * @throws PostgresSessionSettings.SettingException {@code 0A000} for such a search_path
+   */
+  private void applySessionToLanguage(final String language) {
+    if (!PostgresQueryLanguages.POSTGRESQL.equals(language))
+      return;
+    if (sessionSettings.searchPathLeavesOut(RelationalCatalog.SCHEMA))
+      throw new PostgresSessionSettings.SettingException("the postgresql language reads every table from the schema "
+          + RelationalCatalog.SCHEMA + ", which the search_path \"" + sessionSettings.requestedSearchPath()
+          + "\" leaves out: send SET search_path TO " + RelationalCatalog.SCHEMA,
+          PostgresSessionSettings.SQLSTATE_FEATURE_NOT_SUPPORTED);
+    SessionTimeZone.set(sessionSettings.show("timezone"));
   }
 
   /**
