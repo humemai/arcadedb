@@ -44,6 +44,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * {@code CREATE INDEX} (fork issue #125). The default method and {@code btree} make the tree index of the engine, {@code hnsw} the
@@ -82,8 +83,14 @@ public final class CreateIndexPlan {
     this.statement = statement;
   }
 
-  /** Makes the index; the answer has no column and no row. */
-  public PostgreSQLResultSet execute() {
+  /**
+   * Makes the index; the answer has no column and no row.
+   *
+   * @param permitted asked about the table once its name, the name of the index and the columns hold, and before anything is
+   *                  changed: it throws when the schema of that table may not be changed now. A statement that changes nothing
+   *                  ({@code IF NOT EXISTS} of a taken name) does not ask.
+   */
+  public PostgreSQLResultSet execute(final Consumer<DocumentType> permitted) {
     final Table table = table();
     final String given = statement.name() == null ? null : statement.name().value();
     if (given != null && taken(given)) {
@@ -109,6 +116,8 @@ public final class CreateIndexPlan {
       columns.add(column);
       names.add(column.name());
     }
+
+    permitted.accept(database.getSchema().getType(table.name()));
 
     final boolean engine = vector ? vectorIndex(table, columns.get(0)) : treeIndex(table, columns);
     final String name = given != null ? given : freeName(table.name(), names);
