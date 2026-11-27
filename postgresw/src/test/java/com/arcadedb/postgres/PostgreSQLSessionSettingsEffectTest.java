@@ -77,22 +77,22 @@ class PostgreSQLSessionSettingsEffectTest extends PostgreSQLSessionAgainstPostgr
     });
   }
 
+  /** An offset counts as in PostgreSQL, and a value that names no zone is refused as there (fork issue #270). */
   @Test
-  void aTimeZoneThatIsNotANameRefusesWhatDependsOnIt() throws Exception {
+  void anOffsetCountsAndAValueThatNamesNoZoneIsRefused() throws Exception {
     compare((postgres, arcade) -> {
-      try (final Connection own = arcade.connect(false)) {
-        for (final String set : List.of("SET TIME ZONE 9", "SET TIME ZONE '+09:00'", "SET TIME ZONE 'Mars/Olympus'")) {
-          answer(own, set);
-          for (final String statement : List.of("SELECT CURRENT_DATE", "SELECT LOCALTIMESTAMP")) {
-            assertThat(answer(own, statement)).as(set + "; " + statement).isEqualTo("error 0A000");
-            assertThat(errorMessage(own, statement)).contains("SET TIME ZONE 'UTC'");
+      for (final boolean simple : new boolean[] { false, true })
+        try (final Connection pg = postgres.connect(simple); final Connection own = arcade.connect(simple)) {
+          for (final String zone : List.of("9", "'+09:00'")) {
+            final String set = "SET TIME ZONE " + zone;
+            assertThat(answer(own, set)).as(set).isEqualTo(answer(pg, set));
+            assertSameClock(pg, own, set);
           }
-          // what does not depend on the time zone still runs
-          assertThat(answer(own, "SELECT 1")).isEqualTo("rows [1]");
+          final String none = "SET TIME ZONE 'Mars/Olympus'";
+          assertThat(answer(own, none)).as(none).isEqualTo(answer(pg, none)).isEqualTo("error 22023");
+          // the zone of before stays
+          assertSameClock(pg, own, none);
         }
-        answer(own, "SET TIME ZONE 'UTC'");
-        assertThat(answer(own, "SELECT CURRENT_DATE")).doesNotStartWith("error");
-      }
     });
   }
 

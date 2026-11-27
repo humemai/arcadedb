@@ -18,7 +18,6 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
-import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.SessionTimeZone;
 import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.TypeName;
@@ -30,6 +29,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.time.OffsetTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -109,18 +109,75 @@ class DateTimeTextTest {
     assertThat(sqlState(cast(s(text), "timestamptz"))).as(text).isEqualTo("22009");
   }
 
-  @Test
-  void aSessionInAnotherZoneIsRefusedWhereAnInstantIsMade() {
+  /** A text without a zone is a local time of the session (fork issue #270), and one with a zone is the same in every session. */
+  @ParameterizedTest
+  @CsvSource(delimiter = '|', textBlock = """
+      Asia/Seoul          | 2026-03-01 10:00:00  | 2026-03-01T01:00:00 | 2026-03-01 10:00:00+09
+      Asia/Seoul          | 2026-03-01 10:00:00Z | 2026-03-01T10:00:00 | 2026-03-01 19:00:00+09
+      asia/kolkata        | 2026-03-01           | 2026-02-28T18:30:00 | 2026-03-01 00:00:00+05:30
+      Asia/Seoul          | 1900-01-01 00:00:00  | 1899-12-31T15:32:08 | 1900-01-01 00:00:00+08:27:52
+      +09:00              | 2026-03-01 10:00:00  | 2026-03-01T19:00:00 | 2026-03-01 10:00:00-09
+      9                   | 2026-03-01 10:00:00  | 2026-03-01T01:00:00 | 2026-03-01 10:00:00+09
+      America/New_York    | 2026-03-08 01:59:59  | 2026-03-08T06:59:59 | 2026-03-08 01:59:59-05
+      America/New_York    | 2026-03-08 02:00:00  | 2026-03-08T07:00:00 | 2026-03-08 03:00:00-04
+      America/New_York    | 2026-03-08 02:30:00  | 2026-03-08T07:30:00 | 2026-03-08 03:30:00-04
+      America/New_York    | 2026-03-08 03:00:00  | 2026-03-08T07:00:00 | 2026-03-08 03:00:00-04
+      America/New_York    | 2026-11-01 00:59:59  | 2026-11-01T04:59:59 | 2026-11-01 00:59:59-04
+      America/New_York    | 2026-11-01 01:00:00  | 2026-11-01T06:00:00 | 2026-11-01 01:00:00-05
+      America/New_York    | 2026-11-01 01:30:00  | 2026-11-01T06:30:00 | 2026-11-01 01:30:00-05
+      America/New_York    | 2026-11-01 02:00:00  | 2026-11-01T07:00:00 | 2026-11-01 02:00:00-05
+      Australia/Lord_Howe | 2026-10-04 02:15:00  | 2026-10-03T15:45:00 | 2026-10-04 02:45:00+11
+      America/New_York    | 0001-01-01 00:00:00Z | 0001-01-01T00:00:00 | 0001-12-31 19:03:58-04:56:02 BC
+      """)
+  void aTimestamptzIsReadAndWrittenInTheZoneOfTheSession(final String zone, final String text, final String utc,
+      final String written) {
     try {
-      SessionTimeZone.set("Asia/Seoul");
-      assertThatThrownBy(() -> value(cast(s("2020-01-08 04:05:06Z"), "timestamptz")))
-          .isInstanceOf(PostgreSQLFeatureNotSupportedException.class).hasMessageContaining("SET TIME ZONE 'UTC'");
-      assertThat(timestamp("2020-01-08 04:05:06Z")).isNull();
-      SessionTimeZone.set("Etc/UTC");
-      assertThat(sqlState(cast(s("2020-01-08 04:05:06Z"), "timestamptz"))).isNull();
+      SessionTimeZone.set(zone);
+      final OffsetDateTime instant = (OffsetDateTime) value(cast(s(text), "timestamptz"));
+      assertThat(instant).isEqualTo(LocalDateTime.parse(utc).atOffset(ZoneOffset.UTC));
+      assertThat(Casts.toText(instant, PgType.TIMESTAMPTZ)).isEqualTo(written);
     } finally {
       SessionTimeZone.clear();
     }
+  }
+
+  /** Months and days are counted on the calendar of the session, and the time is added to the instant. */
+  @ParameterizedTest
+  @CsvSource(delimiter = '|', textBlock = """
+      2026-03-07 12:00:00 | 1 day              | 2026-03-08 12:00:00-04
+      2026-03-07 12:00:00 | 24 hours           | 2026-03-08 13:00:00-04
+      2026-02-08 12:00:00 | 1 month            | 2026-03-08 12:00:00-04
+      2026-03-07 02:30:00 | 1 day              | 2026-03-08 03:30:00-04
+      2026-10-31 01:30:00 | 1 day              | 2026-11-01 01:30:00-05
+      2026-11-01 00:30:00 | 1 hour             | 2026-11-01 01:30:00-04
+      2026-11-01 00:30:00 | 2 hours            | 2026-11-01 01:30:00-05
+      """)
+  void anIntervalIsAddedOnTheCalendarOfTheSession(final String start, final String interval, final String sum) {
+    try {
+      SessionTimeZone.set("America/New_York");
+      final OffsetDateTime instant = (OffsetDateTime) value(cast(s(start), "timestamptz"));
+      assertThat(Casts.toText(PgInterval.add(instant, PgInterval.parse(interval, null), false), PgType.TIMESTAMPTZ)).isEqualTo(sum);
+    } finally {
+      SessionTimeZone.clear();
+    }
+  }
+
+  @Test
+  void theFieldsOfATimestamptzAreThoseOfTheSession() {
+    try {
+      final OffsetDateTime instant = OffsetDateTime.of(2026, 3, 1, 23, 30, 0, 0, ZoneOffset.UTC);
+      SessionTimeZone.set("<-0345>+03:45");
+      assertThat(Functions.extract("hour", instant)).isEqualByComparingTo("19");
+      assertThat(Functions.extract("timezone", instant)).isEqualByComparingTo("-13500");
+      assertThat(Functions.extract("timezone_hour", instant)).isEqualByComparingTo("-3");
+      assertThat(Functions.extract("timezone_minute", instant)).isEqualByComparingTo("-45");
+      assertThat(Functions.extract("epoch", instant)).isEqualByComparingTo(Long.toString(instant.toEpochSecond()));
+      SessionTimeZone.set("Asia/Seoul");
+      assertThat(Functions.extract("day", instant)).isEqualByComparingTo("2");
+    } finally {
+      SessionTimeZone.clear();
+    }
+    assertThat(Functions.extract("timezone", OffsetDateTime.of(2026, 3, 1, 0, 0, 0, 0, ZoneOffset.UTC))).isEqualByComparingTo("0");
   }
 
   @ParameterizedTest

@@ -139,13 +139,13 @@ class PostgreSQLTimestampTzTest extends PostgreSQLSideBySideTestBase {
         compare("the values in the binary format", read(binaryPostgres), read(binaryArcade));
       }
 
-      // a session in another time zone: PostgreSQL shows and reads local times, which the language does not
-      run(arcade, "SET TIME ZONE 'Asia/Seoul'");
-      refused(arcade, "SELECT at FROM j", "SET TIME ZONE 'UTC'");
-      refused(arcade, "INSERT INTO j (id, at) VALUES (50, '2026-03-01 10:00:00')", "SET TIME ZONE 'UTC'");
-      same(postgres, arcade, "SELECT id FROM j WHERE plain > '2026-01-01' ORDER BY id");
-      run(arcade, "SET TIME ZONE 'Etc/UTC'");
-      same(postgres, arcade, "SELECT id, at FROM j ORDER BY id");
+      // sessions in other zones, which show and read local times (fork issue #270)
+      for (final String zone : List.of("Asia/Seoul", "America/New_York", "Etc/UTC")) {
+        both(postgres, arcade, "SET TIME ZONE '" + zone + "'");
+        same(postgres, arcade, "SELECT id, at, plain FROM j ORDER BY id");
+        both(postgres, arcade, "DELETE FROM j");
+        compare(zone + ": the values that the driver binds and reads", bindAndRead(postgres), bindAndRead(arcade));
+      }
     }
     assertThat(failures).as(String.join("\n", failures)).isEmpty();
   }

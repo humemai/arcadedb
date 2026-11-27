@@ -1009,8 +1009,8 @@ public final class ExpressionCompiler {
       if (by == null)
         return null;
       if (when instanceof OffsetDateTime instant)
-        // the session is in UTC, so a day is 24 hours and a month is counted on the UTC calendar
-        return Casts.instant(PgInterval.add(instant.toLocalDateTime(), (PgInterval) by, subtract));
+        // months and days are counted on the calendar of the session, and the time is added to the instant
+        return PgInterval.add(instant, (PgInterval) by, subtract);
       final LocalDateTime start = when instanceof LocalDate date ? date.atStartOfDay() : (LocalDateTime) when;
       return PgInterval.add(start, (PgInterval) by, subtract);
     }, moment, span);
@@ -1979,13 +1979,13 @@ public final class ExpressionCompiler {
     }
     // the clock is read once for a transaction, so every row of the statement has the same value (fork issues #222 and #190)
     case CURRENT_DATE: {
-      final LocalDate today = localTime("CURRENT_DATE").toLocalDate();
+      final LocalDate today = localTime().toLocalDate();
       return new Evaluable.Node(PgType.DATE, row -> today);
     }
     case CURRENT_TIMESTAMP:
       return currentTimestamp(precision(call));
     case LOCALTIMESTAMP: {
-      final LocalDateTime now = Casts.roundTimestamp(localTime("LOCALTIMESTAMP"), precision(call));
+      final LocalDateTime now = Casts.roundTimestamp(localTime(), precision(call));
       return new Evaluable.Node(PgType.TIMESTAMP, row -> now);
     }
     default:
@@ -1999,15 +1999,12 @@ public final class ExpressionCompiler {
         : Math.min(integerModifier(call.args().get(0)), Casts.MAX_TIMESTAMP_PRECISION);
   }
 
-  /** The time of the transaction as a time of the session (fork issue #237), which {@code reader} reads. */
-  private LocalDateTime localTime(final String reader) {
-    return LocalDateTime.ofInstant(parameters.time(), SessionTimeZone.zoneOf(reader));
+  /** The time of the transaction as a time of the session (fork issue #237). */
+  private LocalDateTime localTime() {
+    return LocalDateTime.ofInstant(parameters.time(), SessionTimeZone.ofClock());
   }
 
-  /**
-   * {@code now()} and its other names: the time of the transaction as a {@code timestamptz}, refused in a session in another
-   * time zone than UTC, as every instant is.
-   */
+  /** {@code now()} and its other names: the time of the transaction as a {@code timestamptz}. */
   private Evaluable currentTimestamp(final int precision) {
     final OffsetDateTime now = Casts.instant(
         Casts.roundTimestamp(LocalDateTime.ofInstant(parameters.time(), ZoneOffset.UTC), precision));

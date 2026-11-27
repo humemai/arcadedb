@@ -18,10 +18,14 @@
  */
 package com.arcadedb.query.postgresql.eval;
 
+import com.arcadedb.query.postgresql.SessionTimeZone;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DateTimeException;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -113,6 +117,26 @@ public record PgInterval(int months, int days, long micros) {
     if (result.getYear() < 1 || result.getYear() > 9999)
       throw PostgreSQLEvaluationException.unsupported("A timestamp before the year 1 or after the year 9999 is not supported");
     return result;
+  }
+
+  /**
+   * A {@code timestamptz} plus or minus this interval, as {@code timestamptz_pl_interval} computes it (fork issue #270): the
+   * months on the calendar of the session, then the days on it, each time giving the local time back its instant, which a daylight
+   * saving change can move; then the time part on the instant. A day is therefore 23, 24, or 25 hours there, and {@code 24 hours}
+   * are always 24.
+   *
+   * @param start an instant at the offset zero
+   */
+  static OffsetDateTime add(final OffsetDateTime start, final PgInterval interval, final boolean subtract) {
+    OffsetDateTime result = start;
+    // an instant is moved through its local time only for a field that is not zero: a local time that occurs twice has one instant
+    if (interval.months() != 0)
+      result = SessionTimeZone.instant(
+          add(SessionTimeZone.shown(result).toLocalDateTime(), new PgInterval(interval.months(), 0, 0L), subtract));
+    if (interval.days() != 0)
+      result = SessionTimeZone.instant(
+          add(SessionTimeZone.shown(result).toLocalDateTime(), new PgInterval(0, interval.days(), 0L), subtract));
+    return add(result.toLocalDateTime(), new PgInterval(0, 0, interval.micros()), subtract).atOffset(ZoneOffset.UTC);
   }
 
   private static PostgreSQLEvaluationException timestampOutOfRange() {

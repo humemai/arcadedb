@@ -18,86 +18,111 @@
  */
 package com.arcadedb.query.postgresql;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.zone.ZoneOffsetTransition;
 import java.time.zone.ZoneRules;
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.regex.Pattern;
 
 /**
- * The time zone of the session that the statement of this thread belongs to (fork issue #237), in which {@code CURRENT_DATE} and
- * {@code LOCALTIMESTAMP} read the clock. A server that has sessions, the Postgres wire, says it before each statement. Without
- * one, as through the engine API, the clock is read in the time zone of the Java virtual machine.
+ * The time zone of the session that the statement of this thread belongs to (fork issues #237 and #270), and the conversions that
+ * depend on it. A server that has sessions, the Postgres wire, says it before each statement.
  * <p>
- * A zone is applied when it is a name of the time zone database, in any case, or a zero offset. Every other spelling that
- * PostgreSQL has ({@code 9}, {@code '+09:00'}, a POSIX rule, an interval) is refused where the clock is read, because Java
- * reads the sign of an offset the other way round.
+ * A {@code timestamp with time zone} is an instant, which the language holds at the offset zero. The zone matters only where a
+ * local time is involved: a text without a zone, the casts from and to {@code date} and {@code timestamp}, the fields of
+ * {@code extract}, the months and days of interval arithmetic, and the text of an answer. {@code CURRENT_DATE} and
+ * {@code LOCALTIMESTAMP} read the clock in it.
+ * <p>
+ * Without a session, as through the engine API, an instant is read and written in UTC, and the clock is read in the time zone of
+ * the Java virtual machine.
  */
 public final class SessionTimeZone {
-  private static final ThreadLocal<String> NAME = new ThreadLocal<>();
-
-  private static final Pattern ZERO_OFFSET = Pattern.compile("[+-]?0{1,2}(:?00)?");
-
-  private static final Map<String, String> ZONES = new HashMap<>();
-
-  static {
-    for (final String zone : ZoneId.getAvailableZoneIds())
-      ZONES.put(zone.toLowerCase(Locale.ENGLISH), zone);
+  private record Session(String value, TimeZoneSetting setting) {
   }
+
+  private static final ThreadLocal<Session> SESSION = new ThreadLocal<>();
 
   private SessionTimeZone() {
   }
 
-  /** The time zone of the session, as its {@code TimeZone} setting spells it, for the statements of this thread from now on. */
-  public static void set(final String name) {
-    NAME.set(name);
-  }
-
-  /** No session: the clock of this thread is that of the Java virtual machine again. */
-  public static void clear() {
-    NAME.remove();
-  }
-
   /**
-   * Refuses what the language computes in UTC only, a {@code timestamp with time zone} (fork issue #223), in a session in
-   * another time zone, where PostgreSQL shows and reads local times. Without a session, as through the engine API, an instant
-   * is computed in UTC.
+   * The time zone of the session, as its {@code TimeZone} setting spells it, for the statements of this thread from now on.
    *
-   * @throws PostgreSQLFeatureNotSupportedException (SQLSTATE {@code 0A000}) when the session's time zone is not UTC
+   * @throws com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException SQLSTATE {@code 22023} for a value that names no
+   *                                                                          zone
+   * @throws PostgreSQLFeatureNotSupportedException                           SQLSTATE {@code 0A000} for a zone that is not
+   *                                                                          supported, see {@link TimeZoneSetting#read}
    */
-  public static void requireUtc() {
-    final String name = NAME.get();
-    if (name == null || ZERO_OFFSET.matcher(name.trim()).matches())
+  public static void set(final String value) {
+    final Session session = SESSION.get();
+    if (session != null && session.value().equals(value))
       return;
-    final String zone = ZONES.get(name.trim().toLowerCase(Locale.ENGLISH));
-    if (zone != null) {
-      // the names of UTC: UTC, Etc/UTC, GMT and the like, which never had another offset
-      final ZoneRules rules = ZoneId.of(zone).getRules();
-      if (rules.isFixedOffset() && ZoneOffset.UTC.equals(rules.getOffset(Instant.EPOCH)))
-        return;
-    }
-    throw new PostgreSQLFeatureNotSupportedException("A timestamp with time zone is computed in UTC only by the postgresql"
-        + " language, and the TimeZone of this session is \"" + name + "\": send SET TIME ZONE 'UTC'");
+    // a value that cannot be read leaves no session of an earlier one behind
+    SESSION.remove();
+    SESSION.set(new Session(value, TimeZoneSetting.read(value)));
+  }
+
+  /** No session. */
+  public static void clear() {
+    SESSION.remove();
+  }
+
+  /** The zone in which an instant is read and written: that of the session, and UTC without one. */
+  public static ZoneId ofInstants() {
+    final Session session = SESSION.get();
+    return session == null ? ZoneOffset.UTC : session.setting().zone();
+  }
+
+  /** The zone in which the clock gives a date or a wall clock: that of the session, and the Java virtual machine's without one. */
+  public static ZoneId ofClock() {
+    final Session session = SESSION.get();
+    return session == null ? ZoneId.systemDefault() : session.setting().zone();
   }
 
   /**
-   * @param reader the expression that reads the clock, for the error
-   *
-   * @throws PostgreSQLFeatureNotSupportedException (SQLSTATE {@code 0A000}) when the session's time zone cannot be applied
+   * The instant of a local time of the session, at the offset zero. As in PostgreSQL, a time that the clocks skip when they go
+   * forward takes the offset from before the change, and a time that occurs twice when they go back takes the offset from after
+   * it. For the second, {@code LocalDateTime.atZone} would take the other one.
    */
-  public static ZoneId zoneOf(final String reader) {
-    final String name = NAME.get();
-    if (name == null)
-      return ZoneId.systemDefault();
-    if (ZERO_OFFSET.matcher(name.trim()).matches())
-      return ZoneOffset.UTC;
-    final String zone = ZONES.get(name.trim().toLowerCase(Locale.ENGLISH));
-    if (zone == null)
-      throw new PostgreSQLFeatureNotSupportedException(reader + " in the time zone \"" + name + "\" is not supported by the "
-          + "postgresql language: send SET TIME ZONE with a name such as 'Asia/Seoul', or SET TIME ZONE 'UTC'");
-    return ZoneId.of(zone);
+  public static OffsetDateTime instant(final LocalDateTime local) {
+    final ZoneRules rules = ofInstants().getRules();
+    final ZoneOffsetTransition change = rules.getTransition(local);
+    final ZoneOffset offset = change == null ? rules.getOffset(local)
+        : change.isGap() ? change.getOffsetBefore() : change.getOffsetAfter();
+    return local.atOffset(offset).withOffsetSameInstant(ZoneOffset.UTC);
+  }
+
+  /** An instant at the offset that the session's zone has then: its local time, and what a server writes. */
+  public static OffsetDateTime shown(final OffsetDateTime instant) {
+    return instant.atZoneSameInstant(ofInstants()).toOffsetDateTime();
+  }
+
+  /** The size of an offset in seconds as PostgreSQL writes it, without the sign: {@code 09}, {@code 05:30}, {@code 08:27:52}. */
+  public static String offsetDigits(final int seconds) {
+    final int magnitude = Math.abs(seconds);
+    final StringBuilder digits = new StringBuilder(String.format(Locale.ROOT, "%02d", magnitude / 3600));
+    if (magnitude % 3600 != 0) {
+      digits.append(String.format(Locale.ROOT, ":%02d", magnitude / 60 % 60));
+      if (magnitude % 60 != 0)
+        digits.append(String.format(Locale.ROOT, ":%02d", magnitude % 60));
+    }
+    return digits.toString();
+  }
+
+  /** A value of an answer, or a list of them, with every instant {@link #shown}. */
+  static Object shownValue(final Object value) {
+    if (value instanceof OffsetDateTime instant)
+      return shown(instant);
+    if (value instanceof List<?> list) {
+      final List<Object> out = new ArrayList<>(list.size());
+      for (final Object item : list)
+        out.add(shownValue(item));
+      return out;
+    }
+    return value;
   }
 }

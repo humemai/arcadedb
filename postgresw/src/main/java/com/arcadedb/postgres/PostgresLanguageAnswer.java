@@ -19,6 +19,7 @@
 package com.arcadedb.postgres;
 
 import com.arcadedb.database.Database;
+import com.arcadedb.query.postgresql.eval.Casts;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
 import com.arcadedb.query.sql.executor.InternalResultSet;
@@ -171,6 +172,22 @@ final class PostgresLanguageAnswer {
     final PostgresType type = oid == 0 ? null : PostgresType.byCode((int) oid);
     final PgType pgType = type == null ? null : PgType.byName(List.of(type.typeName));
     return pgType != null ? pgType : PgType.UNKNOWN;
+  }
+
+  /** Whether {@code oid} is the type {@code timestamptz} or {@code timestamptz[]}. */
+  static boolean isInstant(final long oid) {
+    return oid == PostgresType.TIMESTAMPTZ.code || oid == PostgresType.ARRAY_TIMESTAMPTZ.code;
+  }
+
+  /**
+   * The value of a text parameter that the client declared as {@code timestamptz} or {@code timestamptz[]} (see
+   * {@link #isInstant}), as the language reads it: a text without a zone is a time of the session (fork issue #270), which
+   * {@code SessionTimeZone} holds for this thread.
+   */
+  static Object instants(final long oid, final String text) {
+    if (oid == PostgresType.TIMESTAMPTZ.code)
+      return Casts.parse(text, PgType.TIMESTAMPTZ);
+    return typedArray(oid, PostgresArrayLiteral.parse(text, item -> Casts.parse(item, PgType.TIMESTAMPTZ)));
   }
 
   /**

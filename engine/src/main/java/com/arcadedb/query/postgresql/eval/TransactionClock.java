@@ -62,15 +62,20 @@ public final class TransactionClock {
   /**
    * What a default of the clock writes into a column of type {@code type}, as the record holds it: a date, or a wall clock. A
    * {@code date} and a {@code timestamp} take the time of the session (fork issue #237). A {@code timestamptz} takes the
-   * instant, as its time in UTC, and a session in another time zone is refused.
+   * instant, as its time in UTC; {@code CURRENT_DATE} gives it midnight of the session, and {@code LOCALTIMESTAMP} the instant
+   * of that local time, as the casts of PostgreSQL do (fork issue #270).
    *
    * @param time the time of the transaction of the write
    */
   public static Object defaultValue(final Instant time, final ClockDefault kind, final ColumnType type) {
-    final boolean instant = type == ColumnType.TIMESTAMPTZ;
-    if (instant)
-      SessionTimeZone.requireUtc();
-    final LocalDateTime now = LocalDateTime.ofInstant(time, instant ? ZoneOffset.UTC : SessionTimeZone.zoneOf(kind.text()));
+    if (type == ColumnType.TIMESTAMPTZ) {
+      if (kind != ClockDefault.CURRENT_DATE && kind != ClockDefault.LOCALTIMESTAMP)
+        return LocalDateTime.ofInstant(time, ZoneOffset.UTC);
+      final LocalDateTime local = LocalDateTime.ofInstant(time, SessionTimeZone.ofInstants());
+      return SessionTimeZone.instant(kind == ClockDefault.CURRENT_DATE ? local.toLocalDate().atStartOfDay() : local)
+          .toLocalDateTime();
+    }
+    final LocalDateTime now = LocalDateTime.ofInstant(time, SessionTimeZone.ofClock());
     if (type == ColumnType.DATE)
       return now.toLocalDate();
     return kind == ClockDefault.CURRENT_DATE ? now.toLocalDate().atStartOfDay() : now;

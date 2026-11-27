@@ -20,6 +20,9 @@ package com.arcadedb.postgres;
 
 import com.arcadedb.database.Database;
 import com.arcadedb.log.LogManager;
+import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
+import com.arcadedb.query.postgresql.TimeZoneSetting;
+import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -234,7 +237,9 @@ final class PostgresSessionSettings {
         placeholders = new HashSet<>();
       placeholders.add(key);
     }
-    final String normalized = normalize(key, value);
+    // the postgresql language works in the zone, so its connections take only a value that names one (fork issue #270)
+    final String normalized = "timezone".equals(key) && value != null && usesPostgreSqlLanguage() ? timeZoneName(value)
+        : normalize(key, value);
     if (local)
       localValues.put(key, normalized);
     else {
@@ -275,6 +280,36 @@ final class PostgresSessionSettings {
       ++version;
     } catch (final SettingException e) {
       LogManager.instance().log(this, Level.INFO, "Ignoring startup parameter %s='%s': %s", name, value, e.getMessage());
+    }
+  }
+
+  /**
+   * Reads the time zone that the startup packet named, once the whole packet is read and so the language of the connection is
+   * known. A connection of the {@code postgresql} language takes it as PostgreSQL does (fork issue #270): {@code SHOW} answers
+   * the zone's name as PostgreSQL spells it, and a value that names no zone fails the connection.
+   *
+   * @throws SettingException {@code 22023} for a value that names no zone, {@code 0A000} for a zone the language does not support
+   */
+  void readStartupTimeZone() {
+    final String value = resetValues.get("timezone");
+    if (value != null && usesPostgreSqlLanguage()) {
+      resetValues.put("timezone", timeZoneName(value));
+      ++version;
+    }
+  }
+
+  private boolean usesPostgreSqlLanguage() {
+    return PostgresQueryLanguages.POSTGRESQL.equals(language());
+  }
+
+  /** The name of the zone that {@code value} names, as PostgreSQL spells it. */
+  private static String timeZoneName(final String value) {
+    try {
+      return TimeZoneSetting.read(value).name();
+    } catch (final PostgreSQLEvaluationException e) {
+      throw new SettingException(e.getMessage(), SQLSTATE_INVALID_VALUE);
+    } catch (final PostgreSQLFeatureNotSupportedException e) {
+      throw new SettingException(e.getMessage(), SQLSTATE_FEATURE_NOT_SUPPORTED);
     }
   }
 

@@ -45,8 +45,8 @@ import java.util.Locale;
  * <tr><td>{@code text}, {@code varchar}</td><td>{@link String}</td></tr>
  * <tr><td>{@code date}</td><td>{@link LocalDate}</td></tr>
  * <tr><td>{@code timestamp}</td><td>{@link LocalDateTime}</td></tr>
- * <tr><td>{@code timestamptz}</td><td>{@link OffsetDateTime} at the offset zero: an instant in UTC (see
- * {@code SessionTimeZone.requireUtc})</td></tr>
+ * <tr><td>{@code timestamptz}</td><td>{@link OffsetDateTime} at the offset zero: an instant. In the rows of an answer it is at
+ * the offset of the session's time zone (see {@code SessionTimeZone}), the offset zero without a session</td></tr>
  * <tr><td>{@code interval}</td><td>{@link PgInterval}, only as the operand of date and timestamp arithmetic</td></tr>
  * </table>
  *

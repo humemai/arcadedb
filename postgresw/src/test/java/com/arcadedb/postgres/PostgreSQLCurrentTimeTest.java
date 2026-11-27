@@ -93,10 +93,11 @@ class PostgreSQLCurrentTimeTest extends PostgreSQLSideBySideTestBase {
       both(postgres, arcade, "CREATE TABLE z (id int PRIMARY KEY, l timestamp DEFAULT CURRENT_TIMESTAMP,"
           + " m timestamp DEFAULT LOCALTIMESTAMP, d date DEFAULT CURRENT_DATE)");
       compare("defaults in the time zone of the session", inZone(postgres), inZone(arcade));
-      run(arcade, "SET TIME ZONE 'Asia/Seoul'");
-      refused(arcade, "SELECT now()", "SET TIME ZONE 'UTC'");
-      refused(arcade, "INSERT INTO d (id) VALUES (40)", "SET TIME ZONE 'UTC'");
-      run(arcade, "SET TIME ZONE 'UTC'");
+      // now() and the defaults of timestamptz columns run in another zone too (fork issue #270)
+      both(postgres, arcade, "SET TIME ZONE 'Asia/Seoul'");
+      both(postgres, arcade, "INSERT INTO d (id) VALUES (40)");
+      same(postgres, arcade, "SELECT now() >= now() - interval '1 day' AS a, CURRENT_TIMESTAMP::date = CURRENT_DATE AS b");
+      both(postgres, arcade, "SET TIME ZONE 'UTC'");
     }
     assertThat(failures).as(String.join("\n", failures)).isEmpty();
   }
