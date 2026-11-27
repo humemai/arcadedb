@@ -29,6 +29,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetTime;
 import java.time.ZoneOffset;
 import java.util.List;
 
@@ -47,6 +49,16 @@ class DateTimeTextTest {
 
   private static String date(final String text) {
     return sqlState(cast(s(text), "date"));
+  }
+
+  /** A parameter of a type that the language lacks: the error names the type as PostgreSQL does, and no Java class (#223). */
+  @Test
+  void aParameterOfATypeThatTheLanguageLacksIsRefusedByItsName() {
+    assertThatThrownBy(() -> value(new Expression.ParameterRef(P, 1), LocalTime.of(10, 11)))
+        .isInstanceOfSatisfying(PostgreSQLEvaluationException.class, e -> assertThat(e.getSqlState()).isEqualTo("0A000"))
+        .hasMessageContaining("(time): send it as text").hasMessageNotContaining("java.");
+    assertThatThrownBy(() -> value(new Expression.ParameterRef(P, 1), OffsetTime.of(10, 11, 0, 0, ZoneOffset.UTC)))
+        .hasMessageContaining("(time with time zone)").hasMessageNotContaining("java.");
   }
 
   private static String timestamp(final String text) {
