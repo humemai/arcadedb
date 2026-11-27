@@ -20,12 +20,13 @@ package com.arcadedb.postgres;
 
 import com.arcadedb.database.Database;
 import com.arcadedb.query.postgresql.eval.Casts;
+import com.arcadedb.query.postgresql.eval.Jsonb;
 import com.arcadedb.query.postgresql.eval.PgType;
 import com.arcadedb.query.postgresql.plan.PostgreSQLResultSet;
-import com.arcadedb.query.sql.executor.InternalResultSet;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultInternal;
 import com.arcadedb.query.sql.executor.ResultSet;
+import com.arcadedb.serializer.json.JSONObject;
 
 import java.lang.reflect.Array;
 import java.math.BigDecimal;
@@ -73,20 +74,87 @@ final class PostgresLanguageAnswer {
     final List<PostgreSQLResultSet.Column> columns = answer.columns();
     final List<String> rowKeys = PostgreSQLResultSet.uniqueKeys(columns);
     final List<String> wireKeys = wireKeys(columns);
-    if (rowKeys.equals(wireKeys))
+    final boolean rewritten = columns.stream()
+        .anyMatch(column -> "jsonb".equals(column.typeName()) || isArray(column.typeName()));
+    if (!rewritten && rowKeys.equals(wireKeys))
       return new PostgresLanguageAnswer(columns, !answer.returnsRows(), answer.affectedRows(), resultSet);
 
-    final InternalResultSet rekeyed = new InternalResultSet();
-    try (resultSet) {
-      while (resultSet.hasNext()) {
+    // each row is copied as the wire reads it, when the wire reads it
+    final ResultSet copies = new ResultSet() {
+      @Override
+      public boolean hasNext() {
+        return resultSet.hasNext();
+      }
+
+      @Override
+      public Result next() {
         final Result row = resultSet.next();
         final ResultInternal copy = new ResultInternal(database);
         for (int i = 0; i < rowKeys.size(); i++)
-          copy.setProperty(wireKeys.get(i), row.getProperty(rowKeys.get(i)));
-        rekeyed.add(copy);
+          copy.setProperty(wireKeys.get(i), written(columns.get(i).typeName(), row.getProperty(rowKeys.get(i))));
+        return copy;
       }
-    }
-    return new PostgresLanguageAnswer(columns, !answer.returnsRows(), answer.affectedRows(), rekeyed);
+
+      @Override
+      public void close() {
+        resultSet.close();
+      }
+    };
+    return new PostgresLanguageAnswer(columns, !answer.returnsRows(), answer.affectedRows(), copies);
+  }
+
+  /**
+   * A value of a column of the type {@code typeName} as the wire writes it for the language: a {@code jsonb} value as its text
+   * ({@link #jsonb}) and an array as a {@link PostgresLanguageArray}. Any other value is returned as it is.
+   */
+  private static Object written(final String typeName, final Object value) {
+    if (value == null)
+      return null;
+    if ("jsonb".equals(typeName))
+      return jsonb(value);
+    if (!isArray(typeName))
+      return value;
+    final String element = elementName(typeName);
+    return PostgresLanguageArray.of(value, element == null ? null : PgType.byName(List.of(element)));
+  }
+
+  /**
+   * A {@code jsonb} value as the text that the language gives it ({@code ::text}), which is PostgreSQL's: a space after each
+   * {@code :} and {@code ,}, and the keys of an object in PostgreSQL's order. A string is the JSON text that it holds. A value
+   * with a part that is no JSON value, such as a date that another language stored in a map, is returned as it is, and keeps
+   * the text this protocol writes for it.
+   */
+  static Object jsonb(final Object value) {
+    return !(value instanceof String) && isJson(value, 0) ? Jsonb.write(value) : value;
+  }
+
+  private static boolean isJson(final Object value, final int depth) {
+    // deeper than the writer goes: it answers 54001, as the cast to text does
+    if (depth > 1000)
+      return true;
+    return switch (value) {
+      case null -> true;
+      case String s -> true;
+      case Number n -> true;
+      case Boolean b -> true;
+      case Jsonb.Scalar scalar -> isJson(scalar.value(), depth + 1);
+      case Map<?, ?> map -> map.values().stream().allMatch(member -> isJson(member, depth + 1));
+      case Collection<?> items -> items.stream().allMatch(item -> isJson(item, depth + 1));
+      default -> value == JSONObject.NULL;
+    };
+  }
+
+  private static boolean isArray(final String typeName) {
+    return "array".equals(typeName) || elementName(typeName) != null;
+  }
+
+  /** The element type in the name of an array type ({@code text[]}, {@code _text}), {@code null} for a name that says none. */
+  private static String elementName(final String typeName) {
+    if (typeName == null)
+      return null;
+    if (typeName.endsWith("[]"))
+      return typeName.substring(0, typeName.length() - 2);
+    return typeName.startsWith("_") ? typeName.substring(1) : null;
   }
 
   ResultSet rows() {
@@ -150,11 +218,7 @@ final class PostgresLanguageAnswer {
     default:
       break;
     }
-    String element = null;
-    if (typeName.endsWith("[]"))
-      element = typeName.substring(0, typeName.length() - 2);
-    else if (typeName.startsWith("_"))
-      element = typeName.substring(1);
+    final String element = elementName(typeName);
     if (element != null) {
       final PostgresType scalar = PostgresType.byName(element);
       final PostgresType array = scalar != null && scalar.arrayCode != 0 ? PostgresType.byCode(scalar.arrayCode) : null;

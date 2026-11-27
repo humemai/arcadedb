@@ -1143,6 +1143,9 @@ public enum PostgresType {
     final String temporalText = temporalText(pgType, value);
     if (temporalText != null) {
       serializedValue = temporalText;
+    } else if (value instanceof PostgresLanguageArray array) {
+      // an array of the postgresql language is written as PostgreSQL writes it (fork issue #234)
+      serializedValue = array.literal();
     } else if ((pgType == JSON || pgType == JSONB) && value != null
         && (value instanceof Collection<?> || value.getClass().isArray())) {
       // The column was announced as a json document holding an array (issue #5366): emit a real JSON array

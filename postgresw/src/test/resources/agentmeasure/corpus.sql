@@ -744,7 +744,7 @@ INSERT INTO f (id, name, n, price, at, meta, tags, emb) VALUES (1, 'ann', 10, 1.
 SELECT array_agg(name ORDER BY id) FROM f
 --@ F03 feature
 SELECT json_agg(name ORDER BY id) FROM f
---@ F04 feature
+--@ F04 feature volatile
 SELECT jsonb_agg(n) FROM f
 --@ F05 feature
 SELECT json_build_object('id', id, 'name', name) FROM f ORDER BY id
@@ -934,7 +934,7 @@ EXPLAIN ANALYZE SELECT * FROM f WHERE id = 1
 SELECT * FROM f NATURAL JOIN f g
 --@ F98 feature
 SELECT t.id FROM f AS t WHERE EXISTS (SELECT 1 FROM f u WHERE u.id = t.id AND u.n > 10) ORDER BY t.id
---@ F99 feature
+--@ F99 feature volatile
 SELECT (SELECT array_agg(g.name) FROM f g) AS names
 --@ F100 feature
 SELECT ARRAY(SELECT name FROM f ORDER BY id)
