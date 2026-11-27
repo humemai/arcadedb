@@ -132,8 +132,8 @@ class PostgreSQLAlterTableInBlockTest extends PostgreSQLSideBySideTestBase {
   }
 
   /**
-   * The rows are written and one of them is refused part way: the {@code sql} language made a mandatory property that one row
-   * lacks, so every later write of that row fails.
+   * The rows are written and one of them is refused part way: a property that one row lacks is mandatory, so every later write
+   * of that row fails. The {@code sql} statement refuses to set the flag over such a row, so the Java API of the server sets it.
    */
   @Test
   void aStatementThatFailsWhileItWritesTheRowsLeavesTheTableAsItWas() throws Exception {
@@ -143,7 +143,7 @@ class PostgreSQLAlterTableInBlockTest extends PostgreSQLSideBySideTestBase {
         run(arcade, "INSERT INTO partial VALUES (" + id + ", 'v" + id + "')");
       run(arcade, "{sql} CREATE PROPERTY partial.m STRING");
       run(arcade, "{sql} UPDATE partial SET m = 'x' WHERE id < 40");
-      run(arcade, "{sql} ALTER PROPERTY partial.m MANDATORY true");
+      getServerDatabase(0, getDatabaseName()).getSchema().getType("partial").getProperty("m").setMandatory(true);
       final String rows = count(arcade, "SELECT id, v, m FROM partial ORDER BY id");
 
       for (final boolean inBlock : new boolean[] { false, true }) {

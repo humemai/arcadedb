@@ -78,7 +78,8 @@ class AlterTableInTransactionTest extends TestHelper {
       run("INSERT INTO t VALUES (" + id + ", 'v')");
     database.command("sql", "CREATE PROPERTY t.m STRING").close();
     database.transaction(() -> database.command("sql", "UPDATE t SET m = 'x' WHERE id < 40").close());
-    database.command("sql", "ALTER PROPERTY t.m MANDATORY true").close();
+    // the sql statement refuses the flag over a row that lacks the value, the Java API does not read the rows
+    database.getSchema().getType("t").getProperty("m").setMandatory(true);
 
     database.begin();
     boolean failed = false;
