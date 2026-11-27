@@ -54,14 +54,23 @@ final class PostgresTransactionStatement {
   final Database.TRANSACTION_ISOLATION_LEVEL isolation;
   /** The command tag PostgreSQL answers this statement with. */
   final String                               tag;
+  /** True for a BEGIN / START TRANSACTION that asked for {@code READ ONLY} and was accepted with it. */
+  final boolean                              readOnly;
   private final PostgresSessionSettings.SettingException refusal;
 
   private PostgresTransactionStatement(final PostgresPortal.TransactionControl control,
       final Database.TRANSACTION_ISOLATION_LEVEL isolation, final String tag, final PostgresSessionSettings.SettingException refusal) {
+    this(control, isolation, tag, refusal, false);
+  }
+
+  private PostgresTransactionStatement(final PostgresPortal.TransactionControl control,
+      final Database.TRANSACTION_ISOLATION_LEVEL isolation, final String tag, final PostgresSessionSettings.SettingException refusal,
+      final boolean readOnly) {
     this.control = control;
     this.isolation = isolation;
     this.tag = tag;
     this.refusal = refusal;
+    this.readOnly = readOnly;
   }
 
   /**
@@ -96,6 +105,55 @@ final class PostgresTransactionStatement {
    * @return the statement, or null when the text is not one of the shapes above
    */
   static PostgresTransactionStatement parse(final String upperCaseText) {
+    return parse(upperCaseText, false);
+  }
+
+  /**
+   * A transaction-control statement of the {@code postgresql} language (fork issue #236): read as PostgreSQL reads it, so a
+   * comment is white space, and with {@code BEGIN READ ONLY}, whose block the protocol keeps from writing.
+   *
+   * @param upperCaseText the statement upper-cased, trimmed and without its trailing {@code ;}
+   */
+  static PostgresTransactionStatement parseOfLanguage(final String upperCaseText) {
+    return parse(withoutComments(upperCaseText), true);
+  }
+
+  /**
+   * The statement with each comment replaced by a space, trimmed and without a trailing {@code ;}. A text with a quote or a
+   * dollar sign outside its comments is given back as it is: no transaction statement that this class reads has one.
+   */
+  private static String withoutComments(final String text) {
+    if (text.indexOf("--") < 0 && text.indexOf("/*") < 0)
+      return text;
+    final StringBuilder kept = new StringBuilder(text.length());
+    int depth = 0;
+    for (int i = 0; i < text.length(); i++) {
+      final char c = text.charAt(i);
+      final char next = i + 1 < text.length() ? text.charAt(i + 1) : 0;
+      if (c == '/' && next == '*') {
+        // PostgreSQL nests block comments
+        ++depth;
+        ++i;
+      } else if (depth > 0) {
+        if (c == '*' && next == '/') {
+          if (--depth == 0)
+            kept.append(' ');
+          ++i;
+        }
+      } else if (c == '-' && next == '-') {
+        while (i + 1 < text.length() && text.charAt(i + 1) != '\n' && text.charAt(i + 1) != '\r')
+          ++i;
+        kept.append(' ');
+      } else if (c == '\'' || c == '"' || c == '$')
+        return text;
+      else
+        kept.append(c);
+    }
+    // an unterminated comment is a syntax error, which the language answers
+    return depth > 0 ? text : PostgresNetworkExecutor.normalizeStatementText(kept.toString());
+  }
+
+  private static PostgresTransactionStatement parse(final String upperCaseText, final boolean readOnlySupported) {
     if (upperCaseText.isEmpty())
       return null;
     // Cheap rejection first: this runs on every statement the wire dispatches
@@ -114,9 +172,9 @@ final class PostgresTransactionStatement {
     // Matched in place, so a statement that only shares a first letter with a keyword (SELECT, CREATE, SET...)
     // allocates nothing
     if (isKeyword(upperCaseText, keywordEnd, "BEGIN"))
-      return begin(upperCaseText, "BEGIN", restOf(upperCaseText, keywordEnd), true);
+      return begin(upperCaseText, "BEGIN", restOf(upperCaseText, keywordEnd), true, readOnlySupported);
     if (isKeyword(upperCaseText, keywordEnd, "START"))
-      return begin(upperCaseText, TAG_START_TRANSACTION, restOf(upperCaseText, keywordEnd), false);
+      return begin(upperCaseText, TAG_START_TRANSACTION, restOf(upperCaseText, keywordEnd), false, readOnlySupported);
     if (isKeyword(upperCaseText, keywordEnd, "COMMIT"))
       return end(PostgresPortal.TransactionControl.COMMIT, "COMMIT", restOf(upperCaseText, keywordEnd));
     if (isKeyword(upperCaseText, keywordEnd, "END"))
@@ -137,7 +195,7 @@ final class PostgresTransactionStatement {
   }
 
   private static PostgresTransactionStatement begin(final String query, final String tag, final String rest,
-      final boolean transactionKeywordOptional) {
+      final boolean transactionKeywordOptional, final boolean readOnlySupported) {
     // PostgreSQL separates the modes with a comma OR with whitespace (transaction_mode_list : item | list ',' item |
     // list item), so both are separators here. A comma that separates nothing - leading, trailing or doubled - is a
     // syntax error in PostgreSQL, and is left to the grammar here, which refuses it the same way
@@ -157,8 +215,10 @@ final class PostgresTransactionStatement {
       return null;
 
     final String isolationName;
+    // Set by the last READ ONLY or READ WRITE of the list; null when a read-only block cannot be opened here
+    final boolean[] readOnly = readOnlySupported ? new boolean[1] : null;
     try {
-      isolationName = isolationOfModes(query, tokens, i);
+      isolationName = isolationOfModes(query, tokens, i, readOnly);
     } catch (final PostgresSessionSettings.SettingException e) {
       if (PostgresCopyStatement.SQLSTATE_SYNTAX_ERROR.equals(e.sqlState))
         // Not PostgreSQL's spelling: left to the SQL grammar, which accepts ArcadeDB's own (BEGIN ISOLATION <level>)
@@ -166,12 +226,13 @@ final class PostgresTransactionStatement {
       return new PostgresTransactionStatement(PostgresPortal.TransactionControl.BEGIN, null, tag, e);
     }
 
+    final boolean refusesWrites = readOnly != null && readOnly[0];
     if (isolationName == null)
-      return new PostgresTransactionStatement(PostgresPortal.TransactionControl.BEGIN, null, tag, null);
+      return new PostgresTransactionStatement(PostgresPortal.TransactionControl.BEGIN, null, tag, null, refusesWrites);
     return switch (isolationName) {
       case "repeatable read" ->
           new PostgresTransactionStatement(PostgresPortal.TransactionControl.BEGIN, Database.TRANSACTION_ISOLATION_LEVEL.REPEATABLE_READ, tag,
-              null);
+              null, refusesWrites);
       case "serializable" -> new PostgresTransactionStatement(PostgresPortal.TransactionControl.BEGIN, null, tag,
           new PostgresSessionSettings.SettingException(
               "transaction isolation level \"serializable\" is not supported by this server: transactions run at \"read committed\" or \"repeatable read\"",
@@ -179,7 +240,7 @@ final class PostgresTransactionStatement {
       // READ UNCOMMITTED behaves as READ COMMITTED, as in PostgreSQL
       case "read committed", "read uncommitted" ->
           new PostgresTransactionStatement(PostgresPortal.TransactionControl.BEGIN, Database.TRANSACTION_ISOLATION_LEVEL.READ_COMMITTED, tag,
-              null);
+              null, refusesWrites);
       default -> throw new IllegalStateException("Unmapped transaction isolation level '" + isolationName + "'");
     };
   }
@@ -217,7 +278,8 @@ final class PostgresTransactionStatement {
   /**
    * The isolation level a list of transaction modes asks for, spelled as PostgreSQL reports it (e.g.
    * {@code read committed}), or null when it names none. {@code READ WRITE} and {@code [NOT] DEFERRABLE} change nothing
-   * here ({@code DEFERRABLE} only matters to a SERIALIZABLE READ ONLY transaction), and {@code READ ONLY} is refused.
+   * here ({@code DEFERRABLE} only matters to a SERIALIZABLE READ ONLY transaction), and {@code READ ONLY} is refused unless
+   * the caller can keep a block from writing.
    *
    * @param query  the whole statement, for the syntax-error message
    * @param tokens the statement split on whitespace and commas
@@ -227,6 +289,10 @@ final class PostgresTransactionStatement {
    *                                                  {@code READ ONLY}
    */
   static String isolationOfModes(final String query, final String[] tokens, final int from) {
+    return isolationOfModes(query, tokens, from, null);
+  }
+
+  private static String isolationOfModes(final String query, final String[] tokens, final int from, final boolean[] readOnly) {
     String isolation = null;
     int i = from;
     while (i < tokens.length) {
@@ -254,11 +320,13 @@ final class PostgresTransactionStatement {
         if (i >= tokens.length)
           throw syntaxError(query);
         final String access = tokens[i++];
-        if ("ONLY".equals(access))
+        if (!"ONLY".equals(access) && !"WRITE".equals(access))
+          throw syntaxError(query);
+        if (readOnly != null)
+          readOnly[0] = "ONLY".equals(access);
+        else if ("ONLY".equals(access))
           throw new PostgresSessionSettings.SettingException(PostgresSessionSettings.READ_ONLY_NOT_SUPPORTED,
               PostgresSessionSettings.SQLSTATE_FEATURE_NOT_SUPPORTED);
-        if (!"WRITE".equals(access))
-          throw syntaxError(query);
       }
       case "NOT" -> {
         if (i >= tokens.length || !"DEFERRABLE".equals(tokens[i++]))

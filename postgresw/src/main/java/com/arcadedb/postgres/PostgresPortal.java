@@ -131,6 +131,8 @@ public class PostgresPortal {
    * applied with it at Execute (issue #8273). Null for a plain BEGIN and for every other statement.
    */
   public Database.TRANSACTION_ISOLATION_LEVEL isolationLevel;
+  /** True for a {@code BEGIN READ ONLY}, recorded next to {@link #transactionControl} and applied with it at Execute. */
+  public boolean                   transactionReadOnly  = false;
   /**
    * The parsed {@code SET}/{@code RESET} statement, or null for everything else (issue #8135). Parse only
    * parses and RECORDS it here, exactly as it does {@link #transactionControl}; {@code executeCommand()} applies it
@@ -235,6 +237,7 @@ public class PostgresPortal {
     portal.sqlStatement = template.sqlStatement;
     portal.parameterTypes = template.parameterTypes;
     portal.ignoreExecution = template.ignoreExecution;
+    portal.transactionReadOnly = template.transactionReadOnly;
     portal.emptyQuery = template.emptyQuery;
     portal.isExpectingResult = template.isExpectingResult;
     portal.catalogQuery = template.catalogQuery;
