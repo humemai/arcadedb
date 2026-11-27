@@ -106,6 +106,26 @@ Every refusal below is `0A000`.
 | Keys | any type with an operator class | tree indexes over `bool`, the number types, `text`, `varchar`, `date`, and `timestamp` |
 | Transactions | a rollback takes the index back | refused in a transaction block, as `CREATE TABLE` is |
 
+## Missing functions and operators
+
+A call of a function or operator that PostgreSQL 18 has and `postgresql` lacks is `0A000` (not supported). A call that PostgreSQL would not find either keeps PostgreSQL's code, `42883`. The language knows what PostgreSQL has from a [list of its catalog](../engine/src/main/resources/com/arcadedb/query/postgresql/eval/postgresql-18-catalog.tsv) (names and argument types), which [`pg_catalog_list.sh`](../.github/scripts/pg_catalog_list.sh) writes from a PostgreSQL 18.7 server and CI compares with a server again.
+
+| statement | `postgresql` | why |
+| --- | --- | --- |
+| `SELECT make_date(2013, 2, 30)` | `0A000` | PostgreSQL has the function |
+| `SELECT substr('a'::bytea, 1, 1)` | `0A000` | the language has `substr` for text only |
+| `SELECT '{}'::jsonb \|\| '{}'::jsonb` | `0A000` | PostgreSQL has the operator |
+| `SELECT lower(1)` | `42883` | PostgreSQL has no `lower(integer)` either |
+| `SELECT no_such_function(1)` | `42883` | PostgreSQL has no such name |
+
+Limits:
+
+- An extension is not in the list: `l2_distance` of pgvector, which the language lacks, is `42883`.
+- The match is simpler than PostgreSQL's. The element type of an array is not compared, and the polymorphic arguments of one call need not agree, so `width_bucket('5'::text, ARRAY[3, 4])` is `0A000` where PostgreSQL answers `42883`.
+- The list says only whether PostgreSQL has a candidate. A call that PostgreSQL refuses as ambiguous (`42725`) or for another reason is `0A000` too (from reading the code, not tested).
+- The language answers for the first call that it cannot make, whatever PostgreSQL finds later. In `SELECT f1(point(3, 4))` that is `point` (`0A000`), while PostgreSQL answers `42883` for `f1`. `regproc('know')` is `0A000` too, while PostgreSQL has the cast and answers `42883` for the name `know`.
+- A function that a script makes with `CREATE FUNCTION`, which is refused, is not in the list, so a later call of it is `42883`.
+
 ## Choices, open to change
 
 | # | choice | the main alternative |

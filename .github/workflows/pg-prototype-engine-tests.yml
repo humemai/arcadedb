@@ -21,9 +21,10 @@
 # whole suite, which takes the better part of an hour; this runs only the tests of the postgresql packages: the engine tests (a
 # build of the engine module and a few seconds of tests) and the tests of the same packages in postgresw, which compare the engine
 # with the wire module (a build of the modules postgresw needs); and the census module, whose checks read the classes of every
-# module (a build of all of them). Three jobs, side by side, on every push to a feat/pg-* branch and to the prototype branch,
-# and on every pull request into the prototype branch. The full suite is started by hand (mvn-test.yml, whose modules shard of
-# unit-tests runs the postgresw tests and the censuses too). Drop this file when anything goes upstream.
+# module (a build of all of them); and the list of PostgreSQL's functions and operators, which a PostgreSQL 18 server writes.
+# Four jobs, side by side, on every push to a feat/pg-* branch and to the prototype branch, and on every pull request into the
+# prototype branch. The full suite is started by hand (mvn-test.yml, whose modules shard of unit-tests runs the postgresw tests
+# and the censuses too). Drop this file when anything goes upstream.
 name: PostgreSQL prototype - engine tests
 
 on:
@@ -146,3 +147,32 @@ jobs:
       - name: Where the Maven files came from
         if: always()
         run: bash .github/scripts/pg_maven_report.sh
+
+  # The postgresql language answers 0A000 for a function or operator that PostgreSQL 18 has and it lacks (fork issue #198), from
+  # a committed list that a script writes from the catalog of a server. This job writes it again: the committed file must be
+  # what the server gives.
+  catalog-list:
+    name: PostgreSQL 18 list of functions and operators
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Write the list from a PostgreSQL 18 server
+        run: .github/scripts/pg_catalog_list.sh
+
+      - name: Upload the list the server gave
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pg-catalog-list
+          path: engine/src/main/resources/com/arcadedb/query/postgresql/eval/postgresql-18-catalog.tsv
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: The committed list is the one of the server
+        run: |
+          list=engine/src/main/resources/com/arcadedb/query/postgresql/eval/postgresql-18-catalog.tsv
+          if ! git ls-files --error-unmatch "$list" > /dev/null || ! git diff --exit-code --stat -- "$list"; then
+            echo "$list is not the committed output of .github/scripts/pg_catalog_list.sh" >&2
+            exit 1
+          fi

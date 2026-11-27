@@ -146,10 +146,11 @@ class VectorSearchPlanTest extends TestHelper {
     assertThat(state("SELECT embedding <-> '[1,0]' FROM item")).isEqualTo("22000");
     assertThat(state("SELECT '[1,2,3]'::vector <=> '[1,2]'")).isEqualTo("22000");
     assertThat(state("SELECT embedding <-> '[1,x]' FROM item")).isEqualTo("22P02");
-    // no operator between an integer and a vector, or between two unknown literals
+    // no operator between an integer and a vector
     assertThat(state("SELECT embedding <-> 1 FROM item")).isEqualTo("42883");
-    assertThat(state("SELECT '[1,2]' <-> '[1,2]'")).isEqualTo("42883");
     assertThat(state("SELECT iid <-> '[1,0,0]' FROM item")).isEqualTo("42883");
+    // two unknown literals can be the operands of <-> of PostgreSQL's geometric types, which the language lacks
+    assertThat(state("SELECT '[1,2]' <-> '[1,2]'")).isEqualTo("0A000");
     // a vector has no order or equality in this prototype
     assertThat(state("SELECT iid FROM item ORDER BY embedding")).isEqualTo("0A000");
   }

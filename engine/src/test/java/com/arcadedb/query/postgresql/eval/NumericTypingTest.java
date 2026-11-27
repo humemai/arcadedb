@@ -220,7 +220,8 @@ class NumericTypingTest {
 
   @Test
   void aFunctionThatDoesNotExistIsAnError() {
-    assertThat(sqlState(call("abs", s("x")))).isEqualTo("42883");
+    // PostgreSQL reads the literal as double precision here, which the language does not do
+    assertThat(sqlState(call("abs", s("x")))).isEqualTo("0A000");
     assertThat(sqlState(call("nosuchfunction", i(1)))).isEqualTo("42883");
     assertThat(sqlState(call("lower", i(1)))).as("no implicit cast from integer to text").isEqualTo("42883");
   }

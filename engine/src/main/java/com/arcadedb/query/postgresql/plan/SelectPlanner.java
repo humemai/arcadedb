@@ -1307,7 +1307,7 @@ public class SelectPlanner {
           throw PostgreSQLEvaluationException.noFunction(name);
       } else {
         if (call.args().size() != 1)
-          throw PostgreSQLEvaluationException.noFunction(name);
+          throw PostgreSQLEvaluationException.noFunction(name, inputCompiler.argumentTypes(call));
         argument = inputCompiler.resolveOutput(inputCompiler.compile(call.args().get(0)));
         argumentType = argument.type();
       }
@@ -1350,12 +1350,8 @@ public class SelectPlanner {
    * text one. There is no implicit cast from a number to text: {@code string_agg(pid, ',')} is {@code 42883}, as in PostgreSQL.
    */
   private static SelectPlan.AggregateSpec stringAggSpec(final Expression.FunctionCall call, final ExpressionCompiler inputCompiler) {
-    if (call.star() || call.args().size() != 2) {
-      final List<PgType> types = new ArrayList<>();
-      for (final Expression argument : call.args())
-        types.add(inputCompiler.compile(argument).type());
-      throw PostgreSQLEvaluationException.noFunction("string_agg", types.toArray(new PgType[0]));
-    }
+    if (call.star() || call.args().size() != 2)
+      throw PostgreSQLEvaluationException.noFunction("string_agg", inputCompiler.argumentTypes(call));
     final Evaluable value = inputCompiler.compile(call.args().get(0));
     final Evaluable delimiter = inputCompiler.compile(call.args().get(1));
     if (value.type() == PgType.BYTEA || delimiter.type() == PgType.BYTEA)

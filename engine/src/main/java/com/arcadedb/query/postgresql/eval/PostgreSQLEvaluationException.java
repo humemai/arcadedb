@@ -41,7 +41,7 @@ import com.arcadedb.exception.CommandExecutionException;
  * <tr><td>{@code 22011}, {@code 22019}, {@code 22025}</td><td>substring error, invalid escape character, invalid escape sequence</td></tr>
  * <tr><td>{@code 2201F}</td><td>invalid_argument_for_power_function</td></tr>
  * <tr><td>{@code 2201W}, {@code 2201X}</td><td>invalid_row_count_in_limit_clause, invalid_row_count_in_result_offset_clause</td></tr>
- * <tr><td>{@code 42883}</td><td>undefined_function: no operator or function takes these types</td></tr>
+ * <tr><td>{@code 42883}</td><td>undefined_function: no operator or function takes these types, in PostgreSQL either</td></tr>
  * <tr><td>{@code 42804}</td><td>datatype_mismatch: a {@code WHERE} that is not boolean, a {@code CASE} with unmatched branches</td></tr>
  * <tr><td>{@code 42846}</td><td>cannot_coerce: no cast between the two types</td></tr>
  * <tr><td>{@code 42725}</td><td>ambiguous_function: {@code unknown + unknown}</td></tr>
@@ -49,7 +49,8 @@ import com.arcadedb.exception.CommandExecutionException;
  * <tr><td>{@code 42P02}</td><td>undefined_parameter: {@code $2} with one value bound</td></tr>
  * <tr><td>{@code 42P07}, {@code 42710}</td><td>duplicate_table, duplicate_object: a relation or a constraint under a taken
  * name</td></tr>
- * <tr><td>{@code 0A000}</td><td>feature_not_supported: a type or function outside the subset</td></tr>
+ * <tr><td>{@code 0A000}</td><td>feature_not_supported: a type, or a function or operator of PostgreSQL, outside the
+ * subset</td></tr>
  * </table>
  */
 public class PostgreSQLEvaluationException extends CommandExecutionException {
@@ -98,25 +99,40 @@ public class PostgreSQLEvaluationException extends CommandExecutionException {
     return new PostgreSQLEvaluationException("22P02", "invalid input syntax for type " + type.displayName() + ": \"" + text + "\"");
   }
 
-  /** {@code 42883}: {@code operator does not exist: integer = text}. */
+  /**
+   * The language has no operator for these operands. {@code 42883}: {@code operator does not exist: integer = text}; or
+   * {@code 0A000} when PostgreSQL has one, see {@link PostgreSQLBuiltins}.
+   */
   public static PostgreSQLEvaluationException noOperator(final String operator, final PgType left, final PgType right) {
-    return new PostgreSQLEvaluationException("42883", "operator does not exist: " + left.displayName() + " " + operator + " "
-        + right.displayName() + ". Hint: No operator matches the given name and argument types. You might need to add explicit "
-        + "type casts.");
-  }
-
-  public static PostgreSQLEvaluationException noOperator(final String operator, final PgType operand) {
-    return new PostgreSQLEvaluationException("42883", "operator does not exist: " + operator + " " + operand.displayName()
+    final String call = left.displayName() + " " + operator + " " + right.displayName();
+    if (PostgreSQLBuiltins.hasOperator(operator, left, right))
+      return unsupported("The operator " + call + " is not supported by the postgresql language");
+    return new PostgreSQLEvaluationException("42883", "operator does not exist: " + call
         + ". Hint: No operator matches the given name and argument types. You might need to add explicit type casts.");
   }
 
-  /** {@code 42883}: {@code function sum(text) does not exist}. */
+  /** {@link #noOperator(String, PgType, PgType)} of a prefix operator. */
+  public static PostgreSQLEvaluationException noOperator(final String operator, final PgType operand) {
+    final String call = operator + " " + operand.displayName();
+    if (PostgreSQLBuiltins.hasOperator(operator, null, operand))
+      return unsupported("The operator " + call + " is not supported by the postgresql language");
+    return new PostgreSQLEvaluationException("42883", "operator does not exist: " + call
+        + ". Hint: No operator matches the given name and argument types. You might need to add explicit type casts.");
+  }
+
+  /**
+   * The language has no function of this name for these arguments. {@code 42883}: {@code function sum(text) does not exist}; or
+   * {@code 0A000} when PostgreSQL has one, see {@link PostgreSQLBuiltins}.
+   */
   public static PostgreSQLEvaluationException noFunction(final String name, final PgType... arguments) {
-    final StringBuilder out = new StringBuilder("function ").append(name).append('(');
+    final StringBuilder call = new StringBuilder(name).append('(');
     for (int i = 0; i < arguments.length; i++)
-      out.append(i > 0 ? ", " : "").append(arguments[i].displayName());
-    return new PostgreSQLEvaluationException("42883", out.append(") does not exist. Hint: No function matches the given name "
-        + "and argument types. You might need to add explicit type casts.").toString());
+      call.append(i > 0 ? ", " : "").append(arguments[i].displayName());
+    call.append(')');
+    if (PostgreSQLBuiltins.hasFunction(name, arguments))
+      return unsupported("The function " + call + " is not supported by the postgresql language");
+    return new PostgreSQLEvaluationException("42883", "function " + call
+        + " does not exist. Hint: No function matches the given name and argument types. You might need to add explicit type casts.");
   }
 
   /**
