@@ -7,6 +7,7 @@ cases marked pending (such as `is-columns-public-rows`, identity columns in `inf
 PostgreSQL 18.7 by the parity corpus (`engine/src/test/resources/postgresql/corpus`).
 
 Where the language behaves differently from PostgreSQL, and why, is on the [differences page](postgresql-differences.md).
+What PostgreSQL's own regression files give, statement by statement, is on the [regression page](postgresql-regression.md).
 
 | Construct | State | Notes |
 |---|---|---|

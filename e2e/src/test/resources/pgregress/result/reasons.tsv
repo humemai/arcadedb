@@ -1,0 +1,1119 @@
+kind	statements	reason
+blocked	4694	inheritance and partitions are not copied
+blocked	1934	only tables of public and temporary tables are copied
+blocked	1408	the copy differs from the table in information_schema
+blocked	660	a column of type name cannot be held
+blocked	649	for a write: the copy does not carry a default, identity or generated column
+blocked	605	a column of type int4range cannot be held
+blocked	457	a column of type character(n) cannot be held
+blocked	344	a value of type numeric cannot be held
+blocked	234	a column of type point cannot be held
+blocked	224	a column of type box cannot be held
+blocked	201	for a write: the copy does not carry a trigger
+blocked	186	for a write: the copy does not carry a unique index
+blocked	183	a column of type tsvector cannot be held
+blocked	173	for a write: the copy does not carry a foreign key that refers to it
+blocked	125	for a write: the copy does not carry a check constraint
+blocked	112	a column of type timestamp(n) with time zone cannot be held
+blocked	107	a value of type timestamp cannot be held
+blocked	106	a column of type oid cannot be held
+blocked	101	a value of type _int4 cannot be held
+blocked	83	a column of type int4multirange cannot be held
+blocked	82	a column of type cidr cannot be held
+blocked	77	a column of type nummultirange cannot be held
+blocked	77	a column of type uuid cannot be held
+blocked	76	for a write: the copy does not carry a rule
+blocked	71	a column of type circle cannot be held
+blocked	63	a jsonb value that is not an object cannot be held
+blocked	62	a column of type interval cannot be held
+blocked	60	a column of type polygon cannot be held
+blocked	55	a column of type money cannot be held
+blocked	51	a column of type numrange cannot be held
+blocked	51	a column of type xml cannot be held
+blocked	45	a column of type macaddr8 cannot be held
+blocked	44	a column of type timestamp with time zone cannot be held
+blocked	39	a column of type path cannot be held
+blocked	37	a column of type bit(n) cannot be held
+blocked	36	a column of type line cannot be held
+blocked	36	a column of type time without time zone cannot be held
+blocked	35	a column of type public.rainbow cannot be held
+blocked	34	a column of type lseg cannot be held
+blocked	33	for a write: the copy does not carry a deferrable key
+blocked	31	a column of type name[] cannot be held
+blocked	30	a column of type macaddr cannot be held
+blocked	28	a column of type inet cannot be held
+blocked	27	EquivalentIndexException: Found the existent index '...' defined on the properties '...' for type '...'. It already provides what was requested: use IF NOT E...
+blocked	25	a column of type json cannot be held
+blocked	25	a column of type time(n) with time zone cannot be held
+blocked	23	a column of type bit varying(n) cannot be held
+blocked	23	a column of type tsquery cannot be held
+blocked	22	a column of type public.dcomptypea cannot be held
+blocked	21	a column of type public.insert_test_domain cannot be held
+blocked	20	a column of type public.insert_test_type cannot be held
+blocked	18	a column of type public.dcomptype cannot be held
+blocked	18	a column of type public.ddef1 cannot be held
+blocked	18	a column of type time(n) without time zone cannot be held
+blocked	17	a column of type "..." cannot be held
+blocked	17	a column of type public.rowold_comp cannot be held
+blocked	17	a column of type public.textrange cannot be held
+blocked	16	a column of type public.domainint4arr cannot be held
+blocked	16	a value of type date cannot be held
+blocked	16	for a write: the copy does not carry an exclusion constraint
+blocked	15	a column of type public.attdrop_tail cannot be held
+blocked	14	a column of type public.dnotnull cannot be held
+blocked	14	a value of type _int2 cannot be held
+blocked	13	a column of type public.dposinta[] cannot be held
+blocked	13	a column of type public.myint cannot be held
+blocked	12	a column of type public.t_rec cannot be held
+blocked	11	a column of type fullname cannot be held
+blocked	10	a column of type public.compositetable_type cannot be held
+blocked	10	a value of type _text cannot be held
+blocked	9	DuplicatedKeyException: Duplicated key [n] found on index '...' already assigned to record #n:n
+blocked	9	a column of type pg_lsn cannot be held
+blocked	9	a column of type public.avg_rec cannot be held
+blocked	9	a column of type public.dcomptype[] cannot be held
+blocked	9	a column of type public.dnotnulltest cannot be held
+blocked	9	a column of type public.insert_pos_ints cannot be held
+blocked	9	a column of type public.int8alias1 cannot be held
+blocked	9	a column of type public.quad cannot be held
+blocked	8	ValidationException: The property '...' is mandatory, but not found on record: @notnull_tbl1[b=n]
+blocked	8	a column of type pg_snapshot cannot be held
+blocked	8	a column of type public.domainint4 cannot be held
+blocked	8	a column of type public.fk_err_vch cannot be held
+blocked	8	a column of type txid_snapshot cannot be held
+blocked	7	Unreadable: The harness could not read the server: P0004 sro_ifun(n) called by postgres for: SELECT "..." FROM ONLY "..."."..."
+blocked	7	a column of type public.con cannot be held
+blocked	7	a column of type public.dtop cannot be held
+blocked	7	a column of type public.posint[] cannot be held
+blocked	7	a column of type public.rta_type cannot be held
+blocked	7	for a write: the copy does not carry a t
+blocked	6	a column of type public.atcomp_inc cannot be held
+blocked	6	a column of type public.connotnull cannot be held
+blocked	6	a column of type public.priv_testdomain1 cannot be held
+blocked	6	a column of type xid cannot be held
+blocked	5	a column of type public.atexprec cannot be held
+blocked	5	a column of type public.compositetable_type_1 cannot be held
+blocked	5	a column of type public.orderedpair cannot be held
+blocked	5	a column of type xid8 cannot be held
+blocked	4	a column of type public.attbl cannot be held
+blocked	4	a column of type public.attinh cannot be held
+blocked	4	a column of type public.attmp cannot be held
+blocked	4	a column of type public.attpart cannot be held
+blocked	4	a column of type public.attview cannot be held
+blocked	4	a column of type public.compositetable_type[] cannot be held
+blocked	4	a column of type public.compositetable_type_2 cannot be held
+blocked	4	a column of type public.comptype cannot be held
+blocked	4	a column of type public.dcheck_ign_err2 cannot be held
+blocked	4	a column of type public.ddtest1d cannot be held
+blocked	4	a column of type public.fk_acl_enum cannot be held
+blocked	4	a column of type public.inotnull cannot be held
+blocked	4	a column of type public.int8_tbl[] cannot be held
+blocked	4	a column of type public.posint2 cannot be held
+blocked	4	a column of type public.rta_key cannot be held
+blocked	4	a column of type public.textandtext[] cannot be held
+blocked	4	a column of type public.vc4[] cannot be held
+blocked	4	its rows cannot be read
+blocked	3	ValidationException: The property '...' is mandatory, but not found on record: @test_replica_identity6[]
+blocked	3	a column of type int8multirange[] cannot be held
+blocked	3	a column of type int8range[] cannot be held
+blocked	3	a column of type public.attfd cannot be held
+blocked	3	a column of type public.cantcompare cannot be held
+blocked	3	a column of type public.float8multirange cannot be held
+blocked	3	a column of type public.float8range cannot be held
+blocked	3	a column of type public.insert_nnarray cannot be held
+blocked	3	a column of type public.mytype cannot be held
+blocked	3	a column of type public.rowzero_comp cannot be held
+blocked	3	a column of type public.rta_ref cannot be held
+blocked	3	a column of type public.spgist_text cannot be held
+blocked	3	a column of type public.text_w_default cannot be held
+blocked	2	a column of type daterange cannot be held
+blocked	2	a column of type public.at_tab1 cannot be held
+blocked	2	a column of type public.ddtest1 cannot be held
+blocked	2	a column of type public.ddtest1[] cannot be held
+blocked	2	a column of type public.rposint cannot be held
+blocked	2	a column of type public.rta_type[] cannot be held
+blocked	2	a column of type public.test_typex cannot be held
+blocked	2	a column of type public.things cannot be held
+blocked	2	a column of type recur1 cannot be held
+blocked	2	rows differ in n: PostgreSQL has [NULL, NULL, NULL], got [n, NULL, NULL] instead
+blocked	1	a column of type public.ft1 cannot be held
+blocked	1	a column of type public.multitextrange1[] cannot be held
+blocked	1	a column of type public.mycomptype cannot be held
+blocked	1	a column of type public.priv_testtype1[] cannot be held
+blocked	1	a column of type public.rf_bug_status cannot be held
+blocked	1	a column of type public.test_type1 cannot be held
+blocked	1	a column of type public.test_type3 cannot be held
+blocked	1	for a write: the copy does not carry a row security
+blocked	1	rows differ in n: PostgreSQL has [n, '...', NULL, '...', NULL], got [n, '...', '...', '...', NULL] instead
+missing_function	300	jsonb_path_query
+missing_function	128	pg_input_is_valid
+missing_function	81	pg_get_viewdef
+missing_function	81	to_timestamp
+missing_function	76	to_tsquery
+missing_function	73	ts_lexize
+missing_function	67	websearch_to_tsquery
+missing_function	64	jsonb_path_query_tz
+missing_function	59	to_char
+missing_function	54	numrange
+missing_function	49	nextval
+missing_function	40	generate_series
+missing_function	39	has_table_privilege
+missing_function	37	regexp_matches
+missing_function	35	has_largeobject_privilege
+missing_function	31	int4range
+missing_function	30	format
+missing_function	29	explain_filter
+missing_function	28	to_number
+missing_function	27	setval
+missing_function	27	to_tsvector
+missing_function	26	dfunc
+missing_function	26	has_function_privilege
+missing_function	22	pg_stat_force_next_flush
+missing_function	22	to_date
+missing_function	21	jsonb_set
+missing_function	21	now
+missing_function	20	jsonb_insert
+missing_function	20	regexp_instr
+missing_function	19	regexp_replace
+missing_function	17	float4send
+missing_function	16	json_strip_nulls
+missing_function	16	jsonb_strip_nulls
+missing_function	16	split_part
+missing_function	15	jsonb_to_tsvector
+missing_function	15	jsonb_typeof
+missing_function	15	ln
+missing_function	15	log
+missing_function	15	pg_partition_root
+missing_function	15	string_to_array
+missing_function	15	unnest
+missing_function	15	xml_is_well_formed
+missing_function	14	brin_desummarize_range
+missing_function	14	brin_summarize_range
+missing_function	14	explain_mask_costs
+missing_function	14	md5
+missing_function	14	pg_restore_relation_stats
+missing_function	14	regexp_substr
+missing_function	13	explain_memoize
+missing_function	13	lo_create
+missing_function	13	make_timestamptz
+missing_function	13	return_int_input
+missing_function	13	xpath
+missing_function	12	current_setting
+missing_function	12	exp
+missing_function	12	explain_parallel_append
+missing_function	11	array_fill
+missing_function	11	date_trunc
+missing_function	11	pg_relation_size
+missing_function	11	regexp_split_to_array
+missing_function	11	ts_rewrite
+missing_function	10	array_sort
+missing_function	10	decode
+missing_function	10	has_column_privilege
+missing_function	10	min_scale
+missing_function	10	pg_column_compression
+missing_function	10	pg_typeof
+missing_function	10	regexp_match
+missing_function	9	div
+missing_function	9	extract
+missing_function	9	f1
+missing_function	9	getdatabaseencoding
+missing_function	9	has_schema_privilege
+missing_function	9	pg_sleep
+missing_function	9	trim_scale
+missing_function	9	width_bucket
+missing_function	8	chr
+missing_function	8	explain_merge
+missing_function	8	pg_stat_get_snapshot_timestamp
+missing_function	8	random
+missing_function	8	scale
+missing_function	8	to_regrole
+missing_function	7	array_position
+missing_function	7	cast_invoker
+missing_function	7	jsonb_contained
+missing_function	7	jsonb_contains
+missing_function	7	jsonb_set_lax
+missing_function	7	nummultirange
+missing_function	7	pg_stat_reset_shared
+missing_function	7	testrngfunc
+missing_function	7	to_regtype
+missing_function	6	array_remove
+missing_function	6	array_replace
+missing_function	6	array_to_string
+missing_function	6	comp
+missing_function	6	crc32c
+missing_function	6	daterange
+missing_function	6	dup
+missing_function	6	json_extract_path
+missing_function	6	json_extract_path_text
+missing_function	6	jsonb_extract_path
+missing_function	6	jsonb_extract_path_text
+missing_function	6	jsonb_object
+missing_function	6	jsonb_path_query_array
+missing_function	6	regexp_count
+missing_function	6	stats_test_func2
+missing_function	6	table_to_xml
+missing_function	6	textrange
+missing_function	6	tsquery
+missing_function	5	array_positions
+missing_function	5	currval
+missing_function	5	encode
+missing_function	5	float8
+missing_function	5	hobby_construct_named
+missing_function	5	jsonb_delete
+missing_function	5	jsonb_exists_all
+missing_function	5	jsonb_exists_any
+missing_function	5	justify_interval
+missing_function	5	lastval
+missing_function	5	lpad
+missing_function	5	my_avg
+missing_function	5	pg_size_pretty
+missing_function	5	phraseto_tsquery
+missing_function	5	pleast
+missing_function	5	polyf
+missing_function	5	position
+missing_function	5	power
+missing_function	5	rpad
+missing_function	5	stricttest
+missing_function	5	table_to_xmlschema
+missing_function	5	test_temp_pin
+missing_function	5	to_regnamespace
+missing_function	5	xmltext
+missing_function	4	any_value
+missing_function	4	array_elem_check
+missing_function	4	array_reverse
+missing_function	4	asinh
+missing_function	4	btrim
+missing_function	4	compos
+missing_function	4	convert_to
+missing_function	4	cosh
+missing_function	4	dom_check
+missing_function	4	jsonb_delete_path
+missing_function	4	jsonb_exists
+missing_function	4	jsonb_path_match
+missing_function	4	jsonb_path_query_first
+missing_function	4	max_xacttest
+missing_function	4	myfunc
+missing_function	4	myleast
+missing_function	4	num_nonnulls
+missing_function	4	num_nulls
+missing_function	4	outer_outer_func
+missing_function	4	pg_advisory_lock
+missing_function	4	pg_advisory_xact_lock
+missing_function	4	pg_size_bytes
+missing_function	4	pg_stat_get_function_calls
+missing_function	4	plainto_tsquery
+missing_function	4	shadowtest
+missing_function	4	sinh
+missing_function	4	strtest
+missing_function	4	substring
+missing_function	4	table_to_xml_and_xmlschema
+missing_function	4	tanh
+missing_function	4	to_bin
+missing_function	4	to_hex
+missing_function	4	to_oct
+missing_function	4	to_regclass
+missing_function	4	to_regcollation
+missing_function	4	to_regoper
+missing_function	4	to_regproc
+missing_function	4	to_regprocedure
+missing_function	4	uuid_extract_timestamp
+missing_function	4	warn
+missing_function	3	atref_func
+missing_function	3	brin_summarize_new_values
+missing_function	3	cache_test
+missing_function	3	cache_test_2
+missing_function	3	cardinality
+missing_function	3	current_schemas
+missing_function	3	date_bin
+missing_function	3	factorial
+missing_function	3	float8_combine
+missing_function	3	float8_regr_combine
+missing_function	3	forc01
+missing_function	3	gin_clean_pending_list
+missing_function	3	has_foreign_data_wrapper_privilege
+missing_function	3	has_server_privilege
+missing_function	3	hashfloat4
+missing_function	3	json_build_object
+missing_function	3	jsonb_build_object
+missing_function	3	jsonb_pretty
+missing_function	3	lgamma
+missing_function	3	make_timestamp
+missing_function	3	pg_advisory_unlock
+missing_function	3	pg_advisory_unlock_all
+missing_function	3	pg_backend_pid
+missing_function	3	pg_lsn
+missing_function	3	pg_notify
+missing_function	3	pg_read_binary_file
+missing_function	3	pg_read_file
+missing_function	3	pg_trigger_depth
+missing_function	3	quote_literal
+missing_function	3	report_guc
+missing_function	3	reverse
+missing_function	3	sp_add_user
+missing_function	3	stacked_diagnostics_test
+missing_function	3	substr
+missing_function	3	to_regoperator
+missing_function	3	to_regtypemod
+missing_function	3	translate
+missing_function	3	ts_headline
+missing_function	3	txid_status
+missing_function	3	unistr
+missing_function	3	unreserved_test
+missing_function	3	uuid_extract_version
+missing_function	3	whoami
+missing_function	3	xmlcomment
+missing_function	2	acosh
+missing_function	2	array_append
+missing_function	2	array_to_set
+missing_function	2	array_to_tsvector
+missing_function	2	arrayassign1
+missing_function	2	arrayrange
+missing_function	2	ascii
+missing_function	2	atanh
+missing_function	2	cachebug
+missing_function	2	cleast_agg
+missing_function	2	composrec
+missing_function	2	crc32
+missing_function	2	current_database
+missing_function	2	exc_using
+missing_function	2	explain_analyze_inc_sort_nodes_verify_invariants
+missing_function	2	explain_analyze_inc_sort_nodes_without_memory
+missing_function	2	explain_analyze_without_memory
+missing_function	2	foreach_test
+missing_function	2	gcd
+missing_function	2	gist_translate_cmptype_common
+missing_function	2	has_sequence_privilege
+missing_function	2	has_type_privilege
+missing_function	2	hashfloat8
+missing_function	2	int2
+missing_function	2	int4
+missing_function	2	json_array_length
+missing_function	2	json_build_array
+missing_function	2	jsonb_array_length
+missing_function	2	jsonb_build_array
+missing_function	2	jsonb_each
+missing_function	2	jsonb_each_text
+missing_function	2	jsonb_path_exists
+missing_function	2	large_val
+missing_function	2	lcm
+missing_function	2	lo_unlink
+missing_function	2	make_ad
+missing_function	2	make_date
+missing_function	2	make_type_unversioned
+missing_function	2	max
+missing_function	2	min
+missing_function	2	my_sum_init
+missing_function	2	non_strict
+missing_function	2	nonsimple_expr_test
+missing_function	2	parse_ident
+missing_function	2	pg_current_xact_id
+missing_function	2	pg_get_serial_sequence
+missing_function	2	pg_has_role
+missing_function	2	pg_listening_channels
+missing_function	2	pg_ls_dir
+missing_function	2	pg_settings_get_flags
+missing_function	2	pg_stat_get_backend_io
+missing_function	2	pg_stat_have_stats
+missing_function	2	pg_stat_reset
+missing_function	2	pg_stat_reset_slru
+missing_function	2	pg_visible_in_snapshot
+missing_function	2	priv_testagg1
+missing_function	2	priv_testfunc1
+missing_function	2	refcursor_test1
+missing_function	2	regclass
+missing_function	2	regcollation
+missing_function	2	regexp_like
+missing_function	2	regnamespace
+missing_function	2	regoper
+missing_function	2	regoperator
+missing_function	2	regproc
+missing_function	2	regprocedure
+missing_function	2	regrole
+missing_function	2	regtype
+missing_function	2	return_text_input
+missing_function	2	returns_rw_array
+missing_function	2	row_security_active
+missing_function	2	rta_func
+missing_function	2	schema_to_xml
+missing_function	2	schema_to_xmlschema
+missing_function	2	set_and_report_role
+missing_function	2	sha224
+missing_function	2	sha256
+missing_function	2	sha384
+missing_function	2	sha512
+missing_function	2	sign
+missing_function	2	sillysrf
+missing_function	2	sp_id_user
+missing_function	2	starts_with
+missing_function	2	stats_test_func1
+missing_function	2	test_strict
+missing_function	2	testoa
+missing_function	2	to_json
+missing_function	2	to_jsonb
+missing_function	2	tsquery_phrase
+missing_function	2	txid_current
+missing_function	2	txid_visible_in_snapshot
+missing_function	2	uuidv7
+missing_function	2	vari
+missing_function	2	xml_is_well_formed_content
+missing_function	2	xml_is_well_formed_document
+missing_function	1	aggfns
+missing_function	1	aggfstr
+missing_function	1	array_cat
+missing_function	1	array_larger_accum
+missing_function	1	array_length
+missing_function	1	array_prepend
+missing_function	1	array_sample
+missing_function	1	asind
+missing_function	1	atand
+missing_function	1	bit_count
+missing_function	1	bleat
+missing_function	1	booland_statefunc
+missing_function	1	booleq
+missing_function	1	boolne
+missing_function	1	boolor_statefunc
+missing_function	1	build_group
+missing_function	1	casttestfunc
+missing_function	1	check_ddl_rewrite
+missing_function	1	constant_refcursor
+missing_function	1	convert_from
+missing_function	1	cosd
+missing_function	1	create_and_insert
+missing_function	1	current_function
+missing_function	1	declares_cursor
+missing_function	1	dogrant_ok
+missing_function	1	doubledecrement
+missing_function	1	echo_me
+missing_function	1	equipment_named_ambiguous_2a
+missing_function	1	equipment_named_ambiguous_2b
+missing_function	1	erf
+missing_function	1	error2
+missing_function	1	error_trap_test
+missing_function	1	excpt_test3
+missing_function	1	excpt_test4
+missing_function	1	execute_into_test
+missing_function	1	expensivefunc
+missing_function	1	float8_accum
+missing_function	1	float8_regr_accum
+missing_function	1	float8send
+missing_function	1	formarray
+missing_function	1	functest_a_1
+missing_function	1	functest_a_2
+missing_function	1	functest_a_3
+missing_function	1	functest_s_1
+missing_function	1	functest_s_10
+missing_function	1	functest_s_13
+missing_function	1	functest_s_14
+missing_function	1	functest_s_2
+missing_function	1	functest_s_3
+missing_function	1	functest_srf0
+missing_function	1	gamma
+missing_function	1	get_bit
+missing_function	1	get_byte
+missing_function	1	get_first_user
+missing_function	1	get_users
+missing_function	1	hobbies_by_name
+missing_function	1	hobby_construct
+missing_function	1	int8range
+missing_function	1	interval_hash
+missing_function	1	intr
+missing_function	1	inverse
+missing_function	1	json_array_elements
+missing_function	1	json_array_elements_text
+missing_function	1	json_each
+missing_function	1	json_each_text
+missing_function	1	jsonb_array_elements
+missing_function	1	jsonb_array_elements_text
+missing_function	1	jsonb_concat
+missing_function	1	justify_days
+missing_function	1	justify_hours
+missing_function	1	ks_test_normal_random
+missing_function	1	ks_test_uniform_random
+missing_function	1	ks_test_uniform_random_bigint_in_range
+missing_function	1	ks_test_uniform_random_int_in_range
+missing_function	1	ks_test_uniform_random_numeric_in_range
+missing_function	1	least_agg
+missing_function	1	ltrim
+missing_function	1	make_table
+missing_function	1	make_time
+missing_function	1	makedcomp
+missing_function	1	multi_datum_use
+missing_function	1	mvtest_func
+missing_function	1	my_sum
+missing_function	1	myaggn01a
+missing_function	1	myaggn01b
+missing_function	1	myaggn03a
+missing_function	1	myaggp01a
+missing_function	1	myaggp03a
+missing_function	1	myaggp03b
+missing_function	1	mylt2
+missing_function	1	mysum2
+missing_function	1	namedparmcursor_test1
+missing_function	1	namedparmcursor_test2
+missing_function	1	namedparmcursor_test8
+missing_function	1	namedparmcursor_test9
+missing_function	1	perform_test_func
+missing_function	1	pg_basetype
+missing_function	1	pg_clear_relation_stats
+missing_function	1	pg_column_toast_chunk_id
+missing_function	1	pg_current_xact_id_if_assigned
+missing_function	1	pg_get_acl
+missing_function	1	pg_get_constraintdef
+missing_function	1	pg_get_function_arg_default
+missing_function	1	pg_get_function_arguments
+missing_function	1	pg_get_function_identity_arguments
+missing_function	1	pg_get_function_result
+missing_function	1	pg_get_functiondef
+missing_function	1	pg_get_indexdef
+missing_function	1	pg_get_partkeydef
+missing_function	1	pg_get_ruledef
+missing_function	1	pg_get_statisticsobjdef
+missing_function	1	pg_get_triggerdef
+missing_function	1	pg_ls_waldir
+missing_function	1	pg_notification_queue_usage
+missing_function	1	pg_numa_available
+missing_function	1	pg_stat_clear_snapshot
+missing_function	1	pg_stat_get_replication_slot
+missing_function	1	pg_stat_get_subscription_stats
+missing_function	1	pl_qual_names
+missing_function	1	priv_testfunc4
+missing_function	1	query_to_xml
+missing_function	1	query_to_xml_and_xmlschema
+missing_function	1	query_to_xmlschema
+missing_function	1	raise_exprs
+missing_function	1	raise_test3
+missing_function	1	recurse
+missing_function	1	recursion_test
+missing_function	1	refcursor_test2
+missing_function	1	regr_avgx
+missing_function	1	regr_count
+missing_function	1	regr_r2
+missing_function	1	regr_slope
+missing_function	1	regr_sxx
+missing_function	1	regr_sxy
+missing_function	1	regr_syy
+missing_function	1	reraise_test
+missing_function	1	return_unnamed_refcursor
+missing_function	1	rngfunc
+missing_function	1	rngfuncb
+missing_function	1	rngfuncbar
+missing_function	1	rngfuncr
+missing_function	1	rtrim
+missing_function	1	rwagg
+missing_function	1	schema_to_xml_and_xmlschema
+missing_function	1	set_bit
+missing_function	1	set_byte
+missing_function	1	setseed
+missing_function	1	sind
+missing_function	1	sp_test_func
+missing_function	1	sql_if
+missing_function	1	sum2
+missing_function	1	tand
+missing_function	1	test_found
+missing_function	1	testpolym
+missing_function	1	textmultirange
+missing_function	1	textrange1
+missing_function	1	trim_array
+missing_function	1	trunc
+missing_function	1	truncate_in_subxact
+missing_function	1	txid_current_if_assigned
+missing_function	1	unicode_version
+missing_function	1	uuidv4
+missing_function	1	void_return_expr
+missing_function	1	voidtest1
+missing_function	1	voidtest2
+missing_function	1	voidtest3
+missing_function	1	voidtest4
+missing_function	1	vol
+missing_function	1	volfoo
+missing_function	1	xid8cmp
+refused_0a000	2210	DROP is not supported by the postgresql language
+refused_0a000	1779	SET is not supported by the postgresql language
+refused_0a000	1620	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+refused_0a000	1513	ALTER is not supported by the postgresql language
+refused_0a000	726	CREATE FUNCTION is not supported by the postgresql language
+refused_0a000	667	RESET is not supported by the postgresql language
+refused_0a000	641	A table option (INHERITS, PARTITION BY, USING, WITH, ON COMMIT or TABLESPACE) is not supported by the postgresql language
+refused_0a000	418	A temporary or unlogged table is not supported by the postgresql language
+refused_0a000	332	CREATE VIEW is not supported by the postgresql language
+refused_0a000	325	This column option (CHECK, GENERATED, COLLATE, storage, a deferrable or unenforced constraint and the like) is not supported by the postgresql language
+refused_0a000	322	GRANT is not supported by the postgresql language
+refused_0a000	274	CREATE OR is not supported by the postgresql language
+refused_0a000	266	FETCH is not supported by the postgresql language
+refused_0a000	264	CREATE TYPE is not supported by the postgresql language
+refused_0a000	253	The type jsonpath is not supported by the postgresql language
+refused_0a000	230	EXECUTE is not supported by the postgresql language
+refused_0a000	213	The type timestamptz is not supported by the postgresql language
+refused_0a000	194	This form of CREATE TABLE (OF, PARTITION OF, AS or a table option) is not supported by the postgresql language
+refused_0a000	191	COPY is not supported by the postgresql language
+refused_0a000	169	CREATE DOMAIN is not supported by the postgresql language
+refused_0a000	168	CREATE ROLE is not supported by the postgresql language
+refused_0a000	163	MERGE is not supported by the postgresql language
+refused_0a000	146	ROW is not supported by the postgresql language
+refused_0a000	145	ANALYZE is not supported by the postgresql language
+refused_0a000	145	The operator @@ is not supported by the postgresql language
+refused_0a000	144	A named argument is not supported by the postgresql language
+refused_0a000	131	A field selection or a subscript is not supported by the postgresql language
+refused_0a000	129	REVOKE is not supported by the postgresql language
+refused_0a000	126	The operator @> is not supported by the postgresql language
+refused_0a000	124	JSON_VALUE is not supported by the postgresql language
+refused_0a000	123	CREATE AGGREGATE is not supported by the postgresql language
+refused_0a000	123	SAVEPOINT is not supported by the postgresql language
+refused_0a000	122	SHOW is not supported by the postgresql language
+refused_0a000	121	JSON_QUERY is not supported by the postgresql language
+refused_0a000	118	The operator @? is not supported by the postgresql language
+refused_0a000	117	CREATE SCHEMA is not supported by the postgresql language
+refused_0a000	109	CREATE OPERATOR is not supported by the postgresql language
+refused_0a000	107	COMMENT is not supported by the postgresql language
+refused_0a000	107	CREATE POLICY is not supported by the postgresql language
+refused_0a000	107	REINDEX is not supported by the postgresql language
+refused_0a000	104	COLLATE is not supported by the postgresql language
+refused_0a000	104	DO is not supported by the postgresql language
+refused_0a000	97	ROLLBACK TO is not supported by the postgresql language
+refused_0a000	95	VACUUM is not supported by the postgresql language
+refused_0a000	94	CREATE STATISTICS is not supported by the postgresql language
+refused_0a000	93	CREATE TRIGGER is not supported by the postgresql language
+refused_0a000	92	An index on an expression is not supported by the postgresql language
+refused_0a000	90	CREATE USER is not supported by the postgresql language
+refused_0a000	88	WITH RECURSIVE is not supported by the postgresql language
+refused_0a000	84	OVER is not supported by the postgresql language
+refused_0a000	77	A bit string constant is not supported by the postgresql language
+refused_0a000	71	JSON_OBJECT is not supported by the postgresql language
+refused_0a000	71	The type tsvector is not supported by the postgresql language
+refused_0a000	71	VARIADIC is not supported by the postgresql language
+refused_0a000	67	NaN and Infinity are not supported as numeric
+refused_0a000	66	The type regclass is not supported by the postgresql language
+refused_0a000	65	AT TIME ZONE is not supported by the postgresql language
+refused_0a000	65	The operator <@ is not supported by the postgresql language
+refused_0a000	63	A JSON scalar is not supported as a jsonb value: give an object or an array
+refused_0a000	62	PREPARE is not supported by the postgresql language
+refused_0a000	62	The type timetz is not supported by the postgresql language
+refused_0a000	62	This table constraint (CHECK, EXCLUDE, NOT NULL, NULLS NOT DISTINCT or USING INDEX) is not supported by the postgresql language
+refused_0a000	61	CREATE SEQUENCE is not supported by the postgresql language
+refused_0a000	61	The type tsquery is not supported by the postgresql language
+refused_0a000	60	The type time is not supported by the postgresql language
+refused_0a000	58	A result column of type interval is not supported: an interval is read only as an operand of date arithmetic
+refused_0a000	57	A column of type serial is not supported by the postgresql language
+refused_0a000	56	LOCK is not supported by the postgresql language
+refused_0a000	55	CREATE RULE is not supported by the postgresql language
+refused_0a000	54	The operator ~ is not supported by the postgresql language
+refused_0a000	53	ROLLUP, CUBE, GROUPING SETS and the empty grouping set is not supported by the postgresql language
+refused_0a000	53	The type money is not supported by the postgresql language
+refused_0a000	52	CREATE COLLATION is not supported by the postgresql language
+refused_0a000	50	The ISO n form of an interval is not supported: "..."
+refused_0a000	50	The type textmultirange is not supported by the postgresql language
+refused_0a000	49	CREATE MATERIALIZED is not supported by the postgresql language
+refused_0a000	48	LIKE in CREATE TABLE is not supported by the postgresql language
+refused_0a000	47	CREATE FOREIGN is not supported by the postgresql language
+refused_0a000	46	DEALLOCATE is not supported by the postgresql language
+refused_0a000	45	CREATE TABLE inside a transaction block is not supported by the postgresql language, because a rollback would not take it back
+refused_0a000	44	CREATE TEXT is not supported by the postgresql language
+refused_0a000	44	DECLARE is not supported by the postgresql language
+refused_0a000	43	BIT is not supported by the postgresql language
+refused_0a000	43	REFRESH is not supported by the postgresql language
+refused_0a000	42	CALL is not supported by the postgresql language
+refused_0a000	42	TRUNCATE is not supported by the postgresql language
+refused_0a000	39	ARRAY is not supported by the postgresql language
+refused_0a000	39	The operator #> is not supported by the postgresql language
+refused_0a000	38	A column alias list is not supported by the postgresql language
+refused_0a000	38	CLOSE is not supported by the postgresql language
+refused_0a000	36	The operator -> is not supported by the postgresql language
+refused_0a000	35	A transaction mode (ISOLATION LEVEL, READ ONLY, DEFERRABLE) is not supported by the postgresql language
+refused_0a000	35	ORDER BY inside a function call is not supported by the postgresql language
+refused_0a000	34	A Unicode escape string is not supported by the postgresql language
+refused_0a000	34	A comparison with ANY, SOME or ALL is not supported by the postgresql language
+refused_0a000	33	CREATE SERVER is not supported by the postgresql language
+refused_0a000	31	CREATE PROCEDURE is not supported by the postgresql language
+refused_0a000	31	JSON_ARRAY is not supported by the postgresql language
+refused_0a000	31	The type textrange is not supported by the postgresql language
+refused_0a000	29	GROUPING is not supported by the postgresql language
+refused_0a000	29	JSON_EXISTS is not supported by the postgresql language
+refused_0a000	28	A foreign key other than the two ends of an edge table (source_id and target_id, each text NOT NULL REFERENCES a table (rid) ON DELETE CASCADE) is not suppor...
+refused_0a000	28	A type modifier on a column of type bpchar is not supported by the postgresql language
+refused_0a000	28	CREATE CAST is not supported by the postgresql language
+refused_0a000	28	The operator << is not supported by the postgresql language
+refused_0a000	28	XMLSERIALIZE is not supported by the postgresql language
+refused_0a000	27	A type modifier on a column of type numeric is not supported by the postgresql language
+refused_0a000	27	An array of more than one dimension is not supported
+refused_0a000	26	TABLE is not supported by the postgresql language
+refused_0a000	25	CREATE EVENT is not supported by the postgresql language
+refused_0a000	24	A row constructor is not supported by the postgresql language
+refused_0a000	24	The operator #>> is not supported by the postgresql language
+refused_0a000	24	The type nummultirange is not supported by the postgresql language
+refused_0a000	24	This clause of CREATE INDEX (INCLUDE, NULLS NOT DISTINCT, TABLESPACE or WHERE) is not supported by the postgresql language
+refused_0a000	23	The aggregate function var_pop is not supported
+refused_0a000	23	The operator &< is not supported by the postgresql language
+refused_0a000	23	WITHIN GROUP is not supported by the postgresql language
+refused_0a000	22	The operator &> is not supported by the postgresql language
+refused_0a000	22	XMLPARSE is not supported by the postgresql language
+refused_0a000	21	An array literal with explicit bounds is not supported
+refused_0a000	21	The operator && is not supported by the postgresql language
+refused_0a000	21	The type macaddr8 is not supported by the postgresql language
+refused_0a000	20	A column of type box is not supported by the postgresql language
+refused_0a000	20	AND CHAIN is not supported by the postgresql language
+refused_0a000	20	The operator -|- is not supported by the postgresql language
+refused_0a000	19	NORMALIZE is not supported by the postgresql language
+refused_0a000	19	RELEASE is not supported by the postgresql language
+refused_0a000	19	The operator >> is not supported by the postgresql language
+refused_0a000	18	CLUSTER is not supported by the postgresql language
+refused_0a000	18	JSON_OBJECTAGG is not supported by the postgresql language
+refused_0a000	18	The index method brin is not supported by the postgresql language
+refused_0a000	18	The operator ? is not supported by the postgresql language
+refused_0a000	17	CREATE INDEX CONCURRENTLY is not supported by the postgresql language
+refused_0a000	17	FILTER is not supported by the postgresql language
+refused_0a000	17	TABLESAMPLE is not supported by the postgresql language
+refused_0a000	17	The operator ->> is not supported by the postgresql language
+refused_0a000	16	An alias on a parenthesised join is not supported by the postgresql language
+refused_0a000	16	JSON is not supported by the postgresql language
+refused_0a000	16	XMLELEMENT is not supported by the postgresql language
+refused_0a000	15	A WITH clause on INSERT, UPDATE, DELETE or MERGE is not supported by the postgresql language
+refused_0a000	15	A column of type int4range is not supported by the postgresql language
+refused_0a000	15	A column of type name is not supported by the postgresql language
+refused_0a000	15	A locking clause (FOR UPDATE and the others) is not supported by the postgresql language
+refused_0a000	15	A table with no column is not supported by the postgresql language
+refused_0a000	15	The type inet is not supported by the postgresql language
+refused_0a000	15	The type pg_lsn is not supported by the postgresql language
+refused_0a000	15	The type regproc is not supported by the postgresql language
+refused_0a000	14	DISTINCT ON is not supported by the postgresql language
+refused_0a000	14	SUBSTRING with SIMILAR is not supported by the postgresql language
+refused_0a000	14	This option of an index column (COLLATE, DESC, NULLS, a qualified operator class or its parameters) is not supported by the postgresql language
+refused_0a000	13	A prefix operator is not supported by the postgresql language
+refused_0a000	13	IS JSON is not supported by the postgresql language
+refused_0a000	13	JSON_SCALAR is not supported by the postgresql language
+refused_0a000	13	JSON_SERIALIZE is not supported by the postgresql language
+refused_0a000	13	The text form of a value of type jsonb is not supported
+refused_0a000	13	The type rainbow is not supported by the postgresql language
+refused_0a000	12	JSON_ARRAYAGG is not supported by the postgresql language
+refused_0a000	12	MOVE is not supported by the postgresql language
+refused_0a000	12	WHERE CURRENT OF is not supported by the postgresql language
+refused_0a000	12	XMLPI is not supported by the postgresql language
+refused_0a000	11	OVERLAY is not supported by the postgresql language
+refused_0a000	11	REASSIGN is not supported by the postgresql language
+refused_0a000	11	SESSION_USER is not supported by the postgresql language
+refused_0a000	11	The aggregate function stddev_pop is not supported
+refused_0a000	11	The index method hash is not supported by the postgresql language
+refused_0a000	11	The type xid is not supported by the postgresql language
+refused_0a000	11	The type xid8 is not supported by the postgresql language
+refused_0a000	11	The type xml is not supported by the postgresql language
+refused_0a000	11	numeric ^ numeric is supported for an integer exponent only
+refused_0a000	10	A data-modifying statement in WITH is not supported by the postgresql language
+refused_0a000	10	A subscript is not supported by the postgresql language
+refused_0a000	10	CREATE INDEX inside a transaction block is not supported by the postgresql language, because a rollback would not take it back
+refused_0a000	10	The type name is not supported by the postgresql language
+refused_0a000	10	The type pg_snapshot is not supported by the postgresql language
+refused_0a000	10	The type txid_snapshot is not supported by the postgresql language
+refused_0a000	9	A column of type inet is not supported by the postgresql language
+refused_0a000	9	A column of type point is not supported by the postgresql language
+refused_0a000	9	A fractional number of months in an interval is not supported: "..."
+refused_0a000	9	A fractional number of weeks in an interval is not supported: "..."
+refused_0a000	9	A multiple-column assignment is not supported by the postgresql language
+refused_0a000	9	A select list with no item is not supported by the postgresql language
+refused_0a000	9	An option of a table constraint (INCLUDE, WITH, DEFERRABLE and the like) is not supported by the postgresql language
+refused_0a000	9	CURRENT_USER is not supported by the postgresql language
+refused_0a000	9	OVER W is not supported by the postgresql language
+refused_0a000	9	The type char is not supported by the postgresql language
+refused_0a000	9	The type fullname is not supported by the postgresql language
+refused_0a000	9	The type tid is not supported by the postgresql language
+refused_0a000	9	XMLROOT is not supported by the postgresql language
+refused_0a000	8	A DEFAULT that is not a constant is not supported by the postgresql language
+refused_0a000	8	CREATE CONVERSION is not supported by the postgresql language
+refused_0a000	8	SECURITY is not supported by the postgresql language
+refused_0a000	8	SIMILAR TO is not supported by the postgresql language
+refused_0a000	8	The operator #- is not supported by the postgresql language
+refused_0a000	8	The operator <<< is not supported by the postgresql language
+refused_0a000	8	The operator ?& is not supported by the postgresql language
+refused_0a000	8	The type bpchar is not supported by the postgresql language
+refused_0a000	8	The type regrole is not supported by the postgresql language
+refused_0a000	8	XMLCONCAT is not supported by the postgresql language
+refused_0a000	8	numeric ^ numeric is supported for a negative exponent only when the base is n, -n or n
+refused_0a000	7	A parenthesised query is not supported by the postgresql language
+refused_0a000	7	A whole-row reference such as t.* is not supported by the postgresql language
+refused_0a000	7	CHECKPOINT is not supported by the postgresql language
+refused_0a000	7	The operator ?| is not supported by the postgresql language
+refused_0a000	7	The type int2vector is not supported by the postgresql language
+refused_0a000	7	The type interval minute to second is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	7	The type oidvector is not supported by the postgresql language
+refused_0a000	6	A column of type timestamptz is not supported by the postgresql language
+refused_0a000	6	A join alias (USING ... AS name) is not supported by the postgresql language
+refused_0a000	6	An empty statement is not supported by the postgresql language
+refused_0a000	6	An operator class of a tree index is not supported by the postgresql language
+refused_0a000	6	DELETE with USING is not supported by the postgresql language
+refused_0a000	6	NATURAL JOIN is not supported by the postgresql language
+refused_0a000	6	SELECT INTO is not supported by the postgresql language
+refused_0a000	6	The aggregate function jsonb_object_agg is not supported
+refused_0a000	6	The type bogus is not supported by the postgresql language
+refused_0a000	6	The type dtop is not supported by the postgresql language
+refused_0a000	6	The type regtype is not supported by the postgresql language
+refused_0a000	6	This value cannot be written to the column "..." of type jsonb yet: it holds a MAP: only a JSON object can be stored in it, not an array
+refused_0a000	5	A parameter of a tree index is not supported by the postgresql language
+refused_0a000	5	A type modifier on a column of type varchar is not supported by the postgresql language
+refused_0a000	5	A window function in a query with GROUP BY, HAVING or an aggregate is not supported
+refused_0a000	5	An array of anyarray is not supported: one dimension of booleans, numbers, text, bytea, dates or timestamps
+refused_0a000	5	CURRENT_TIMESTAMP is not supported by the postgresql language yet
+refused_0a000	5	The operator * on interval and double precision is not supported: an interval is added to or subtracted from a date or a timestamp only
+refused_0a000	5	The type casttesttype is not supported by the postgresql language
+refused_0a000	5	The type int4multirange is not supported by the postgresql language
+refused_0a000	4	A column of type at_tab1 is not supported by the postgresql language
+refused_0a000	4	A column of type gtest31_1 is not supported by the postgresql language
+refused_0a000	4	A column of type interval is not supported by the postgresql language
+refused_0a000	4	A column of type oid is not supported by the postgresql language
+refused_0a000	4	A column of type xml is not supported by the postgresql language
+refused_0a000	4	A fractional number of days in an interval is not supported: "..."
+refused_0a000	4	A fractional number of yrs in an interval is not supported: "..."
+refused_0a000	4	CREATE CONSTRAINT is not supported by the postgresql language
+refused_0a000	4	CREATE GROUP is not supported by the postgresql language
+refused_0a000	4	DISCARD is not supported by the postgresql language
+refused_0a000	4	IMPORT is not supported by the postgresql language
+refused_0a000	4	MATCH in a foreign key is not supported by the postgresql language
+refused_0a000	4	NATURAL FULL JOIN is not supported by the postgresql language
+refused_0a000	4	The aggregate function array_agg is not supported
+refused_0a000	4	The aggregate function covar_pop is not supported
+refused_0a000	4	The aggregate function variance is not supported
+refused_0a000	4	The index method gin is not supported by the postgresql language
+refused_0a000	4	The operator / on interval and numeric is not supported: an interval is added to or subtracted from a date or a timestamp only
+refused_0a000	4	The operator ~<~ is not supported by the postgresql language
+refused_0a000	4	The type dia is not supported by the postgresql language
+refused_0a000	4	The type interval day to hour is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	4	The type interval day to second(n) is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	4	The type interval minute to second(n) is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	4	The type refcursor is not supported by the postgresql language
+refused_0a000	4	The type varbit is not supported by the postgresql language
+refused_0a000	4	string_agg over bytea is not supported
+refused_0a000	3	A Unicode escape identifier is not supported by the postgresql language
+refused_0a000	3	A column of type nummultirange is not supported by the postgresql language
+refused_0a000	3	A column of type numrange is not supported by the postgresql language
+refused_0a000	3	A column of type path is not supported by the postgresql language
+refused_0a000	3	An index parameter that is not a whole number is not supported by the postgresql language
+refused_0a000	3	An index that names a column twice is not supported by the postgresql language
+refused_0a000	3	BIT VARYING is not supported by the postgresql language
+refused_0a000	3	CURRENT_SCHEMA is not supported by the postgresql language
+refused_0a000	3	IS NOT DOCUMENT is not supported by the postgresql language
+refused_0a000	3	IS TRUE is not supported by the postgresql language
+refused_0a000	3	OVER WND is not supported by the postgresql language
+refused_0a000	3	The aggregate function json_object_agg is not supported
+refused_0a000	3	The operator * on interval and integer is not supported: an interval is added to or subtracted from a date or a timestamp only
+refused_0a000	3	The operator = is not supported for type jsonb
+refused_0a000	3	The operator ^@ is not supported by the postgresql language
+refused_0a000	3	The operator ~<=~ is not supported by the postgresql language
+refused_0a000	3	The operator ~>=~ is not supported by the postgresql language
+refused_0a000	3	The operator ~>~ is not supported by the postgresql language
+refused_0a000	3	The type bogon is not supported by the postgresql language
+refused_0a000	3	The type dnotnull is not supported by the postgresql language
+refused_0a000	3	The type interval day to minute is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	3	The type interval day to second is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	3	The type interval hour to minute is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	3	The type interval hour to second is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	3	The type interval hour to second(n) is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	3	The type interval second(n) is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	3	The type point is not supported by the postgresql language
+refused_0a000	3	The type priv_testenum1 is not supported by the postgresql language
+refused_0a000	3	The type rgb is not supported by the postgresql language
+refused_0a000	3	The type rta_type is not supported by the postgresql language
+refused_0a000	3	XMLEXISTS is not supported by the postgresql language
+refused_0a000	2	A column of type compositetable_type is not supported by the postgresql language
+refused_0a000	2	A column of type compositetable_type_1 is not supported by the postgresql language
+refused_0a000	2	A column of type ddef1 is not supported by the postgresql language
+refused_0a000	2	A column of type ddtest1d is not supported by the postgresql language
+refused_0a000	2	A column of type insert_test_domain is not supported by the postgresql language
+refused_0a000	2	A column of type int8alias1 is not supported by the postgresql language
+refused_0a000	2	A column of type polygon is not supported by the postgresql language
+refused_0a000	2	A column of type priv_testdomain1 is not supported by the postgresql language
+refused_0a000	2	A column of type priv_testtype1[] is not supported by the postgresql language
+refused_0a000	2	A column of type rainbow is not supported by the postgresql language
+refused_0a000	2	A column of type rta_type is not supported by the postgresql language
+refused_0a000	2	A column of type tsvector is not supported by the postgresql language
+refused_0a000	2	A column of type uuid is not supported by the postgresql language
+refused_0a000	2	COLLATION FOR is not supported by the postgresql language
+refused_0a000	2	CREATE DATABASE is not supported by the postgresql language
+refused_0a000	2	CREATE DEFAULT is not supported by the postgresql language
+refused_0a000	2	GROUP BY ALL and GROUP BY DISTINCT is not supported by the postgresql language
+refused_0a000	2	IS DOCUMENT is not supported by the postgresql language
+refused_0a000	2	IS FALSE is not supported by the postgresql language
+refused_0a000	2	IS NOT FALSE is not supported by the postgresql language
+refused_0a000	2	IS NOT TRUE is not supported by the postgresql language
+refused_0a000	2	LISTEN is not supported by the postgresql language
+refused_0a000	2	MERGE_ACTION is not supported by the postgresql language
+refused_0a000	2	NATURAL INNER JOIN is not supported by the postgresql language
+refused_0a000	2	ON CONFLICT ON CONSTRAINT is not supported by the postgresql language
+refused_0a000	2	The aggregate function bool_and is not supported
+refused_0a000	2	The aggregate function stddev_samp is not supported
+refused_0a000	2	The aggregate function var_samp is not supported
+refused_0a000	2	The index method spgist is not supported by the postgresql language
+refused_0a000	2	The operator + on interval and interval is not supported: an interval is added to or subtracted from a date or a timestamp only
+refused_0a000	2	The operator - on interval and interval is not supported: an interval is added to or subtracted from a date or a timestamp only
+refused_0a000	2	The operator <> is not supported for type jsonb
+refused_0a000	2	The type aclitem is not supported by the postgresql language
+refused_0a000	2	The type domainint4 is not supported by the postgresql language
+refused_0a000	2	The type domainvarchar is not supported by the postgresql language
+refused_0a000	2	The type inotnull is not supported by the postgresql language
+refused_0a000	2	The type interval year to month is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	2	The type interval(p) is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	2	The type interval[] is not supported by the postgresql language: only a single field (year, month, day, hour, minute, second) is read
+refused_0a000	2	The type j_ordered_pair is not supported by the postgresql language
+refused_0a000	2	The type jb_ordered_pair is not supported by the postgresql language
+refused_0a000	2	The type jsb_char2 is not supported by the postgresql language
+refused_0a000	2	The type jsb_i_gt_1_rec is not supported by the postgresql language
+refused_0a000	2	The type jsb_i_not_null_rec is not supported by the postgresql language
+refused_0a000	2	The type jsb_ia is not supported by the postgresql language
+refused_0a000	2	The type jsb_ia2 is not supported by the postgresql language
+refused_0a000	2	The type oid is not supported by the postgresql language
+refused_0a000	2	The type orderedarray is not supported by the postgresql language
+refused_0a000	2	The type orderedpair is not supported by the postgresql language
+refused_0a000	2	The type planets is not supported by the postgresql language
+refused_0a000	2	The type regprocedure is not supported by the postgresql language
+refused_0a000	2	The type tstzrange is not supported by the postgresql language
+refused_0a000	2	The type xid[] is not supported by the postgresql language
+refused_0a000	2	This value cannot be written to the column "..." of type int4[] yet: a primitive array holds no null element
+refused_0a000	2	UNLISTEN is not supported by the postgresql language
+refused_0a000	1	A column of type atcomp_inc is not supported by the postgresql language
+refused_0a000	1	A column of type atexprec is not supported by the postgresql language
+refused_0a000	1	A column of type attbl is not supported by the postgresql language
+refused_0a000	1	A column of type attdrop_tail is not supported by the postgresql language
+refused_0a000	1	A column of type attfd is not supported by the postgresql language
+refused_0a000	1	A column of type attinh is not supported by the postgresql language
+refused_0a000	1	A column of type attmp is not supported by the postgresql language
+refused_0a000	1	A column of type attpart is not supported by the postgresql language
+refused_0a000	1	A column of type attview is not supported by the postgresql language
+refused_0a000	1	A column of type cidr is not supported by the postgresql language
+refused_0a000	1	A column of type circle is not supported by the postgresql language
+refused_0a000	1	A column of type compositetable_type[] is not supported by the postgresql language
+refused_0a000	1	A column of type compositetable_type_2 is not supported by the postgresql language
+refused_0a000	1	A column of type comptype is not supported by the postgresql language
+refused_0a000	1	A column of type con is not supported by the postgresql language
+refused_0a000	1	A column of type connotnull is not supported by the postgresql language
+refused_0a000	1	A column of type daterange is not supported by the postgresql language
+refused_0a000	1	A column of type dcheck_ign_err2 is not supported by the postgresql language
+refused_0a000	1	A column of type dcomptype is not supported by the postgresql language
+refused_0a000	1	A column of type dcomptype[] is not supported by the postgresql language
+refused_0a000	1	A column of type dcomptypea is not supported by the postgresql language
+refused_0a000	1	A column of type ddtest1 is not supported by the postgresql language
+refused_0a000	1	A column of type ddtest1[] is not supported by the postgresql language
+refused_0a000	1	A column of type dnotnulltest is not supported by the postgresql language
+refused_0a000	1	A column of type domain1 is not supported by the postgresql language
+refused_0a000	1	A column of type domainint4 is not supported by the postgresql language
+refused_0a000	1	A column of type domainint4arr is not supported by the postgresql language
+refused_0a000	1	A column of type dposinta[] is not supported by the postgresql language
+refused_0a000	1	A column of type fk_acl_enum is not supported by the postgresql language
+refused_0a000	1	A column of type fk_err_vch is not supported by the postgresql language
+refused_0a000	1	A column of type float8multirange is not supported by the postgresql language
+refused_0a000	1	A column of type float8range is not supported by the postgresql language
+refused_0a000	1	A column of type ft1 is not supported by the postgresql language
+refused_0a000	1	A column of type inotnull is not supported by the postgresql language
+refused_0a000	1	A column of type insert_nnarray is not supported by the postgresql language
+refused_0a000	1	A column of type insert_pos_ints is not supported by the postgresql language
+refused_0a000	1	A column of type insert_test_type is not supported by the postgresql language
+refused_0a000	1	A column of type int2[] is not supported by the postgresql language
+refused_0a000	1	A column of type int4multirange is not supported by the postgresql language
+refused_0a000	1	A column of type int8multirange[] is not supported by the postgresql language
+refused_0a000	1	A column of type int8range[] is not supported by the postgresql language
+refused_0a000	1	A column of type line is not supported by the postgresql language
+refused_0a000	1	A column of type lseg is not supported by the postgresql language
+refused_0a000	1	A column of type macaddr is not supported by the postgresql language
+refused_0a000	1	A column of type macaddr8 is not supported by the postgresql language
+refused_0a000	1	A column of type money is not supported by the postgresql language
+refused_0a000	1	A column of type pg_lsn is not supported by the postgresql language
+refused_0a000	1	A column of type posint2 is not supported by the postgresql language
+refused_0a000	1	A column of type posint[] is not supported by the postgresql language
+refused_0a000	1	A column of type rewritetype is not supported by the postgresql language
+refused_0a000	1	A column of type rowold_comp is not supported by the postgresql language
+refused_0a000	1	A column of type rowzero_comp is not supported by the postgresql language
+refused_0a000	1	A column of type rposint is not supported by the postgresql language
+refused_0a000	1	A column of type rta_key is not supported by the postgresql language
+refused_0a000	1	A column of type rta_ref is not supported by the postgresql language
+refused_0a000	1	A column of type spgist_text is not supported by the postgresql language
+refused_0a000	1	A column of type test_type1 is not supported by the postgresql language
+refused_0a000	1	A column of type testdomain_p is not supported by the postgresql language
+refused_0a000	1	A column of type testdomain_sv is not supported by the postgresql language
+refused_0a000	1	A column of type text_w_default is not supported by the postgresql language
+refused_0a000	1	A column of type textrange is not supported by the postgresql language
+refused_0a000	1	A column of type things is not supported by the postgresql language
+refused_0a000	1	A column of type tt15v is not supported by the postgresql language
+refused_0a000	1	A column of type unknown is not supported by the postgresql language
+refused_0a000	1	A column of type vc4[] is not supported by the postgresql language
+refused_0a000	1	A column of type widget is not supported by the postgresql language
+refused_0a000	1	A column of type xid8 is not supported by the postgresql language
+refused_0a000	1	A key over a column of type bytea is not supported by the postgresql language
+refused_0a000	1	A subquery is not supported by the postgresql language
+refused_0a000	1	A type modifier on a column of type time is not supported by the postgresql language
+refused_0a000	1	A type modifier on a column of type timestamp is not supported by the postgresql language
+refused_0a000	1	A type modifier on a column of type timestamptz is not supported by the postgresql language
+refused_0a000	1	A type modifier on a column of type timetz is not supported by the postgresql language
+refused_0a000	1	An array of jsonb is not supported: one dimension of booleans, numbers, text, bytea, dates or timestamps
+refused_0a000	1	An index over a column of type jsonb is not supported by the postgresql language
+refused_0a000	1	CREATE FOO is not supported by the postgresql language
+refused_0a000	1	CREATE RECURSIVE is not supported by the postgresql language
+refused_0a000	1	CREATE TRANSFORM is not supported by the postgresql language
+refused_0a000	1	CURRENT_CATALOG is not supported by the postgresql language
+refused_0a000	1	CURRENT_TIME is not supported by the postgresql language yet
+refused_0a000	1	FULL JOIN is only supported with merge-joinable or hash-joinable join conditions
+refused_0a000	1	IS NFC is not supported by the postgresql language
+refused_0a000	1	IS NOT JSON is not supported by the postgresql language
+refused_0a000	1	LOCALTIME is not supported by the postgresql language yet
+refused_0a000	1	NATURAL LEFT JOIN is not supported by the postgresql language
+refused_0a000	1	NOTIFY is not supported by the postgresql language
+refused_0a000	1	OVER W1 is not supported by the postgresql language
+refused_0a000	1	The aggregate function bool_or is not supported
+refused_0a000	1	The aggregate function corr is not supported
+refused_0a000	1	The aggregate function every is not supported
+refused_0a000	1	The function alter2.plus1 is not supported
+refused_0a000	1	The function pg_temp.nonempty is not supported
+refused_0a000	1	The function pg_temp.whoami is not supported
+refused_0a000	1	The operator !~ is not supported by the postgresql language
+refused_0a000	1	The operator * on interval and numeric is not supported: an interval is added to or subtracted from a date or a timestamp only
+refused_0a000	1	The operator <% is not supported by the postgresql language
+refused_0a000	1	The operator = is not supported for type anyarray
+refused_0a000	1	The operator = is not supported for type interval
+refused_0a000	1	The operator > is not supported for type anyarray
+refused_0a000	1	The operator > is not supported for type jsonb
+refused_0a000	1	The operator >= is not supported for type anyarray
+refused_0a000	1	The type base is not supported by the postgresql language
+refused_0a000	1	The type casetestenum is not supported by the postgresql language
+refused_0a000	1	The type int2vector[] is not supported by the postgresql language
+refused_0a000	1	The type int4range is not supported by the postgresql language
+refused_0a000	1	The type line is not supported by the postgresql language
+refused_0a000	1	The type name[] is not supported by the postgresql language
+refused_0a000	1	The type nonempty is not supported by the postgresql language
+refused_0a000	1	The type rainbow[] is not supported by the postgresql language
+refused_0a000	1	The type regnamespace is not supported by the postgresql language
+refused_0a000	1	The type rta_tab is not supported by the postgresql language
+refused_0a000	1	The type varbitmultirange is not supported by the postgresql language
+refused_0a000	1	The type varbitrange is not supported by the postgresql language
+refused_0a000	1	The window function ntile is not supported
+refused_0a000	1	numeric ^ numeric with an exponent above n is supported only when the base is n, -n or n, or the result is too large or too small for numeric
+refused_other	3110	function does not exist
+refused_other	454	relation "..." does not exist
+refused_other	180	syntax error at or near "..."
+refused_other	138	invalid input syntax for type date: "..."
+refused_other	49	invalid input syntax for type timestamp: "..."
+refused_other	46	operator does not exist
+refused_other	41	schema "..." does not exist
+refused_other	37	column "..." does not exist
+refused_other	26	column "..." must appear in the GROUP BY clause or be used in an aggregate function
+refused_other	20	invalid input syntax for type integer: "..."
+refused_other	14	invalid input syntax for type bigint: "..."
+refused_other	14	invalid input syntax for type smallint: "..."
+refused_other	8	invalid input syntax for type interval: "..."
+refused_other	5	date/time field value out of range: "..."
+refused_other	4	cannot cast type bytea to bigint
+refused_other	4	cannot cast type bytea to integer
+refused_other	4	cannot cast type bytea to smallint
+refused_other	4	syntax error at or near "..."x"..."y"..."
+refused_other	3	value out of range: underflow
+refused_other	2	division by zero
+refused_other	2	missing FROM-clause entry for table "..."
+refused_other	2	more than one row returned by a subquery used as an expression
+refused_other	2	syntax error at or near "..."a"..."dollar \\u0024 character"..."
+refused_other	2	syntax error at or near "..."a"..."dollar \u0024 character"..."
+refused_other	2	syntax error at or near "..."a"..."null \\u0000 escape"..."
+refused_other	2	syntax error at or near "..."a"..."the Copyright \u00a9 sign"..."
+refused_other	1	a negative number raised to a non-integer power yields a complex result
+refused_other	1	cannot cast type bigint to bytea
+refused_other	1	cannot cast type integer to bytea
+refused_other	1	cannot cast type smallint to bytea
+refused_other	1	column reference "..." is ambiguous, it matches "...", "..."
+refused_other	1	invalid input syntax for type integer: "..."([^"...""...")+)"
+refused_other	1	invalid input syntax for type integer: "..."(b_d)#"..."
+refused_other	1	relation "..." already exists
+refused_other	1	syntax error at or near "..."a"..."\ud83d\ude04\ud83d\udc36"..."
+refused_other	1	syntax error at or near "..."a"..."null \u0000 escape"..."
+refused_other	1	unit "..." not recognized for type date

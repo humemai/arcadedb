@@ -87,7 +87,7 @@ This document provides detailed attribution information for third-party software
 
 ### 3. PostgreSQL Regression Test Statements
 
-The syntax corpus of the `postgresql` language (`engine/src/test/resources/postgresql/corpus/syntax.tsv`) contains statements copied from the regression tests of [PostgreSQL](https://www.postgresql.org/) `REL_18_7` (`src/test/regress/sql`), with values first read from the expected output of the same tests. They are the entries with an id of the form `<test>:<line>`. They are test data and are not part of the shipped artifacts.
+The syntax corpus of the `postgresql` language (`engine/src/test/resources/postgresql/corpus/syntax.tsv`) contains statements copied from the regression tests of [PostgreSQL](https://www.postgresql.org/) `REL_18_7` (`src/test/regress/sql`), with values first read from the expected output of the same tests. They are the entries with an id of the form `<test>:<line>`. The page [`docs/postgresql-regression.md`](docs/postgresql-regression.md) quotes the statements of the same tests that the language answers wrong, and its result file `e2e/src/test/resources/pgregress/result/wrong.tsv` holds them. None of these copies is part of the shipped artifacts.
 
 - **License:** PostgreSQL License
 
