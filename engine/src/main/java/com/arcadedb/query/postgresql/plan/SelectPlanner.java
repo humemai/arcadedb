@@ -460,7 +460,7 @@ public class SelectPlanner {
     // only its own columns, reading the rest for the records that pass (fork issue #85). The plan lines above are those of the
     // statement, whatever the scan does. Not for a join, a subquery (either way), a window function or a source that is not a scan.
     Evaluable filter = where;
-    if (joined == null && outerScope == null && windows == null && !scope.askedForSubquery() && source instanceof TableSource scan
+    if (joined == null && !readsAQueryAround() && windows == null && !scope.askedForSubquery() && source instanceof TableSource scan
         && scan.access() == TableSource.Access.SCAN) {
       if (where != null && !whereAskedForSubquery) {
         source = scan.withScanFilter(where, whereColumns, scope.usedColumns());
@@ -471,6 +471,11 @@ public class SelectPlanner {
 
     return new SelectPlan(source, filter, group, having, outputs.toArray(new Evaluable[0]), extras.toArray(new Evaluable[0]), columns,
         select.distinct(), sortKeys, limit, offset, steps, warnings, windows);
+  }
+
+  /** Whether an expression of this planner's query can read a column of a query around it. */
+  private boolean readsAQueryAround() {
+    return outerScope != null && !(outerScope instanceof UnreadableScope unreadable && unreadable.readsNothing());
   }
 
   // ---- queries inside queries ----
@@ -634,17 +639,39 @@ public class SelectPlanner {
    * @throws PostgreSQLFeatureNotSupportedException for any other correlation
    */
   private Evaluable planExists(final Statement query, final ExpressionCompiler outer) {
+    // the subquery is planned apart from the query around it; the terms taken out as keys are compiled by that query's compiler
+    final SelectPlanner apart = inside(new UnreadableScope(outer, outerScope));
     if (query instanceof SelectStatement select && !select.from().isEmpty() && select.where() != null) {
-      final Evaluable correlated = correlatedExists(select, outer);
+      final Evaluable correlated = apart.correlatedExists(select, outer);
       if (correlated != null)
         return correlated;
     }
     final Statement asked = query instanceof SelectStatement select && select.limit() == null && select.offset() == null
-        ? new SelectStatement(select.position(), select.distinct(), select.items(), select.from(), select.where(), select.groupBy(),
-        select.having(), select.orderBy(), new Expression.IntegerLiteral(select.position(), java.math.BigInteger.ONE), null)
+        ? new SelectStatement(select.position(), select.distinct(), existsItems(select, outer), select.from(), select.where(),
+        select.groupBy(), select.having(), select.orderBy(),
+        new Expression.IntegerLiteral(select.position(), java.math.BigInteger.ONE), null)
         : query;
-    final Subquery subquery = planSubquery(asked);
+    final Subquery subquery = apart.planSubquery(asked);
     return new Evaluable.Node(PgType.BOOL, row -> !subquery.rows().isEmpty());
+  }
+
+  /**
+   * The select list of an {@code EXISTS} subquery, whose values nobody reads: a bare column name that the query around shows becomes a
+   * constant. PostgreSQL accepts such a name whichever query it takes it from, and {@link UnreadableScope} would refuse it where a
+   * table of the subquery hides a column of that name. Not for a grouping or {@code DISTINCT} query, where the name can matter.
+   */
+  private static List<SelectItem> existsItems(final SelectStatement select, final ExpressionCompiler outer) {
+    if (select.distinct() || !select.groupBy().isEmpty() || select.having() != null || hasAggregate(select))
+      return select.items();
+    final List<SelectItem> items = new ArrayList<>(select.items().size());
+    for (final SelectItem item : select.items())
+      if (item instanceof SelectItem.Projection projection && projection.expression() instanceof Expression.ColumnRef reference
+          && reference.qualifier().isEmpty() && outer.showsHere(reference.column()))
+        items.add(new SelectItem.Projection(projection.position(),
+            new Expression.IntegerLiteral(projection.position(), java.math.BigInteger.ONE), projection.alias()));
+      else
+        items.add(item);
+    return items;
   }
 
   private Evaluable correlatedExists(final SelectStatement select, final ExpressionCompiler outer) {
@@ -874,6 +901,12 @@ public class SelectPlanner {
     boolean hasInner = false;
     boolean hasOuter = false;
     for (final Expression.ColumnRef reference : references) {
+      // a column that the subquery only hides gives way to one that the query around shows (fork issue #157)
+      if (inner.givesWay(reference, outer)) {
+        outer.compile(reference);
+        hasOuter = true;
+        continue;
+      }
       try {
         inner.column(reference);
         hasInner = true;
@@ -1137,6 +1170,16 @@ public class SelectPlanner {
     }
 
     @Override
+    public boolean shows(final Name column) {
+      return inputCompiler.shows(column);
+    }
+
+    @Override
+    public boolean showsHere(final Name column) {
+      return inputCompiler.showsHere(column);
+    }
+
+    @Override
     public Evaluable column(final Expression.ColumnRef reference) {
       // a column of the query around a correlated subquery is a constant for it, grouped or not
       try {
@@ -1284,6 +1327,16 @@ public class SelectPlanner {
     @Override
     public Evaluable column(final Expression.ColumnRef reference) {
       return base.column(reference);
+    }
+
+    @Override
+    public boolean shows(final Name column) {
+      return base.shows(column);
+    }
+
+    @Override
+    public boolean showsHere(final Name column) {
+      return base.showsHere(column);
     }
 
     @Override

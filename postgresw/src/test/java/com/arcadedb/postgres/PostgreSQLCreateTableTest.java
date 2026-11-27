@@ -200,6 +200,28 @@ class PostgreSQLCreateTableTest extends PostgresWireProtocolTestBase {
         same(postgres, arcade, "SELECT constraint_name, unique_constraint_name, match_option, update_rule, delete_rule"
             + " FROM information_schema.referential_constraints ORDER BY constraint_name");
 
+        // a record id that ArcadeDB hides gives way to a column of the query around a subquery (fork issue #157)
+        for (final String statement : List.of("CREATE TABLE memo (label text)", "CREATE TABLE ticket (rid int)",
+            "INSERT INTO memo VALUES ('1')", "INSERT INTO ticket VALUES (7)")) {
+          run(postgres, statement);
+          run(arcade, statement);
+        }
+        for (final String query : List.of("SELECT name, (SELECT id FROM memo) AS pid FROM person ORDER BY name",
+            "SELECT name FROM person WHERE (SELECT count(*) FROM memo WHERE id > 1) > 0",
+            "SELECT name FROM person WHERE EXISTS (SELECT 1 FROM memo WHERE label = id::text)",
+            "SELECT name FROM person WHERE NOT EXISTS (SELECT 1 FROM memo WHERE id = 1)",
+            "SELECT name FROM person WHERE id::text IN (SELECT id::text FROM memo) ORDER BY name",
+            "SELECT name, (SELECT count(*) FROM memo a, memo b WHERE id = 1) AS n FROM person ORDER BY name",
+            "SELECT name, (SELECT (SELECT id FROM memo) FROM memo) AS pid FROM person ORDER BY name",
+            "SELECT name, (SELECT count(*) FROM (SELECT label FROM memo WHERE id = 2) s) AS n FROM person ORDER BY name",
+            "SELECT (SELECT rid FROM t2 LIMIT 1) AS r FROM ticket",
+            // person.rid is listed, because knows refers to it: it is a column of its table on both servers
+            "SELECT (SELECT rid <> '7' FROM person WHERE id = 1) AS other FROM ticket",
+            "SELECT name FROM person WHERE rid = (SELECT rid FROM t2 LIMIT 1) ORDER BY name"))
+          same(postgres, arcade, query);
+        final String ungrouped = "SELECT name, count(*), (SELECT id FROM memo) FROM person GROUP BY name";
+        assertThat(state(arcade, ungrouped)).isEqualTo(state(postgres, ungrouped)).isEqualTo("42803");
+
         for (final String statement : ERRORS) {
           final String expected = state(postgres, statement);
           final String actual = state(arcade, statement);

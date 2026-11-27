@@ -51,10 +51,12 @@ public interface RelationSource {
    * @param typeName the name of the type as the client sees it ({@code int4}, {@code _text})
    * @param hidden   whether the column is readable by its name only: {@code *} leaves it out, and an unqualified name stands for
    *                 another column of that name before it (the record id of a table made by {@code CREATE TABLE})
+   * @param listed   whether the catalog views show the column, that is, whether the table has it in PostgreSQL's terms: one that is
+   *                 not listed gives way to a column of its name that a query around a subquery has (fork issue #157)
    */
-  record Field(String relation, String name, PgType type, String typeName, boolean hidden) {
+  record Field(String relation, String name, PgType type, String typeName, boolean hidden, boolean listed) {
     public Field(final String relation, final String name, final PgType type, final String typeName) {
-      this(relation, name, type, typeName, false);
+      this(relation, name, type, typeName, false, true);
     }
   }
 

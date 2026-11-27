@@ -113,7 +113,7 @@ public final class TableSource implements RelationSource {
       final Column column = catalogColumns.get(i);
       types[i] = PgType.of(column.type());
       final String typeName = column.type().isArray() ? "_" + column.type().elementType().typeName() : column.type().typeName();
-      described.add(new RelationSource.Field(relation, column.name(), types[i], typeName, column.isHidden()));
+      described.add(new RelationSource.Field(relation, column.name(), types[i], typeName, column.isHidden(), column.isListed()));
     }
     this.columns = List.copyOf(described);
     this.access = access;
