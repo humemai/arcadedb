@@ -28,10 +28,12 @@ import com.arcadedb.graph.Vertex;
 import com.arcadedb.index.IndexCursor;
 import com.arcadedb.index.TypeIndex;
 import com.arcadedb.query.postgresql.catalog.Column;
+import com.arcadedb.query.postgresql.catalog.EndKey;
 import com.arcadedb.query.postgresql.catalog.Table;
 import com.arcadedb.query.postgresql.eval.Casts;
 import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.PgType;
+import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.Property;
 import com.arcadedb.schema.Type;
@@ -79,6 +81,16 @@ public final class TableSource implements RelationSource {
   private final List<Column>   catalogColumns;
   private final List<RelationSource.Field> columns;
   private final PgType[]       types;
+  /**
+   * Where a row keeps the record id of its record, for a walk that starts at it, or {@code -1}: only a table whose key an end of an
+   * edge table refers to has the slot (fork issue #213).
+   */
+  private final int            ownRecordSlot;
+  /**
+   * By column, where a row of a walk keeps the record at an end that refers to a key, or {@code -1}: the join that reads that record
+   * takes it from the row.
+   */
+  private final int[]          endRecordSlots;
   private final Access         access;
   private final Column         keyColumn;
   private final Evaluable      key;
@@ -106,14 +118,27 @@ public final class TableSource implements RelationSource {
     this.table = table;
     this.relation = relation;
     this.only = only;
+    if (table.broken() != null)
+      throw new PostgreSQLEvaluationException("55000", table.broken());
     this.catalogColumns = table.columns();
-    this.types = new PgType[catalogColumns.size()];
-    final List<RelationSource.Field> described = new ArrayList<>();
-    for (int i = 0; i < types.length; i++) {
+    final int count = catalogColumns.size();
+    int width = count;
+    this.ownRecordSlot = table.isReferencedByKey() ? width++ : -1;
+    this.endRecordSlots = new int[count];
+    for (int i = 0; i < count; i++)
+      endRecordSlots[i] = catalogColumns.get(i).endKey() != null ? width++ : -1;
+    this.types = new PgType[width];
+    final List<RelationSource.Field> described = new ArrayList<>(width);
+    for (int i = 0; i < count; i++) {
       final Column column = catalogColumns.get(i);
       types[i] = PgType.of(column.type());
       final String typeName = column.type().isArray() ? "_" + column.type().elementType().typeName() : column.type().typeName();
       described.add(new RelationSource.Field(relation, column.name(), types[i], typeName, column.isHidden(), column.isListed()));
+    }
+    // the slots after the columns, which no statement can name: they hold records for the walks of the join planner
+    for (int i = count; i < width; i++) {
+      types[i] = PgType.UNKNOWN;
+      described.add(new RelationSource.Field(relation, "\u0000" + i, PgType.UNKNOWN, "unknown", true, false));
     }
     this.columns = List.copyOf(described);
     this.access = access;
@@ -191,7 +216,41 @@ public final class TableSource implements RelationSource {
    * planner reads the edges of a vertex and turns each into the row a scan of the edge table gives.
    */
   public Object[] rowOf(final Document record) {
-    return readColumns == null ? row(record) : row(record, readColumns);
+    return readColumns == null ? row(record, (Vertex) null) : row(record, readColumns, null);
+  }
+
+  /**
+   * {@link #rowOf(Document)} of an edge that a walk from the vertex {@code near} reached: that end is read from it, and the row keeps
+   * the records at the ends that refer to a key.
+   */
+  public Object[] rowOfWalk(final Document edge, final Vertex near) {
+    return readColumns == null ? row(edge, near) : row(edge, readColumns, near);
+  }
+
+  /** The position in a row of the record id of its record, {@code -1} when rows keep none. */
+  public int ownRecordSlot() {
+    return ownRecordSlot;
+  }
+
+  /** The position in a row of a walk of the record at this end, which refers to a key. */
+  public int endRecordSlot(final Column end) {
+    return endRecordSlots[catalogColumns.indexOf(end)];
+  }
+
+  /**
+   * The rows that can match a join on the key of a record that a walk read: the row of that record when it is one of this table.
+   * With no record, which the walk gives only for a link it did not read the end of, every row. The join compares the keys.
+   */
+  public Iterator<Object[]> openRecord(final Object record) {
+    if (!(record instanceof Document document))
+      return open();
+    return belongs(document) ? Collections.singletonList(rowOf(document)).iterator() : Collections.emptyIterator();
+  }
+
+  /** The plan line of {@link #openRecord}. */
+  public Supplier<String> recordLine() {
+    final String name = table.name() + (relation.equals(table.name()) ? "" : " AS " + relation);
+    return () -> "READ RECORD " + name + " (the record at the end of the edge)";
   }
 
   /** Whether a record is a row of this table: of the type, or of a subtype unless the read is {@code ONLY}. */
@@ -288,7 +347,7 @@ public final class TableSource implements RelationSource {
 
       @Override
       public Object[] next() {
-        return readColumns == null ? row(records.next()) : row(records.next(), readColumns);
+        return rowOf(records.next());
       }
     };
   }
@@ -303,9 +362,10 @@ public final class TableSource implements RelationSource {
         while (next == null && records.hasNext()) {
           final Document record = records.next();
           final Object[] values = new Object[types.length];
-          fill(values, record, filterColumns);
+          fill(values, record, filterColumns, null);
           if (Boolean.TRUE.equals(scanFilter.eval(values))) {
-            fill(values, record, restColumns);
+            fill(values, record, restColumns, null);
+            keepRecordId(values, record);
             next = values;
           }
         }
@@ -340,25 +400,51 @@ public final class TableSource implements RelationSource {
 
   // ---- reading ----
 
-  private Object[] row(final Document record) {
+  private Object[] row(final Document record, final Vertex near) {
     final Object[] values = new Object[types.length];
-    for (int i = 0; i < values.length; i++)
-      values[i] = Casts.fromColumn(catalogColumns.get(i).read(record), catalogColumns.get(i).type(), types[i]);
-    columnsRead += values.length;
+    final int count = catalogColumns.size();
+    for (int i = 0; i < count; i++)
+      values[i] = read(values, record, i, near);
+    columnsRead += count;
+    keepRecordId(values, record);
     return values;
   }
 
   /** The row of a record with only these columns read, the others {@code null}. */
-  private Object[] row(final Document record, final int[] columns) {
+  private Object[] row(final Document record, final int[] columns, final Vertex near) {
     final Object[] values = new Object[types.length];
-    fill(values, record, columns);
+    fill(values, record, columns, near);
+    keepRecordId(values, record);
     return values;
   }
 
-  private void fill(final Object[] values, final Document record, final int[] columns) {
+  private void fill(final Object[] values, final Document record, final int[] columns, final Vertex near) {
     for (final int i : columns)
-      values[i] = Casts.fromColumn(catalogColumns.get(i).read(record), catalogColumns.get(i).type(), types[i]);
+      values[i] = read(values, record, i, near);
     columnsRead += columns.length;
+  }
+
+  /** The value of one column, and for an end that refers to a key, in a row of a walk, the record at that end in its slot. */
+  private Object read(final Object[] values, final Document record, final int i, final Vertex near) {
+    final Column column = catalogColumns.get(i);
+    final EndKey key = column.endKey();
+    final Object value;
+    if (key == null)
+      value = column.read(record);
+    else {
+      final Edge edge = record instanceof Edge found ? found : record.asEdge();
+      final Vertex end = key.endOf(edge, column, near);
+      if (near != null)
+        values[endRecordSlots[i]] = end;
+      value = key.read(edge, column, end);
+    }
+    return Casts.fromColumn(value, column.type(), types[i]);
+  }
+
+  /** Puts the record id of a record in its slot, when rows have one. */
+  void keepRecordId(final Object[] values, final Document record) {
+    if (ownRecordSlot >= 0)
+      values[ownRecordSlot] = record.getIdentity();
   }
 
   /** Whether a record is a row of this table: of the type, or of a subtype unless the read is {@code ONLY}. */

@@ -167,6 +167,9 @@ public final class WritePlanner {
 
   private WritePlan insert(final InsertStatement insert) {
     final Table table = resolveTable(insert.table(), "INSERT");
+    if (table.ends().source() != null || table.ends().target() != null)
+      throw new PostgreSQLFeatureNotSupportedException("INSERT into " + table.name() + ", whose ends refer to a key, is not "
+          + "supported yet: insert the link in ArcadeDB sql");
     final TableSource shape = new TableSource(database, table, relationOf(insert.table(), table), false);
     final ExpressionCompiler constants = new ExpressionCompiler(new RelationScope(List.of(), catalog, selectPlanner.subqueries()), parameters);
 

@@ -81,9 +81,10 @@ record Constraint(String name, String table, String type, List<String> columns, 
         out.add(key(table.name(), UNIQUE, key));
       for (final Table.ForeignKey foreignKey : table.foreignKeys()) {
         final Table referenced = byName.get(foreignKey.referencedTable());
+        // a key an end refers to can be a unique index that CREATE UNIQUE INDEX made, which is no constraint
+        final Table.Key key = referenced.keyOn(foreignKey.referencedColumns());
         out.add(new Constraint(foreignKey.name(), table.name(), FOREIGN_KEY, foreignKey.columns(), referenced.name(),
-            foreignKey.referencedColumns(), referenced.keyOn(foreignKey.referencedColumns()).name(), foreignKey.cascadesOnDelete(),
-            foreignKey.enforced()));
+            foreignKey.referencedColumns(), key == null ? null : key.name(), foreignKey.cascadesOnDelete(), foreignKey.enforced()));
       }
     }
     return out;

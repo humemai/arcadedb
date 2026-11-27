@@ -265,8 +265,9 @@ public final class InformationSchema {
     final List<Object[]> rows = new ArrayList<>();
     for (final Constraint constraint : Constraint.of(catalog))
       if (constraint.isForeignKey())
-        rows.add(row(view, db, RelationalCatalog.SCHEMA, constraint.name(), db, RelationalCatalog.SCHEMA,
-            constraint.referencedKey(), "NONE", "NO ACTION", constraint.cascadesOnDelete() ? "CASCADE" : "NO ACTION"));
+        rows.add(row(view, db, RelationalCatalog.SCHEMA, constraint.name(), constraint.referencedKey() == null ? null : db,
+            constraint.referencedKey() == null ? null : RelationalCatalog.SCHEMA, constraint.referencedKey(), "NONE", "NO ACTION",
+            constraint.cascadesOnDelete() ? "CASCADE" : "NO ACTION"));
     return rows;
   }
 

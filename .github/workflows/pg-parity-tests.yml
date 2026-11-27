@@ -98,7 +98,7 @@ jobs:
       - name: Run the parity harness
         run: >-
           ./mvnw verify -Pintegration --batch-mode --errors --show-version -pl e2e
-          -Dit.test=PostgresServerIT,PgParityIT,PgTpchParityIT,PgIdRuleParityIT,PgParameterParityIT,PgVectorParityIT,PgTransactionParityIT
+          -Dit.test=PostgresServerIT,PgParityIT,PgTpchParityIT,PgIdRuleParityIT,PgParameterParityIT,PgVectorParityIT,PgTransactionParityIT,PgLinkKeyParityIT
           -Dpgparity.regenerate="${PGPARITY_REGENERATE}"
           -Dpgparity.tpch.dir="${RUNNER_TEMP}/tpch"
 

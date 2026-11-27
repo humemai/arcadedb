@@ -105,8 +105,11 @@ public final class JoinSource implements RelationSource {
    * @param column the column of the right table the lookup uses: a property with an index, or {@code id}
    * @param key    the position in the key list of the equality that supplies the value to look up
    * @param filter a condition on the right rows that was pushed to the right side, {@code null} for none
+   * @param recordSlot the position in a left row of the record at the end of a link that a walk kept, for a join on the key that
+   *                   end refers to (fork issue #213): the right row is read from that record, and {@code -1} for a lookup by the
+   *                   value
    */
-  record IndexProbe(TableSource table, Column column, int key, Evaluable filter) {
+  record IndexProbe(TableSource table, Column column, int key, Evaluable filter, int recordSlot) {
   }
 
   /**
@@ -121,9 +124,11 @@ public final class JoinSource implements RelationSource {
    *                    table that can hold lightweight edges walks the declared source table only, so an incoming walk must
    *                    drop an edge from anywhere else to give the rows of the scan
    * @param from        the left vertex table the walk starts at, for the plan line
+   * @param startSlot   the position in a left row of the record id of the start vertex, for an end that refers to a key (fork
+   *                    issue #213); {@code -1} for an end that holds record ids, where the key value is the record id
    */
   record Traversal(Database database, TableSource edges, Vertex.DIRECTION direction, int key, Evaluable filter,
-                   String sourceGuard, TableSource from) {
+                   String sourceGuard, TableSource from, int startSlot) {
     String[] edgeTypes() {
       return edges.edgeTypeNames();
     }
@@ -484,8 +489,10 @@ public final class JoinSource implements RelationSource {
     final Object[] holder = new Object[1];
     final Key lookupKey = keys.get(probe.key());
     final Evaluable value = new Evaluable.Node(lookupKey.type(), row -> holder[0]);
-    final TableSource lookup = probe.column().kind() == Column.Kind.IDENTITY ? probe.table().withIdLookup(probe.column(), value)
-        : probe.table().withIndexLookup(probe.column(), value);
+    final int recordSlot = probe.recordSlot();
+    final TableSource lookup = recordSlot >= 0 ? probe.table()
+        : probe.column().kind() == Column.Kind.IDENTITY ? probe.table().withIdLookup(probe.column(), value)
+            : probe.table().withIndexLookup(probe.column(), value);
     final Iterator<Object[]> outer = left.open();
     return new Expanding() {
       @Override
@@ -498,7 +505,7 @@ public final class JoinSource implements RelationSource {
         final Object lookupValue = key == null ? null : lookupKey.left().eval(l);
         if (lookupValue != null) {
           holder[0] = lookupValue;
-          final Iterator<Object[]> candidates = lookup.open();
+          final Iterator<Object[]> candidates = recordSlot >= 0 ? lookup.openRecord(l[recordSlot]) : lookup.open();
           while (candidates.hasNext()) {
             final Object[] r = candidates.next();
             if (probe.filter() != null && !Boolean.TRUE.equals(probe.filter().eval(r)))
@@ -537,14 +544,15 @@ public final class JoinSource implements RelationSource {
         final Object[] l = outer.next();
         boolean matched = false;
         final Object key = keyOf(l, true);
-        final Object id = key == null ? null : lookupKey.left().eval(l);
-        final Vertex vertex = id instanceof String text ? vertexOf(walk, text) : null;
+        // the start vertex is named by the key itself when it is a record id, else by the record id its row keeps
+        final Object id = key == null ? null : walk.startSlot() < 0 ? lookupKey.left().eval(l) : l[walk.startSlot()];
+        final Vertex vertex = id == null ? null : vertexOf(walk, id);
         if (vertex != null) {
           final Iterator<Edge> edges = vertex.getEdges(walk.direction(), walk.edgeTypes()).iterator();
           while (edges.hasNext()) {
             final Edge edge = edges.next();
             edgesRead.incrementAndGet();
-            final Object[] r = edgeRow(walk, edge);
+            final Object[] r = edgeRow(walk, edge, vertex);
             if (r == null || !Objects.equals(key, keyOf(r, false)))
               continue;
             final Object[] row = concat(l, r);
@@ -562,9 +570,11 @@ public final class JoinSource implements RelationSource {
   }
 
   /** The vertex a record id names, {@code null} when it is not a record id, not a record, or not a vertex. */
-  private static Vertex vertexOf(final Traversal walk, final String id) {
+  private static Vertex vertexOf(final Traversal walk, final Object id) {
+    if (!(id instanceof String || id instanceof RID))
+      return null;
     try {
-      final Object found = walk.database().lookupByRID(new RID(id), true);
+      final Object found = walk.database().lookupByRID(id instanceof RID rid ? rid : new RID((String) id), true);
       return found instanceof Vertex vertex ? vertex : null;
     } catch (final RuntimeException e) {
       // not a record id, or a record that does not exist: no edge starts or ends there
@@ -573,7 +583,7 @@ public final class JoinSource implements RelationSource {
   }
 
   /** The row of the edge table for one edge, {@code null} when the edge is not a row of the table or fails the pushed condition. */
-  private static Object[] edgeRow(final Traversal walk, final Edge edge) {
+  private static Object[] edgeRow(final Traversal walk, final Edge edge, final Vertex near) {
     try {
       if (!walk.edges().holds(edge))
         return null;
@@ -582,7 +592,7 @@ public final class JoinSource implements RelationSource {
         if (from == null || !from.instanceOf(walk.sourceGuard()))
           return null;
       }
-      final Object[] row = walk.edges().rowOf(edge);
+      final Object[] row = walk.edges().rowOfWalk(edge, near);
       return walk.filter() == null || Boolean.TRUE.equals(walk.filter().eval(row)) ? row : null;
     } catch (final RecordNotFoundException e) {
       // an entry of an adjacency list whose edge record is gone: a scan of the edge table does not see it either

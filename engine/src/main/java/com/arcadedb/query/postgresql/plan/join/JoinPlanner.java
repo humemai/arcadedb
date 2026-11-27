@@ -28,6 +28,7 @@ import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.TableReference;
 import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.EdgeEndpoints;
+import com.arcadedb.query.postgresql.catalog.EndKey;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.catalog.Table;
 import com.arcadedb.query.postgresql.eval.Evaluable;
@@ -672,7 +673,7 @@ public final class JoinPlanner {
       }
     }
     if (strategy == JoinSource.Strategy.HASH) {
-      probe = probesRight ? indexProbe(join, right, candidates, leftRows, start != null) : null;
+      probe = probesRight ? indexProbe(join, left, right, candidates, leftRows, start != null) : null;
       if (probe != null)
         strategy = JoinSource.Strategy.INDEX_NESTED_LOOP;
       else
@@ -681,8 +682,10 @@ public final class JoinPlanner {
             || ((inner || join.type == TableReference.JoinType.FULL) && leftRows < rightRows);
       walkShape |= traversalRule && probesRight && readsFarEnd(join, right, candidates);
     }
-    final boolean farEnd = strategy == JoinSource.Strategy.INDEX_NESTED_LOOP && start != null
-        && edgeEnd(join, candidates.get(probe.key())) != null;
+    final Located followed = strategy == JoinSource.Strategy.INDEX_NESTED_LOOP ? edgeEnd(join, candidates.get(probe.key())) : null;
+    // an end that refers to a key is followed only when the join reads the record the walk kept: a join on its value is a join
+    final boolean farEnd = followed != null && start != null
+        && (probe.recordSlot() >= 0 || followed.column().endKey() == null);
 
     // the plan text is built when it is read (EXPLAIN, the plan of a result set, a warning), never to run the statement; what the
     // suppliers below keep is names, parsed terms and catalog objects
@@ -712,7 +715,7 @@ public final class JoinPlanner {
       } else
         header = () -> "INDEX NESTED LOOP " + type + " ON " + condition.get() + " (probe " + String.join(", ", probed) + " by "
             + column.name() + ")";
-      final Supplier<String> lookup = probe.table().lookupLine(column);
+      final Supplier<String> lookup = probe.recordSlot() >= 0 ? probe.table().recordLine() : probe.table().lookupLine(column);
       rightLines = withFirstLine(rightRead, () -> lookup.get() + " for each left row");
       break;
     }
@@ -861,8 +864,8 @@ public final class JoinPlanner {
    * single-table plan can look up (a property with an index of its own, or {@code id}), the types of the key are two integers or
    * two strings, and the left input is not larger than the right table.
    */
-  private JoinSource.IndexProbe indexProbe(final JoinNode join, final RelationSource right, final List<Candidate> candidates,
-      final long leftRows, final boolean startBound) {
+  private JoinSource.IndexProbe indexProbe(final JoinNode join, final RelationSource left, final RelationSource right,
+      final List<Candidate> candidates, final long leftRows, final boolean startBound) {
     RelationSource base = right;
     Evaluable filter = null;
     if (right instanceof FilteredSource filteredRight) {
@@ -877,10 +880,18 @@ public final class JoinPlanner {
       if (!(candidate.rawRight() instanceof Evaluable.Slot slot))
         continue;
       final Column column = table.table().columns().get(slot.index());
+      final Located end = edgeEnd(join, candidate);
+      // an end that refers to a key (fork issue #213): the walk that produced the edge rows kept the record at that end
+      if (traversalRule && startBound && end != null && refersTo(end.column(), column, table.table())
+          && walkOf(left, end.table().relation()) != null) {
+        final int endSlot = ((Evaluable.Slot) candidate.rawLeft()).index();
+        final int recordSlot = endSlot - end.table().table().columns().indexOf(end.column()) + end.table().endRecordSlot(end.column());
+        return new JoinSource.IndexProbe(table, column, i, filter, recordSlot);
+      }
       // the end vertex of an edge row is read by its record id whatever the sizes (the traversal rule): the edge says where it is.
       // Only where the start is bound (fork issue #52): the edge rows of a table of all vertices are joined by the sizes
       final boolean followsAnEdge = traversalRule && startBound && table.table().kind() == Table.Kind.VERTEX
-          && column.kind() == Column.Kind.IDENTITY && edgeEnd(join, candidate) != null;
+          && column.kind() == Column.Kind.IDENTITY && end != null;
       if (!smaller && !followsAnEdge)
         continue;
       final PgType columnType = slot.type();
@@ -889,7 +900,7 @@ public final class JoinPlanner {
       if (!fits)
         continue;
       if ((column.kind() == Column.Kind.IDENTITY && columnType.isString()) || table.hasIndexOn(column))
-        return new JoinSource.IndexProbe(table, column, i, filter);
+        return new JoinSource.IndexProbe(table, column, i, filter, -1);
     }
     return null;
   }
@@ -903,11 +914,27 @@ public final class JoinPlanner {
     final RelationSource base = right instanceof FilteredSource filteredRight ? filteredRight.inner() : right;
     if (!(base instanceof TableSource table) || table.access() != TableSource.Access.SCAN || table.table().kind() != Table.Kind.VERTEX)
       return false;
-    for (final Candidate candidate : candidates)
-      if (candidate.rawRight() instanceof Evaluable.Slot slot
-          && table.table().columns().get(slot.index()).kind() == Column.Kind.IDENTITY && edgeEnd(join, candidate) != null)
+    for (final Candidate candidate : candidates) {
+      if (!(candidate.rawRight() instanceof Evaluable.Slot slot))
+        continue;
+      final Column column = table.table().columns().get(slot.index());
+      final Located end = edgeEnd(join, candidate);
+      if (end != null && (end.column().endKey() == null ? column.kind() == Column.Kind.IDENTITY
+          : refersTo(end.column(), column, table.table())))
         return true;
+    }
     return false;
+  }
+
+  /**
+   * Whether a column of a vertex table is the key that an end of an edge table refers to (fork issue #213): the key itself, in the
+   * declared table or a subtype of it. The key is unique there, so its value names the record at the end. In a supertype another
+   * record can have the same value, and the join stays a join on the value.
+   */
+  private boolean refersTo(final Column end, final Column column, final Table table) {
+    final EndKey key = end.endKey();
+    return key != null && table.kind() == Table.Kind.VERTEX && column.kind() == Column.Kind.PROPERTY
+        && key.property().equals(column.property()) && instanceOf(table.name(), key.table());
   }
 
   // ---- traversal (fork issue #8) ----
@@ -941,12 +968,20 @@ public final class JoinPlanner {
       if (vertex == null)
         continue; // a view of information_schema has no vertex behind its columns
       final Table vertexTable = vertex.table().table();
-      if (vertex.column().kind() != Column.Kind.IDENTITY || vertexTable.kind() != Table.Kind.VERTEX)
+      if (vertexTable.kind() != Table.Kind.VERTEX)
         continue;
       final boolean outgoing = end.kind() == Column.Kind.SOURCE;
       final String declared = outgoing ? edgeTable.sourceTable() : edgeTable.targetTable();
-      if (!related(vertexTable.name(), declared))
-        continue;
+      // where the left row has the record id of the start vertex, for an end that refers to a key
+      int startSlot = -1;
+      if (end.endKey() == null) {
+        if (vertex.column().kind() != Column.Kind.IDENTITY || !related(vertexTable.name(), declared))
+          continue;
+      } else {
+        if (!refersTo(end, vertex.column(), vertexTable))
+          continue;
+        startSlot = start.index() - vertexTable.columns().indexOf(vertex.column()) + vertex.table().ownRecordSlot();
+      }
       String guard = null;
       if (edgeTable.edgeStorage() != Table.EdgeStorage.REGULAR) {
         // a scan of an edge table that can hold lightweight edges walks the declared source table, so a walk may not see more
@@ -958,7 +993,7 @@ public final class JoinPlanner {
       if (!outgoing && !storesIncomingSide(edges.edgeTypeNames()))
         continue;
       return new JoinSource.Traversal(database, edges, outgoing ? Vertex.DIRECTION.OUT : Vertex.DIRECTION.IN, i, filter, guard,
-          vertex.table());
+          vertex.table(), startSlot);
     }
     return null;
   }
@@ -1066,15 +1101,20 @@ public final class JoinPlanner {
         "no index, link or edge pattern on the equality of " + names(join.left) + " and " + names(join.right));
   }
 
-  private static JoinSupport classify(final Located left, final Located right) {
+  private JoinSupport classify(final Located left, final Located right) {
     final Table leftTable = left.table().table();
     final Table rightTable = right.table().table();
     final Column leftColumn = left.column();
     final Column rightColumn = right.column();
     final String pair = leftTable.name() + "." + leftColumn.name() + " = " + rightTable.name() + "." + rightColumn.name();
-    if ((isEndpoint(leftColumn) && leftTable.kind() == Table.Kind.EDGE && rightColumn.kind() == Column.Kind.IDENTITY)
-        || (isEndpoint(rightColumn) && rightTable.kind() == Table.Kind.EDGE && leftColumn.kind() == Column.Kind.IDENTITY))
+    if ((isEndpoint(leftColumn) && leftColumn.endKey() == null && leftTable.kind() == Table.Kind.EDGE
+        && rightColumn.kind() == Column.Kind.IDENTITY)
+        || (isEndpoint(rightColumn) && rightColumn.endKey() == null && rightTable.kind() == Table.Kind.EDGE
+        && leftColumn.kind() == Column.Kind.IDENTITY))
       return new JoinSupport(JoinSupport.Kind.EDGE, pair + " joins an edge endpoint to an id");
+    if ((leftTable.kind() == Table.Kind.EDGE && refersTo(leftColumn, rightColumn, rightTable))
+        || (rightTable.kind() == Table.Kind.EDGE && refersTo(rightColumn, leftColumn, leftTable)))
+      return new JoinSupport(JoinSupport.Kind.EDGE, pair + " joins an edge endpoint to the key it refers to");
     if ((leftColumn.isLink() && rightColumn.kind() == Column.Kind.IDENTITY)
         || (rightColumn.isLink() && leftColumn.kind() == Column.Kind.IDENTITY))
       return new JoinSupport(JoinSupport.Kind.LINK, pair + " follows a link to its record");

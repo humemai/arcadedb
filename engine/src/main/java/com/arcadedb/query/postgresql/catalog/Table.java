@@ -86,7 +86,8 @@ public final class Table {
    * property {@code id} of its own and a unique key of one that has. The columns of a foreign key hold record ids, so it refers to
    * the record id column under whatever name the table gives it ({@code id} or {@code rid}).
    */
-  public record ForeignKey(String name, List<String> columns, String referencedTable, List<String> referencedColumns, Origin origin) {
+  public record ForeignKey(String name, List<String> columns, String referencedTable, List<String> referencedColumns, Origin origin,
+      boolean cascadesOnDelete) {
     public enum Origin {
       /** A {@code LINK} property: a many-to-one reference to the type it links to. */
       LINK_PROPERTY,
@@ -94,11 +95,6 @@ public final class Table {
       EDGE_SOURCE,
       /** {@code target_id}, from the declared target table of the edge type. */
       EDGE_TARGET
-    }
-
-    /** Whether this is an end of an edge: deleting the vertex it refers to deletes the edge, which is {@code ON DELETE CASCADE}. */
-    public boolean cascadesOnDelete() {
-      return origin != Origin.LINK_PROPERTY;
     }
 
     /**
@@ -110,6 +106,19 @@ public final class Table {
     }
   }
 
+  /**
+   * What the ends of an edge table declare beyond the tables they refer to (fork issue #213).
+   *
+   * @param source the key {@code source_id} refers to, {@code null} for the record id
+   * @param target the key {@code target_id} refers to, {@code null} for the record id
+   * @param broken why a declared key cannot be followed, {@code null} when there is no such reason
+   */
+  public record Ends(EndKey source, EndKey target, String broken) {
+    static final Ends NONE = new Ends(null, null, null);
+  }
+
+  private final Ends                ends;
+  private final boolean             referencedByKey;
   private final String              name;
   private final Kind                kind;
   private final DocumentType        documentType;
@@ -128,7 +137,10 @@ public final class Table {
 
   Table(final String name, final Kind kind, final DocumentType documentType, final List<Column> columns, final Key primaryKey,
       final List<Key> uniqueKeys, final List<ForeignKey> foreignKeys, final List<String> superTables, final List<String> subTables,
-      final EdgeStorage edgeStorage, final String sourceTable, final String targetTable, final List<String> walkFromTables) {
+      final EdgeStorage edgeStorage, final String sourceTable, final String targetTable, final List<String> walkFromTables,
+      final Ends ends, final boolean referencedByKey) {
+    this.ends = Objects.requireNonNull(ends);
+    this.referencedByKey = referencedByKey;
     this.name = Objects.requireNonNull(name);
     this.kind = Objects.requireNonNull(kind);
     this.documentType = Objects.requireNonNull(documentType);
@@ -158,7 +170,25 @@ public final class Table {
     if (keys.size() == foreignKeys.size())
       return this;
     return new Table(name, kind, documentType, columns, primaryKey, uniqueKeys, keys, superTables, subTables, edgeStorage,
-        sourceTable, targetTable, walkFromTables);
+        sourceTable, targetTable, walkFromTables, ends, referencedByKey);
+  }
+
+  /** What the ends of an edge table declare about keys; no key and nothing broken for every other table. */
+  public Ends ends() {
+    return ends;
+  }
+
+  /** Whether an end of some edge table refers to a key of this table or of a supertype of it: its rows can be the end of such a link. */
+  public boolean isReferencedByKey() {
+    return referencedByKey;
+  }
+
+  /**
+   * Why a statement cannot read or write this table, {@code null} when it can: a declaration of the key an end refers to that names
+   * no unique column anymore (fork issue #213).
+   */
+  public String broken() {
+    return ends.broken();
   }
 
   /** The name of the table: the name of its type, exactly. */

@@ -17,7 +17,30 @@ CREATE TABLE knows (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, source_i
 SELECT q.id AS qid, q.name AS name, k.since AS since FROM person p JOIN knows k ON k.source_id = p.rid JOIN person q ON k.target_id = q.rid WHERE p.id = 1 ORDER BY since;
 ```
 
-A PostgreSQL schema would usually point `knows.source_id` at `person (id)` and join on `p.id`. In `postgresql` the two ends of an edge hold record ids, so the join is on `rid`, or on `id` when the type has no `id` property of its own (a table that `CREATE TABLE` made answers to both names).
+Here the two ends of the edge hold record ids, so the join is on `rid`, or on `id` when the type has no `id` property of its own (a table that `CREATE TABLE` made answers to both names). An end can refer to a key instead, as the next section shows.
+
+## Ends that refer to a key
+
+An end of an edge type can refer to a column that is alone a unique key of the table at that end. The edge type declares it in ArcadeDB `sql` (`CREATE TABLE` cannot yet, and `INSERT` into such a table is refused until fork issue [#213](https://github.com/humemai/arcadedb/issues/213) is closed):
+
+```sql
+CREATE EDGE TYPE knows CUSTOM source_table = 'person', source_column = 'id', target_table = 'person', target_column = 'id';
+```
+
+`source_id` and `target_id` are then the `id` of the two records, with its type, and the join that a PostgreSQL schema would use answers:
+
+```sql
+SELECT q.name FROM person p JOIN knows k ON k.source_id = p.id JOIN person q ON q.id = k.target_id WHERE p.id = 1;
+```
+
+The engine still stores a link between the two records, and from a start that a key binds the two joins walk it, as the joins on record ids do. Without `source_column` or `target_column` an end holds record ids.
+
+| area | PostgreSQL | `postgresql` |
+| --- | --- | --- |
+| A link to a record without the key, or of another table | cannot exist | `sql` and openCypher can write one. A statement that reads that end fails with `23503` and names the link; it is never shown as `NULL` or with another table's value |
+| A declared column that is no unique key anymore | the unique index cannot be dropped | every statement on the edge table fails with `55000`, which says how to repair it. Record ids are not shown in place of the key |
+| Cost of reading an end | the column is in the row | the record at that end is read, where a record id comes from the link alone. A walk from a bound start reads each far record once; a scan or a hash join over all links reads one record for each link and end that it reads |
+| Join through a supertype of the declared table | | answers on the value, as written, without the walk |
 
 ## From the engine
 
@@ -132,7 +155,7 @@ Limits:
 | ---: | --- | --- |
 | 1 | A type's own `id` property is the column `id` (the primary key when a unique index covers it), and the record id is `rid`. Without one, `id` is the record id, and a table that `CREATE TABLE` made reads it as `rid` too | the record id always under one name |
 | 2 | A record id is `text`, such as `#12:3` | a number |
-| 3 | `source_id` and `target_id` hold record ids | the key of the vertex they point at, which reads the vertex for each edge row |
+| 3 | `source_id` and `target_id` hold record ids, unless the end declares a unique column of the table at that end, whose value it then shows ([above](#ends-that-refer-to-a-key)) | the key always, which reads the record at the end for each edge row |
 | 4 | Edge ends are declared on the edge type: `CREATE EDGE TYPE knows CUSTOM source_table = 'person', target_table = 'person'`. Foreign keys come only from this and from link properties | a schema feature of the engine, or ends inferred from the data |
 | 5 | Updating an end of an edge is refused; delete the edge and insert it again | replace the edge record behind the statement |
 | 6 | An unquoted name is folded to lower case, and then one name that differs only in case is accepted (`person` finds `Person`) | lower case only, as PostgreSQL does, with quotes for `Person` |
