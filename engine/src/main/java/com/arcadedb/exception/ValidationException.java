@@ -36,6 +36,8 @@ public class ValidationException extends ArcadeDBException {
     MANDATORY,
     /** A NOTNULL property set to {@code null}. */
     NOT_NULL,
+    /** A check constraint of the type that the record does not meet, see {@link CheckConstraintException}. */
+    CHECK,
     /** A value under the property's MIN: a number, a date, or the size of a string, a collection or a binary. */
     MIN,
     /** A value over the property's MAX, except the length of a string or a binary, which is {@link #MAX_LENGTH}. */

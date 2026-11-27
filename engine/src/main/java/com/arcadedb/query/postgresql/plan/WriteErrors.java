@@ -18,6 +18,7 @@
  */
 package com.arcadedb.query.postgresql.plan;
 
+import com.arcadedb.exception.CheckConstraintException;
 import com.arcadedb.exception.ConcurrentModificationException;
 import com.arcadedb.exception.DuplicatedKeyException;
 import com.arcadedb.exception.ForeignKeyException;
@@ -55,6 +56,9 @@ public final class WriteErrors {
     if (error instanceof ConcurrentModificationException)
       return new PostgreSQLEvaluationException("40001", "could not serialize access due to concurrent update: " + error.getMessage(),
           error);
+    // fork issue #227: so does a check constraint
+    if (error instanceof CheckConstraintException check)
+      return new PostgreSQLEvaluationException(check.getSqlState(), check.getMessage(), check);
     // fork issue #228: a foreign key says which SQLSTATE PostgreSQL answers with
     if (error instanceof ForeignKeyException foreignKey)
       return new PostgreSQLEvaluationException(foreignKey.getSqlState(), foreignKey.getMessage(), foreignKey);
@@ -68,7 +72,7 @@ public final class WriteErrors {
       return "23000";
     return switch (kind) {
       case MANDATORY, NOT_NULL -> "23502";
-      case MIN, MAX, REGEXP, READONLY -> "23514";
+      case MIN, MAX, REGEXP, READONLY, CHECK -> "23514";
       case MAX_LENGTH -> "22001";
       case TYPE -> "42804";
       case ENCODING -> "22021";

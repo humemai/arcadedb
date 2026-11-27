@@ -125,7 +125,7 @@ CREATE TABLE knows (
 | A taken name | `42P07`, or `42710` for a constraint | the same SQLSTATE, also from `CREATE INDEX`. As for a taken name in `sql`, every protocol of ArcadeDB answers it as a conflict: HTTP with 409 and `AlreadyExistsException` |
 | Column types | all, with modifiers | `bool`, `int2`, `int4`, `int8`, `float4`, `float8`, `numeric`, `text`, `varchar`, `bytea`, `date`, `timestamp`, `timestamptz`, `uuid`, `jsonb`, `vector` and `vector(n)`, and arrays of `bool`, `int4`, `int8`, `float4`, `float8`, `numeric`, `bytea`, `text`, `date`, and `timestamp`. No other type modifier |
 | A `jsonb` column | any JSON | a JSON object; an array or a scalar is refused when it is written. In an expression every JSON value is a `jsonb` value; outside the PostgreSQL protocol a string, number, boolean, or `null` comes back as its JSON text |
-| Constraints | all | `NULL`, `NOT NULL`, `UNIQUE`, `PRIMARY KEY`, `DEFAULT`, and [`serial` and identity columns](#serial-and-identity-columns). No `CHECK`, `EXCLUDE`, generated columns, deferrable constraints, `NULLS NOT DISTINCT`, or table options (`TEMP`, `INHERITS`, `PARTITION BY`, `LIKE`, `AS`, `WITH`) |
+| Constraints | all | `NULL`, `NOT NULL`, `UNIQUE`, `PRIMARY KEY`, `DEFAULT`, and [`serial` and identity columns](#serial-and-identity-columns). [`CHECK`](#check-constraints). No `EXCLUDE`, generated columns, deferrable constraints, `NULLS NOT DISTINCT`, or table options (`TEMP`, `INHERITS`, `PARTITION BY`, `LIKE`, `AS`, `WITH`) |
 | Defaults | any expression | a constant, for `bool`, the number types, `text`, and `varchar`; a constant JSON object for `jsonb` (`'{}'`); for an array, `'{}'`, `ARRAY[]::type[]`, or `'{...}'` with elements of `bool`, `int4`, `int8`, `float8`, or `text` and no `NULL` (fork issue [#224](https://github.com/humemai/arcadedb/issues/224)); a constant for `uuid`; `gen_random_uuid()` for `uuid`, `text`, and `varchar`; and `now()`, `CURRENT_TIMESTAMP`, `transaction_timestamp()`, `LOCALTIMESTAMP`, or `CURRENT_DATE` without a precision, for `date`, `timestamp`, and `timestamptz` |
 | Keys | any type with an index | `bool`, the number types, `text`, `varchar`, `uuid`, `date`, `timestamp`, and `timestamptz` |
 | A `uuid` from another language | not applicable | the property is a `STRING` with a pattern: `sql` and openCypher write the 36 characters in lower case, and any other text is refused |
@@ -133,7 +133,20 @@ CREATE TABLE knows (
 | `NOT NULL` in `information_schema.table_constraints` | listed as a `CHECK` constraint | not listed; `is_nullable` says it |
 | A name in a subquery that its tables do not declare | read from a query around it | the same, also where a table of the subquery reads its record id under that name: a record id that the catalog does not list gives way to a column of that name in a query around the subquery. In a join condition of an `EXISTS` subquery, in a subquery inside it, and beside another `EXISTS` in its `WHERE`, such a name is refused |
 
-`NOT NULL`, unique keys, foreign keys, defaults, and the dimensions of a `vector(n)` are kept by the schema of the engine, so they hold for writes of every language.
+`NOT NULL`, unique keys, foreign keys, check constraints, defaults, and the dimensions of a `vector(n)` are kept by the schema of the engine, so they hold for writes of every language.
+
+### Check constraints
+
+The engine evaluates each `CHECK` for every record that any language creates or updates, always as the `postgresql` language reads the expression (fork issue [#227](https://github.com/humemai/arcadedb/issues/227), `PostgreSQLCheckConstraintTest`).
+
+| area | PostgreSQL | `postgresql` |
+| --- | --- | --- |
+| What a check may read | any immutable or volatile function, the clock, the session | the columns of the row: no clock, no `random()`, no session function, and a `timestamptz` value only in a comparison of two `timestamptz` columns or `IS NULL`. The record id and the ends of a link table are refused too (`0A000`) |
+| `sql`, openCypher, Java API | not applicable | the same check at each record write, a validation error that names the constraint. openCypher saves a node built in two steps twice, and each save is checked |
+| A column that a check reads is dropped | the constraint goes with it | writes to the type are refused until the column is back, or `ALTER TYPE t CUSTOM checkConstraints = null` in `sql` removes the checks |
+| An edge type with a check | not applicable | cannot be `LIGHTWEIGHT`: a lightweight edge has no record |
+| `pg_constraint`, `information_schema.check_constraints` | lists each check | not listed yet; `table_constraints` and `constraint_column_usage` list them |
+| The detail of a `23514` | the failing row | no detail |
 
 ## Foreign keys
 

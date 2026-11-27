@@ -50,6 +50,7 @@ import com.arcadedb.query.postgresql.grammar.PostgreSQLParser;
 import com.arcadedb.query.postgresql.grammar.PostgreSQLParser.*;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.misc.Interval;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
 
@@ -160,6 +161,8 @@ final class AstBuilder {
           identity.generatedWhen() instanceof GeneratedAlwaysContext ? CreateTableStatement.Kind.IDENTITY_ALWAYS
               : CreateTableStatement.Kind.IDENTITY_BY_DEFAULT, name, List.of(), null, null);
     }
+    if (element instanceof CheckColumnConstraintContext check)
+      return check(position, name, check.aExpr());
     final CreateTableStatement.Kind kind;
     if (element instanceof NotNullConstraintContext)
       kind = CreateTableStatement.Kind.NOT_NULL;
@@ -199,9 +202,19 @@ final class AstBuilder {
     if (element instanceof PrimaryKeyTableConstraintContext primary)
       return new CreateTableStatement.Constraint(position, CreateTableStatement.Kind.PRIMARY_KEY, name, names(primary.columns),
           null, null);
+    if (element instanceof CheckTableConstraintContext check)
+      return check(position, name, check.aExpr());
     final ForeignKeyTableConstraintContext foreign = (ForeignKeyTableConstraintContext) element;
     return new CreateTableStatement.Constraint(position, CreateTableStatement.Kind.FOREIGN_KEY, name, names(foreign.columns),
         null, reference(foreign.references()));
+  }
+
+  /** A {@code CHECK}, with the text of its expression, which the schema keeps. */
+  private CreateTableStatement.Constraint check(final SourcePosition position, final Name name, final AExprContext context) {
+    final String text = context.getStart().getInputStream()
+        .getText(Interval.of(context.getStart().getStartIndex(), context.getStop().getStopIndex()));
+    return new CreateTableStatement.Constraint(position, CreateTableStatement.Kind.CHECK, name, List.of(), expression(context),
+        null, text);
   }
 
   private List<Name> names(final List<ColIdContext> contexts) {

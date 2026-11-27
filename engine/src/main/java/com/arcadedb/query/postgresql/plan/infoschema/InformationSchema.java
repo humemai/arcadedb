@@ -68,7 +68,8 @@ import static com.arcadedb.query.postgresql.plan.infoschema.InfoType.YES_OR_NO;
  * foreign key of a {@code LINK} property has {@code enforced = 'NO'} (delete rule {@code NO ACTION}), because the record a link
  * points at can be deleted.
  * Not-null columns are {@code is_nullable = 'NO'}; PostgreSQL also lists each of them as a {@code CHECK} constraint in
- * {@code table_constraints}, with a name made of object ids, and the engine does not (it has no check constraints).
+ * {@code table_constraints}, with a name made of object ids, and the engine does not. The check constraints that a table
+ * declares are listed there and in {@code constraint_column_usage} (fork issue #227).
  */
 public final class InformationSchema {
   /** The name of the schema. */
@@ -262,7 +263,8 @@ public final class InformationSchema {
     final String db = catalog.databaseName();
     final List<Object[]> rows = new ArrayList<>();
     for (final Constraint constraint : Constraint.of(catalog))
-      for (int i = 0; i < constraint.columns().size(); i++)
+      // a check constraint constrains no key
+      for (int i = 0; !constraint.isCheck() && i < constraint.columns().size(); i++)
         rows.add(row(view, db, RelationalCatalog.SCHEMA, constraint.name(), db, RelationalCatalog.SCHEMA, constraint.table(),
             constraint.columns().get(i), i + 1, constraint.isForeignKey() ? (Object) (i + 1) : null));
     return rows;
