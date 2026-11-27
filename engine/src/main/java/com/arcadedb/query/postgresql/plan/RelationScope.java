@@ -152,15 +152,60 @@ public final class RelationScope implements ExpressionCompiler.Scope {
     return fields;
   }
 
+  /** What an unqualified name finds among the columns of this query alone. */
+  private enum Found {
+    NOTHING, HIDDEN, SHOWN
+  }
+
+  private Found find(final Name column) {
+    final int width = outputs == null ? fields.size() : outputs.size();
+    for (int pass = 0; pass < 2; pass++) {
+      boolean hidden = false;
+      for (int i = 0; i < width; i++) {
+        if (!same(column, outputs == null ? fields.get(i).name() : outputs.get(i).name(), pass))
+          continue;
+        if (!fields.get(outputs == null ? i : outputs.get(i).index()).hidden())
+          return Found.SHOWN;
+        hidden = true;
+      }
+      if (hidden)
+        return Found.HIDDEN;
+      if (column.quoted())
+        break;
+    }
+    return Found.NOTHING;
+  }
+
+  @Override
+  public boolean shows(final Name column) {
+    return showsHere(column) || outer != null && outer.shows(column);
+  }
+
+  @Override
+  public boolean showsHere(final Name column) {
+    return find(column) == Found.SHOWN;
+  }
+
+  /**
+   * Whether the reference is an unqualified name that this query has only as hidden columns and that a query around it shows: it then
+   * reads that query's column, as in PostgreSQL, which has no such hidden column (fork issue #157).
+   */
+  boolean givesWay(final Expression.ColumnRef reference, final ExpressionCompiler around) {
+    return reference.qualifier().isEmpty() && find(reference.column()) == Found.HIDDEN && around.shows(reference.column());
+  }
+
   /**
    * The column of this query, or else of the query around it. The innermost scope wins, as in PostgreSQL: the outer one is asked only
    * when the relation of a qualified name is not in this {@code FROM} clause ({@code 42P01}) or an unqualified name is no column of
-   * it ({@code 42703}); a name that is ambiguous here, or a column that a relation of this scope lacks, stays an error.
+   * it ({@code 42703}); a name that is ambiguous here, or a column that a relation of this scope lacks, stays an error. One
+   * exception (fork issue #157): a column that this query only hides gives way to a column that a query around it shows.
    */
   @Override
   public Evaluable column(final Expression.ColumnRef reference) {
     if (outer == null)
       return own(reference);
+    if (reference.qualifier().isEmpty() && find(reference.column()) == Found.HIDDEN && outer.shows(reference.column()))
+      return outer.column(reference);
     try {
       return own(reference);
     } catch (final PostgreSQLReferenceException notHere) {

@@ -20,6 +20,7 @@ package com.arcadedb.query.postgresql.plan;
 
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.ast.Expression;
+import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
 
@@ -74,6 +75,11 @@ final class OuterBindings implements ExpressionCompiler.Scope {
     return reference.qualifier().stream().map(name -> name.quoted() ? '"' + name.value() + '"' : name.value())
         .collect(Collectors.joining(".", "", ".")) + (reference.column().quoted() ? '"' + reference.column().value() + '"'
         : reference.column().value());
+  }
+
+  @Override
+  public boolean shows(final Name column) {
+    return outer.shows(column);
   }
 
   @Override

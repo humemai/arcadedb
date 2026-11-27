@@ -20,6 +20,7 @@ package com.arcadedb.query.postgresql.eval;
 
 import com.arcadedb.query.postgresql.PostgreSQLFeatureNotSupportedException;
 import com.arcadedb.query.postgresql.ast.Expression;
+import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.ast.SelectItem;
 import com.arcadedb.query.postgresql.ast.SelectStatement;
 import com.arcadedb.query.postgresql.ast.SetOperationStatement;
@@ -72,6 +73,19 @@ public final class ExpressionCompiler {
     Evaluable column(Expression.ColumnRef reference);
 
     /**
+     * Whether this query, or one around it, shows a column of this unqualified name: a column that a table hides gives way to such a
+     * column inside a subquery (fork issue #157).
+     */
+    default boolean shows(final Name column) {
+      return false;
+    }
+
+    /** {@link #shows} of the columns of this query alone. */
+    default boolean showsHere(final Name column) {
+      return false;
+    }
+
+    /**
      * Called before every node is typed: a non-null answer replaces the node. A grouping query uses it to read a grouped
      * expression and an aggregate from the group row.
      */
@@ -97,6 +111,16 @@ public final class ExpressionCompiler {
   }
 
   // ---- entry points ----
+
+  /** {@link Scope#shows} of the scope of this compiler. */
+  public boolean shows(final Name column) {
+    return scope.shows(column);
+  }
+
+  /** {@link Scope#showsHere} of the scope of this compiler. */
+  public boolean showsHere(final Name column) {
+    return scope.showsHere(column);
+  }
 
   public Evaluable compile(final Expression expression) {
     final Evaluable replaced = scope.intercept(expression, this);
