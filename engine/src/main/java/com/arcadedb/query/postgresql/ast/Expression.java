@@ -173,7 +173,9 @@ public sealed interface Expression extends Node {
     /** {@code jsonb #> path}: the value at a path. */
     JSON_PATH("#>"),
     /** {@code jsonb #>> path}: the same as text. */
-    JSON_PATH_TEXT("#>>");
+    JSON_PATH_TEXT("#>>"),
+    /** {@code jsonb #- path}: the value without what the path leads to. */
+    JSON_DELETE_PATH("#-");
 
     private final String symbol;
 

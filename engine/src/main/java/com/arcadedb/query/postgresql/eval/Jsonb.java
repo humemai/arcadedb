@@ -27,6 +27,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -385,6 +387,216 @@ public final class Jsonb {
       return Casts.cast(decimal, PgType.NUMERIC, to, typmod);
     final String found = json instanceof BigDecimal ? "numeric" : typeOf(json);
     throw new PostgreSQLEvaluationException("22023", "cannot cast jsonb " + found + " to type " + to.displayName());
+  }
+
+  // ---- values that are built and changed ----
+
+  /** A value as a member of an object or an element of an array holds it: the JSON {@code null} is the Java {@code null}. */
+  private static Object member(final Object json) {
+    return json == JSONObject.NULL ? null : json;
+  }
+
+  /** {@code ||}: two objects are merged, the right one wins; else both are read as arrays, one after the other. */
+  static Object concat(final Object left, final Object right) {
+    final Object a = view(left);
+    final Object b = view(right);
+    if (a instanceof Map<?, ?> first && b instanceof Map<?, ?> second) {
+      final Map<Object, Object> out = new LinkedHashMap<>(first);
+      out.putAll(second);
+      return out;
+    }
+    final List<Object> out = new ArrayList<>();
+    for (final Object json : new Object[] { a, b })
+      if (json instanceof List<?> list)
+        out.addAll(list);
+      else
+        out.add(member(json));
+    return out;
+  }
+
+  /** {@code -} with names: the members of an object with these names, or the string elements of an array equal to them. */
+  static Object delete(final Object target, final List<?> names) {
+    final Object json = view(target);
+    if (json instanceof Map<?, ?> map) {
+      final Map<Object, Object> out = new LinkedHashMap<>(map);
+      for (final Object name : names)
+        if (name != null)
+          out.remove(name);
+      return out;
+    }
+    if (json instanceof List<?> list) {
+      final List<Object> out = new ArrayList<>(list.size());
+      for (final Object item : list) {
+        final Object element = view(item);
+        if (!(element instanceof String && names.contains(element)))
+          out.add(item);
+      }
+      return out;
+    }
+    throw invalidParameter("cannot delete from scalar");
+  }
+
+  /** {@code -} with an integer: the element of an array at the index, which counts from the end when it is negative. */
+  static Object deleteElement(final Object target, final long index) {
+    final Object json = view(target);
+    if (json instanceof List<?> list) {
+      final List<Object> out = new ArrayList<>(list);
+      final long at = index < 0 ? out.size() + index : index;
+      if (at >= 0 && at < out.size())
+        out.remove((int) at);
+      return out;
+    }
+    throw invalidParameter(
+        json instanceof Map<?, ?> ? "cannot delete from object using integer index" : "cannot delete from scalar");
+  }
+
+  /** {@code #-}: the value without what the path leads to. */
+  static Object deletePath(final Object target, final List<?> steps) {
+    final Object json = view(target);
+    if (!(json instanceof Map<?, ?>) && !(json instanceof List<?>))
+      throw invalidParameter("cannot delete path in scalar");
+    return steps.isEmpty() ? json : change(json, steps, 0, true, null, false);
+  }
+
+  /**
+   * {@code jsonb_set}: the value with {@code replacement} where the path leads. With {@code create} the last step adds a member
+   * that an object does not have, and an element before or after the elements of an array.
+   */
+  static Object set(final Object target, final List<?> steps, final Object replacement, final boolean create) {
+    final Object json = view(target);
+    if (!(json instanceof Map<?, ?>) && !(json instanceof List<?>))
+      throw invalidParameter("cannot set path in scalar");
+    return steps.isEmpty() ? json : change(json, steps, 0, false, member(view(replacement)), create);
+  }
+
+  /** A copy of the value with one change at the path; what the path does not lead to stays as it is. */
+  private static Object change(final Object json, final List<?> steps, final int level, final boolean delete,
+      final Object replacement, final boolean create) {
+    checkDepth(level);
+    if (!(json instanceof Map<?, ?>) && !(json instanceof List<?>))
+      return member(json);
+    final Object step = steps.get(level);
+    if (step == null)
+      throw new PostgreSQLEvaluationException("22004", "path element at position " + (level + 1) + " is null");
+    final boolean last = level == steps.size() - 1;
+    if (json instanceof Map<?, ?> map) {
+      final Map<Object, Object> out = new LinkedHashMap<>(map);
+      if (!out.containsKey(step)) {
+        if (create && last)
+          out.put(step, replacement);
+      } else if (!last)
+        out.put(step, change(view(out.get(step)), steps, level + 1, delete, replacement, create));
+      else if (delete)
+        out.remove(step);
+      else
+        out.put(step, replacement);
+      return out;
+    }
+    final Integer index = index((String) step);
+    if (index == null)
+      throw new PostgreSQLEvaluationException("22P02",
+          "path element at position " + (level + 1) + " is not an integer: \"" + step + "\"");
+    final List<Object> out = new ArrayList<>((List<?>) json);
+    final long at = index < 0 ? out.size() + (long) index : index;
+    if (at < 0 || at >= out.size()) {
+      if (create && last)
+        out.add(at < 0 ? 0 : out.size(), replacement);
+    } else if (!last)
+      out.set((int) at, change(view(out.get((int) at)), steps, level + 1, delete, replacement, create));
+    else if (delete)
+      out.remove((int) at);
+    else
+      out.set((int) at, replacement);
+    return out;
+  }
+
+  /** {@code jsonb_strip_nulls}: no member of an object, and with {@code arrays} no element of an array, is the JSON null. */
+  static Object stripNulls(final Object value, final boolean arrays) {
+    return wrap(strip(view(value), arrays, 0));
+  }
+
+  private static Object strip(final Object json, final boolean arrays, final int depth) {
+    checkDepth(depth);
+    if (json instanceof Map<?, ?> map) {
+      final Map<Object, Object> out = new LinkedHashMap<>();
+      for (final Map.Entry<?, ?> entry : map.entrySet()) {
+        final Object found = view(entry.getValue());
+        if (found != JSONObject.NULL)
+          out.put(entry.getKey(), strip(found, arrays, depth + 1));
+      }
+      return out;
+    }
+    if (json instanceof List<?> list) {
+      final List<Object> out = new ArrayList<>(list.size());
+      for (final Object item : list) {
+        final Object found = view(item);
+        if (!arrays || found != JSONObject.NULL)
+          out.add(strip(found, arrays, depth + 1));
+      }
+      return out;
+    }
+    return member(json);
+  }
+
+  /**
+   * What {@code to_jsonb} makes of a value of {@code type}, as a member of an object or an element of an array holds it. The
+   * value is not SQL {@code NULL}. A date or a time is its text in ISO 8601 form, as PostgreSQL writes it into JSON.
+   *
+   * @param typeName the name of the type, which for an array says the element type
+   */
+  static Object of(final Object value, final PgType type, final String typeName) {
+    switch (type) {
+    case JSONB:
+      return member(view(value));
+    case BOOL:
+    case INT2:
+    case INT4:
+    case INT8:
+    case TEXT:
+    case VARCHAR:
+      return value;
+    case NUMERIC: {
+      // a double when it is written the same way, so that every language reads a number, as for a literal
+      final BigDecimal decimal = (BigDecimal) value;
+      final double approximation = decimal.doubleValue();
+      return !Double.isInfinite(approximation) && BigDecimal.valueOf(approximation).equals(decimal) ? (Object) approximation
+          : decimal;
+    }
+    case FLOAT4:
+    case FLOAT8: {
+      final String text = Casts.toText(value, type);
+      // NaN and Infinity are no JSON numbers: PostgreSQL writes them as strings
+      return text.indexOf('N') >= 0 || text.indexOf('I') >= 0 ? text : new BigDecimal(text);
+    }
+    case DATE:
+      return Casts.toText(value, type);
+    case TIMESTAMP:
+      return Casts.toText(value, type).replace(' ', 'T');
+    case TIMESTAMPTZ:
+      return Casts.toText(value, type).replace(' ', 'T') + ":00";
+    case BYTEA:
+      return "\\x" + HexFormat.of().formatHex(ValueInput.toBytes(value));
+    case ARRAY: {
+      final PgType declared = ValueInput.elementType(typeName);
+      final List<Object> out = new ArrayList<>();
+      for (final Object item : ValueInput.asList(value)) {
+        final PgType element = declared != null ? declared : PgType.ofJavaValue(item);
+        if (element == null)
+          throw PostgreSQLEvaluationException.unsupported(
+              "A jsonb value of a value of class " + item.getClass().getName() + " is not supported");
+        out.add(item == null || item == JSONObject.NULL ? null
+            : of(Casts.fromEngine(item, element), element, element.typeName()));
+      }
+      return out;
+    }
+    default:
+      throw PostgreSQLEvaluationException.unsupported(
+          "A jsonb value of a value of type " + type.displayName() + " is not supported");
+    }
+  }
+
+  private static PostgreSQLEvaluationException invalidParameter(final String message) {
+    return new PostgreSQLEvaluationException("22023", message);
   }
 
   private static void checkDepth(final int depth) {

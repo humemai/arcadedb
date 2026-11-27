@@ -832,6 +832,7 @@ final class AstBuilder {
       case "->>" -> BinaryOperator.JSON_FIELD_TEXT;
       case "#>" -> BinaryOperator.JSON_PATH;
       case "#>>" -> BinaryOperator.JSON_PATH_TEXT;
+      case "#-" -> BinaryOperator.JSON_DELETE_PATH;
       default -> throw Diagnostics.notSupported("The operator " + token.getText(), token);
     };
   }
