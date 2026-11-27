@@ -26,8 +26,9 @@ import java.sql.Connection;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@code CREATE TABLE} in a transaction block of the {@code postgresql} language against PostgreSQL 18 (fork issue #229): over
- * JDBC, and with psycopg and SQLAlchemy on their defaults, which open a transaction.
+ * {@code CREATE TABLE} in a transaction block of the {@code postgresql} language against PostgreSQL 18 (fork issue #229), and
+ * {@code CREATE INDEX} on a table that the block made (fork issue #277): over JDBC, and with psycopg and SQLAlchemy on their
+ * defaults, which open a transaction.
  */
 class PostgreSQLCreateTableInBlockTest extends PostgreSQLSideBySideTestBase {
   private static final String SCRIPT = """
@@ -93,6 +94,45 @@ class PostgreSQLCreateTableInBlockTest extends PostgreSQLSideBySideTestBase {
           print("rolled back")
       print(sa.inspect(engine).has_table("undone"), sa.inspect(engine).has_table("orm_account"))
 
+      # create_all for models with indexes, on the defaults: one block holds the tables and their indexes
+      class Tagged(orm.DeclarativeBase):
+          pass
+
+      class Tag(Tagged):
+          __tablename__ = "orm_tag"
+          id: orm.Mapped[int] = orm.mapped_column(primary_key=True)
+          label: orm.Mapped[str] = orm.mapped_column(sa.String, index=True)
+          code: orm.Mapped[int] = orm.mapped_column(sa.Integer)
+          __table_args__ = (sa.Index("ux_orm_tag_code", "code", unique=True),)
+
+      Tagged.metadata.create_all(engine)
+      Tagged.metadata.create_all(engine)
+      with orm.Session(engine) as session:
+          session.add_all([Tag(label="a", code=1), Tag(label="b", code=2)])
+          session.commit()
+          print(session.execute(sa.select(Tag.code).where(Tag.label == "b")).all())
+          session.add(Tag(label="c", code=1))
+          try:
+              session.commit()
+          except sa.exc.IntegrityError as e:
+              print(e.orig.sqlstate)
+
+      indexed = sa.MetaData()
+      sa.Table("undone_indexed", indexed, sa.Column("id", sa.Integer, primary_key=True),
+               sa.Column("label", sa.String, index=True))
+      try:
+          with engine.begin() as connection:
+              indexed.create_all(connection)
+              connection.execute(sa.text("INSERT INTO undone_indexed (label) VALUES ('a')"))
+              raise RuntimeError("stop")
+      except RuntimeError:
+          print("rolled back with its index")
+      print(sa.inspect(engine).has_table("undone_indexed"))
+      # the names of the table and of its index are free again
+      indexed.create_all(engine)
+      with engine.connect() as connection:
+          print(connection.execute(sa.text("SELECT count(*) FROM undone_indexed")).scalar())
+
       # a connection that ends inside its block takes the empty table with it, a moment after it closed
       other = psycopg.connect(CONNINFO)
       other.execute("CREATE TABLE left_open (a int)")
@@ -151,7 +191,52 @@ class PostgreSQLCreateTableInBlockTest extends PostgreSQLSideBySideTestBase {
         arcade.setAutoCommit(true);
         assertThat(answer(arcade, "SELECT a FROM t5", false)).isEqualTo("    a|\n    1|\n");
 
-        // an index is still refused in a block
+        // an index of a table that the block made runs, and a rollback takes both back (fork issue #277)
+        for (final Connection connection : new Connection[] { postgres, arcade })
+          connection.setAutoCommit(false);
+        both(postgres, arcade, "CREATE TABLE t6 (id serial PRIMARY KEY, a int, b text)");
+        both(postgres, arcade, "CREATE INDEX t6_a ON t6 (a)");
+        both(postgres, arcade, "INSERT INTO t6 (a, b) VALUES (1, 'x'), (2, 'y')");
+        both(postgres, arcade, "CREATE UNIQUE INDEX t6_b ON t6 (b)");
+        sameValues(postgres, arcade, "SELECT a, b FROM t6 WHERE a = 2");
+        sameError(postgres, arcade, "INSERT INTO t6 (a, b) VALUES (3, 'x')", "23505");
+        postgres.rollback();
+        arcade.rollback();
+        sameError(postgres, arcade, "SELECT * FROM t6", "42P01");
+        postgres.rollback();
+        arcade.rollback();
+
+        // the names are free again, and the indexes of a committed block answer and hold their keys
+        both(postgres, arcade, "CREATE TABLE t6 (a int, b text)");
+        both(postgres, arcade, "INSERT INTO t6 VALUES (1, 'x'), (2, 'y')");
+        both(postgres, arcade, "CREATE INDEX t6_a ON t6 (a)");
+        both(postgres, arcade, "CREATE UNIQUE INDEX t6_b ON t6 (b)");
+        both(postgres, arcade, "INSERT INTO t6 VALUES (1, 'z')");
+        postgres.commit();
+        arcade.commit();
+        sameValues(postgres, arcade, "SELECT b FROM t6 WHERE a = 1 ORDER BY b");
+        sameError(postgres, arcade, "INSERT INTO t6 VALUES (3, 'y')", "23505");
+        postgres.rollback();
+        arcade.rollback();
+
+        // a unique index over rows that repeat a key fails the block
+        both(postgres, arcade, "CREATE TABLE t7 (a int)");
+        both(postgres, arcade, "INSERT INTO t7 VALUES (1), (1)");
+        sameError(postgres, arcade, "CREATE UNIQUE INDEX t7_a ON t7 (a)", "23505");
+        sameError(postgres, arcade, "SELECT 1", "25P02");
+        postgres.rollback();
+        arcade.rollback();
+        sameError(postgres, arcade, "SELECT * FROM t7", "42P01");
+        postgres.rollback();
+        arcade.rollback();
+
+        // statements sent together are one block of their own, and the error takes the table and its index
+        for (final Connection connection : new Connection[] { postgres, arcade })
+          connection.setAutoCommit(true);
+        sameError(postgres, arcade, "CREATE TABLE t8 (a int); CREATE INDEX t8_a ON t8 (a); SELECT nope FROM t8", "42703");
+        sameError(postgres, arcade, "SELECT * FROM t8", "42P01");
+
+        // the index of a table that was there before the block is refused
         arcade.setAutoCommit(false);
         refused(arcade, "CREATE INDEX ON t2 (v)", "CREATE INDEX inside a transaction block");
         arcade.rollback();

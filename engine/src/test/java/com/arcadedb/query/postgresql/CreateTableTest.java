@@ -392,14 +392,79 @@ class CreateTableTest extends TestHelper {
     assertThat(lines("SELECT a FROM t")).containsExactly("1");
   }
 
+  /** Fork issue #277: an index of a table that the block made runs, also over rows of the block, and goes with the table. */
   @Test
-  void anIndexStaysRefusedInATransactionBlock() {
+  void anIndexOfATableOfTheBlockRunsAndARollbackDropsBoth() {
     run("BEGIN");
-    run("CREATE TABLE t (a int)");
-    assertState("CREATE INDEX ON t (a)", "0A000");
+    run("CREATE TABLE t (id serial PRIMARY KEY, a int, b text, e vector(3))");
+    run("CREATE INDEX t_a ON t (a)");
+    run("INSERT INTO t (a, b, e) VALUES (1, 'x', '[1,0,0]'), (2, 'y', '[0,1,0]')");
+    run("CREATE UNIQUE INDEX t_b ON t (b)");
+    run("CREATE INDEX t_e ON t USING hnsw (e vector_l2_ops)");
+    assertThat(lines("SELECT b FROM t WHERE a = 2")).containsExactly("y");
+    assertState("INSERT INTO t (a, b) VALUES (3, 'x')", "23505");
     run("ROLLBACK");
 
     assertThat(database.getSchema().existsType("t")).isFalse();
+    assertThat(database.getSchema().getIndexes()).noneMatch(index -> "t".equals(index.getTypeName()));
+    assertThat(database.countType(Sequences.TYPE_NAME, false)).isZero();
+
+    // the names are free again, and the indexes of a committed block answer for the rows written before and after them
+    run("BEGIN");
+    run("CREATE TABLE t (id serial PRIMARY KEY, a int, b text, e vector(3))");
+    run("INSERT INTO t (a, b, e) VALUES (1, 'x', '[1,0,0]'), (2, 'y', '[0,1,0]')");
+    run("CREATE INDEX t_a ON t (a)");
+    run("CREATE UNIQUE INDEX t_b ON t (b)");
+    run("CREATE INDEX t_e ON t USING hnsw (e vector_l2_ops)");
+    run("INSERT INTO t (a, b, e) VALUES (1, 'z', '[0,0,1]')");
+    run("COMMIT");
+
+    assertThat(lines("SELECT b FROM t WHERE a = 1 ORDER BY b")).containsExactly("x", "z");
+    assertThat(lines("SELECT a FROM t WHERE b = 'y'")).containsExactly("2");
+    assertThat(lines("SELECT b FROM t ORDER BY e <-> '[0,0,0.9]' LIMIT 1")).containsExactly("z");
+    assertState("INSERT INTO t (a, b) VALUES (3, 'x')", "23505");
+  }
+
+  @Test
+  void aUniqueIndexOverRowsOfTheBlockThatRepeatAKeyFailsTheBlock() {
+    run("BEGIN");
+    run("CREATE TABLE t (a int)");
+    run("INSERT INTO t VALUES (1), (1)");
+    assertState("CREATE UNIQUE INDEX ON t (a)", "23505");
+    assertState("SELECT 1", "25P02");
+    run("ROLLBACK");
+
+    assertThat(database.getSchema().existsType("t")).isFalse();
+  }
+
+  @Test
+  void anIndexOfATableThatTheTransactionDidNotMakeStaysRefused() {
+    run("CREATE TABLE old (a int)");
+    run("BEGIN");
+    run("CREATE TABLE t (a int)");
+    assertState("CREATE INDEX ON old (a)", "0A000");
+    run("ROLLBACK");
+    assertThat(database.getSchema().existsType("t")).isFalse();
+    assertThat(database.getSchema().getType("old").getPolymorphicIndexByProperties("a")).isNull();
+
+    // a name that is taken answers as outside a block, since nothing is changed
+    run("CREATE INDEX old_a ON old (a)");
+    run("BEGIN");
+    run("CREATE INDEX IF NOT EXISTS old_a ON old (a)");
+    assertState("CREATE INDEX old_a ON old (a)", "42P07");
+    run("ROLLBACK");
+
+    // a table that an earlier transaction of the caller made, and one that the caller's own transaction makes
+    database.begin();
+    run("CREATE TABLE u (a int)");
+    database.commit();
+    database.begin();
+    assertState("CREATE INDEX ON u (a)", "0A000");
+    run("CREATE TABLE v (a int)");
+    run("CREATE INDEX ON v (a)");
+    database.rollback();
+    run("CREATE TABLE IF NOT EXISTS v (b int)");
+    assertThat(columns("SELECT * FROM v")).containsExactly("b");
   }
 
   @Test

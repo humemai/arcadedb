@@ -140,7 +140,7 @@ class PostgreSQLTransactionTest extends TestHelper {
     assertState(() -> command("SELECT 1"), "25P02");
     command("ROLLBACK");
     command("BEGIN");
-    // CREATE TABLE runs in a block (fork issue #229); an index does not
+    // an index of a table that the block did not make is refused (fork issue #277)
     assertState(() -> command("CREATE INDEX ON person (name)"), "0A000");
     assertState(() -> command("SELECT 1"), "25P02");
     command("ROLLBACK");

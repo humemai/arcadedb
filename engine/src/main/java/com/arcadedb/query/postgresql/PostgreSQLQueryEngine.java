@@ -307,10 +307,8 @@ public class PostgreSQLQueryEngine implements QueryEngine {
           dropIfRolledBack(plan.created());
         return made;
       }
-      if (statement instanceof CreateIndexStatement create) {
-        requireNoBlock(state, create);
-        return new CreateIndexPlan(database, catalog(), create).execute();
-      }
+      if (statement instanceof CreateIndexStatement create)
+        return new CreateIndexPlan(database, catalog(), create).execute(table -> requireTableOfBlock(state, table, create));
       // the time of the transaction, which every clock function and default of the statement answers (fork issue #222)
       final Parameters timed = parameters.at(TransactionClock.now(database));
       if (statement instanceof ExplainWriteStatement explain)
@@ -365,10 +363,15 @@ public class PostgreSQLQueryEngine implements QueryEngine {
     final TransactionContext transaction = database.getTransaction();
     final AtomicBoolean committed = new AtomicBoolean();
     transaction.addAfterCommitCallback(() -> committed.set(true));
-    transaction.addAfterCompletionCallbackIfAbsent("postgresql:create-table:" + table.getName(), () -> {
+    transaction.addAfterCompletionCallbackIfAbsent(createdTableKey(table), () -> {
       if (!committed.get())
         rolledBack.add(table);
     });
+  }
+
+  /** Under this key a transaction holds what it owes a table that it made: the table, not only its name. */
+  private static String createdTableKey(final DocumentType table) {
+    return "postgresql:create-table:" + table.getName() + ':' + System.identityHashCode(table);
   }
 
   /**
@@ -414,14 +417,19 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
-   * An index cannot be taken back by a rollback, so {@code CREATE INDEX} is refused in a transaction block with SQLSTATE
-   * {@code 0A000}: one that this language opened, or the caller. A transaction that a server opened around one request, as its
-   * auto-commit, is not a block.
+   * A rollback takes an index back only together with its table, which it drops when the block made it. So
+   * {@code CREATE INDEX} runs in a transaction block on a table that the same transaction made, and is refused with SQLSTATE
+   * {@code 0A000} on any other (fork issue #277). A block is a transaction that this language opened, or the caller: a
+   * transaction that a server opened around one request, as its auto-commit, is not one.
    */
-  private void requireNoBlock(final Block state, final Statement create) {
-    if (state.open || database.isTransactionActive() && !database.getTransaction().isImplicit())
-      throw new PostgreSQLFeatureNotSupportedException(statementName(create) + " inside a transaction block is not supported by"
-          + " the postgresql language, because a rollback would not take it back (" + create.position() + ")");
+  private void requireTableOfBlock(final Block state, final DocumentType table, final CreateIndexStatement create) {
+    if (!database.isTransactionActive())
+      return;
+    final TransactionContext transaction = database.getTransaction();
+    if ((state.open || !transaction.isImplicit()) && !transaction.hasAfterCompletionCallbackKey(createdTableKey(table)))
+      throw new PostgreSQLFeatureNotSupportedException("CREATE INDEX inside a transaction block is not supported by the"
+          + " postgresql language on a table that the block did not create, because a rollback would not take the index back ("
+          + create.position() + ")");
   }
 
   /**

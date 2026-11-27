@@ -175,7 +175,7 @@ Every refusal below is `0A000`.
 | The name of an index | in `pg_indexes` | recorded for `IF NOT EXISTS` and `42P07`; the wire catalog (`\d`) shows the name of the engine's index |
 | What it takes | expressions, `WHERE`, `INCLUDE`, `DESC`, `NULLS`, `COLLATE`, `CONCURRENTLY`, `TABLESPACE` | plain columns, ascending; the rest is refused |
 | Keys | any type with an operator class | tree indexes over `bool`, the number types, `text`, `varchar`, `date`, and `timestamp` |
-| Transactions | a rollback takes the index back | refused in a transaction block, also for a table that the block made, so `create_all` of SQLAlchemy needs autocommit for a model with an index |
+| Transactions | a rollback takes the index back, and nobody else sees it before the commit | runs in a transaction block on a table that the same block made, so `create_all` of SQLAlchemy works on its defaults for a model with an index. A rollback drops the table together with its indexes, under the rules of [`CREATE TABLE`](#create-table): a table that another session has written stays, with its index. In a block, on a table that the block did not make, `CREATE INDEX` is refused: run it outside a block, in autocommit |
 
 ## `CREATE EXTENSION`
 
