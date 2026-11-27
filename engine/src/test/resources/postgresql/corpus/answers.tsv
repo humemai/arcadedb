@@ -242,6 +242,13 @@ err-c1-union-literal-not-a-number	multiset	-	ok	SELECT 1 UNION SELECT 'a'	{"erro
 err-c1-union-order-by-expression	multiset	-	ok	SELECT pid FROM person UNION SELECT oid FROM orders ORDER BY pid + 1	{"error":"0A000"}
 err-c1-union-order-by-unknown-column	multiset	-	ok	SELECT pid FROM person UNION SELECT oid FROM orders ORDER BY nosuch	{"error":"42703"}
 err-c1-multiple-order-by	multiset	-	ok	(SELECT pid FROM person ORDER BY pid) ORDER BY pid	{"error":"42601"}
+sqrt-numeric-two	multiset	-	ok	SELECT sqrt(2::numeric)	pending-server
+sqrt-numeric-half-way-below-and-above	multiset	-	ok	SELECT sqrt(1.000000000000003::numeric) AS a, sqrt(1.000000000000004::numeric) AS b	pending-server
+sqrt-numeric-large	multiset	-	ok	SELECT sqrt(96627521408608.56340355805::numeric) AS a, sqrt(96627521408608.56340355806::numeric) AS b, sqrt(515549506212297735.073688290367::numeric) AS c, sqrt(515549506212297735.073688290368::numeric) AS d	pending-server
+sqrt-numeric-more-digits-than-sixteen	multiset	-	ok	SELECT sqrt(8015491789940783531003294973900306::numeric) AS a, sqrt(8015491789940783531003294973900307::numeric) AS b	pending-server
+sqrt-numeric-zero-and-small	multiset	-	ok	SELECT sqrt(0.0) AS a, sqrt(0.000000000000000000000004) AS b, sqrt(4.00) AS c	pending-server
+sqrt-of-an-integer-and-a-float	multiset	-	ok	SELECT sqrt(16) AS a, sqrt(2::float8) AS b	pending-server
+err-sqrt-numeric-negative	multiset	-	ok	SELECT sqrt(-1.0)	pending-server
 c1-with-basic	ordered	-	ok	WITH d AS (SELECT name, age FROM person WHERE city = 'Delft') SELECT * FROM d ORDER BY name	{"columns":["name","age"],"types":["varchar","int4"],"rows":[["Ada",36],["Bo",41]]}
 c1-with-read-twice	multiset	-	ok	WITH d AS (SELECT pid FROM person WHERE age > 30) SELECT count(*) FROM d a JOIN d b ON a.pid = b.pid	{"columns":["count"],"types":["int8"],"rows":[[3]]}
 c1-with-chain	ordered	-	ok	WITH a AS (SELECT pid FROM person), b AS (SELECT pid FROM a WHERE pid > 2) SELECT * FROM b ORDER BY pid	{"columns":["pid"],"types":["int4"],"rows":[[3],[4],[5]]}
