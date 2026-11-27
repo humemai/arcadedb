@@ -205,18 +205,63 @@ public final class Casts {
   }
 
   private static Object parseInteger(final String text, final PgType type) {
-    final String s = text.strip();
-    if (!s.matches("[+-]?[0-9]+"))
+    final BigInteger value = integerText(text.strip());
+    if (value == null)
       throw PostgreSQLEvaluationException.invalidText(type, text);
-    final BigInteger value = new BigInteger(s);
     if (!fits(value, type))
       throw PostgreSQLEvaluationException.outOfRange(text, type);
     return integer(value, type);
   }
 
+  /**
+   * An integer as the input functions of PostgreSQL read it since version 16: a sign, then decimal digits, or {@code 0x},
+   * {@code 0o} or {@code 0b} and digits of that base, with single underscores between the digits and, after a prefix, before the
+   * first one.
+   *
+   * @return the number, {@code null} for a text that is none
+   */
+  private static BigInteger integerText(final String text) {
+    int start = text.startsWith("+") || text.startsWith("-") ? 1 : 0;
+    int radix = 10;
+    if (text.length() > start + 1 && text.charAt(start) == '0') {
+      radix = switch (text.charAt(start + 1)) {
+        case 'x', 'X' -> 16;
+        case 'o', 'O' -> 8;
+        case 'b', 'B' -> 2;
+        default -> 10;
+      };
+      if (radix != 10)
+        start += 2;
+    }
+    final StringBuilder digits = new StringBuilder(text.startsWith("-") ? "-" : "");
+    boolean underscore = false;
+    boolean digit = false;
+    for (int i = start; i < text.length(); i++) {
+      final char c = text.charAt(i);
+      if (c == '_') {
+        // not two in a row, and a decimal number does not begin with one
+        if (underscore || radix == 10 && !digit)
+          return null;
+        underscore = true;
+      } else if (c < 128 && Character.digit(c, radix) >= 0) {
+        digits.append(c);
+        digit = true;
+        underscore = false;
+      } else
+        return null;
+    }
+    return digit && !underscore ? new BigInteger(digits.toString(), radix) : null;
+  }
+
   private static BigDecimal parseNumeric(final String text) {
-    final String s = text.strip();
+    final String stripped = text.strip();
+    // an underscore between two digits of a decimal number says nothing
+    final String s = stripped.indexOf('_') < 0 ? stripped : stripped.replaceAll("(?<=[0-9])_(?=[0-9])", "");
     if (!NUMBER.matcher(s).matches()) {
+      // an integer in base 2, 8 or 16
+      final BigInteger integer = integerText(stripped);
+      if (integer != null)
+        return new BigDecimal(integer);
       final String lower = s.toLowerCase(Locale.ROOT);
       if (lower.equals("nan") || lower.endsWith("infinity") || lower.endsWith("inf"))
         throw PostgreSQLEvaluationException.unsupported("NaN and Infinity are not supported as numeric");

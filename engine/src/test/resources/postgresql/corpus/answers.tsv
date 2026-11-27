@@ -161,6 +161,17 @@ trav-bound-in-list-with-edge-filter	ordered	-	ok	SELECT p.name, w.since FROM per
 trav-bound-not-in	ordered	-	ok	SELECT p.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id WHERE p.pid NOT IN (1, 2) ORDER BY w.since, p.name	{"columns":["name","since"],"types":["varchar","int4"],"rows":[["Cy",2021],["Di",2023]]}
 trav-bound-or	ordered	-	ok	SELECT p.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id WHERE p.pid = 1 OR p.pid = 2 ORDER BY w.since, p.name	{"columns":["name","since"],"types":["varchar","int4"],"rows":[["Ada",2019],["Bo",2020],["Ada",2022]]}
 trav-bound-in-list-with-null	ordered	-	ok	SELECT p.name, w.since FROM person p JOIN works_at w ON w.source_id = p.id WHERE p.pid IN (1, NULL) ORDER BY w.since	{"columns":["name","since"],"types":["varchar","int4"],"rows":[["Ada",2019],["Ada",2022]]}
+num-int2-binary	multiset	-	ok	SELECT int2 '0b100101' AS a, int2 '0b111111111111111' AS b	{"columns":["a","b"],"types":["int2","int2"],"rows":[[37,32767]]}
+num-int4-octal-and-hex	multiset	-	ok	SELECT int4 '0o273' AS a, int4 '0x42F' AS b, '-0x80000000'::int4 AS c, ' +0B11 '::int4 AS d	{"columns":["a","b","c","d"],"types":["int4","int4","int4","int4"],"rows":[[187,1071,-2147483648,3]]}
+num-int8-underscores	multiset	-	ok	SELECT int8 '1_000_000' AS a, '0x_1F'::int8 AS b, '-0o7_7'::int8 AS c	{"columns":["a","b","c"],"types":["int8","int8","int8"],"rows":[[1000000,31,-63]]}
+num-numeric-notations	multiset	-	ok	SELECT numeric '1_000.000_5' AS a, '0x1F'::numeric AS b, '-0b1_01'::numeric AS c	{"columns":["a","b","c"],"types":["numeric","numeric","numeric"],"rows":[[1000.0005,31,-5]]}
+err-num-int2-binary-too-large	multiset	-	ok	SELECT int2 '0b1000000000000000'	{"error":"22003"}
+err-num-int4-hex-too-large	multiset	-	ok	SELECT int4 '0x80000000'	{"error":"22003"}
+err-num-int8-octal-too-large	multiset	-	ok	SELECT int8 '0o1000000000000000000000'	{"error":"22003"}
+err-num-prefix-without-digits	multiset	-	ok	SELECT int4 '0x'	{"error":"22P02"}
+err-num-underscore-first	multiset	-	ok	SELECT int4 '_100'	{"error":"22P02"}
+err-num-underscore-last	multiset	-	ok	SELECT int4 '100_'	{"error":"22P02"}
+err-num-underscore-twice	multiset	-	ok	SELECT int4 '10__0'	{"error":"22P02"}
 interval-date-minus-day	multiset	-	ok	SELECT date '1998-12-01' - interval '90' day	{"columns":["?column?"],"types":["timestamp"],"rows":[["1998-09-02T00:00"]]}
 interval-date-plus-month	multiset	-	ok	SELECT date '1995-09-01' + interval '1' month	{"columns":["?column?"],"types":["timestamp"],"rows":[["1995-10-01T00:00"]]}
 interval-date-plus-year	multiset	-	ok	SELECT date '1994-01-01' + interval '1' year	{"columns":["?column?"],"types":["timestamp"],"rows":[["1995-01-01T00:00"]]}
