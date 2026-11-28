@@ -952,12 +952,28 @@ public class PostgresCatalog {
         && (i + 1 >= tokens.size() || !tokens.get(i + 1).isSymbol("["));
   }
 
-  /** Whether a word of the statement, outside its string literals, names the catalog: a name that starts with {@code pg_}. */
+  /**
+   * Whether the statement names the catalog outside its string literals: a name, quoted or not, that starts with {@code pg_}.
+   * The {@code pg_catalog} in front of the type of a cast is the exception, see {@link #qualifiesCastType}.
+   */
   private static boolean namesCatalog(final List<PostgresCatalogToken> tokens) {
-    for (final PostgresCatalogToken token : tokens)
-      if (token.type == PostgresCatalogToken.Type.IDENTIFIER && token.text.regionMatches(true, 0, "pg_", 0, 3))
+    for (int i = 0; i < tokens.size(); i++) {
+      final PostgresCatalogToken token = tokens.get(i);
+      if ((token.type == PostgresCatalogToken.Type.IDENTIFIER || token.type == PostgresCatalogToken.Type.QUOTED_IDENTIFIER)
+          && token.text.regionMatches(true, 0, "pg_", 0, 3) && !qualifiesCastType(tokens, i))
         return true;
+    }
     return false;
+  }
+
+  /**
+   * Whether the token at {@code i} is the {@code pg_catalog} of {@code ::pg_catalog.t} or {@code CAST(x AS pg_catalog.t)}, which
+   * names a type and reads nothing of the catalog. Not for a {@code reg} type, such as {@code regclass}, which looks a name up.
+   */
+  private static boolean qualifiesCastType(final List<PostgresCatalogToken> tokens, final int i) {
+    return i > 0 && i + 2 < tokens.size() && tokens.get(i).isKeyword(PG_CATALOG_SCHEMA) && tokens.get(i + 1).isSymbol(".")
+        && (tokens.get(i - 1).isSymbol("::") || tokens.get(i - 1).isKeyword("AS"))
+        && !tokens.get(i + 2).text.regionMatches(true, 0, "reg", 0, 3);
   }
 
   /**
