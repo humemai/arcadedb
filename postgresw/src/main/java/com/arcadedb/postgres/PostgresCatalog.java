@@ -854,6 +854,10 @@ public class PostgresCatalog {
       return null;
     if (relational)
       requireRelations(tokens, database, userName, settings);
+    // a statement of the language that names nothing of the catalog is the language's, a set operation of constants among them
+    // (fork issue #278): this catalog reads a literal by its text and passes over its casts
+    if (relational && !namesCatalog(tokens))
+      return null;
 
     if (!catalogNamed) {
       // Reached only for being a set operation: anything this catalog cannot evaluate is the SQL engine's to
@@ -946,6 +950,30 @@ public class PostgresCatalog {
       i += 2;
     return i < tokens.size() && tokens.get(i).isKeyword("regclass")
         && (i + 1 >= tokens.size() || !tokens.get(i + 1).isSymbol("["));
+  }
+
+  /**
+   * Whether the statement names the catalog outside its string literals: a name, quoted or not, that starts with {@code pg_}.
+   * The {@code pg_catalog} in front of the type of a cast is the exception, see {@link #qualifiesCastType}.
+   */
+  private static boolean namesCatalog(final List<PostgresCatalogToken> tokens) {
+    for (int i = 0; i < tokens.size(); i++) {
+      final PostgresCatalogToken token = tokens.get(i);
+      if ((token.type == PostgresCatalogToken.Type.IDENTIFIER || token.type == PostgresCatalogToken.Type.QUOTED_IDENTIFIER)
+          && token.text.regionMatches(true, 0, "pg_", 0, 3) && !qualifiesCastType(tokens, i))
+        return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether the token at {@code i} is the {@code pg_catalog} of {@code ::pg_catalog.t} or {@code CAST(x AS pg_catalog.t)}, which
+   * names a type and reads nothing of the catalog. Not for a {@code reg} type, such as {@code regclass}, which looks a name up.
+   */
+  private static boolean qualifiesCastType(final List<PostgresCatalogToken> tokens, final int i) {
+    return i > 0 && i + 2 < tokens.size() && tokens.get(i).isKeyword(PG_CATALOG_SCHEMA) && tokens.get(i + 1).isSymbol(".")
+        && (tokens.get(i - 1).isSymbol("::") || tokens.get(i - 1).isKeyword("AS"))
+        && !tokens.get(i + 2).text.regionMatches(true, 0, "reg", 0, 3);
   }
 
   /**
