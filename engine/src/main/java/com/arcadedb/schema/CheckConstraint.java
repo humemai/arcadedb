@@ -37,8 +37,8 @@ import java.util.Objects;
  */
 public record CheckConstraint(String name, String expression) {
 
-  /** The custom value of a type that holds its check constraints. */
-  public static final String CUSTOM_KEY = "checkConstraints";
+  /** The custom value of a type that holds its check constraints, under the engine's prefix as {@link ForeignKey#CUSTOM_KEY}. */
+  public static final String CUSTOM_KEY = "arcadedb_checkConstraints";
 
   public CheckConstraint {
     Objects.requireNonNull(name, "name");

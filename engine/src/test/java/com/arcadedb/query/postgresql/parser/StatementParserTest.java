@@ -454,8 +454,7 @@ class StatementParserTest {
         new String[] { "SELECT * FROM a NATURAL FULL JOIN b", "NATURAL FULL JOIN is not supported" },
         new String[] { "SELECT * FROM a JOIN b USING (x) AS j", "A join alias (USING ... AS name) is not supported" },
         new String[] { "WITH x AS (SELECT 1) DELETE FROM t", "A WITH clause on INSERT, UPDATE, DELETE or MERGE is not supported" },
-        new String[] { "SELECT * FROM generate_series(1, 3)", "is not supported" },
-        new String[] { "SELECT * FROM a, LATERAL (SELECT 1) s", "LATERAL" },
+        new String[] { "SELECT * FROM ROWS FROM (generate_series(1, 3))", "ROWS FROM" },
         new String[] { "SELECT ARRAY(SELECT 1)", "ARRAY is not supported" },
         new String[] { "SELECT ROW(1, 2)", "ROW is not supported" },
         new String[] { "SELECT (1, 2)", "A row constructor is not supported" },
@@ -524,7 +523,7 @@ class StatementParserTest {
       "SET search_path = x",
       "WITH x AS (INSERT INTO t VALUES (1) RETURNING a) SELECT * FROM x", "TABLE t", "EXPLAIN ANALYZE SELECT 1",
       "EXPLAIN CREATE TABLE t (a int)", "SELECT * FROM a NATURAL JOIN b", "SELECT * FROM a JOIN b USING (x) AS j",
-      "SELECT * FROM generate_series(1, 3)", "SELECT (1, 2)", "SELECT count(*) OVER w FROM t",
+      "SELECT * FROM ROWS FROM (generate_series(1, 3))", "SELECT (1, 2)", "SELECT count(*) OVER w FROM t",
       "SELECT DISTINCT ON (a) a FROM t", "SELECT 1 INTO t", "SELECT 1 FOR UPDATE",
       "SELECT a FROM t FETCH FIRST 1 ROWS ONLY", "SELECT a SIMILAR TO b", "SELECT a IS TRUE", "SELECT 1 + ANY (ARRAY[1])",
       "SELECT a < ALL (SELECT b FROM t)",
@@ -558,7 +557,7 @@ class StatementParserTest {
     assertThatThrownBy(() -> StatementParser.parse("SELECT 1 + FROM (SELECT 2) s")).isInstanceOf(PostgreSQLSyntaxException.class)
         .hasMessageContaining("\"FROM\" (line 1, column 12)");
     // a subquery before an error is a construct PostgreSQL accepts, and the grammar does not read beyond it
-    assertThatThrownBy(() -> StatementParser.parse("SELECT * FROM generate_series(1, 3) s WHERE"))
+    assertThatThrownBy(() -> StatementParser.parse("SELECT * FROM ROWS FROM (generate_series(1, 3)) s WHERE"))
         .isInstanceOf(PostgreSQLFeatureNotSupportedException.class).hasMessageContaining("(line 1, column 15)");
   }
 
@@ -630,8 +629,6 @@ class StatementParserTest {
       "SELECT 1 FROM (unnest(ARRAY[1, (SELECT 2)]) AS u(b) RIGHT JOIN (VALUES (1)) AS v(b) USING (b) FULL JOIN t i8 ON true) AS j, length(j::text) f",
       "SELECT j FROM i4 LEFT JOIN (LATERAL (VALUES (i4.f1)) AS v(a) CROSS JOIN i8) AS j ON (j.q1 = 123), i4b WHERE i4.f1 = 0",
       "SELECT * FROM x JOIN (y x CROSS JOIN z y(ff)) j ON q1 = f1",
-      "SELECT v.* FROM (x LEFT JOIN (SELECT q1 FROM t) y ON x.q2 = y.q1), LATERAL (SELECT x.q1 UNION ALL SELECT x.q2) v(vx, vy)",
-      "SELECT * FROM a JOIN LATERAL (SELECT 1 UNION ALL SELECT 2) ss ON true",
       "SELECT bar.* FROM (t1 JOIN t2 USING (a) AS foo) AS bar, t3 FOR UPDATE OF bar",
       "SELECT row_to_json(x.*) FROM a JOIN b USING (i) AS x WHERE a.t = 'one'" })
   void aConstructOutsideTheSubsetIsRefusedWhateverFollowsIt(final String text) {

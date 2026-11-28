@@ -632,10 +632,22 @@ tableRef
   | tableRef CROSS JOIN tableRef                          # crossJoinRef
   | tableRef joinKind? JOIN tableRef joinQual             # joinRef
   | tableRef unsupportedJoinKind JOIN tableRef joinQual?  # unsupportedJoinRef
-  | LPAREN selectStmt RPAREN derivedAlias?                # derivedRef
+  | LATERAL? LPAREN selectStmt RPAREN derivedAlias?       # derivedRef
   | LPAREN tableRef RPAREN                                # parenRef
   | LPAREN tableRef RPAREN unsupportedJoinAlias           # unsupportedParenAliasRef
   | unsupportedTableRef unsupportedTableAlias?            # unsupportedRef
+  // a function in FROM (func_table of gram.y), fork issue #243: it may read the tables before it, with or without LATERAL
+  | LATERAL? funcApplication (WITH ORDINALITY)? functionAlias?   # functionRef
+  ;
+
+functionAlias
+  : derivedAlias
+  | unsupportedColumnDefinitions
+  ;
+
+// AS t(a int, b text): the column definitions of a function that returns records
+unsupportedColumnDefinitions
+  : AS? colId? LPAREN colId typename (COMMA colId typename)* RPAREN
   ;
 
 joinKind
@@ -667,11 +679,10 @@ unsupportedTablesample
   ;
 
 unsupportedTableRef
-  : LATERAL (parenGroup | funcName parenGroup)
-  | ROWS FROM parenGroup
-  | XMLTABLE parenGroup
-  | JSON_TABLE parenGroup
-  | funcName parenGroup
+  : LATERAL parenGroup
+  | LATERAL? ROWS FROM parenGroup
+  | LATERAL? XMLTABLE parenGroup
+  | LATERAL? JSON_TABLE parenGroup
   // these keywords are functions in FROM too, and may carry column definitions: AS (a int, b int)
   | (COALESCE | GREATEST | LEAST | NULLIF) parenGroup (AS parenGroup)?
   | subqueryGroup

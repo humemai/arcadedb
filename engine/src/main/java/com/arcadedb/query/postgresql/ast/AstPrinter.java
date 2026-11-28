@@ -276,9 +276,14 @@ public final class AstPrinter {
       case TableReference.Table table -> (table.only() ? "ONLY " : "")
           + table.name().stream().map(AstPrinter::print).collect(Collectors.joining("."))
           + (table.alias() == null ? "" : " AS " + print(table.alias()));
-      case TableReference.Subquery subquery -> "(" + print(subquery.query()) + ")"
+      case TableReference.Subquery subquery -> (subquery.lateral() ? "LATERAL " : "") + "(" + print(subquery.query()) + ")"
           + (subquery.alias() == null ? "" : " AS " + print(subquery.alias()))
           + (subquery.columns().isEmpty() ? "" : " (" + subquery.columns().stream().map(AstPrinter::print)
+          .collect(Collectors.joining(", ")) + ")");
+      case TableReference.Function function -> print((Expression) function.call())
+          + (function.ordinality() ? " WITH ORDINALITY" : "")
+          + (function.alias() == null ? "" : " AS " + print(function.alias()))
+          + (function.columns().isEmpty() ? "" : " (" + function.columns().stream().map(AstPrinter::print)
           .collect(Collectors.joining(", ")) + ")");
       case TableReference.Join join -> print(join.left()) + " " + join.type() + " JOIN "
           // a join on the right has to be in parentheses to keep its shape: joins group to the left

@@ -130,7 +130,6 @@ class ValuesQueryTest extends TestHelper {
     assertState("SELECT * FROM (VALUES (1, 2), (3)) v(a, b)", "42601");
     assertState("SELECT * FROM (VALUES (DEFAULT)) v(a)", "42601");
     assertState("SELECT * FROM (TABLE person) v", "0A000");
-    assertState("SELECT * FROM person p, LATERAL (VALUES (p.pid)) v(a)", "0A000");
     final StringBuilder big = new StringBuilder("SELECT count(*) FROM (VALUES (0)");
     for (int i = 1; i <= 500; i++)
       big.append(", (").append(i).append(')');
