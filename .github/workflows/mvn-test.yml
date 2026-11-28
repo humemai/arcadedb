@@ -144,6 +144,12 @@ jobs:
           distribution: "temurin"
           java-version: 21
 
+      # Fork only: Maven Central answers the shared runners with HTTP 429. The caches here were filled under the id central.
+      - name: Send Maven Central through the mirror
+        uses: ./.github/actions/pg-maven-mirror
+        with:
+          repository-id: central
+
       - name: Cache local Maven repository
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -243,6 +249,12 @@ jobs:
           distribution: "temurin"
           java-version: 21
           cache: "maven"
+
+      # Fork only: Maven Central answers the shared runners with HTTP 429. The caches here were filled under the id central.
+      - name: Send Maven Central through the mirror
+        uses: ./.github/actions/pg-maven-mirror
+        with:
+          repository-id: central
 
       - name: Download ArcadeDB Maven artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -387,6 +399,12 @@ jobs:
           java-version: 21
           cache: "maven"
 
+      # Fork only: Maven Central answers the shared runners with HTTP 429. The caches here were filled under the id central.
+      - name: Send Maven Central through the mirror
+        uses: ./.github/actions/pg-maven-mirror
+        with:
+          repository-id: central
+
       - name: Download ArcadeDB Maven artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -500,6 +518,12 @@ jobs:
           java-version: 21
           cache: "maven"
 
+      # Fork only: Maven Central answers the shared runners with HTTP 429. The caches here were filled under the id central.
+      - name: Send Maven Central through the mirror
+        uses: ./.github/actions/pg-maven-mirror
+        with:
+          repository-id: central
+
       - name: Download ArcadeDB Maven artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -591,6 +615,12 @@ jobs:
           distribution: "temurin"
           java-version: 21
           cache: "maven"
+
+      # Fork only: Maven Central answers the shared runners with HTTP 429. The caches here were filled under the id central.
+      - name: Send Maven Central through the mirror
+        uses: ./.github/actions/pg-maven-mirror
+        with:
+          repository-id: central
 
       - name: Download ArcadeDB Maven artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -729,6 +759,12 @@ jobs:
           java-version: 21
           cache: "maven"
 
+      # Fork only: Maven Central answers the shared runners with HTTP 429. The caches here were filled under the id central.
+      - name: Send Maven Central through the mirror
+        uses: ./.github/actions/pg-maven-mirror
+        with:
+          repository-id: central
+
       - name: Download ArcadeDB Maven artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -807,6 +843,12 @@ jobs:
           java-version: 21
           cache: "maven"
 
+      # Fork only: Maven Central answers the shared runners with HTTP 429. The caches here were filled under the id central.
+      - name: Send Maven Central through the mirror
+        uses: ./.github/actions/pg-maven-mirror
+        with:
+          repository-id: central
+
       - name: Download ArcadeDB Maven artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -842,6 +884,12 @@ jobs:
           distribution: "temurin"
           java-version: 21
           cache: "maven"
+
+      # Fork only: Maven Central answers the shared runners with HTTP 429. The caches here were filled under the id central.
+      - name: Send Maven Central through the mirror
+        uses: ./.github/actions/pg-maven-mirror
+        with:
+          repository-id: central
 
       - name: Download ArcadeDB Maven artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
