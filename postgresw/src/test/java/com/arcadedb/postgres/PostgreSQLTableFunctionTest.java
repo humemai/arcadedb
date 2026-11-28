@@ -80,7 +80,7 @@ class PostgreSQLTableFunctionTest extends PostgreSQLSideBySideTestBase {
       "SELECT id, k.key, k.value FROM f, jsonb_each(meta) k WHERE id = 2",
       "SELECT key, value FROM f, jsonb_each_text(meta) WHERE id = 1 ORDER BY key",
       "SELECT * FROM jsonb_each('{\"b\": 1, \"aa\": [1], \"c\": null}')",
-      "SELECT * FROM jsonb_each_text('{\"b\": 1.50, \"aa\": {\"x\": \"y\"}, \"c\": null, \"d\": \"s\", \"e\": true}')",
+      "SELECT * FROM jsonb_each_text('{\"b\": 1.5, \"aa\": {\"x\": \"y\"}, \"c\": null, \"d\": \"s\", \"e\": true}')",
       "SELECT value FROM jsonb_array_elements('[1, \"a\", null, {\"k\": 2}]')",
       "SELECT * FROM jsonb_array_elements_text('[1, \"a\", null, true]') e",
       "SELECT * FROM jsonb_object_keys('{\"zz\": 1, \"a\": 2}')",

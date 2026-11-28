@@ -219,7 +219,8 @@ public final class TableFunction {
         || args[1].type() == PgType.TIMESTAMP && args[0].type() == PgType.UNKNOWN ? PgType.TIMESTAMP : PgType.TIMESTAMPTZ;
     final Evaluable start = compiler.coerce(args[0], type);
     final Evaluable stop = compiler.coerce(args[1], type);
-    final Evaluable step = compiler.coerce(args[2], PgType.INTERVAL);
+    final Evaluable step = args[2] instanceof Evaluable.Constant literal && literal.type() == PgType.UNKNOWN ? interval(literal)
+        : compiler.coerce(args[2], PgType.INTERVAL);
     if (start == null || stop == null || step == null)
       throw PostgreSQLEvaluationException.noFunction(name, types(args));
     // value + step and the comparisons, over a row of the value, the step and the end
@@ -254,6 +255,13 @@ public final class TableFunction {
         }
       };
     });
+  }
+
+  /** A step written as a string with no type, as in {@code '12 hours'}: it is read as an {@code interval}. */
+  private static Evaluable interval(final Evaluable.Constant literal) {
+    ExpressionCompiler.inferParameter(literal, PgType.INTERVAL);
+    return new Evaluable.Constant(PgType.INTERVAL,
+        literal.value() == null ? null : PgInterval.parse((String) literal.value(), null));
   }
 
   /** 1 for a step forward, -1 for one backward. A step whose parts have both signs is refused: its direction is not obvious. */
