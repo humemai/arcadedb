@@ -268,6 +268,18 @@ public class PostgreSQLQueryEngine implements QueryEngine {
             + " leader");
   }
 
+  /**
+   * A schema change that follows writes of its run is refused on a replica (fork issue #338): the writes wait there for the end
+   * of the run, and the leader would commit the schema change before them.
+   */
+  public void checkSchemaChangeAfterWritesOnReplica(final String query) {
+    final Statement statement = parse(query);
+    throw new PostgreSQLFeatureNotSupportedException(statementName(statement) + " after other writes of the same batch or"
+        + " pipeline is not supported by the postgresql language on a replica of a high availability cluster, because it would run"
+        + " on the leader at once, before those writes commit (" + statement.position() + ")",
+        "Send the statement on its own, in autocommit, or connect to the leader");
+  }
+
   @Override
   public ResultSet query(final String query, final ContextConfiguration configuration, final Map<String, Object> parameters) {
     return execute(query, Parameters.of(parameters), true);

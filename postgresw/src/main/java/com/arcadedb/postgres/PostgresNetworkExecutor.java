@@ -5877,11 +5877,19 @@ public class PostgresNetworkExecutor extends Thread {
   }
 
   /**
-   * Says to the {@code postgresql} language whether more statements follow the schema change that this portal is about to run in
-   * the implicit block of its run (fork issue #335). A failure of a later statement rolls the block back, which cannot take back
-   * what is not of the transaction: what a {@code DROP} dropped and, on a replica, every schema change, which the leader commits
-   * as it runs it. The language refuses such a {@code DROP}, and on a replica every such schema change is refused here. To know
-   * what follows, this waits for the next messages, as {@link #isRetriedOnItsOwn} does.
+   * Looks at what follows the statement of the {@code postgresql} language that this portal is about to run in the implicit
+   * block of its run, where the failure of a later statement rolls the block back. To know what follows, this waits for the next
+   * messages, as {@link #isRetriedOnItsOwn} does.
+   * <p>
+   * A rollback cannot take back what is not of the transaction: what a {@code DROP} dropped and, on a replica, every schema
+   * change, which the leader commits as it runs it (fork issue #335). The language is told whether statements follow, and
+   * refuses such a {@code DROP}; on a replica every such schema change is refused here.
+   * <p>
+   * A replica also forwards a write to the leader, which commits it at once (fork issue #338). So when statements follow a write,
+   * the transaction of the run is declared the client's, as that of a multi-statement simple query is
+   * ({@link #beginSimpleQueryBlock}): this write and the later ones run in it, and the Sync commits them as one. A schema change
+   * after them would be committed by the leader before they are, so it is refused too. A write with only the Sync behind it,
+   * and no write waiting, is forwarded as before.
    *
    * @param described the name of the portal when a Describe is about to run it, {@code null} at an Execute
    */
@@ -5891,22 +5899,38 @@ public class PostgresNetworkExecutor extends Thread {
       return;
     final PostgreSQLQueryEngine engine = (PostgreSQLQueryEngine) ((DatabaseInternal) database).getQueryEngine(
         PostgresQueryLanguages.POSTGRESQL);
+    final QueryEngine.AnalyzedQuery analyzed;
     try {
-      if (!engine.analyze(portal.query).isDDL())
-        return;
+      analyzed = engine.analyze(portal.query);
     } catch (final RuntimeException refused) {
       // the statement is refused again, and answered, when it runs
       return;
     }
+    final boolean schemaChange = analyzed.isDDL();
+    final boolean follower = isHAFollower();
+    if (!schemaChange && (!follower || analyzed.isIdempotent()))
+      return;
+    final TransactionContext transaction = ((DatabaseInternal) database).getTransaction();
+    // on a replica, only a write that statements followed has declared the transaction of this run the client's
+    final boolean writesWait = follower && transaction.isClientManaged();
+    if (writesWait && !schemaChange)
+      return;
     boolean follow;
     try {
       follow = !PostgresAutocommitRetry.onlySyncFollows(channel.getDataInput(), described);
     } catch (final IOException e) {
-      // what follows is unknown, so the statement counts as followed: nothing is dropped
+      // what follows is unknown, so the statement counts as followed: nothing is dropped, and nothing is forwarded
       follow = true;
     }
-    if (follow && isHAFollower())
+    if (!schemaChange) {
+      if (follow)
+        transaction.setClientManaged(true);
+      return;
+    }
+    if (follow && follower)
       engine.checkSchemaChangeThatStatementsFollowOnReplica(portal.query);
+    if (writesWait)
+      engine.checkSchemaChangeAfterWritesOnReplica(portal.query);
     PostgreSQLQueryEngine.statementsFollow(database, follow);
   }
 
