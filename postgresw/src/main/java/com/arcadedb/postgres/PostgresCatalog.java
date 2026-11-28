@@ -854,6 +854,10 @@ public class PostgresCatalog {
       return null;
     if (relational)
       requireRelations(tokens, database, userName, settings);
+    // a statement of the language that names nothing of the catalog is the language's, a set operation of constants among them
+    // (fork issue #278): this catalog reads a literal by its text and passes over its casts
+    if (relational && !namesCatalog(tokens))
+      return null;
 
     if (!catalogNamed) {
       // Reached only for being a set operation: anything this catalog cannot evaluate is the SQL engine's to
@@ -946,6 +950,14 @@ public class PostgresCatalog {
       i += 2;
     return i < tokens.size() && tokens.get(i).isKeyword("regclass")
         && (i + 1 >= tokens.size() || !tokens.get(i + 1).isSymbol("["));
+  }
+
+  /** Whether a word of the statement, outside its string literals, names the catalog: a name that starts with {@code pg_}. */
+  private static boolean namesCatalog(final List<PostgresCatalogToken> tokens) {
+    for (final PostgresCatalogToken token : tokens)
+      if (token.type == PostgresCatalogToken.Type.IDENTIFIER && token.text.regionMatches(true, 0, "pg_", 0, 3))
+        return true;
+    return false;
   }
 
   /**
