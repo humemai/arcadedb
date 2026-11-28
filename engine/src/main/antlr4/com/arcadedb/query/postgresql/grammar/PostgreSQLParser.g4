@@ -583,11 +583,8 @@ simpleSelect
 
 selectQuantifier
   : ALL
-  | DISTINCT (unsupportedDistinctOn skipRest)?
-  ;
-
-unsupportedDistinctOn
-  : ON
+  // DISTINCT ON (a, b): the first row of each group, in the order of ORDER BY (fork issue #244)
+  | DISTINCT (ON LPAREN on+=aExpr (COMMA on+=aExpr)* RPAREN)?
   ;
 
 unsupportedInto
@@ -765,15 +762,16 @@ selectLimit
 
 limitClause
   : LIMIT (aExpr | ALL) unsupportedLimitComma?
-  | unsupportedFetchClause
+  // FETCH FIRST n ROWS ONLY is LIMIT n (fork issue #244)
+  | FETCH (FIRST | NEXT) fetchFirstValue? (ROW | ROWS) (ONLY | unsupportedWithTies)
   ;
 
 unsupportedLimitComma
   : COMMA aExpr
   ;
 
-unsupportedFetchClause
-  : FETCH (FIRST | NEXT) fetchFirstValue? (ROW | ROWS) (ONLY | WITH TIES)
+unsupportedWithTies
+  : WITH TIES
   ;
 
 offsetClause
@@ -870,6 +868,8 @@ cExpr
   | LPAREN aExpr RPAREN                                                        # parenExpr
   | LPAREN aExpr RPAREN unsupportedIndirection                                 # unsupportedParenIndirectionExpr
   | LPAREN unsupportedStarArg RPAREN                                           # unsupportedParenStarExpr
+  // (a, b): read in a comparison of two rows and in IN with a list of rows (fork issue #244)
+  | LPAREN items+=aExpr COMMA items+=aExpr (COMMA items+=aExpr)* RPAREN        # implicitRowExpr
   | LPAREN aExpr unsupportedRowComma RPAREN                                   # unsupportedRowExpr
   | caseExpr                                                                   # caseExprAlt
   | CAST LPAREN aExpr AS typename RPAREN                                       # castExpr
