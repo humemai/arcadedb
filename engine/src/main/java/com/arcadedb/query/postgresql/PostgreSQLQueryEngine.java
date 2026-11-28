@@ -230,6 +230,18 @@ public class PostgreSQLQueryEngine implements QueryEngine {
     };
   }
 
+  /**
+   * A schema change that a replica would send to the leader out of a transaction block is refused (fork issue #316): there it
+   * runs and commits at once, so a {@code ROLLBACK} would take nothing back, and a {@code DROP} would take the rows with it.
+   */
+  @Override
+  public void checkSchemaChangeOutsideClientTransaction(final String query) {
+    final Statement statement = parse(query);
+    throw new PostgreSQLFeatureNotSupportedException(statementName(statement) + " inside a transaction block is not supported by"
+        + " the postgresql language on a replica of a high availability cluster, because it would run on the leader at once,"
+        + " outside the block (" + statement.position() + ")");
+  }
+
   @Override
   public ResultSet query(final String query, final ContextConfiguration configuration, final Map<String, Object> parameters) {
     return execute(query, Parameters.of(parameters), true);

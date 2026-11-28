@@ -1859,7 +1859,7 @@ public class RaftReplicatedDatabase implements DatabaseInternal, HAReplicatedDat
       // see issue #4039), where the local page cache lags behind the asynchronous state
       // machine apply and produces inconsistent IDs across the cluster.
       if (queryEngine.isExecutedByTheLeader() || analyzed.isDDL() || !analyzed.isIdempotent()) {
-        if (!runsInTheClientTransaction(queryEngine, analyzed))
+        if (!runsInTheClientTransaction(queryEngine, analyzed, query))
           return forwardCommandToLeaderViaRaft(language, query, null, args, analyzed.isDDL() || !analyzed.isIdempotent());
         ForwardedRequestIdContext.markExecutedLocally();
         return proxied.command(language, query, configuration, args);
@@ -1914,9 +1914,12 @@ public class RaftReplicatedDatabase implements DatabaseInternal, HAReplicatedDat
    * <p>
    * DDL keeps being forwarded: a schema change is not transactional anywhere - a ROLLBACK does not undo one on the
    * leader either - and a follower cannot write the schema at all. A script carrying DDL is refused, because it cannot
-   * be honoured either way: forwarded, its writes would escape the transaction; run here, its DDL could not.
+   * be honoured either way: forwarded, its writes would escape the transaction; run here, its DDL could not. A language
+   * that keeps a schema change in the transaction on a single server refuses it here too
+   * ({@link QueryEngine#checkSchemaChangeOutsideClientTransaction}).
    */
-  private boolean runsInTheClientTransaction(final QueryEngine queryEngine, final QueryEngine.AnalyzedQuery analyzed) {
+  private boolean runsInTheClientTransaction(final QueryEngine queryEngine, final QueryEngine.AnalyzedQuery analyzed,
+      final String query) {
     final TransactionContext tx = proxied.getTransactionIfExists();
     if (tx == null || !tx.isActive() || !tx.isClientManaged())
       return false;
@@ -1930,6 +1933,7 @@ public class RaftReplicatedDatabase implements DatabaseInternal, HAReplicatedDat
       throw new TransactionException("A script that changes the schema cannot run inside a transaction on a replica server: "
           + "its writes would commit outside the transaction. Run it outside the transaction, or send its schema changes "
           + "as separate commands");
+    queryEngine.checkSchemaChangeOutsideClientTransaction(query);
     return false;
   }
 
@@ -2115,7 +2119,7 @@ public class RaftReplicatedDatabase implements DatabaseInternal, HAReplicatedDat
       if (analyzed.inspectsTheLocalNode())
         return runInspectionOfThisNode(language, query, configuration, args);
       if (queryEngine.isExecutedByTheLeader() || analyzed.isDDL() || !analyzed.isIdempotent()) {
-        if (!runsInTheClientTransaction(queryEngine, analyzed))
+        if (!runsInTheClientTransaction(queryEngine, analyzed, query))
           return forwardCommandToLeaderViaRaft(language, query, args, null, analyzed.isDDL() || !analyzed.isIdempotent());
         ForwardedRequestIdContext.markExecutedLocally();
         return proxied.command(language, query, configuration, args);

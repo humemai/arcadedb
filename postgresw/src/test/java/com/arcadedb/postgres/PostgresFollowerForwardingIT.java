@@ -68,11 +68,61 @@ class PostgresFollowerForwardingIT extends BaseRaftHATest {
     final int index = serverIndexOf(config);
     config.setValue(GlobalConfiguration.SERVER_PLUGINS.getKey(), "Postgres:com.arcadedb.postgres.PostgresProtocolPlugin");
     config.setValue(GlobalConfiguration.POSTGRES_PORT.getKey(), String.valueOf(postgresPorts[index]));
+    config.setValue(GlobalConfiguration.POSTGRES_LANGUAGES.getKey(), "sqlscript,cypher,opencypher,postgresql");
   }
 
   @Override
   protected int getServerCount() {
     return 3;
+  }
+
+  /**
+   * Fork issue #316: a follower does not send a schema change of a {@code postgresql} transaction block to the leader, where it
+   * would commit at once and a {@code ROLLBACK} would not reach it. Outside a block the leader runs it, as before.
+   */
+  @Test
+  @Timeout(180)
+  void aSchemaChangeInsideAPostgresqlBlockIsRefusedOnAFollower() throws Exception {
+    final int leader = requireLeaderIndex();
+    final Database leaderDb = getServerDatabase(leader, getDatabaseName());
+    leaderDb.command("postgresql", "CREATE TABLE facts316 (id int PRIMARY KEY, note text)");
+    leaderDb.command("postgresql", "CREATE INDEX facts316_note ON facts316 (note)");
+    leaderDb.command("postgresql", "INSERT INTO facts316 VALUES (1, 'a')");
+    waitForAllServers();
+    final int follower = firstFollowerOf(leader);
+
+    for (final String queryMode : new String[] { "simple", "extended" })
+      try (final Connection connection = connect(follower, queryMode, "postgresql");
+          final Statement statement = connection.createStatement()) {
+        connection.setAutoCommit(false);
+        for (final String change : List.of("DROP TABLE facts316", "DROP INDEX facts316_note",
+            "CREATE INDEX ON facts316 (note, id)", "ALTER TABLE facts316 ADD COLUMN more int", "CREATE TABLE more316 (id int)")) {
+          final Throwable refused = catchThrowable(() -> statement.execute(change));
+          assertThat(refused).as(queryMode + ": " + change).isInstanceOf(SQLException.class)
+              .hasMessageContaining("inside a transaction block is not supported by the postgresql language");
+          assertThat(((SQLException) refused).getSQLState()).as(queryMode + ": " + change).isEqualTo("0A000");
+          connection.rollback();
+        }
+      }
+
+    waitForAllServers();
+    for (int i = 0; i < getServerCount(); i++) {
+      final Database db = getServerDatabase(i, getDatabaseName());
+      assertThat(db.getSchema().existsType("more316")).as("server %d: the refused table", i).isFalse();
+      assertThat(db.getSchema().getType("facts316").existsProperty("more")).as("server %d: the refused column", i).isFalse();
+      assertThat(db.getSchema().getType("facts316").getAllIndexes(false)).as("server %d: the indexes", i).hasSize(2);
+      try (final ResultSet rows = db.query("postgresql", "SELECT count(*) AS n FROM facts316")) {
+        assertThat(rows.next().<Number>getProperty("n").longValue()).as("server %d: the rows", i).isEqualTo(1);
+      }
+    }
+
+    try (final Connection connection = connect(follower, "simple", "postgresql");
+        final Statement statement = connection.createStatement()) {
+      statement.execute("DROP TABLE facts316");
+    }
+    waitForAllServers();
+    for (int i = 0; i < getServerCount(); i++)
+      assertThat(getServerDatabase(i, getDatabaseName()).getSchema().existsType("facts316")).as("server %d: dropped", i).isFalse();
   }
 
   /*
@@ -506,11 +556,18 @@ class PostgresFollowerForwardingIT extends BaseRaftHATest {
   }
 
   private Connection connect(final int serverIndex, final String queryMode) throws SQLException {
+    return connect(serverIndex, queryMode, null);
+  }
+
+  /** @param language the query language of the connection, or null for the default of the protocol */
+  private Connection connect(final int serverIndex, final String queryMode, final String language) throws SQLException {
     final Properties props = new Properties();
     props.setProperty("user", "root");
     props.setProperty("password", DEFAULT_PASSWORD_FOR_TESTS);
     props.setProperty("sslmode", "disable");
     props.setProperty("preferQueryMode", queryMode);
+    if (language != null)
+      props.setProperty("options", "-c arcadedb.language=" + language);
     return DriverManager.getConnection("jdbc:postgresql://localhost:" + postgresPorts[serverIndex] + "/" + getDatabaseName(), props);
   }
 

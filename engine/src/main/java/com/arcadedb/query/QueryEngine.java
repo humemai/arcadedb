@@ -199,6 +199,15 @@ public interface QueryEngine {
     return false;
   }
 
+  /**
+   * Asked on a replica server before a statement that changes the schema, sent inside a transaction that the client ends itself,
+   * goes to the leader, where it runs at once and outside that transaction (fork issue #316). A language whose users read it as a
+   * part of the transaction throws its refusal here. By default nothing is refused.
+   */
+  default void checkSchemaChangeOutsideClientTransaction(String query) {
+    // NO OPERATIONS
+  }
+
   default boolean isReusable() {
     return true;
   }
