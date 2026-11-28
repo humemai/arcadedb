@@ -128,6 +128,51 @@ class PostgresFollowerForwardingIT extends BaseRaftHATest {
   }
 
   /**
+   * Fork issue #335: a follower does not send the leader a {@code postgresql} schema change that further statements of its run
+   * follow, where it would commit at once and the failure of one of them would not take it back. On its own the leader runs it.
+   */
+  @Test
+  @Timeout(180)
+  void aSchemaChangeThatStatementsFollowIsRefusedOnAFollower() throws Exception {
+    final int leader = requireLeaderIndex();
+    final Database leaderDb = getServerDatabase(leader, getDatabaseName());
+    leaderDb.command("postgresql", "CREATE TABLE facts335 (id int PRIMARY KEY, note text)");
+    leaderDb.command("postgresql", "INSERT INTO facts335 VALUES (1, 'a')");
+    waitForAllServers();
+    final int follower = firstFollowerOf(leader);
+
+    try (final Connection connection = connect(follower, "extended", "postgresql");
+        final Statement statement = connection.createStatement()) {
+      for (final String change : List.of("DROP TABLE facts335", "ALTER TABLE facts335 DROP COLUMN note",
+          "CREATE INDEX ON facts335 (note)", "CREATE TABLE more335 (id int)")) {
+        final Throwable refused = catchThrowable(() -> statement.execute(change + "; SELECT nope FROM facts335"));
+        assertThat(refused).as(change).isInstanceOf(SQLException.class).hasMessageContaining("followed by other statements");
+        assertThat(((SQLException) refused).getSQLState()).as(change).isEqualTo("0A000");
+      }
+    }
+
+    waitForAllServers();
+    for (int i = 0; i < getServerCount(); i++) {
+      final Database db = getServerDatabase(i, getDatabaseName());
+      assertThat(db.getSchema().existsType("more335")).as("server %d: the refused table", i).isFalse();
+      assertThat(db.getSchema().existsType("facts335")).as("server %d: the table", i).isTrue();
+      assertThat(db.getSchema().getType("facts335").existsProperty("note")).as("server %d: the column", i).isTrue();
+      assertThat(db.getSchema().getType("facts335").getAllIndexes(false)).as("server %d: the indexes", i).hasSize(1);
+      try (final ResultSet rows = db.query("postgresql", "SELECT count(*) AS n FROM facts335")) {
+        assertThat(rows.next().<Number>getProperty("n").longValue()).as("server %d: the rows", i).isEqualTo(1);
+      }
+    }
+
+    try (final Connection connection = connect(follower, "extended", "postgresql");
+        final Statement statement = connection.createStatement()) {
+      statement.execute("DROP TABLE facts335");
+    }
+    waitForAllServers();
+    for (int i = 0; i < getServerCount(); i++)
+      assertThat(getServerDatabase(i, getDatabaseName()).getSchema().existsType("facts335")).as("server %d: dropped", i).isFalse();
+  }
+
+  /**
    * Fork issue #326: the rows that the {@code postgresql} language writes reach every server, whether the statement is a
    * transaction of its own or a part of a block, run on the leader or sent to a follower.
    */
