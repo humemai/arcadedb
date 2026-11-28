@@ -50,7 +50,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  */
 abstract class PostgreSQLSideBySideTestBase extends PostgresWireProtocolTestBase {
   private static final String IMAGE        = System.getProperty("pgexamples.image", "pgvector/pgvector:pg18");
-  private static final String PYTHON_IMAGE = "ghcr.io/astral-sh/uv:python3.13-bookworm-slim";
+  static final         String PYTHON_IMAGE = "ghcr.io/astral-sh/uv:python3.13-bookworm-slim";
   private static final String PASSWORD     = "sidebyside";
 
   /** What differed, reported together at the end of a test. */
@@ -80,7 +80,7 @@ abstract class PostgreSQLSideBySideTestBase extends PostgresWireProtocolTestBase
     return container;
   }
 
-  private static void requireDocker() {
+  static void requireDocker() {
     boolean available;
     try {
       available = DockerClientFactory.instance().isDockerAvailable();
@@ -88,8 +88,8 @@ abstract class PostgreSQLSideBySideTestBase extends PostgresWireProtocolTestBase
       available = false;
     }
     if ("true".equals(System.getenv("GITHUB_ACTIONS")))
-      assertThat(available).as("a Docker daemon is needed to start PostgreSQL 18").isTrue();
-    assumeTrue(available, "a Docker daemon is needed to start PostgreSQL 18");
+      assertThat(available).as("a Docker daemon is needed to start a container").isTrue();
+    assumeTrue(available, "a Docker daemon is needed to start a container");
   }
 
   /** A connection to PostgreSQL, its session in UTC whatever the zone of this JVM; {@code parameters} go into the URL. */

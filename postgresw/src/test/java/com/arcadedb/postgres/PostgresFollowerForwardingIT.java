@@ -27,6 +27,10 @@ import com.arcadedb.server.ha.raft.BaseRaftHATest;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.testcontainers.Testcontainers;
+import org.testcontainers.containers.Container;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.images.builder.Transferable;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -170,6 +174,206 @@ class PostgresFollowerForwardingIT extends BaseRaftHATest {
     waitForAllServers();
     for (int i = 0; i < getServerCount(); i++)
       assertThat(getServerDatabase(i, getDatabaseName()).getSchema().existsType("facts335")).as("server %d: dropped", i).isFalse();
+  }
+
+  /**
+   * Fork issue #338: the writes of the messages before one {@code Sync}, here a JDBC batch, are one transaction on a follower
+   * too. Each one forwarded to the leader would commit there at once, out of reach of the failure of a later one.
+   */
+  @Test
+  @Timeout(180)
+  void aFailedBatchOnAFollowerCommitsNothing() throws Exception {
+    final int leader = requireLeaderIndex();
+    createNotes(leader, "batch338");
+    final int follower = firstFollowerOf(leader);
+
+    try (final Connection connection = connect(follower, "extended", "postgresql");
+        final Statement statement = connection.createStatement()) {
+      for (final String write : List.of("INSERT INTO batch338 VALUES (3, 'c')", "UPDATE batch338 SET note = 'changed' WHERE id = 1",
+          "DELETE FROM batch338 WHERE id = 2", "INSERT INTO batch338 VALUES (4, NULL)"))
+        statement.addBatch(write);
+      final Throwable failed = catchThrowable(statement::executeBatch);
+
+      assertNotesOnEveryServer("batch338", "1 a", "2 b");
+      assertThat(failed).isInstanceOf(SQLException.class);
+      assertThat(((SQLException) failed).getSQLState()).as(failed.getMessage()).isEqualTo("23502");
+
+      // the connection goes on, and a batch that succeeds reaches every server
+      try (final PreparedStatement insert = connection.prepareStatement("INSERT INTO batch338 VALUES (?, ?)")) {
+        for (int id = 5; id <= 7; id++) {
+          insert.setInt(1, id);
+          insert.setString(2, "n" + id);
+          insert.addBatch();
+        }
+        assertThat(insert.executeBatch()).containsExactly(1, 1, 1);
+      }
+    }
+    assertNotesOnEveryServer("batch338", "1 a", "2 b", "5 n5", "6 n6", "7 n7");
+  }
+
+  /** Fork issue #338, as a psycopg pipeline sends it; a run that succeeds reads what it wrote before its {@code Sync}. */
+  @Test
+  @Timeout(180)
+  void aFailedPipelineOnAFollowerCommitsNothing() throws Exception {
+    final int leader = requireLeaderIndex();
+    createNotes(leader, "piped338");
+    final int follower = firstFollowerOf(leader);
+
+    final String failed = psycopg(follower, """
+        import sys
+        import psycopg
+
+        with psycopg.connect(sys.argv[1], autocommit=True) as conn:
+            try:
+                with conn.pipeline():
+                    conn.execute("INSERT INTO piped338 VALUES (3, 'c')")
+                    conn.execute("UPDATE piped338 SET note = %s WHERE id = %s", ("changed", 1))
+                    conn.execute("DELETE FROM piped338 WHERE id = 2")
+                    conn.execute("INSERT INTO piped338 VALUES (4, NULL)")
+                print("ran")
+            except psycopg.Error as e:
+                print(e.sqlstate)
+        """);
+    assertNotesOnEveryServer("piped338", "1 a", "2 b");
+    assertThat(failed).isEqualTo("23502\n");
+
+    final String succeeded = psycopg(follower, """
+        import sys
+        import psycopg
+
+        with psycopg.connect(sys.argv[1], autocommit=True) as conn:
+            with conn.pipeline():
+                conn.execute("INSERT INTO piped338 VALUES (5, 'e')")
+                conn.execute("UPDATE piped338 SET note = 'f' WHERE id = 5")
+                # the answer is asked for before the Sync
+                print(conn.execute("SELECT note FROM piped338 WHERE id = 5").fetchone()[0])
+                conn.execute("DELETE FROM piped338 WHERE id = 1")
+            print("ran")
+        """);
+    assertThat(succeeded).isEqualTo("f\nran\n");
+    assertNotesOnEveryServer("piped338", "2 b", "5 f");
+  }
+
+  /**
+   * Fork issue #338: the values of a {@code serial} column that runs on a follower take, each in a commit of its own, are those
+   * of the one counter that the leader reads.
+   */
+  @Test
+  @Timeout(180)
+  void theRunsOfAFollowerShareTheCounterOfASerialColumn() throws Exception {
+    final int leader = requireLeaderIndex();
+    final Database leaderDb = getServerDatabase(leader, getDatabaseName());
+    leaderDb.command("postgresql", "CREATE TABLE counted338 (id serial PRIMARY KEY, note text)");
+    waitForAllServers();
+
+    try (final Connection connection = connect(firstFollowerOf(leader), "extended", "postgresql");
+        final Statement statement = connection.createStatement()) {
+      statement.execute("INSERT INTO counted338 (note) VALUES ('a'); INSERT INTO counted338 (note) VALUES ('b')");
+      waitForAllServers();
+      leaderDb.command("postgresql", "INSERT INTO counted338 (note) VALUES ('c')");
+      waitForAllServers();
+      statement.execute("INSERT INTO counted338 (note) VALUES ('d'); INSERT INTO counted338 (note) VALUES ('e')");
+    }
+    assertNotesOnEveryServer("counted338", "1 a", "2 b", "3 c", "4 d", "5 e");
+  }
+
+  /**
+   * Fork issue #338: a schema change that follows writes of its run is refused on a follower, because the leader would commit it
+   * while the writes still wait for the {@code Sync}. After reads only it runs.
+   */
+  @Test
+  @Timeout(180)
+  void aSchemaChangeAfterWritesOfItsRunIsRefusedOnAFollower() throws Exception {
+    final int leader = requireLeaderIndex();
+    createNotes(leader, "ordered338");
+
+    try (final Connection connection = connect(firstFollowerOf(leader), "extended", "postgresql");
+        final Statement statement = connection.createStatement()) {
+      final Throwable refused = catchThrowable(
+          () -> statement.execute("INSERT INTO ordered338 VALUES (3, 'c'); CREATE TABLE refused338 (id int)"));
+      assertThat(refused).isInstanceOf(SQLException.class)
+          .hasMessageContaining("after other writes of the same batch or pipeline");
+      assertThat(((SQLException) refused).getSQLState()).isEqualTo("0A000");
+
+      statement.execute("SELECT 1; CREATE TABLE after338 (id int)");
+    }
+    assertNotesOnEveryServer("ordered338", "1 a", "2 b");
+    for (int i = 0; i < getServerCount(); i++) {
+      final Database db = getServerDatabase(i, getDatabaseName());
+      assertThat(db.getSchema().existsType("refused338")).as("server %d: the refused table", i).isFalse();
+      assertThat(db.getSchema().existsType("after338")).as("server %d: the table made after a read", i).isTrue();
+    }
+  }
+
+  /**
+   * Fork issue #338: a commit that starts on a replica cannot check a foreign key, so a run of several writes that has one to
+   * check is refused as a whole at its {@code Sync}. A write on its own still goes to the leader.
+   */
+  @Test
+  @Timeout(180)
+  void aRunThatHasAForeignKeyToCheckIsRefusedWholeOnAFollower() throws Exception {
+    final int leader = requireLeaderIndex();
+    final Database leaderDb = getServerDatabase(leader, getDatabaseName());
+    leaderDb.command("postgresql", "CREATE TABLE parent338 (id int PRIMARY KEY)");
+    leaderDb.command("postgresql", "CREATE TABLE child338 (id int PRIMARY KEY, note text, parent int REFERENCES parent338 (id))");
+    leaderDb.command("postgresql", "INSERT INTO parent338 VALUES (1)");
+    waitForAllServers();
+
+    try (final Connection connection = connect(firstFollowerOf(leader), "extended", "postgresql");
+        final Statement statement = connection.createStatement()) {
+      statement.addBatch("INSERT INTO child338 VALUES (1, 'a', 1)");
+      statement.addBatch("INSERT INTO child338 VALUES (2, 'b', 1)");
+      final Throwable refused = catchThrowable(statement::executeBatch);
+      assertNotesOnEveryServer("child338");
+      assertThat(refused).isInstanceOf(SQLException.class)
+          .hasMessageContaining("cannot write what a foreign key has to check");
+
+      statement.clearBatch();
+      statement.execute("INSERT INTO child338 VALUES (3, 'c', 1)");
+    }
+    assertNotesOnEveryServer("child338", "3 c");
+  }
+
+  /** A table of two notes, {@code 1 a} and {@code 2 b}, that every server has. */
+  private void createNotes(final int leader, final String table) {
+    final Database leaderDb = getServerDatabase(leader, getDatabaseName());
+    leaderDb.command("postgresql", "CREATE TABLE " + table + " (id int PRIMARY KEY, note text NOT NULL)");
+    leaderDb.command("postgresql", "INSERT INTO " + table + " VALUES (1, 'a'), (2, 'b')");
+    waitForAllServers();
+  }
+
+  /** The rows of the table, as {@code id note}, on every server once it has applied what the leader committed. */
+  private void assertNotesOnEveryServer(final String table, final String... notes) {
+    waitForAllServers();
+    for (int i = 0; i < getServerCount(); i++) {
+      final List<String> found = new ArrayList<>();
+      try (final ResultSet rows = getServerDatabase(i, getDatabaseName()).query("postgresql",
+          "SELECT id, note FROM " + table + " ORDER BY id")) {
+        while (rows.hasNext()) {
+          final Result row = rows.next();
+          found.add(row.<Number>getProperty("id") + " " + row.<String>getProperty("note"));
+        }
+      }
+      assertThat(found).as("server %d: the rows of %s", i, table).containsExactly(notes);
+    }
+  }
+
+  /** Runs a psycopg script, in a container, against one server and returns what it printed. */
+  private String psycopg(final int serverIndex, final String script) throws Exception {
+    PostgreSQLSideBySideTestBase.requireDocker();
+    Testcontainers.exposeHostPorts(postgresPorts[serverIndex]);
+    try (final GenericContainer<?> python = new GenericContainer<>(PostgreSQLSideBySideTestBase.PYTHON_IMAGE)
+        .withCreateContainerCmdModifier(cmd -> cmd.withEntrypoint("sleep", "infinity"))) {
+      python.start();
+      python.execInContainer("mkdir", "-p", "/work");
+      python.copyFileToContainer(Transferable.of(script), "/work/clients.py");
+      final Container.ExecResult result = python.execInContainer("uv", "run", "--no-project", "--with", "psycopg[binary]", "python",
+          "-I", "/work/clients.py", "host=host.testcontainers.internal port=" + postgresPorts[serverIndex] + " dbname="
+              + getDatabaseName() + " user=root password=" + DEFAULT_PASSWORD_FOR_TESTS
+              + " sslmode=disable options='-c arcadedb.language=postgresql'");
+      assertThat(result.getExitCode()).as(result.getStdout() + "\n" + result.getStderr()).isZero();
+      return result.getStdout();
+    }
   }
 
   /**
