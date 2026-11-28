@@ -61,20 +61,23 @@ public final class WritePlan {
 
   public PostgreSQLResultSet execute(final Database database) {
     final boolean own = !database.isTransactionActive();
+    // as in sql, the wrapper of the database begins and commits: on a high availability server its commit is the one that reaches
+    // the other servers
+    final Database transactions = database instanceof DatabaseInternal internal ? internal.getWrappedDatabaseInstance() : database;
     if (own)
-      database.begin();
+      transactions.begin();
     try {
       final PostgreSQLResultSet result = body.run(database);
       // as PostgreSQL does at the end of a statement: the referential actions, and the foreign keys checked (fork issue #228)
       if (database instanceof DatabaseInternal internal)
         internal.getTransaction().checkForeignKeys();
       if (own)
-        database.commit();
+        transactions.commit();
       return result;
     } catch (final RuntimeException e) {
       if (own && database.isTransactionActive()) {
         try {
-          database.rollback();
+          transactions.rollback();
         } catch (final RuntimeException suppressed) {
           e.addSuppressed(suppressed);
         }
