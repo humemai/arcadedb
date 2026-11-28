@@ -590,8 +590,8 @@ final class AstBuilder {
             width < 0 ? new Name(position, "column" + (items.size() + 1), true) : null));
       }
       width = items.size();
-      final SelectStatement select = new SelectStatement(position(row.getStart()), false, items, List.of(), null, List.of(), null,
-          List.of(), null, null);
+      final SelectStatement select = new SelectStatement(position(row.getStart()), false, List.of(), items, List.of(), null,
+          List.of(), null, List.of(), null, null);
       result = result == null ? select
           : new SetOperationStatement(position(row.getStart()), SetOperationStatement.Kind.UNION, true, result, select, List.of(), null,
               null);
@@ -608,8 +608,8 @@ final class AstBuilder {
       case SelectStatement select -> {
         checkNotYetGiven(!select.orderBy().isEmpty() && !orderBy.isEmpty(), select.limit() != null && limit != null,
             select.offset() != null && offset != null, start);
-        yield new SelectStatement(select.position(), select.distinct(), select.items(), select.from(), select.where(),
-            select.groupBy(), select.having(), orderBy.isEmpty() ? select.orderBy() : orderBy,
+        yield new SelectStatement(select.position(), select.distinct(), select.distinctOn(), select.items(), select.from(),
+            select.where(), select.groupBy(), select.having(), orderBy.isEmpty() ? select.orderBy() : orderBy,
             limit == null ? select.limit() : limit, offset == null ? select.offset() : offset);
       }
       case SetOperationStatement set -> {
@@ -637,11 +637,19 @@ final class AstBuilder {
   /** One {@code SELECT} without its {@code ORDER BY}, {@code OFFSET} and {@code LIMIT}: {@code simple_select} of {@code gram.y}. */
   private SelectStatement simpleSelect(final SimpleSelectContext context) {
     final Token start = context.getStart();
-    final boolean distinct = context.selectQuantifier() != null && has(context.selectQuantifier(), PostgreSQLParser.DISTINCT);
+    final SelectQuantifierContext quantifier = context.selectQuantifier();
+    final boolean quantified = quantifier != null && has(quantifier, PostgreSQLParser.DISTINCT);
 
     // an empty select list is read where nobody reads a value: in the query of an EXISTS, as in EXISTS (SELECT FROM t)
-    if (context.targetList() == null && (distinct || !directlyInExists(context)))
+    if (context.targetList() == null && (quantified || !directlyInExists(context)))
       throw Diagnostics.notSupported("A select list with no item", start);
+
+    final List<Expression> distinctOn = new ArrayList<>();
+    if (quantifier != null)
+      for (final AExprContext key : quantifier.distinctOn)
+        distinctOn.add(expression(key));
+    // SELECT DISTINCT ON (...) is not SELECT DISTINCT: it compares only its keys
+    final boolean distinct = quantified && distinctOn.isEmpty();
 
     final List<SelectItem> items = new ArrayList<>();
     if (context.targetList() != null)
@@ -662,7 +670,7 @@ final class AstBuilder {
 
     final Expression having = context.havingClause() == null ? null : expression(context.havingClause().aExpr());
 
-    return new SelectStatement(position(start), distinct, items, from, where, groupBy, having, List.of(), null, null);
+    return new SelectStatement(position(start), distinct, distinctOn, items, from, where, groupBy, having, List.of(), null, null);
   }
 
   /** Whether a {@code SELECT} is the query of an {@code EXISTS} itself, whatever its {@code WITH}, order and limit. */

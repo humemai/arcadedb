@@ -82,7 +82,7 @@ subquery-from	ok	inside	-	SELECT * FROM (SELECT 1) s	written for the parser	-
 subquery-in	ok	inside	-	SELECT name FROM person WHERE pid IN (SELECT pid FROM orders)	written for the parser	-
 exists	ok	inside	-	SELECT name FROM person p WHERE EXISTS (SELECT 1 FROM orders o WHERE o.pid = p.pid)	written for the parser	-
 window	ok	inside	-	SELECT name, row_number() OVER (ORDER BY name) FROM person	written for the parser	-
-distinct-on	ok	outside	-	SELECT DISTINCT ON (city) city, name FROM person	written for the parser	-
+distinct-on	ok	inside	-	SELECT DISTINCT ON (city) city, name FROM person	written for the parser	-
 ilike	ok	inside	-	SELECT name FROM person WHERE name ILIKE 'a%'	written for the parser	-
 is-distinct-from	ok	inside	-	SELECT 1 IS DISTINCT FROM 2	written for the parser	-
 any-array	ok	inside	-	SELECT 1 = ANY (ARRAY[1, 2])	written for the parser	-
@@ -1007,7 +1007,7 @@ join:2667	ok	outside	-	explain (costs off)\nselect d.* from d left join (select 
 join:2675	ok	outside	-	explain (costs off)\nselect d.* from d left join (select * from b group by b.id, b.c_id) s\n  on d.a = s.id	src/test/regress/sql/join.sql:2675; src/test/regress/expected/join.out:7355	42P01
 join:2680	ok	outside	-	explain (costs off)\nselect d.* from d left join (select distinct * from b) s\n  on d.a = s.id	src/test/regress/sql/join.sql:2680; src/test/regress/expected/join.out:7371	42P01
 join:2686	ok	outside	-	explain (costs off)\nselect d.* from d left join\n  (select distinct on (id) id, generate_series(1, 2) as g from b order by id) s\n  on d.a = s.id\n  order by 1, 2	src/test/regress/sql/join.sql:2686; src/test/regress/expected/join.out:7389	42P01
-join:2691	ok	outside	-	select d.* from d left join\n  (select distinct on (id) id, generate_series(1, 2) as g from b order by id) s\n  on d.a = s.id\n  order by 1, 2	src/test/regress/sql/join.sql:2691; src/test/regress/expected/join.out:7408	42P01
+join:2691	ok	inside	-	select d.* from d left join\n  (select distinct on (id) id, generate_series(1, 2) as g from b order by id) s\n  on d.a = s.id\n  order by 1, 2	src/test/regress/sql/join.sql:2691; src/test/regress/expected/join.out:7408	42P01
 join:2697	ok	outside	-	explain (costs off)\nselect 1 from a t1\n  left join (a t2 left join a t3 on t2.id = 1) on t2.id = 1	src/test/regress/sql/join.sql:2697; src/test/regress/expected/join.out:7421	42P01
 join:2703	ok	outside	-	explain (costs off)\nselect d.* from d left join (select id from a union select id from b) s\n  on d.a = s.id	src/test/regress/sql/join.sql:2703; src/test/regress/expected/join.out:7438	42P01
 join:2708	ok	outside	-	explain (costs off)\nselect i8.* from int8_tbl i8 left join (select f1 from int4_tbl group by f1) i4\n  on i8.q1 = i4.f1	src/test/regress/sql/join.sql:2708; src/test/regress/expected/join.out:7447	42P01
@@ -1467,7 +1467,7 @@ out-subquery-scalar	ok	inside	-	SELECT (SELECT 1)	s3	-
 out-with	ok	inside	-	WITH t AS (SELECT 1) SELECT * FROM t	s3	-
 out-intersect	ok	inside	-	SELECT 1 INTERSECT SELECT 1	s3	-
 out-window	ok	inside	-	SELECT row_number() OVER (ORDER BY pid) FROM person	s3	-
-out-distinct-on	ok	outside	-	SELECT DISTINCT ON (city) city, name FROM person ORDER BY city, pid	s3	-
+out-distinct-on	ok	inside	-	SELECT DISTINCT ON (city) city, name FROM person ORDER BY city, pid	s3	-
 out-for-update	ok	outside	-	SELECT name FROM person FOR UPDATE	s3	-
 out-tablesample	ok	outside	-	SELECT * FROM person TABLESAMPLE SYSTEM (10)	s3	-
 out-rollup	ok	outside	-	SELECT city, count(*) FROM person GROUP BY ROLLUP (city)	s3	-

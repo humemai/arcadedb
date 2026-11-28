@@ -49,7 +49,7 @@ import java.util.function.Supplier;
 /**
  * A planned {@code SELECT}: a {@link RelationSource}, then the steps PostgreSQL applies to its rows, in the order of its
  * evaluation: the {@code WHERE} filter, grouping and the {@code HAVING} filter, the select list, {@code DISTINCT},
- * {@code ORDER BY}, {@code OFFSET} and {@code LIMIT}. {@link #execute(Database)} runs it and answers a
+ * {@code ORDER BY}, {@code DISTINCT ON}, {@code OFFSET} and {@code LIMIT}. {@link #execute(Database)} runs it and answers a
  * {@link PostgreSQLResultSet}. Every expression is an {@link Evaluable} that was typed when the plan was built, so a type error
  * is raised before the first row is read.
  *
@@ -102,6 +102,8 @@ public final class SelectPlan implements QueryPlan {
   private final List<PostgreSQLResultSet.Column> columns;
   private final boolean        distinct;
   private final List<SortKey>  sortKeys;
+  /** Where the values of the keys of {@code DISTINCT ON} are in a row, empty when there is none; the sort starts with them. */
+  private final int[]          distinctOn;
   private final Evaluable      limit;
   private final Evaluable      offset;
   private final Supplier<List<String>> steps;
@@ -112,8 +114,9 @@ public final class SelectPlan implements QueryPlan {
 
   SelectPlan(final RelationSource source, final Evaluable where, final GroupStage group, final Evaluable having,
       final Evaluable[] outputs, final Evaluable[] extras, final List<PostgreSQLResultSet.Column> columns, final boolean distinct,
-      final List<SortKey> sortKeys, final Evaluable limit, final Evaluable offset, final Supplier<List<String>> steps,
-      final List<String> warnings, final WindowStage windows, final BitSet recordIds) {
+      final List<SortKey> sortKeys, final int[] distinctOn, final Evaluable limit, final Evaluable offset,
+      final Supplier<List<String>> steps, final List<String> warnings, final WindowStage windows, final BitSet recordIds) {
+    this.distinctOn = distinctOn;
     this.windows = windows;
     this.recordIds = recordIds;
     this.source = source;
@@ -233,13 +236,28 @@ public final class SelectPlan implements QueryPlan {
         return 0;
       });
 
-    final int from = (int) Math.min(skip, (long) rows.size());
-    final int to = limitValue == null || limitValue >= rows.size() - from ? rows.size() : from + (int) (long) limitValue;
+    final List<Object[]> kept = distinctOn.length == 0 ? rows : firstOfEach(rows);
+    final int from = (int) Math.min(skip, (long) kept.size());
+    final int to = limitValue == null || limitValue >= kept.size() - from ? kept.size() : from + (int) (long) limitValue;
 
     final List<Object[]> answer = new ArrayList<>(Math.max(0, to - from));
     for (int r = from; r < to; r++)
-      answer.add(extras.length == 0 ? rows.get(r) : Arrays.copyOf(rows.get(r), outputs.length));
+      answer.add(extras.length == 0 ? kept.get(r) : Arrays.copyOf(kept.get(r), outputs.length));
     return answer;
+  }
+
+  /** The first row, in the order of the sort, of each different value of the keys of {@code DISTINCT ON}. */
+  private List<Object[]> firstOfEach(final List<Object[]> sorted) {
+    final Set<List<Object>> seen = new HashSet<>();
+    final List<Object[]> first = new ArrayList<>();
+    for (final Object[] row : sorted) {
+      final List<Object> key = new ArrayList<>(distinctOn.length);
+      for (final int position : distinctOn)
+        key.add(normalize(row[position]));
+      if (seen.add(key))
+        first.add(row);
+    }
+    return first;
   }
 
   /** The rows the select list reads: the filtered rows of the source, or the rows of the groups that pass {@code HAVING}. */

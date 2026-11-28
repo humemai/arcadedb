@@ -319,6 +319,8 @@ public final class ExpressionCompiler {
   private static void collectReferences(final Statement query, final List<Expression> out) {
     switch (query) {
     case SelectStatement select -> {
+      for (final Expression key : select.distinctOn())
+        collectReferences(key, out);
       for (final SelectItem item : select.items())
         if (item instanceof SelectItem.Projection projection)
           collectReferences(projection.expression(), out);

@@ -766,8 +766,8 @@ public final class WritePlanner {
     final List<TableReference> from = new ArrayList<>();
     from.add(update.table());
     from.addAll(update.from());
-    final SelectPlan selectPlan = selectPlanner.plan(new SelectStatement(position, false, items, from, update.where(), List.of(), null,
-        List.of(), null, null));
+    final SelectPlan selectPlan = selectPlanner.plan(new SelectStatement(position, false, List.of(), items, from, update.where(),
+        List.of(), null, List.of(), null, null));
 
     final PgType[] types = new PgType[columns.size()];
     int next = 1;

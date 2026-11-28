@@ -43,7 +43,6 @@ final class Diagnostics {
   /** What the construct matched by a rule of the parser grammar whose name starts with {@code unsupported} is called. */
   private static final Map<String, String> DESCRIPTIONS = Map.ofEntries(
       Map.entry("unsupportedExplainOption", "EXPLAIN with an option"),
-      Map.entry("unsupportedDistinctOn", "DISTINCT ON"),
       Map.entry("unsupportedInto", "SELECT INTO"),
       Map.entry("unsupportedWindowClause", "A WINDOW clause"),
       Map.entry("unsupportedLockingClause", "A locking clause (FOR UPDATE and the others)"),
@@ -192,8 +191,6 @@ final class Diagnostics {
       case "unsupportedTableConstraint", "unsupportedConstraintOption" ->
           "Leave " + first + " and what belongs to it out; UNIQUE (columns) and PRIMARY KEY (columns) keep values unique";
       case "unsupportedExplainOption" -> "Write EXPLAIN SELECT ... with no option: it plans the statement and runs nothing";
-      case "unsupportedDistinctOn" -> "Number the rows in a WITH query with row_number() OVER (PARTITION BY ... ORDER BY ...) and"
-          + " keep the rows numbered 1";
       case "unsupportedInto" -> "Create the table with CREATE TABLE, then write INSERT INTO name SELECT ...";
       case "unsupportedWindowClause" -> "Write the window inside the OVER (...) of each function";
       case "unsupportedLockingClause" -> "Leave the clause out: no row is locked. Of two transactions that change one row the later"

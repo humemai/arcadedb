@@ -583,11 +583,8 @@ simpleSelect
 
 selectQuantifier
   : ALL
-  | DISTINCT (unsupportedDistinctOn skipRest)?
-  ;
-
-unsupportedDistinctOn
-  : ON
+  // DISTINCT ON (a, b): the first row of each value of the keys, in the order of ORDER BY (fork issue #244)
+  | DISTINCT (ON LPAREN distinctOn+=aExpr (COMMA distinctOn+=aExpr)* RPAREN)?
   ;
 
 unsupportedInto
