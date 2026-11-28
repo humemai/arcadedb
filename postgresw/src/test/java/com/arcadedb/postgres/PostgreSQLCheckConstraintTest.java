@@ -23,6 +23,7 @@ import org.testcontainers.Testcontainers;
 import org.testcontainers.containers.GenericContainer;
 
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
@@ -116,12 +117,26 @@ class PostgreSQLCheckConstraintTest extends PostgreSQLSideBySideTestBase {
             + " WHERE constraint_name = 'products_price_check'");
         python(container, REFLECTION);
 
-        // a shape that is not written as PostgreSQL writes it is refused, and the check is still listed
-        run(arcade, "CREATE TABLE odd (a int, CONSTRAINT odd_case CHECK (CASE WHEN a > 0 THEN true ELSE false END))");
-        refused(arcade, definitions("odd"), "odd_case");
-        refused(arcade, "SELECT check_clause FROM information_schema.check_constraints", "odd_case");
-        compare("the names of the checks of odd", "    conname|\n    odd_case|\n", answer(arcade,
-            "SELECT conname FROM pg_catalog.pg_constraint WHERE conrelid = 'odd'::regclass AND contype = 'c'", false));
+        // a shape that is not written as PostgreSQL writes it is given as it was written, and nothing that reads it fails
+        final String written = "CASE WHEN a > 0 THEN true ELSE false END";
+        run(arcade, "CREATE TABLE odd (a int, CONSTRAINT odd_case CHECK (" + written + "))");
+        compare("\\d odd", "Check constraints:\n    \"odd_case\" CHECK (" + written + ")\n",
+            checksOfPsql(container, false, "odd"));
+        try (final Statement statement = arcade.createStatement()) {
+          try (final ResultSet rows = statement.executeQuery(definitions("odd"))) {
+            assertThat(rows.next()).isTrue();
+            assertThat(List.of(rows.getString(1), rows.getString(2), rows.getString(3), rows.getString(4))).containsExactly(
+                "odd_case", "CHECK (" + written + ")", "CHECK (" + written + ")", written);
+          }
+          try (final ResultSet rows = statement.executeQuery(
+              "SELECT check_clause FROM information_schema.check_constraints WHERE constraint_name = 'odd_case'")) {
+            assertThat(rows.next()).isTrue();
+            assertThat(rows.getString(1)).isEqualTo(written);
+          }
+        }
+        // the checks of the other tables keep PostgreSQL's text beside it
+        sameValues(postgres, arcade, "SELECT check_clause FROM information_schema.check_constraints"
+            + " WHERE constraint_name = 'products_price_check'");
 
         assertThat(failures).as(String.join("\n", failures)).isEmpty();
       }

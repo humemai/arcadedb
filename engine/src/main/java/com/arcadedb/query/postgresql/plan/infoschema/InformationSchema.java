@@ -71,7 +71,7 @@ import static com.arcadedb.query.postgresql.plan.infoschema.InfoType.YES_OR_NO;
  * Not-null columns are {@code is_nullable = 'NO'}; PostgreSQL also lists each of them as a {@code CHECK} constraint in
  * {@code table_constraints}, with a name made of object ids, and the engine does not. The check constraints that a table
  * declares are listed there and in {@code constraint_column_usage} (fork issue #227), and in {@code check_constraints} with its
- * expression as {@link CheckClause} writes it (fork issue #297): a database with a check that it cannot write refuses that view.
+ * expression as {@link CheckClause} writes it (fork issue #297), or as it was declared when it does not write its shape.
  */
 public final class InformationSchema {
   /** The name of the schema. */

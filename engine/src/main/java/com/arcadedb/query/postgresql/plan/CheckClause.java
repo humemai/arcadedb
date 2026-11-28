@@ -46,8 +46,9 @@ import java.util.stream.Collectors;
  * The text of a check constraint as PostgreSQL 18 writes it back (fork issue #297): {@code pg_get_constraintdef},
  * {@code pg_get_expr} and {@code information_schema.check_constraints}. PostgreSQL writes the expression as it analysed it, not
  * the text it was given: each conversion it added is there, {@code BETWEEN} is two comparisons and {@code IN} is {@code = ANY}.
- * This class writes the shapes it knows to be written that way and refuses every other one with {@code 0A000}, so that no
- * expression is written differently from PostgreSQL.
+ * This class writes the shapes it knows to be written that way. Every other expression is given as it was declared, without
+ * the casts and parentheses that PostgreSQL adds ({@code docs/postgresql-differences.md}), so that no statement that reads
+ * the schema fails on a check.
  */
 public final class CheckClause {
   /**
@@ -86,13 +87,9 @@ public final class CheckClause {
       "upper");
   private static final Set<String> TRIM_FUNCTIONS = Set.of("btrim", "ltrim", "rtrim");
 
-  private final String                   constraint;
-  private final String                   table;
   private final Function<String, Column> columns;
 
-  private CheckClause(final String constraint, final String table, final Function<String, Column> columns) {
-    this.constraint = constraint;
-    this.table = table;
+  private CheckClause(final Function<String, Column> columns) {
     this.columns = columns;
   }
 
@@ -127,18 +124,21 @@ public final class CheckClause {
   }
 
   /**
-   * The expression of a check constraint of {@code type} as PostgreSQL writes it.
+   * The expression of a check constraint of {@code type} as PostgreSQL writes it. An expression with a shape that this class
+   * does not write, and one that cannot be checked, is given as it was declared.
    *
    * @param pretty true for the form of {@code pg_get_constraintdef(oid, true)}, which keeps only the parentheses it needs
-   *
-   * @throws PostgreSQLFeatureNotSupportedException when the expression has a shape that this class does not write
    */
   public static String of(final Declared check, final DocumentType type, final boolean pretty) {
-    final CheckClause clause = new CheckClause(check.name(), type.getName(), CheckExpression.declared(check.declaring(), type));
-    // a check that cannot be checked has no analysed form
-    CheckExpression.of(check.declaring(), type, check.expression());
-    final SelectStatement select = (SelectStatement) StatementParser.parse("SELECT " + check.expression());
-    return write(clause.part(((SelectItem.Projection) select.items().get(0)).expression()), pretty);
+    try {
+      final CheckClause clause = new CheckClause(CheckExpression.declared(check.declaring(), type));
+      // a check that cannot be checked has no analysed form
+      CheckExpression.of(check.declaring(), type, check.expression());
+      final SelectStatement select = (SelectStatement) StatementParser.parse("SELECT " + check.expression());
+      return write(clause.part(((SelectItem.Projection) select.items().get(0)).expression()), pretty);
+    } catch (final RuntimeException notWritten) {
+      return check.expression();
+    }
   }
 
   // ---------------------------------------------------------------- writing
@@ -563,10 +563,8 @@ public final class CheckClause {
     return type == PgType.TEXT || type == PgType.VARCHAR;
   }
 
-  private PostgreSQLFeatureNotSupportedException refused() {
-    return new PostgreSQLFeatureNotSupportedException(
-        "The text of the check constraint \"" + constraint + "\" of the table \"" + table
-            + "\" is not supported by the postgresql language: its expression is not written as PostgreSQL writes it yet",
-        "Read its name and its columns from information_schema.table_constraints and constraint_column_usage");
+  /** Ends the writing of an expression that {@link #of} then gives as it was declared. */
+  private static PostgreSQLFeatureNotSupportedException refused() {
+    return new PostgreSQLFeatureNotSupportedException("The expression of the CHECK is not written as PostgreSQL writes it");
   }
 }

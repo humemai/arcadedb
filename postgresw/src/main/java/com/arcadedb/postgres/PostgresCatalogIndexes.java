@@ -278,13 +278,9 @@ final class PostgresCatalogIndexes {
    * @param constraint the constraint as it is declared
    */
   record Check(int tableOid, int oid, int[] attnums, DocumentType type, CheckClause.Declared constraint) {
-    /** The expression as PostgreSQL writes it; refused when it cannot be written that way. */
+    /** The expression as PostgreSQL writes it, or as it was declared when {@link CheckClause} does not write its shape. */
     String written(final boolean pretty) {
-      try {
-        return CheckClause.of(constraint, type, pretty);
-      } catch (final RuntimeException e) {
-        throw new PostgresCatalog.UnsupportedCatalogQuery(e.getMessage());
-      }
+      return CheckClause.of(constraint, type, pretty);
     }
   }
 
