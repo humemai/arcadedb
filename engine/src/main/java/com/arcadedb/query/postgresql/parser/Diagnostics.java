@@ -44,7 +44,6 @@ final class Diagnostics {
   private static final Map<String, String> DESCRIPTIONS = Map.ofEntries(
       Map.entry("unsupportedExplainOption", "EXPLAIN with an option"),
       Map.entry("unsupportedDistinctOn", "DISTINCT ON"),
-      Map.entry("unsupportedDistinctOn", "DISTINCT ON"),
       Map.entry("unsupportedInto", "SELECT INTO"),
       Map.entry("unsupportedWindowClause", "A WINDOW clause"),
       Map.entry("unsupportedLockingClause", "A locking clause (FOR UPDATE and the others)"),
@@ -52,7 +51,7 @@ final class Diagnostics {
       Map.entry("unsupportedGroupingSet", "ROLLUP, CUBE, GROUPING SETS and the empty grouping set"),
       Map.entry("unsupportedSortUsing", "ORDER BY with USING"),
       Map.entry("unsupportedLimitComma", "LIMIT with two values"),
-      Map.entry("unsupportedFetchClause", "FETCH FIRST"),
+      Map.entry("unsupportedWithTies", "FETCH FIRST ... WITH TIES"),
       Map.entry("unsupportedJoinUsingAlias", "A join alias (USING ... AS name)"),
       Map.entry("unsupportedJoinAlias", "An alias on a parenthesised join"),
       Map.entry("unsupportedTablesample", "TABLESAMPLE"),
