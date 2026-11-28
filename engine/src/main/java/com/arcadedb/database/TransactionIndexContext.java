@@ -945,6 +945,26 @@ public class TransactionIndexContext {
   }
 
   /**
+   * Whether what this transaction has queued gives {@code rid} the key {@code value} of {@code index}: then the record has the key
+   * by the change of this transaction, whatever is committed. Asked by a {@link CommitCheck}, before the index changes reach the
+   * pages (fork issue #292).
+   */
+  public boolean isKeyAdded(final TypeIndex index, final Object[] value, final RID rid) {
+    for (final IndexInternal bucketIndex : index.getIndexesOnBuckets()) {
+      final var keys = getIndexKeys(bucketIndex.getName());
+      if (keys == null)
+        continue;
+      final var entries = keys.get(new ComparableKey(bucketIndex.convertLookupKeys(value)));
+      if (entries == null)
+        continue;
+      for (final IndexKey entry : entries.values())
+        if (entry.operation != IndexKey.IndexKeyOperation.REMOVE && rid.equals(entry.rid))
+          return true;
+    }
+    return false;
+  }
+
+  /**
    * Starts journalling what the next {@code addIndexKeyLock} calls add, so {@link #undoRecordChanges()} can take
    * them back. Always paired with {@link #disarmRecordUndo()} in a {@code finally}: see {@link #recordUndo}.
    * <p>

@@ -18,11 +18,16 @@
  */
 package com.arcadedb.query.postgresql.plan;
 
+import com.arcadedb.database.CommitCheck;
 import com.arcadedb.database.Database;
+import com.arcadedb.database.DatabaseInternal;
 import com.arcadedb.database.Document;
 import com.arcadedb.database.Identifiable;
 import com.arcadedb.database.RID;
 import com.arcadedb.database.Record;
+import com.arcadedb.database.TransactionIndexContext;
+import com.arcadedb.exception.ConcurrentModificationException;
+import com.arcadedb.exception.RecordNotFoundException;
 import com.arcadedb.graph.Edge;
 import com.arcadedb.graph.Vertex;
 import com.arcadedb.index.IndexCursor;
@@ -39,9 +44,11 @@ import com.arcadedb.query.postgresql.eval.PostgreSQLEvaluationException;
 import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.EdgeType;
 import com.arcadedb.schema.Schema;
+import com.arcadedb.utility.IntHashSet;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,8 +62,11 @@ import java.util.function.BiConsumer;
  * <p>
  * A statement is checked before it changes anything. A link at an end of a deleted record stops the delete when the rule of that
  * end is {@code NO ACTION} or {@code RESTRICT}, unless the delete takes the link away from its other end, whose rule is
- * {@code CASCADE}, as PostgreSQL checks the reference after the statement. A concurrent transaction that links the record is a
- * conflict of the engine, which refuses one of the two commits.
+ * {@code CASCADE}, as PostgreSQL checks the reference after the statement.
+ * <p>
+ * A concurrent transaction that links the record, deletes it, or changes its key is a conflict, which refuses the commit that
+ * comes second: what the page versions of the engine do not see, the commit reads again under file locks ({@link AtCommit}, fork
+ * issue #292).
  * <p>
  * The engine finds the links of a record from the record. A one-way (unidirectional) edge type keeps nothing in the record at
  * the target end, so for that end the links of the type are read once for each statement.
@@ -150,8 +160,10 @@ final class LinkKeys {
         final Identifiable found = cursor.next();
         // the index of a supertype holds the rows of other tables too, and an index that ignores case holds other keys
         if (found.getRecord() instanceof Vertex vertex && vertex.getType().instanceOf(key.table())
-            && same(column, vertex.get(key.property()), stored))
+            && same(column, vertex.get(key.property()), stored)) {
+          atCommit(db).found(new Found(vertex.getIdentity(), column, key.property(), stored, index));
           return vertex;
+        }
       }
       break;
     }
@@ -190,13 +202,16 @@ final class LinkKeys {
         if (!same(reference.referenced(), change.row().get(change.property()), change.value()))
           changed.put(change.row().getIdentity(), change.row().asVertex());
       }
-      if (!changed.isEmpty())
+      if (!changed.isEmpty()) {
+        // the committed links first: one that another transaction commits after this is a conflict of the commit
+        atCommit(db).keysChange(reference, changed.keySet());
         forEachLink(db, reference, changed, (vertex, link) -> {
           throw new PostgreSQLEvaluationException("23503", "update or delete on table \"" + reference.key().table()
               + "\" violates foreign key constraint \"" + reference.name() + "\" on table \"" + reference.links().name()
               + "\". Detail: Key (" + reference.referenced().name() + ")=(" + keyText(reference, vertex)
               + ") is still referenced from table \"" + reference.links().name() + "\".");
         });
+      }
     }
   }
 
@@ -222,8 +237,7 @@ final class LinkKeys {
         continue;
       if (reference.key().onDelete() == Table.Action.CASCADE) {
         if (!isInTheRecord(db, reference))
-          forEachLink(db, reference, rows,
-              (vertex, link) -> own.put(link.getTypeName() + link.getIdentity() + link.getOut() + link.getIn(), link));
+          forEachLink(db, reference, rows, (vertex, link) -> own.put(identity(link), link));
       } else
         forEachLink(db, reference, rows, (vertex, link) -> {
           if (!goesWithItsOtherEnd(link, reference.end(), deleted))
@@ -262,7 +276,134 @@ final class LinkKeys {
     return Casts.toText(Casts.fromColumn(value, column.type(), type), type);
   }
 
+  // ------------------------------------------------------------------------------------------------ the commit
+
+  private static AtCommit atCommit(final Database db) {
+    final DatabaseInternal database = (DatabaseInternal) db;
+    return database.getTransaction().commitCheck(AtCommit.class.getName(), () -> new AtCommit(database));
+  }
+
+  /** A key by which a transaction found the row at an end of a new link. */
+  private record Found(RID row, Column column, String property, Object key, TypeIndex index) {
+  }
+
+  /**
+   * The rows whose key a transaction changes under one reference that does not follow the change.
+   *
+   * @param reference the reference
+   * @param links     for each row, how many times each of its links was committed when the statement that changed the key ran
+   */
+  private record Moved(Reference reference, Map<RID, Map<String, Integer>> links) {
+  }
+
+  /**
+   * What a transaction read about the keys of link tables, and a concurrent transaction can change under it (fork issue #292). The
+   * page versions see neither side: a new link writes the lists of links, a change of a key writes the row. Both commits lock the
+   * bucket file of the row, so they run one after the other, and the second one reads what the first one committed:
+   * <ul>
+   * <li>a new link: the row still has the key that the link names, unless the transaction gave it that key itself;</li>
+   * <li>a changed key: the row has no committed link that it did not have when the statement ran. Those it had then are the ones
+   * the transaction deleted before, since the statement found none in its own view.</li>
+   * </ul>
+   */
+  private static final class AtCommit implements CommitCheck {
+    private final DatabaseInternal        database;
+    private final TransactionIndexContext changes;
+    private final Map<List<Object>, Found> found = new LinkedHashMap<>();
+    private final Map<String, Moved>       moved = new LinkedHashMap<>();
+
+    private AtCommit(final DatabaseInternal database) {
+      this.database = database;
+      // of the transaction that is checked: the check itself runs in another one
+      this.changes = database.getTransaction().getIndexChanges();
+    }
+
+    void found(final Found key) {
+      found.putIfAbsent(List.of(key.row(), key.property(), key.key()), key);
+    }
+
+    /** Reads the committed links of the rows, before their keys change. A row that was read before keeps its first answer. */
+    void keysChange(final Reference reference, final Collection<RID> rows) {
+      final Moved change = moved.computeIfAbsent(reference.links().name() + '.' + reference.end(),
+          name -> new Moved(reference, new LinkedHashMap<>()));
+      final List<RID> unread = rows.stream().filter(row -> !change.links().containsKey(row)).toList();
+      if (unread.isEmpty())
+        return;
+      database.begin(Database.TRANSACTION_ISOLATION_LEVEL.READ_COMMITTED);
+      try {
+        final Map<RID, Map<String, Integer>> committed = links(change.reference(), unread);
+        for (final RID row : unread)
+          change.links().put(row, committed.getOrDefault(row, Map.of()));
+      } finally {
+        database.rollback();
+      }
+    }
+
+    @Override
+    public void filesToLock(final IntHashSet files) {
+      for (final Found key : found.values())
+        files.add(key.row().getBucketId());
+      for (final Moved change : moved.values())
+        for (final RID row : change.links().keySet())
+          files.add(row.getBucketId());
+    }
+
+    @Override
+    public void checkCommitted() {
+      for (final Found key : found.values()) {
+        if (changes.isKeyAdded(key.index(), new Object[] { key.key() }, key.row()))
+          continue;
+        final Vertex row = load(key.row());
+        if (row == null || !same(key.column(), row.get(key.property()), key.key()))
+          throw conflict("changed or deleted a row that a new link refers to");
+      }
+      for (final Moved change : moved.values())
+        for (final Map.Entry<RID, Map<String, Integer>> now : links(change.reference(), change.links().keySet()).entrySet())
+          for (final Map.Entry<String, Integer> link : now.getValue().entrySet())
+            if (link.getValue() > change.links().get(now.getKey()).getOrDefault(link.getKey(), 0))
+              throw conflict("linked a row of table \"" + change.reference().key().table() + "\" whose key changes");
+    }
+
+    @Override
+    public String replicaRefusal() {
+      return "A commit that starts on a replica cannot insert a link by its keys, or change a key that links refer to: run the"
+          + " transaction on the leader";
+    }
+
+    /** The links of these rows that the current transaction reads, counted by link; a row it does not have has none. */
+    private Map<RID, Map<String, Integer>> links(final Reference reference, final Collection<RID> rows) {
+      final Map<RID, Vertex> there = new LinkedHashMap<>();
+      for (final RID rid : rows) {
+        final Vertex row = load(rid);
+        if (row != null)
+          there.put(rid, row);
+      }
+      final Map<RID, Map<String, Integer>> links = new HashMap<>();
+      if (!there.isEmpty())
+        forEachLink(database, reference, there,
+            (row, link) -> links.computeIfAbsent(row.getIdentity(), rid -> new HashMap<>()).merge(identity(link), 1, Integer::sum));
+      return links;
+    }
+
+    private Vertex load(final RID rid) {
+      try {
+        return database.lookupByRID(rid, true).asVertex();
+      } catch (final RecordNotFoundException e) {
+        return null;
+      }
+    }
+
+    private static ConcurrentModificationException conflict(final String what) {
+      return new ConcurrentModificationException("A concurrent transaction " + what + ". Please retry the operation");
+    }
+  }
+
   // ------------------------------------------------------------------------------------------------ the links of a record
+
+  /** What tells one link from another: a lightweight link has no record of its own, so its ends count too. */
+  private static String identity(final Edge link) {
+    return link.getTypeName() + link.getIdentity() + link.getOut() + link.getIn();
+  }
 
   /** The edge types whose links a link table shows: its type and every subtype. */
   private static List<String> typeNames(final DocumentType type, final List<String> names) {
