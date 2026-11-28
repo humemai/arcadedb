@@ -175,6 +175,7 @@ class AstTest {
       case TableReference.Table t -> "table";
       case TableReference.Join j -> "join";
       case TableReference.Subquery q -> "subquery";
+      case TableReference.Function f -> "function";
     };
     assertThat(tableKind).isEqualTo("table");
 
