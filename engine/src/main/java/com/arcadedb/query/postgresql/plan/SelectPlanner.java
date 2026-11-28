@@ -152,7 +152,35 @@ public class SelectPlanner {
       return planRelation(table);
     if (from.size() == 1 && from.get(0) instanceof TableReference.Subquery subquery)
       return planDerived(subquery);
+    if (from.size() == 1 && from.get(0) instanceof TableReference.Function function)
+      // the only item of FROM: its arguments read no table of this query, only the queries around it
+      return FunctionSource.of(function,
+          new ExpressionCompiler(new RelationScope(List.of(), catalog, subqueryPlanner(), null, outerScope), parameters));
     throw new IllegalArgumentException("A FROM clause with a join is planned by the JoinPlanner");
+  }
+
+  /** The name of a derived table: its alias, or the name PostgreSQL 16 and later give one without. */
+  private String derivedName(final TableReference.Subquery reference) {
+    if (reference.alias() != null)
+      return reference.alias().value();
+    return unnamedSubqueries++ == 0 ? "unnamed_subquery" : "unnamed_subquery_" + (unnamedSubqueries - 1);
+  }
+
+  /**
+   * A {@code LATERAL} subquery that reads columns of the tables before it (fork issue #243): it is run as a correlated subquery
+   * for each row of them. {@code null} when it reads none.
+   */
+  private RelationSource planLateral(final TableReference.Subquery reference, final ExpressionCompiler before) {
+    final SubqueryPlanner.CorrelatedRows rows = planCorrelated(reference.query(), before);
+    if (rows == null)
+      return null;
+    final String relation = derivedName(reference);
+    final List<String> names = columnNames(rows.names(), reference.columns(), "table \"" + relation + "\"");
+    final List<RelationSource.Field> fields = new ArrayList<>();
+    for (int i = 0; i < names.size(); i++)
+      fields.add(new RelationSource.Field(relation, names.get(i), rows.types().get(i), rows.typeNames().get(i), false, true,
+          rows.holdsRecordIds(i) ? RelationSource.RecordIds.PASSED_ON : RelationSource.RecordIds.NONE));
+    return new LateralSubquerySource(rows, fields, "LATERAL SUBQUERY " + relation);
   }
 
   private static boolean hasJoin(final List<TableReference> from) {
@@ -180,6 +208,16 @@ public class SelectPlanner {
       @Override
       public RelationSource derived(final TableReference.Subquery reference) {
         return planDerived(reference);
+      }
+
+      @Override
+      public RelationSource lateral(final TableReference.Subquery reference, final ExpressionCompiler before) {
+        return planLateral(reference, before);
+      }
+
+      @Override
+      public RelationSource function(final TableReference.Function reference, final ExpressionCompiler before) {
+        return FunctionSource.of(reference, before);
       }
 
       @Override
@@ -554,6 +592,16 @@ public class SelectPlanner {
       }
 
       @Override
+      public List<String> names() {
+        return probe.columns().stream().map(PostgreSQLResultSet.Column::name).toList();
+      }
+
+      @Override
+      public boolean holdsRecordIds(final int column) {
+        return probe.holdsRecordIds(column);
+      }
+
+      @Override
       public synchronized List<Object[]> rows(final Object[] outerRow) {
         final List<Object> key = new ArrayList<>(readers.size());
         for (final Evaluable reader : readers)
@@ -660,7 +708,8 @@ public class SelectPlanner {
   private Evaluable planExists(final Statement query, final ExpressionCompiler outer) {
     // the subquery is planned apart from the query around it; the terms taken out as keys are compiled by that query's compiler
     final SelectPlanner apart = inside(new UnreadableScope(outer, outerScope));
-    if (query instanceof SelectStatement select && !select.from().isEmpty() && select.where() != null) {
+    if (query instanceof SelectStatement select && !select.from().isEmpty() && select.where() != null
+        && !readsInFrom(select.from())) {
       final Evaluable correlated = apart.correlatedExists(select, outer);
       if (correlated != null)
         return correlated;
@@ -670,8 +719,25 @@ public class SelectPlanner {
         select.groupBy(), select.having(), select.orderBy(),
         new Expression.IntegerLiteral(select.position(), java.math.BigInteger.ONE), null)
         : query;
+    if (query instanceof SelectStatement select && readsInFrom(select.from())) {
+      // a function or a LATERAL subquery that reads the query around, as in EXISTS (SELECT 1 FROM unnest(t.tags) u ...)
+      final SubqueryPlanner.CorrelatedRows rows = planCorrelated(asked, outer);
+      if (rows != null)
+        return new Evaluable.Node(PgType.BOOL, row -> !rows.rows(row).isEmpty());
+    }
     final Subquery subquery = apart.planSubquery(asked);
     return new Evaluable.Node(PgType.BOOL, row -> !subquery.rows().isEmpty());
+  }
+
+  /** Whether an item of {@code FROM} reads columns: a function that names one, or a {@code LATERAL} subquery. */
+  private static boolean readsInFrom(final List<TableReference> from) {
+    for (final TableReference reference : from)
+      if (reference instanceof TableReference.Function function
+          && function.call().args().stream().anyMatch(ExpressionCompiler::readsColumns)
+          || reference instanceof TableReference.Subquery subquery && subquery.lateral()
+          || reference instanceof TableReference.Join join && readsInFrom(List.of(join.left(), join.right())))
+        return true;
+    return false;
   }
 
   /**
@@ -1038,13 +1104,17 @@ public class SelectPlanner {
 
   /** The names a reader sees: the ones of the select list, the first ones replaced by a list of names when there is one. */
   private static List<String> columnNames(final QueryPlan plan, final List<Name> given, final String what) {
-    final int available = plan.columns().size();
+    return columnNames(plan.columns().stream().map(PostgreSQLResultSet.Column::name).toList(), given, what);
+  }
+
+  private static List<String> columnNames(final List<String> selected, final List<Name> given, final String what) {
+    final int available = selected.size();
     if (given.size() > available)
       throw new PostgreSQLEvaluationException("42P10",
           what + " has " + available + " columns available but " + given.size() + " columns specified");
     final List<String> names = new ArrayList<>(available);
     for (int i = 0; i < available; i++)
-      names.add(i < given.size() ? given.get(i).value() : plan.columns().get(i).name());
+      names.add(i < given.size() ? given.get(i).value() : selected.get(i));
     return names;
   }
 
@@ -1066,12 +1136,7 @@ public class SelectPlanner {
   /** A subquery in {@code FROM}: its answer is read once, and its columns carry the alias as their relation. */
   private RelationSource planDerived(final TableReference.Subquery reference) {
     final QueryPlan plan = planQuery(reference.query(), false);
-    final String relation;
-    if (reference.alias() != null)
-      relation = reference.alias().value();
-    else
-      // PostgreSQL 16 and later name a subquery without an alias, so that two of them can stand in one FROM clause
-      relation = unnamedSubqueries++ == 0 ? "unnamed_subquery" : "unnamed_subquery_" + (unnamedSubqueries - 1);
+    final String relation = derivedName(reference);
     final List<String> names = columnNames(plan, reference.columns(), "table \"" + relation + "\"");
     final List<RelationSource.Field> fields = new ArrayList<>();
     for (int i = 0; i < names.size(); i++)

@@ -220,7 +220,7 @@ public final class Jsonb {
       out.append(json);
   }
 
-  private static int compareKeys(final String left, final String right) {
+  static int compareKeys(final String left, final String right) {
     final byte[] a = left.getBytes(StandardCharsets.UTF_8);
     final byte[] b = right.getBytes(StandardCharsets.UTF_8);
     return a.length != b.length ? Integer.compare(a.length, b.length) : Arrays.compareUnsigned(a, b);

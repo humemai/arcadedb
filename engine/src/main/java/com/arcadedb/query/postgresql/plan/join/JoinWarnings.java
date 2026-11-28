@@ -95,7 +95,8 @@ public final class JoinWarnings {
       collect(join.right(), sentences);
       if (join.warning() != null)
         sentences.add(join.warning());
-    }
+    } else if (source instanceof LateralSource lateral)
+      collect(lateral.left(), sentences);
   }
 
   /**
