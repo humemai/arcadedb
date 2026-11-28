@@ -134,7 +134,7 @@ final class StatementChecks {
 
   /** {@code WITH TIES} needs an {@code ORDER BY}, and does not go with {@code SKIP LOCKED}. */
   private static void fetchWithTies(final ParseTree tree, final List<Token> tokens) {
-    final PostgreSQLParser.UnsupportedFetchClauseContext fetch = find(tree, PostgreSQLParser.UnsupportedFetchClauseContext.class);
+    final PostgreSQLParser.UnsupportedWithTiesContext fetch = find(tree, PostgreSQLParser.UnsupportedWithTiesContext.class);
     if (fetch == null || fetch.getToken(PostgreSQLParser.WITH, 0) == null)
       return;
 
