@@ -75,6 +75,7 @@ import java.io.UncheckedIOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
@@ -543,6 +544,8 @@ public class TransactionContext implements Transaction {
   private       Thread                               afterCompletionOwner        = null;
   // Issue #11937: work that reads what the transaction is about to commit, run when the commit starts, see addBeforeCommitCallbackIfAbsent()
   private       Map<String, Runnable>                beforeCommitCallbacks       = null;
+  // Fork issue #292: the checks a query language runs inside the commit, under its file locks, see commitCheck()
+  private       Map<String, CommitCheck>             commitChecks                = null;
   // Read by begin() on the thread that runs the callbacks, which is the one that sets it
   private       boolean                              runningAfterCompletion      = false;
   // Issue #12251: a commit that runs the callbacks its transaction owes somewhere else than where the transaction concludes, see
@@ -1776,6 +1779,30 @@ public class TransactionContext implements Transaction {
     beforeCommitCallbacks = null;
     for (final Runnable callback : callbacks.values())
       callback.run();
+  }
+
+  /**
+   * The check of this transaction registered under {@code key}, made by {@code create} the first time it is asked for (fork issue
+   * #292). The commit of the transaction locks the files it names and runs it under those locks, see {@link CommitCheck}. It is
+   * dropped with the transaction. A statement that is taken back does not take back what it added to a check, so a check has to
+   * find nothing to refuse for it, or refuse with a conflict that a retry resolves.
+   */
+  @SuppressWarnings("unchecked")
+  public <T extends CommitCheck> T commitCheck(final String key, final Supplier<T> create) {
+    if (commitChecks == null)
+      commitChecks = new LinkedHashMap<>(2);
+    return (T) commitChecks.computeIfAbsent(key, k -> create.get());
+  }
+
+  /** Runs the registered checks in a transaction of their own, which reads the pages as they are committed. */
+  private void runCommitChecks() {
+    database.begin(Database.TRANSACTION_ISOLATION_LEVEL.READ_COMMITTED);
+    try {
+      for (final CommitCheck check : commitChecks.values())
+        check.checkCommitted();
+    } finally {
+      database.rollback();
+    }
   }
 
   /**
@@ -4561,6 +4588,22 @@ public class TransactionContext implements Transaction {
         throw e;
       }
 
+    // Fork issue #292: the files the checks of a query language read under, locked with the others
+    IntHashSet checkedFiles = null;
+    if (commitChecks != null)
+      try {
+        checkedFiles = new IntHashSet();
+        for (final CommitCheck check : commitChecks.values()) {
+          if (!isLeader)
+            // as for the foreign keys: the check is only safe where the commits are ordered
+            throw new TransactionException(check.replicaRefusal());
+          check.filesToLock(checkedFiles);
+        }
+      } catch (final RuntimeException e) {
+        rollback();
+        throw e;
+      }
+
     // Acquire file locks BEFORE processing updatedRecords so that updateRecordNoLock
     // (which loads pages and follows multi-page record chunk chains) is serialized.
     // Without this, concurrent updateRecordNoLock calls could both load the same page
@@ -4595,6 +4638,8 @@ public class TransactionContext implements Transaction {
       final IntHashSet modifiedFiles = lockFilesFromChanges();
       if (referencedFiles != null)
         referencedFiles.forEach(modifiedFiles::add);
+      if (checkedFiles != null)
+        checkedFiles.forEach(modifiedFiles::add);
 
       // checkExplicitLocks nulls explicitLockedFiles on success, so remember the mode now for the
       // late-joiner check further down (#4937): otherwise that check always sees null and would
@@ -4676,6 +4721,9 @@ public class TransactionContext implements Transaction {
       // Fork issue #228: under the locks this commit keeps to its end, and before its own index changes reach the pages
       if (foreignKeys != null)
         foreignKeys.checkCommitted();
+      // Fork issue #292: the checks of a query language, at the same place
+      if (commitChecks != null)
+        runCommitChecks();
 
       // COMMIT INDEX CHANGES: always, on whichever node originates this commit (#6964) - see the note on
       // indexChangesReplayed above.
@@ -5679,6 +5727,7 @@ public class TransactionContext implements Transaction {
     afterCompletionCallbacks = null;
     afterCompletionOwner = null;
     beforeCommitCallbacks = null;
+    commitChecks = null;
     attachments = null;
     clientManaged = false;
     implicit = false;
