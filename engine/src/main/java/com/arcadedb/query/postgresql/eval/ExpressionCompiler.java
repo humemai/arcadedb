@@ -358,9 +358,21 @@ public final class ExpressionCompiler {
         collectReferences(join.condition(), out);
     }
     case TableReference.Subquery subquery -> collectReferences(subquery.query(), out);
+    case TableReference.Function function -> collectReferences((Expression) function.call(), out);
     default -> {
     }
     }
+  }
+
+  /** Whether an expression names a column or has a subquery, which may name one (fork issue #243). */
+  public static boolean readsColumns(final Expression expression) {
+    if (expression instanceof Expression.ColumnRef || expression instanceof Expression.Exists
+        || expression instanceof Expression.ScalarSubquery || expression instanceof Expression.InSubquery)
+      return true;
+    for (final Expression child : children(expression))
+      if (readsColumns(child))
+        return true;
+    return false;
   }
 
   private static void collectReferences(final Expression expression, final List<Expression> out) {
@@ -1058,7 +1070,7 @@ public final class ExpressionCompiler {
   }
 
   /** The element type that an array says it has, {@code null} for an operand of no type or an empty bound array. */
-  private static PgType declaredElement(final Evaluable array) {
+  static PgType declaredElement(final Evaluable array) {
     if (array.type() != PgType.ARRAY)
       return null;
     final PgType named = ValueInput.elementType(array.typeName());
@@ -1164,7 +1176,7 @@ public final class ExpressionCompiler {
     }, expression);
   }
 
-  private Evaluable arithmetic(final Expression.BinaryOperator operator, final Evaluable left, final Evaluable right) {
+  Evaluable arithmetic(final Expression.BinaryOperator operator, final Evaluable left, final Evaluable right) {
     final String symbol = operator.symbol();
     if (operator == Expression.BinaryOperator.SUBTRACT && left.type() == PgType.JSONB)
       return jsonbDelete(left, right);
@@ -1609,7 +1621,7 @@ public final class ExpressionCompiler {
   }
 
   /** The elements of an array value in the canonical class of {@code element}, {@code null} for the array {@code NULL}. */
-  private static List<Object> elements(final Object array, final PgType element) {
+  static List<Object> elements(final Object array, final PgType element) {
     if (array == null)
       return null;
     final List<?> items = ValueInput.asList(array);

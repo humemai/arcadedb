@@ -22,9 +22,9 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * An item of a {@code FROM} clause: {@code table_ref} of {@code gram.y}. Only a table name and a join of two references are in
- * the subset, and a subquery with an alias; a function call, {@code LATERAL} and {@code TABLESAMPLE} are refused with SQLSTATE
- * 0A000.
+ * An item of a {@code FROM} clause: {@code table_ref} of {@code gram.y}. A table name, a join of two references, a subquery and
+ * a function call are in the subset; {@code ROWS FROM}, {@code XMLTABLE}, {@code JSON_TABLE}, a column definition list and
+ * {@code TABLESAMPLE} are refused with SQLSTATE 0A000.
  */
 public sealed interface TableReference extends Node {
 
@@ -49,17 +49,43 @@ public sealed interface TableReference extends Node {
   }
 
   /**
-   * {@code (query) [AS] alias [(columns)]}: a derived table. Its rows are the rows of the query, read once when the statement
-   * runs; its columns have the names of the select list, or the names of the list after the alias.
+   * {@code [LATERAL] (query) [AS] alias [(columns)]}: a derived table. Its rows are the rows of the query, read once when the
+   * statement runs, or once for each row of the tables before it when it is {@code LATERAL} and reads one of their columns; its
+   * columns have the names of the select list, or the names of the list after the alias.
    *
    * @param query   a {@link SelectStatement}, a {@link SetOperationStatement} or a {@link WithStatement}
    * @param alias   the name of the derived table, or {@code null} when none is written (PostgreSQL 16 and later accept that)
    * @param columns the names after the alias in parentheses, empty when there is no list
+   * @param lateral true when {@code LATERAL} is written (fork issue #243)
    */
-  record Subquery(SourcePosition position, Statement query, Name alias, List<Name> columns) implements TableReference {
+  record Subquery(SourcePosition position, Statement query, Name alias, List<Name> columns, boolean lateral)
+      implements TableReference {
     public Subquery {
       Objects.requireNonNull(position, "position");
       Objects.requireNonNull(query, "query");
+      columns = List.copyOf(columns);
+    }
+
+    /** A derived table without {@code LATERAL}. */
+    public Subquery(final SourcePosition position, final Statement query, final Name alias, final List<Name> columns) {
+      this(position, query, alias, columns, false);
+    }
+  }
+
+  /**
+   * {@code [LATERAL] function(args) [WITH ORDINALITY] [[AS] alias [(columns)]]}: the rows that a function returns (fork issue
+   * #243). Its arguments may read the columns of the tables before it, with or without {@code LATERAL}, as in PostgreSQL.
+   *
+   * @param call       the call
+   * @param alias      the name of the rows, or {@code null}: the name of the function then
+   * @param columns    the names after the alias in parentheses, empty when there is no list
+   * @param ordinality true for {@code WITH ORDINALITY}: a last column numbers the rows from 1
+   */
+  record Function(SourcePosition position, Expression.FunctionCall call, Name alias, List<Name> columns, boolean ordinality)
+      implements TableReference {
+    public Function {
+      Objects.requireNonNull(position, "position");
+      Objects.requireNonNull(call, "call");
       columns = List.copyOf(columns);
     }
   }

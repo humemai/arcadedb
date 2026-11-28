@@ -151,6 +151,15 @@ public final class JoinPlanner {
     /** The source of a subquery in the {@code FROM} clause: its rows, computed once. */
     RelationSource derived(TableReference.Subquery reference);
 
+    /**
+     * The source of a {@code LATERAL} subquery that reads columns of the tables before it, which is {@link LateralRows} too;
+     * {@code null} when it reads none, and {@link #derived} serves it.
+     */
+    RelationSource lateral(TableReference.Subquery reference, ExpressionCompiler before);
+
+    /** The source of a function in the {@code FROM} clause, which is {@link LateralRows} too. */
+    RelationSource function(TableReference.Function reference, ExpressionCompiler before);
+
     /** The table read through the best access path that the terms (single table conditions) offer, as the single-table plan. */
     TableSource narrow(TableSource table, List<Expression> terms, ExpressionCompiler compiler);
   }
@@ -215,11 +224,18 @@ public final class JoinPlanner {
     /** The table behind the leaf, {@code null} for a view. */
     private final TableSource    table;
     private final String         relation;
+    /** The rows of the leaf for a row of the tables before it, {@code null} for a leaf that reads none of them. */
+    private final LateralRows    lateral;
 
     Leaf(final RelationSource source, final String relation) {
+      this(source, relation, null);
+    }
+
+    Leaf(final RelationSource source, final String relation, final LateralRows lateral) {
       this.source = source;
       this.table = source instanceof TableSource tableSource ? tableSource : null;
       this.relation = relation;
+      this.lateral = lateral;
     }
 
     @Override
@@ -376,7 +392,7 @@ public final class JoinPlanner {
     for (int i = 1; i < from.size(); i++)
       root = new TableReference.Join(from.get(i).position(), root, TableReference.JoinType.INNER, from.get(i),
           new Expression.BooleanLiteral(from.get(i).position(), true));
-    final Node tree = analyze(root);
+    final Node tree = analyze(root, null);
     final List<Conjunct> incoming = where == null ? List.of() : Pushdown.terms(where, scope(tree), parameters);
     final Built built = build(tree, incoming);
     final List<Expression> remaining = new ArrayList<>();
@@ -414,10 +430,26 @@ public final class JoinPlanner {
     return new ExpressionCompiler(scope(node), parameters);
   }
 
-  private Node analyze(final TableReference reference) {
+  /**
+   * @param before the tables that an item that reads its left neighbours can read: the left input of its join, {@code null} for
+   *               an item with none
+   */
+  private Node analyze(final TableReference reference, final Node before) {
     if (reference instanceof TableReference.Subquery subquery) {
+      if (subquery.lateral() && before != null) {
+        final RelationSource source = tables.lateral(subquery, compiler(before));
+        if (source != null)
+          return new Leaf(source, source.columns().get(0).relation(), (LateralRows) source);
+      }
       final RelationSource source = tables.derived(subquery);
       return new Leaf(source, source.columns().get(0).relation());
+    }
+    if (reference instanceof TableReference.Function function) {
+      // a function reads the tables before it with or without LATERAL; one that names no column is a table of its own
+      final boolean reads = before != null && function.call().args().stream().anyMatch(ExpressionCompiler::readsColumns);
+      final RelationSource source = tables.function(function, reads ? compiler(before)
+          : new ExpressionCompiler(new RelationScope(List.of(), catalog, tables.subqueries(), null, tables.outer()), parameters));
+      return new Leaf(source, source.columns().get(0).relation(), reads ? (LateralRows) source : null);
     }
     if (reference instanceof TableReference.Table table) {
       final RelationSource source = tables.table(table);
@@ -425,11 +457,16 @@ public final class JoinPlanner {
       return new Leaf(source, table.alias() != null ? table.alias().value() : name);
     }
     final TableReference.Join join = (TableReference.Join) reference;
-    final Node left = analyze(join.left());
-    final Node right = analyze(join.right());
+    final Node left = analyze(join.left(), null);
+    final Node right = analyze(join.right(), left);
     for (final String name : right.relations())
       if (left.relations().contains(name))
         throw PostgreSQLReferenceException.duplicateAlias(name);
+    if (right instanceof Leaf leaf && leaf.lateral != null
+        && (join.type() == TableReference.JoinType.RIGHT || join.type() == TableReference.JoinType.FULL))
+      throw new PostgreSQLEvaluationException("42P10", "invalid reference to FROM-clause entry for table \""
+          + left.relations().iterator().next() + "\". Hint: The combining JOIN type must be INNER or LEFT for a LATERAL"
+          + " reference.");
     final JoinNode partial = new JoinNode(join.type(), left, right, List.of());
     final RelationScope scope = scope(partial);
     final List<Using> using = new ArrayList<>();
@@ -500,8 +537,24 @@ public final class JoinPlanner {
     final Pushdown.Placement placement = Pushdown.place(join.type, join.left.relations(), join.right.relations(), incoming,
         join.on);
     final RelationSource left = withRemaining(join.left, build(join.left, placement.toLeft()));
+    if (join.right instanceof Leaf leaf && leaf.lateral != null)
+      // the terms of the right input are tested on the rows of each left row (fork issue #243)
+      return new Built(new LateralSource(left, leaf.source, leaf.lateral, conditionOf(leaf, placement.toRight(), "WHERE"),
+          conditionOf(join, placement.matching(), "JOIN/ON"), join.type == TableReference.JoinType.LEFT, join.fields(),
+          join.outputs()), placement.above());
     final RelationSource right = withRemaining(join.right, build(join.right, placement.toRight()));
     return new Built(joinSource(join, left, right, placement.matching()), placement.above());
+  }
+
+  /** The terms compiled over the rows of a node, as one condition, {@code null} for no term. */
+  private Evaluable conditionOf(final Node node, final List<Conjunct> terms, final String clause) {
+    if (terms.isEmpty())
+      return null;
+    final ExpressionCompiler compiler = compiler(node);
+    final List<Evaluable> conditions = new ArrayList<>(terms.size());
+    for (final Conjunct term : terms)
+      conditions.add(compiler.compileCondition(term.expression(), clause));
+    return allOf(conditions);
   }
 
   /** The rows of a child, with the terms its own subtree could not take applied to its output. */

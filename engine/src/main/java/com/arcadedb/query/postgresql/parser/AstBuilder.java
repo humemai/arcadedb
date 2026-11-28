@@ -734,7 +734,17 @@ final class AstBuilder {
         for (final ColIdContext column : alias.columns.names)
           columns.add(name(column));
       return new TableReference.Subquery(position(context.getStart()), query(derived.selectStmt()),
-          alias == null ? null : name(alias.alias), columns);
+          alias == null ? null : name(alias.alias), columns, derived.LATERAL() != null);
+    }
+    if (context instanceof FunctionRefContext function) {
+      final DerivedAliasContext alias = function.functionAlias() == null ? null : function.functionAlias().derivedAlias();
+      final List<Name> columns = new ArrayList<>();
+      if (alias != null && alias.columns != null)
+        for (final ColIdContext column : alias.columns.names)
+          columns.add(name(column));
+      return new TableReference.Function(position(context.getStart()),
+          (Expression.FunctionCall) functionCall(function.funcApplication(), null),
+          alias == null ? null : name(alias.alias), columns, function.ORDINALITY() != null);
     }
     if (context instanceof ParenRefContext paren) {
       final TableReference inner = tableReference(paren.tableRef());

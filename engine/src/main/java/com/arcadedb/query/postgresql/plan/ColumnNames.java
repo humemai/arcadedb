@@ -94,12 +94,12 @@ final class ColumnNames {
     return switch (reference) {
       case TableReference.Table ignored -> true;
       case TableReference.Subquery subquery -> statement(subquery.query(), names);
+      case TableReference.Function function -> expression(function.call(), names);
       case TableReference.Join join -> {
         for (final Name using : join.using())
           names.add(using.value().toLowerCase(Locale.ROOT));
         yield reference(join.left(), names) && reference(join.right(), names) && expression(join.condition(), names);
       }
-      default -> false;
     };
   }
 

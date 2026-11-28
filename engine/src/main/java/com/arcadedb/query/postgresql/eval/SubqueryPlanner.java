@@ -61,6 +61,12 @@ public interface SubqueryPlanner {
     /** The type name of each column of the answer, as the client sees it. */
     List<String> typeNames();
 
+    /** The name of each column of the answer. */
+    List<String> names();
+
+    /** Whether a column of the answer holds record ids that it passes on (fork issue #240). */
+    boolean holdsRecordIds(int column);
+
     /** The rows of the answer for this row of the outer query. The rows are held in memory under the cap of the planner ({@code 53200}). */
     List<Object[]> rows(Object[] outerRow);
   }

@@ -23,6 +23,7 @@ import com.arcadedb.query.postgresql.ast.Expression;
 import com.arcadedb.query.postgresql.ast.Name;
 import com.arcadedb.query.postgresql.eval.Evaluable;
 import com.arcadedb.query.postgresql.eval.ExpressionCompiler;
+import com.arcadedb.query.postgresql.eval.PgType;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -98,6 +99,10 @@ final class OuterBindings implements ExpressionCompiler.Scope {
       read = outer.resolveOutput(outer.compile(reference));
       reads.put(key, read);
     }
-    return new Evaluable.Constant(read.type(), outerRow == null ? null : read.eval(outerRow));
+    final Object value = outerRow == null ? null : read.eval(outerRow);
+    // an array keeps the name of its type, which says what it holds, as unnest of an outer column needs (fork issue #243)
+    if (read.type() == PgType.ARRAY)
+      return new Evaluable.Node(PgType.ARRAY, read.typeName(), row -> value);
+    return new Evaluable.Constant(read.type(), value);
   }
 }

@@ -56,7 +56,8 @@ final class Diagnostics {
       Map.entry("unsupportedJoinAlias", "An alias on a parenthesised join"),
       Map.entry("unsupportedTablesample", "TABLESAMPLE"),
       Map.entry("unsupportedColumnAliases", "A column alias list"),
-      Map.entry("unsupportedTableRef", "A subquery, a table function or LATERAL in FROM"),
+      Map.entry("unsupportedTableRef", "This form of FROM (ROWS FROM, XMLTABLE, JSON_TABLE and the like)"),
+      Map.entry("unsupportedColumnDefinitions", "A column definition list of a function in FROM"),
       Map.entry("unsupportedRecursive", "WITH RECURSIVE"),
       Map.entry("unsupportedWithWrite", "A WITH clause on INSERT, UPDATE, DELETE or MERGE"),
       Map.entry("unsupportedCteBody", "A data-modifying statement in WITH"),
@@ -203,8 +204,9 @@ final class Diagnostics {
       case "unsupportedFetchClause" -> "Write LIMIT n, with OFFSET m to skip rows";
       case "unsupportedJoinUsingAlias", "unsupportedJoinAlias" -> "Leave the alias out and name the columns by their tables";
       case "unsupportedColumnAliases", "unsupportedTableAlias" -> "Name a query in a WITH clause, with its columns named by AS";
-      case "unsupportedTableRef" -> "There are no table functions and no LATERAL yet: write the rows with VALUES, or a subquery"
-          + " that reads no earlier table, as in FROM (SELECT ...) AS s";
+      case "unsupportedTableRef" -> "Write a subquery, as in FROM (SELECT ...) AS s, or a function that returns rows, as in"
+          + " FROM generate_series(1, 3) AS g";
+      case "unsupportedColumnDefinitions" -> "Name the columns only, as in AS t(a, b), and cast them where they are read";
       case "unsupportedRecursive" -> "Write paths of any length in openCypher, where a table is a vertex type and a link table is an"
           + " edge type, as in {opencypher}MATCH (a:person)-[:knows*]->(b:person) RETURN b.name";
       case "unsupportedWithWrite", "unsupportedCteBody" ->
