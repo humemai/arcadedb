@@ -114,7 +114,7 @@ class PostgreSQLLinkKeyRaceTest extends PostgreSQLSideBySideTestBase {
       run(updates, PERSON);
       run(updates, KNOWS);
       final List<String> both = new ArrayList<>();
-      for (int i = 0; i < 300; i++) {
+      for (int i = 0; i < 2_000; i++) {
         final int key = i;
         run(updates, "INSERT INTO person VALUES (" + key + ")");
         final CyclicBarrier start = new CyclicBarrier(2);

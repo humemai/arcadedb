@@ -25,6 +25,7 @@ import com.arcadedb.database.Document;
 import com.arcadedb.database.Identifiable;
 import com.arcadedb.database.RID;
 import com.arcadedb.database.Record;
+import com.arcadedb.database.TransactionContext;
 import com.arcadedb.database.TransactionIndexContext;
 import com.arcadedb.exception.ConcurrentModificationException;
 import com.arcadedb.exception.RecordNotFoundException;
@@ -203,14 +204,15 @@ final class LinkKeys {
           changed.put(change.row().getIdentity(), change.row().asVertex());
       }
       if (!changed.isEmpty()) {
-        // the committed links first: one that another transaction commits after this is a conflict of the commit
-        atCommit(db).keysChange(reference, changed.keySet());
-        forEachLink(db, reference, changed, (vertex, link) -> {
+        final BiConsumer<Vertex, Edge> refuse = (vertex, link) -> {
           throw new PostgreSQLEvaluationException("23503", "update or delete on table \"" + reference.key().table()
               + "\" violates foreign key constraint \"" + reference.name() + "\" on table \"" + reference.links().name()
               + "\". Detail: Key (" + reference.referenced().name() + ")=(" + keyText(reference, vertex)
               + ") is still referenced from table \"" + reference.links().name() + "\".");
-        });
+        };
+        // the committed links first: one that another transaction commits after this is a conflict of the commit
+        atCommit(db).keysChange(reference, changed.keySet(), refuse);
+        forEachLink(db, reference, changed, refuse);
       }
     }
   }
@@ -304,7 +306,7 @@ final class LinkKeys {
    * <li>a new link: the row still has the key that the link names, unless the transaction changed that key of the row
    * itself;</li>
    * <li>a changed key: the row has no committed link that it did not have when the statement ran. Those it had then are the ones
-   * the transaction deleted before, since the statement found none in its own view.</li>
+   * the transaction deleted before, since the statement refuses every other.</li>
    * </ul>
    */
   private static final class AtCommit implements CommitCheck {
@@ -323,16 +325,27 @@ final class LinkKeys {
       found.putIfAbsent(List.of(key.row(), key.property(), key.key()), key);
     }
 
-    /** Reads the committed links of the rows, before their keys change. A row that was read before keeps its first answer. */
-    void keysChange(final Reference reference, final Collection<RID> rows) {
+    /**
+     * Reads the committed links of the rows, before their keys change. A row that was read before keeps its first answer. A
+     * committed link that the transaction did not delete is a link of its row, whatever the lists say that the statement read
+     * with the row before another transaction committed it, so it is given to {@code refuse}. A lightweight link has no record
+     * to ask about: it is one for sure when the transaction has changed nothing yet.
+     */
+    void keysChange(final Reference reference, final Collection<RID> rows, final BiConsumer<Vertex, Edge> refuse) {
       final Moved change = moved.computeIfAbsent(reference.links().name() + '.' + reference.end(),
           name -> new Moved(reference, new LinkedHashMap<>()));
       final List<RID> unread = rows.stream().filter(row -> !change.links().containsKey(row)).toList();
       if (unread.isEmpty())
         return;
+      final TransactionContext own = database.getTransaction();
+      final boolean unchanged = !own.hasChanges();
       database.begin(Database.TRANSACTION_ISOLATION_LEVEL.READ_COMMITTED);
       try {
-        final Map<RID, Map<String, Integer>> committed = links(change.reference(), unread);
+        final Map<RID, Map<String, Integer>> committed = links(change.reference(), unread, (row, link) -> {
+          final RID record = link.getIdentity();
+          if (record.getPosition() >= 0 ? !own.isDeletedInTransaction(record) : unchanged)
+            refuse.accept(row, link);
+        });
         for (final RID row : unread)
           change.links().put(row, committed.getOrDefault(row, Map.of()));
       } finally {
@@ -359,7 +372,8 @@ final class LinkKeys {
           throw conflict("changed or deleted a row that a new link refers to");
       }
       for (final Moved change : moved.values())
-        for (final Map.Entry<RID, Map<String, Integer>> now : links(change.reference(), change.links().keySet()).entrySet())
+        for (final Map.Entry<RID, Map<String, Integer>> now : links(change.reference(), change.links().keySet(), (row, link) -> {
+        }).entrySet())
           for (final Map.Entry<String, Integer> link : now.getValue().entrySet())
             if (link.getValue() > change.links().get(now.getKey()).getOrDefault(link.getKey(), 0))
               throw conflict("linked a row of table \"" + change.reference().key().table() + "\" whose key changes");
@@ -371,8 +385,12 @@ final class LinkKeys {
           + " transaction on the leader";
     }
 
-    /** The links of these rows that the current transaction reads, counted by link; a row it does not have has none. */
-    private Map<RID, Map<String, Integer>> links(final Reference reference, final Collection<RID> rows) {
+    /**
+     * The links of these rows that the current transaction reads, counted by link; a row it does not have has none. Each link
+     * is also given to {@code each} with its row.
+     */
+    private Map<RID, Map<String, Integer>> links(final Reference reference, final Collection<RID> rows,
+        final BiConsumer<Vertex, Edge> each) {
       final Map<RID, Vertex> there = new LinkedHashMap<>();
       for (final RID rid : rows) {
         final Vertex row = load(rid);
@@ -381,8 +399,10 @@ final class LinkKeys {
       }
       final Map<RID, Map<String, Integer>> links = new HashMap<>();
       if (!there.isEmpty())
-        forEachLink(database, reference, there,
-            (row, link) -> links.computeIfAbsent(row.getIdentity(), rid -> new HashMap<>()).merge(identity(link), 1, Integer::sum));
+        forEachLink(database, reference, there, (row, link) -> {
+          each.accept(row, link);
+          links.computeIfAbsent(row.getIdentity(), rid -> new HashMap<>()).merge(identity(link), 1, Integer::sum);
+        });
       return links;
     }
 

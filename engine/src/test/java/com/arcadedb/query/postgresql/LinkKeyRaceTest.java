@@ -19,6 +19,7 @@
 package com.arcadedb.query.postgresql;
 
 import com.arcadedb.TestHelper;
+import com.arcadedb.database.Database;
 import com.arcadedb.exception.ConcurrentModificationException;
 import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
@@ -208,6 +209,29 @@ class LinkKeyRaceTest extends TestHelper {
         assertThat(lost).as("the link after the key change").isInstanceOf(ConcurrentModificationException.class);
     }
     assertThat(links("follows")).containsExactly("10700>701", "10700>702", "10703>704");
+  }
+
+  /**
+   * The link is committed between the read of the row and the check of its links, as it is when two statements run at the same
+   * moment. The row that was read lists no link, and the statement still finds it.
+   */
+  @Test
+  void aLinkCommittedAfterTheRowWasReadStopsItsKeyChange() throws Exception {
+    people(1, 2);
+    final ExecutorService other = Executors.newSingleThreadExecutor();
+    try {
+      database.begin(Database.TRANSACTION_ISOLATION_LEVEL.REPEATABLE_READ);
+      try (final ResultSet rows = database.query("postgresql", "SELECT * FROM person WHERE id = 1")) {
+        assertThat(rows.stream().count()).isEqualTo(1);
+      }
+      other.submit(() -> write("INSERT INTO knows VALUES (1, 2)")).get(60, TimeUnit.SECONDS);
+      assertThat(catchThrowable(() -> run("UPDATE person SET id = 10 WHERE id = 1"))).as("the key change")
+          .hasStackTraceContaining("foreign key constraint");
+      database.rollback();
+    } finally {
+      other.shutdownNow();
+    }
+    assertThat(links("knows")).containsExactly("1>2");
   }
 
   @Test
