@@ -156,7 +156,7 @@ public final class ForeignKeys {
     for (final Broken each : broken)
       if (type.instanceOf(each.type()) || each.referencedType() != null && type.instanceOf(each.referencedType()))
         throw new ForeignKeyException("55000", each.reason() + ", or remove the key with ALTER TYPE `" + each.type()
-            + "` CUSTOM `" + ForeignKey.CUSTOM_KEY + "` = null (sql)");
+            + "` CUSTOM " + ForeignKey.CUSTOM_KEY + " = null (sql)");
   }
 
   /** Refuses the drop of a type that another type refers to. */

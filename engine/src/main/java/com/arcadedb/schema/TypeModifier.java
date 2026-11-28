@@ -29,7 +29,7 @@ import java.math.RoundingMode;
  * {@code CREATE TABLE} of the {@code postgresql} language keeps it in the custom value {@value #CUSTOM_KEY} of the property,
  * {@code n} on a {@code STRING} property and {@code p,s} on a {@code DECIMAL} one, and the engine applies it to every record that
  * any language creates or updates, as PostgreSQL's assignment casts do (see {@link #assign}). Records that exist when the custom
- * value is set are not changed or checked until they are written again. {@code ALTER PROPERTY t.c CUSTOM `arcadedb.typeModifier`
+ * value is set are not changed or checked until they are written again. {@code ALTER PROPERTY t.c CUSTOM arcadedb_typeModifier
  * = null} of the {@code sql} language removes the limit.
  *
  * @param size  the length of a string in characters, or the precision of a number
@@ -37,7 +37,7 @@ import java.math.RoundingMode;
  */
 public record TypeModifier(int size, Integer scale) {
   /** The key of the custom value of a property, under the engine's prefix as {@link ForeignKey#CUSTOM_KEY}. */
-  public static final String CUSTOM_KEY = "arcadedb.typeModifier";
+  public static final String CUSTOM_KEY = "arcadedb_typeModifier";
 
   /** The longest {@code varchar(n)} of PostgreSQL. */
   private static final int MAX_LENGTH    = 10 * 1024 * 1024;
@@ -144,7 +144,7 @@ public record TypeModifier(int size, Integer scale) {
     if (modifier == null)
       throw new ValidationException(ValidationException.Kind.TYPE,
           "The custom value " + CUSTOM_KEY + " of " + column + " cannot be applied: remove it with ALTER PROPERTY `"
-              + document.getTypeName() + "`.`" + property.getName() + "` CUSTOM `" + CUSTOM_KEY + "` = null");
+              + document.getTypeName() + "`.`" + property.getName() + "` CUSTOM " + CUSTOM_KEY + " = null");
     final Object assigned;
     try {
       assigned = modifier.assign(value);

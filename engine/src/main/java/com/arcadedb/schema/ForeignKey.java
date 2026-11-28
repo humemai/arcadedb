@@ -42,10 +42,10 @@ public record ForeignKey(String name, List<String> columns, String referencedTyp
 
   /**
    * The custom value of a type that holds its foreign keys. Custom values are open to users, so the ones the engine acts on have
-   * the prefix {@code arcadedb.}, which keeps them apart from a name of a user, such as {@code foreignKeys} (fork issue #313).
-   * {@code sql} writes such a name between backticks.
+   * the prefix {@code arcadedb_}, which keeps them apart from a name of a user, such as {@code foreignKeys} (fork issue #313).
+   * The prefix has no dot, so {@code sql} reads the name as it is written.
    */
-  public static final String CUSTOM_KEY = "arcadedb.foreignKeys";
+  public static final String CUSTOM_KEY = "arcadedb_foreignKeys";
 
   /** What happens to the referring records when a referenced record is deleted or its key changes. */
   public enum Action {

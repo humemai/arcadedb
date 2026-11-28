@@ -138,7 +138,8 @@ class ForeignKeyEngineTest extends TestHelper {
     assertThatThrownBy(() -> write("sql", "DELETE FROM parent WHERE id = 1")).hasStackTraceContaining("cannot be checked");
     database.command("sql", "CREATE INDEX ON child (pid) NOTUNIQUE");
     write("sql", "INSERT INTO child SET id = 11, pid = 1");
-    database.command("sql", "ALTER TYPE child CUSTOM `arcadedb.foreignKeys` = null");
+    // without backticks, as the error messages write it
+    database.command("sql", "ALTER TYPE child CUSTOM " + ForeignKey.CUSTOM_KEY + " = null");
     write("sql", "DELETE FROM parent WHERE id = 1");
     database.getSchema().dropType("parent");
   }
