@@ -37,12 +37,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -349,11 +351,14 @@ public final class SelectPlan implements QueryPlan {
 
     private final Evaluable[]          keys;
     private final List<AggregateSpec>  specs;
+    /** The columns that the keys determine through a primary key: a group row holds them after the aggregates. */
+    private final Evaluable[]          determined;
     private final long                 capBytes;
 
-    GroupStage(final Evaluable[] keys, final List<AggregateSpec> specs, final long capBytes) {
+    GroupStage(final Evaluable[] keys, final List<AggregateSpec> specs, final Evaluable[] determined, final long capBytes) {
       this.keys = keys;
       this.specs = List.copyOf(specs);
+      this.determined = determined;
       this.capBytes = capBytes;
     }
 
@@ -376,6 +381,7 @@ public final class SelectPlan implements QueryPlan {
               + "WHERE condition, or raise the cap with the JVM property " + BuildMemory.CAP_PROPERTY + " (MiB)");
       final Map<List<Object>, Object[]> keyValues = new LinkedHashMap<>();
       final Map<List<Object>, Accumulator[]> accumulators = new LinkedHashMap<>();
+      final Map<List<Object>, Object[]> determinedValues = new HashMap<>();
       while (rows.hasNext()) {
         final Object[] row = rows.next();
         final Object[] values = new Object[keys.length];
@@ -392,7 +398,13 @@ public final class SelectPlan implements QueryPlan {
           group = newAccumulators();
           accumulators.put(key, group);
           keyValues.put(key, values);
-        }
+          if (determined.length > 0) {
+            final Object[] first = determinedOf(row);
+            memory.charge(first);
+            determinedValues.put(key, first);
+          }
+        } else if (determined.length > 0)
+          requireSame(determinedValues.get(key), determinedOf(row));
         for (int a = 0; a < specs.size(); a++)
           group[a].addRow(specs.get(a), row, memory);
       }
@@ -402,13 +414,33 @@ public final class SelectPlan implements QueryPlan {
       }
       final List<Object[]> out = new ArrayList<>(accumulators.size());
       for (final Map.Entry<List<Object>, Accumulator[]> entry : accumulators.entrySet()) {
-        final Object[] row = new Object[keys.length + specs.size()];
+        final Object[] row = new Object[keys.length + specs.size() + determined.length];
         System.arraycopy(keyValues.get(entry.getKey()), 0, row, 0, keys.length);
         for (int a = 0; a < specs.size(); a++)
           row[keys.length + a] = entry.getValue()[a].result();
+        if (determined.length > 0)
+          System.arraycopy(determinedValues.get(entry.getKey()), 0, row, keys.length + specs.size(), determined.length);
         out.add(row);
       }
       return out;
+    }
+
+    private Object[] determinedOf(final Object[] row) {
+      final Object[] values = new Object[determined.length];
+      for (int i = 0; i < determined.length; i++)
+        values[i] = determined[i].eval(row);
+      return values;
+    }
+
+    /**
+     * The rows of one value of a primary key are one record, so they hold one value of each of its columns. Only a key that is
+     * {@code NULL} can break that, in a type that the {@code sql} language made: the statement then fails and picks no value.
+     */
+    private static void requireSame(final Object[] first, final Object[] values) {
+      for (int i = 0; i < values.length; i++)
+        if (!Objects.deepEquals(normalize(first[i]), normalize(values[i])))
+          throw new PostgreSQLEvaluationException("42803", "a column that is not in the GROUP BY clause has several values in one"
+              + " group: the primary key is NULL in these rows, so group by the column too");
     }
 
     private Accumulator[] newAccumulators() {

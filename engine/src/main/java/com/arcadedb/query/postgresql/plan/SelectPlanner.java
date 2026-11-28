@@ -54,9 +54,11 @@ import com.arcadedb.query.postgresql.plan.join.BuildMemory;
 import com.arcadedb.query.postgresql.plan.join.JoinPlanner;
 import com.arcadedb.query.postgresql.plan.join.JoinWarnings;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -391,14 +393,19 @@ public class SelectPlanner {
     GroupingScope groupingScope = null;
     ExpressionCompiler outputCompiler = compiler;
     if (grouping) {
-      final List<Expression> groupAsts = groupExpressions(select);
+      final List<Expression> groupAsts = groupExpressions(select, compiler);
       final List<Evaluable> groupEvaluables = new ArrayList<>();
       for (final Expression expression : groupAsts) {
         final Evaluable key = compiler.compile(expression);
         Comparison.requireEquality(key.type());
         groupEvaluables.add(key);
       }
-      groupingScope = new GroupingScope(groupAsts, groupEvaluables, compiler, subqueryPlanner());
+      final List<RelationSource.Field> fields = source.columns();
+      // the same columns in this query alone, to tell a column of FROM from one of a query around it
+      final ExpressionCompiler local = new ExpressionCompiler(
+          new RelationScope(fields, catalog, subqueryPlanner(), source.outputs()), parameters);
+      groupingScope = new GroupingScope(groupAsts, groupEvaluables, compiler, local,
+          () -> determinedByPrimaryKey(select.from(), fields, groupEvaluables), subqueryPlanner());
       outputCompiler = new ExpressionCompiler(groupingScope, parameters);
     }
 
@@ -1379,8 +1386,11 @@ public class SelectPlanner {
     return select.distinctOn().stream().anyMatch(ExpressionCompiler::containsAggregate);
   }
 
-  /** The {@code GROUP BY} expressions, a position standing for the select list item it names. */
-  private static List<Expression> groupExpressions(final SelectStatement select) {
+  /**
+   * The {@code GROUP BY} expressions. A position stands for the select list item it names, and so does a name that no column of
+   * {@code FROM} has and an output column has ({@code findTargetlistEntrySQL92} of PostgreSQL: here a column of {@code FROM} wins).
+   */
+  private static List<Expression> groupExpressions(final SelectStatement select, final ExpressionCompiler input) {
     final List<Expression> out = new ArrayList<>();
     for (final Expression expression : select.groupBy()) {
       if (expression instanceof Expression.IntegerLiteral position) {
@@ -1390,30 +1400,97 @@ public class SelectPlanner {
         if (!(select.items().get(index - 1) instanceof SelectItem.Projection projection))
           throw new PostgreSQLFeatureNotSupportedException("GROUP BY the position of a * item is not supported");
         out.add(projection.expression());
-      } else
+      } else if (expression instanceof Expression.ColumnRef reference && reference.qualifier().isEmpty()
+          && !input.showsHere(reference.column()))
+        out.add(outputNamed(select, reference));
+      else
         out.add(expression);
     }
     return out;
   }
 
+  /** The expression of the output column that a name of {@code GROUP BY} is, the name itself when there is none. */
+  private static Expression outputNamed(final SelectStatement select, final Expression.ColumnRef reference) {
+    final String name = reference.column().value();
+    Expression found = null;
+    for (final SelectItem item : select.items())
+      if (item instanceof SelectItem.Projection projection && name.equals(
+          projection.alias() != null ? projection.alias().value() : outputName(projection.expression()))) {
+        if (found != null && !found.equals(projection.expression()))
+          throw new PostgreSQLEvaluationException("42702", "GROUP BY \"" + name + "\" is ambiguous");
+        found = projection.expression();
+      }
+    return found == null ? reference : found;
+  }
+
+  /**
+   * The columns of the input row that the {@code GROUP BY} keys determine: every column of a table whose primary key is among
+   * them ({@code check_functional_grouping} of PostgreSQL). Only a table has a primary key, not a view of
+   * {@code information_schema}, a derived table, or a {@code WITH} query, and a unique key does not count.
+   */
+  private BitSet determinedByPrimaryKey(final List<TableReference> from, final List<RelationSource.Field> fields,
+      final List<Evaluable> keys) {
+    final BitSet grouped = new BitSet();
+    for (final Evaluable key : keys)
+      if (key instanceof Evaluable.Slot slot)
+        grouped.set(slot.index());
+
+    final BitSet determined = new BitSet();
+    final Deque<TableReference> pending = new ArrayDeque<>(from);
+    while (!pending.isEmpty()) {
+      final TableReference next = pending.pop();
+      if (next instanceof TableReference.Join join) {
+        pending.push(join.left());
+        pending.push(join.right());
+      }
+      if (!(next instanceof TableReference.Table reference)
+          || reference.name().size() == 1 && ctes.containsKey(reference.name().get(0).value())
+          || InformationSchema.resolve(reference, catalog, database) != null)
+        continue;
+      final Table table = planTable(reference).table();
+      if (table.primaryKey() == null)
+        continue;
+      final String relation = reference.alias() != null ? reference.alias().value() : table.name();
+      final BitSet columns = new BitSet();
+      int keyColumns = 0;
+      for (int i = 0; i < fields.size(); i++)
+        if (fields.get(i).relation().equals(relation)) {
+          columns.set(i);
+          if (grouped.get(i) && table.primaryKey().columns().contains(fields.get(i).name()))
+            keyColumns++;
+        }
+      if (keyColumns == table.primaryKey().columns().size())
+        determined.or(columns);
+    }
+    return determined;
+  }
+
   /**
    * The scope of the expressions of a grouping query. An expression equal to a {@code GROUP BY} expression reads that key from
-   * the group row, an aggregate call is computed per group and read from the group row, and any other column reference is the
-   * error PostgreSQL gives: {@code 42803}.
+   * the group row, so does another name of a column that is a key, an aggregate call is computed per group and read from the
+   * group row, a column of a table whose primary key is grouped is read from the group row too, and any other column reference is
+   * the error PostgreSQL gives: {@code 42803}.
    */
   private static final class GroupingScope implements ExpressionCompiler.Scope {
     private final List<Expression>                groupAsts;
     private final List<Evaluable>                 groupEvaluables;
     private final ExpressionCompiler              inputCompiler;
+    private final ExpressionCompiler              localCompiler;
+    private final Supplier<BitSet>                determinedColumns;
     private final SubqueryPlanner                 subqueries;
     private final List<SelectPlan.AggregateSpec>  specs = new ArrayList<>();
     private final List<Expression.FunctionCall>   calls = new ArrayList<>();
+    /** The determined columns that the statement reads, in the order a group row holds them after the aggregates. */
+    private final List<Evaluable.Slot>            determined = new ArrayList<>();
+    private       BitSet                          determinable;
 
     GroupingScope(final List<Expression> groupAsts, final List<Evaluable> groupEvaluables, final ExpressionCompiler inputCompiler,
-        final SubqueryPlanner subqueries) {
+        final ExpressionCompiler localCompiler, final Supplier<BitSet> determinedColumns, final SubqueryPlanner subqueries) {
       this.groupAsts = groupAsts;
       this.groupEvaluables = groupEvaluables;
       this.inputCompiler = inputCompiler;
+      this.localCompiler = localCompiler;
+      this.determinedColumns = determinedColumns;
       this.subqueries = subqueries;
     }
 
@@ -1423,7 +1500,8 @@ public class SelectPlanner {
     }
 
     SelectPlan.GroupStage stage(final long capBytes) {
-      return new SelectPlan.GroupStage(groupEvaluables.toArray(new Evaluable[0]), specs, capBytes);
+      return new SelectPlan.GroupStage(groupEvaluables.toArray(new Evaluable[0]), specs, determined.toArray(new Evaluable[0]),
+          capBytes);
     }
 
     @Override
@@ -1445,13 +1523,35 @@ public class SelectPlanner {
     public Evaluable column(final Expression.ColumnRef reference) {
       // a column of the query around a correlated subquery is a constant for it, grouped or not
       try {
-        if (inputCompiler.compile(reference) instanceof Evaluable.Constant outer)
+        final Evaluable value = inputCompiler.compile(reference);
+        if (value instanceof Evaluable.Constant outer)
           return outer;
+        if (value instanceof Evaluable.Slot input && localCompiler.compile(reference) instanceof Evaluable.Slot local
+            && local.index() == input.index()) {
+          for (int i = 0; i < groupEvaluables.size(); i++)
+            if (groupEvaluables.get(i) instanceof Evaluable.Slot key && key.index() == input.index())
+              return new Evaluable.Slot(key.type(), key.typeName(), i);
+          if (determinable == null)
+            determinable = determinedColumns.get();
+          if (determinable.get(input.index()))
+            return determined(input);
+        }
       } catch (final PostgreSQLReferenceException notAColumn) {
         // the error below is the one this scope has always given
       }
       throw new PostgreSQLEvaluationException("42803", "column \"" + reference.column().value()
           + "\" must appear in the GROUP BY clause or be used in an aggregate function");
+    }
+
+    private Evaluable determined(final Evaluable.Slot input) {
+      int known = determined.indexOf(input);
+      if (known < 0) {
+        determined.add(input);
+        known = determined.size() - 1;
+      }
+      final int position = known;
+      // after the keys and the aggregates, whose number is known only when the whole statement is compiled
+      return new Evaluable.Node(input.type(), input.typeName(), row -> row[groupAsts.size() + specs.size() + position]);
     }
 
     @Override
