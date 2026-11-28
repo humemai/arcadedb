@@ -107,7 +107,7 @@ class PostgreSQLSelectFormsTest extends PostgreSQLSideBySideTestBase {
       "WITH last AS (SELECT DISTINCT ON (f_id) f_id, id FROM facts ORDER BY f_id, id DESC) SELECT * FROM last ORDER BY f_id",
       "SELECT EXISTS (SELECT DISTINCT ON (n) n FROM f ORDER BY n)",
       "SELECT id, (SELECT DISTINCT ON (facts.f_id) facts.id FROM facts WHERE facts.f_id = f.id ORDER BY facts.f_id, facts.id DESC)"
-          + " FROM f ORDER BY id");
+          + " FROM f ORDER BY f.id");
 
   /** Statements that both refuse with the same SQLSTATE. */
   private static final List<List<String>> ERRORS = List.of(
