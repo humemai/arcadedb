@@ -2811,6 +2811,23 @@ else
     fail "merge_group runs are never cancelled in progress (#9850)" "cancel-in-progress is not limited to pull_request"
 fi
 
+# Fork only: Maven Central answers the shared runners with HTTP 429, and one refused plugin turns a lane red before a
+# single test runs. So every job of mvn-test.yml that sets up a JDK (which rewrites settings.xml) sends Maven through
+# the mirror afterwards, before it runs Maven.
+unmirrored=$(awk '
+    function report() { if (jdk && !mirror) print job; jdk = 0; mirror = 0 }
+    /^  [a-z0-9-]+:$/ { report(); job = $1 }
+    /uses: actions\/setup-java@/ { jdk = 1; mirror = 0 }
+    /uses: \.\/\.github\/actions\/pg-maven-mirror/ { mirror = 1 }
+    /\.\/mvnw / && jdk && !mirror { early[job] = 1 }
+    END { report(); for (name in early) print name " runs Maven before the mirror" }
+' .github/workflows/mvn-test.yml)
+if [[ -z $unmirrored ]]; then
+    pass "every job of mvn-test.yml that sets up a JDK sends Maven Central through the mirror"
+else
+    fail "every job of mvn-test.yml that sets up a JDK sends Maven Central through the mirror" "$unmirrored"
+fi
+
 echo
 if [[ $failures -gt 0 ]]; then
     echo "$failures of $checks checks failed"

@@ -20,8 +20,7 @@
 # Fork only (humemai/arcadedb, PostgreSQL-style SQL prototype): the JDK and Maven setup of the prototype's own workflows
 # (pg-prototype-engine-tests.yml, pg-parity-tests.yml). Call it after actions/checkout. Drop it when anything goes upstream.
 #
-# Maven Central answers the shared GitHub runners with HTTP 429, so the requests for central go to the mirror that Google hosts,
-# and the resolver retries a 429 or a 503 more often than its default of 3 times. Each job has its own cache: the cache of
+# Maven Central goes through the mirror of .github/actions/pg-maven-mirror. Each job has its own cache: the cache of
 # setup-java has one key for every job and workflow of the repository, so the job that saved first decided what all the others
 # got, and an exact hit is never saved again.
 name: PostgreSQL prototype - JDK and Maven
@@ -36,25 +35,8 @@ runs:
         distribution: "temurin"
         java-version: 21
 
-    # After setup-java, which writes a ~/.m2/settings.xml of its own. MAVEN_ARGS is read by Maven 3.9 and later. MVNW_REPOURL
-    # makes the wrapper download the Maven distribution from the mirror too.
     - name: Send Maven Central through the mirror
-      shell: bash
-      run: |
-        mkdir -p "$HOME/.m2"
-        cat > "$HOME/.m2/settings.xml" <<'EOF'
-        <settings>
-          <mirrors>
-            <mirror>
-              <id>google-central</id>
-              <mirrorOf>central</mirrorOf>
-              <url>https://maven-central.storage-download.googleapis.com/maven2/</url>
-            </mirror>
-          </mirrors>
-        </settings>
-        EOF
-        echo "MVNW_REPOURL=https://maven-central.storage-download.googleapis.com/maven2" >> "$GITHUB_ENV"
-        echo "MAVEN_ARGS=-Daether.transport.http.retryHandler.count=6 -Daether.transport.http.retryHandler.serviceUnavailable=429,502,503,504" >> "$GITHUB_ENV"
+      uses: ./.github/actions/pg-maven-mirror
 
     # A cache saved by a run of the prototype branch is the one that every pull request into that branch can read. So only a run
     # of that branch saves (after the job succeeded), and every other run restores, which also keeps the branches from filling
