@@ -98,7 +98,7 @@ class AstTest {
 
   @Test
   void theShapesTheGrammarCannotProduceAreRefused() {
-    assertThatThrownBy(() -> select(List.of(), List.of())).isInstanceOf(IllegalArgumentException.class);
+    // an empty select list is a shape of EXISTS (SELECT FROM t); the parser refuses it everywhere else (StatementParserTest)
     assertThatThrownBy(() -> new Expression.InList(P1, integer(1), List.of(), false))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> new Expression.Case(P1, null, List.of(), null)).isInstanceOf(IllegalArgumentException.class);
