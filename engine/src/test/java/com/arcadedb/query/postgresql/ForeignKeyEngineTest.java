@@ -138,9 +138,26 @@ class ForeignKeyEngineTest extends TestHelper {
     assertThatThrownBy(() -> write("sql", "DELETE FROM parent WHERE id = 1")).hasStackTraceContaining("cannot be checked");
     database.command("sql", "CREATE INDEX ON child (pid) NOTUNIQUE");
     write("sql", "INSERT INTO child SET id = 11, pid = 1");
-    database.command("sql", "ALTER TYPE child CUSTOM foreignKeys = null");
+    database.command("sql", "ALTER TYPE child CUSTOM `arcadedb.foreignKeys` = null");
     write("sql", "DELETE FROM parent WHERE id = 1");
     database.getSchema().dropType("parent");
+  }
+
+  /** Custom values are open to users: the names the engine acts on are under its own prefix (fork issue #313). */
+  @Test
+  void customValuesOfAUserWithTheNamesOfTheRulesAreNone() {
+    database.command("sql", "CREATE DOCUMENT TYPE mine");
+    database.command("sql", "CREATE PROPERTY mine.name STRING");
+    database.command("sql", "ALTER TYPE mine CUSTOM foreignKeys = 'none of the engine'");
+    database.command("sql", "ALTER TYPE mine CUSTOM checkConstraints = 'none either'");
+    database.command("sql", "ALTER PROPERTY mine.name CUSTOM typeModifier = 'uppercase'");
+    write("sql", "INSERT INTO mine SET name = 'a'");
+    write("sql", "UPDATE mine SET name = 'b'");
+    reopenDatabase();
+    write("sql", "INSERT INTO mine SET name = 'c'");
+    write("sql", "DELETE FROM mine WHERE name = 'b'");
+    assertThat(count("mine")).isEqualTo(1);
+    assertThat(database.getSchema().getType("mine").getCustomValue("foreignKeys")).isEqualTo("none of the engine");
   }
 
   /**

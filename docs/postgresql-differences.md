@@ -146,7 +146,7 @@ The engine applies the length of a `varchar(n)` and the precision and scale of a
 | The type modifier in a result description (`RowDescription`) | the one of the column | `-1`: a driver reads the length and the precision from the catalog, not from the description of a result |
 | `char(n)` | a type | `0A000`; write `varchar(n)`, which does not pad |
 | An end of a link table | any compatible type | the length or precision of its key, or `text` |
-| Removing a limit | `ALTER TABLE ... ALTER COLUMN ... TYPE` | in `sql`: `ALTER PROPERTY t.c CUSTOM typeModifier = null`. A limit set by editing the custom value does not change or check the rows that exist until they are written again |
+| Removing a limit | `ALTER TABLE ... ALTER COLUMN ... TYPE` | in `sql`: ``ALTER PROPERTY t.c CUSTOM `arcadedb.typeModifier` = null``. A limit set by editing the custom value does not change or check the rows that exist until they are written again |
 
 ### ALTER TABLE
 
@@ -188,7 +188,7 @@ The engine evaluates each `CHECK` for every record that any language creates or 
 | --- | --- | --- |
 | What a check may read | any immutable or volatile function, the clock, the session | the columns of the row: no clock, no `random()`, no session function, and a `timestamptz` value only in a comparison of two `timestamptz` columns or `IS NULL`. The record id and the ends of a link table are refused too (`0A000`) |
 | `sql`, openCypher, Java API | not applicable | the same check at each record write, a validation error that names the constraint. openCypher saves a node built in two steps twice, and each save is checked |
-| A column that a check reads is dropped | the constraint goes with it | writes to the type are refused until the column is back, or `ALTER TYPE t CUSTOM checkConstraints = null` in `sql` removes the checks |
+| A column that a check reads is dropped | the constraint goes with it | writes to the type are refused until the column is back, or ``ALTER TYPE t CUSTOM `arcadedb.checkConstraints` = null`` in `sql` removes the checks |
 | An edge type with a check | not applicable | cannot be `LIGHTWEIGHT`: a lightweight edge has no record |
 | `pg_constraint`, `information_schema.check_constraints` | lists each check | not listed yet; `table_constraints` and `constraint_column_usage` list them |
 | The detail of a `23514` | the failing row | no detail |
@@ -213,7 +213,7 @@ INSERT INTO orders VALUES (1, 99);  -- 23503
 | Indexes | none over the referring columns | `CREATE TABLE` adds one unless a key covers exactly those columns. `CREATE UNIQUE INDEX` over those columns is then `0A000`: declare `UNIQUE` in `CREATE TABLE` |
 | `ALTER TABLE ... ADD CONSTRAINT` | the key is checked while the table is locked | supported, the rows are read after the key is registered, see [`ALTER TABLE`](#alter-table) |
 | Writes of `sql`, openCypher, and the Java API | | the engine checks the same keys at commit and runs the same actions then, so rows that a cascade will remove are visible until the commit. A violation refuses the commit |
-| `sql` schema changes | | `ALTER TYPE orders CUSTOM foreignKeys = null` removes the keys of a table, and a key declared through that custom value does not check the rows that exist. Dropping or renaming a referenced type is refused. When an index that a key needs is dropped, writes to both tables are `55000` until it is created again |
+| `sql` schema changes | | ``ALTER TYPE orders CUSTOM `arcadedb.foreignKeys` = null`` removes the keys of a table, and a key declared through that custom value does not check the rows that exist. Dropping or renaming a referenced type is refused. When an index that a key needs is dropped, writes to both tables are `55000` until it is created again |
 | `LOCK TYPE` in `sql` | | the lock list must include the referenced type, or the commit is refused |
 | High availability | | a commit that starts on a replica and has a key to check is refused: run it on the leader |
 

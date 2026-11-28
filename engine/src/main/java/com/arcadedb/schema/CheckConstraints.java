@@ -105,8 +105,8 @@ public final class CheckConstraints {
         constraints = CheckConstraint.fromJson(value.toString());
       } catch (final RuntimeException e) {
         compiled.add(new Compiled("", null, "The custom value " + CheckConstraint.CUSTOM_KEY + " of type '" + each.getName()
-            + "' is not a list of check constraints: remove it with ALTER TYPE `" + each.getName() + "` CUSTOM "
-            + CheckConstraint.CUSTOM_KEY + " = null"));
+            + "' is not a list of check constraints: remove it with ALTER TYPE `" + each.getName() + "` CUSTOM `"
+            + CheckConstraint.CUSTOM_KEY + "` = null"));
         continue;
       }
       for (final CheckConstraint constraint : constraints)
@@ -115,7 +115,7 @@ public final class CheckConstraints {
         } catch (final RuntimeException e) {
           compiled.add(new Compiled(constraint.name(), null, "The check constraint '" + constraint.name() + "' of type '"
               + each.getName() + "' cannot be checked: " + e.getMessage() + ". Restore what it reads, or remove the constraints"
-              + " of the type with ALTER TYPE `" + each.getName() + "` CUSTOM " + CheckConstraint.CUSTOM_KEY + " = null"));
+              + " of the type with ALTER TYPE `" + each.getName() + "` CUSTOM `" + CheckConstraint.CUSTOM_KEY + "` = null"));
         }
     }
     compiled.sort(Comparator.comparing(Compiled::name));

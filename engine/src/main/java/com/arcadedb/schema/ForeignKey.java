@@ -40,8 +40,12 @@ import java.util.Objects;
 public record ForeignKey(String name, List<String> columns, String referencedType, List<String> referencedColumns, Action onDelete,
     Action onUpdate) {
 
-  /** The custom value of a type that holds its foreign keys. */
-  public static final String CUSTOM_KEY = "foreignKeys";
+  /**
+   * The custom value of a type that holds its foreign keys. Custom values are open to users, so the ones the engine acts on have
+   * the prefix {@code arcadedb.}, which keeps them apart from a name of a user, such as {@code foreignKeys} (fork issue #313).
+   * {@code sql} writes such a name between backticks.
+   */
+  public static final String CUSTOM_KEY = "arcadedb.foreignKeys";
 
   /** What happens to the referring records when a referenced record is deleted or its key changes. */
   public enum Action {
