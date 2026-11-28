@@ -62,11 +62,11 @@ memory	M60	agent	read	no	same	00000	00000	-	-	SELECT EXISTS (SELECT 1 FROM entit
 memory	M61	agent	read	yes	same	00000	00000	-	-	SELECT * FROM entities WHERE name = 'Bob'	-	-	-
 memory	M62	agent	read	yes	follows	00000	42P01	no	no	SELECT * FROM relations ORDER BY id	-	-	relation "relations" does not exist
 memory	M63	agent	read	no	refused	00000	0A000	yes	no way	SELECT content FROM facts WHERE to_tsvector('english', content) @@ plainto_tsquery('english', 'dark') ORDER BY id	-	-	The operator @@ is not supported by the postgresql language
-memory	M64	agent	read	no	refused	00000	0A000	yes	yes	SELECT e.name, f.content FROM entities e CROSS JOIN LATERAL (SELECT content FROM facts WHERE entity_id = e.id ORDER BY id DESC LIMIT 1) f ORDER BY e.name	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+memory	M64	agent	read	no	same	00000	00000	-	-	SELECT e.name, f.content FROM entities e CROSS JOIN LATERAL (SELECT content FROM facts WHERE entity_id = e.id ORDER BY id DESC LIMIT 1) f ORDER BY e.name	-	-	-
 memory	M65	agent	read	no	same	00000	00000	-	-	SELECT e.name, string_agg(f.content, '; ' ORDER BY f.id) AS summary FROM entities e JOIN facts f ON f.entity_id = e.id GROUP BY e.name ORDER BY e.name	-	-	-
 memory	M66	agent	read	no	same	00000	00000	-	-	SELECT jsonb_agg(name ORDER BY name) AS names FROM entities	-	-	-
 memory	M67	agent	read	no	same	00000	00000	-	-	SELECT jsonb_object_agg(name, type) AS types FROM entities	-	-	-
-memory	M68	agent	read	no	refused	00000	0A000	yes	yes	SELECT key, value FROM entities, jsonb_each_text(metadata) WHERE name = 'Bob' ORDER BY key	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+memory	M68	agent	read	no	same	00000	00000	-	-	SELECT key, value FROM entities, jsonb_each_text(metadata) WHERE name = 'Bob' ORDER BY key	-	-	-
 memory	M69	agent	read	no	refused	00000	0A000	yes	no way	SELECT DISTINCT jsonb_object_keys(metadata) AS key FROM entities ORDER BY key	-	-	The function jsonb_object_keys(jsonb) is not supported by the postgresql language
 memory	M70	agent	read	no	refused	00000	0A000	yes	no way	SELECT jsonb_array_elements_text(metadata->'aliases') AS alias FROM entities WHERE name = 'Alice'	-	-	The function jsonb_array_elements_text(jsonb) is not supported by the postgresql language
 memory	M71	agent	write	no	same	00000	00000	-	-	UPDATE facts SET confidence = confidence + 0.05 WHERE entity_id = (SELECT id FROM entities WHERE name = 'Bob') AND confidence < 0.9 RETURNING id	-	-	-
@@ -135,8 +135,8 @@ web	W49	agent	read	no	same	00000	00000	-	-	SELECT email FROM users WHERE email I
 web	W50	agent	read	no	refused	00000	0A000	yes	no way	SELECT lower(email), upper(full_name), length(full_name), split_part(email, '@', 2) AS domain FROM users ORDER BY 1	-	-	The function split_part(text, unknown, integer) is not supported by the postgresql language
 web	W51	agent	read	no	same	00000	00000	-	-	SELECT concat(coalesce(full_name, 'unknown'), ' <', email, '>') AS label FROM users ORDER BY 1	-	-	-
 web	W52	agent	read	no	same	00000	00000	-	-	SELECT full_name || ' (' || id || ')' AS label FROM users WHERE email = 'ann@example.com'	-	-	-
-web	W53	agent	read	yes	refused	00000	0A000	yes	yes	SELECT d::date AS day, count(o.id) FROM generate_series(current_date - 6, current_date, interval '1 day') AS d LEFT JOIN orders o ON o.created_at::date = d::date GROUP BY 1 ORDER BY 1	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
-web	W54	agent	read	no	refused	00000	0A000	yes	yes	SELECT * FROM generate_series(1, 5) AS n	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+web	W53	agent	read	yes	follows	00000	42P01	no	no	SELECT d::date AS day, count(o.id) FROM generate_series(current_date - 6, current_date, interval '1 day') AS d LEFT JOIN orders o ON o.created_at::date = d::date GROUP BY 1 ORDER BY 1	-	-	relation "orders" does not exist
+web	W54	agent	read	no	same	00000	00000	-	-	SELECT * FROM generate_series(1, 5) AS n	-	-	-
 web	W55	agent	read	no	follows	00000	42P01	no	no	SELECT count(*) AS total, count(*) FILTER (WHERE status = 'paid') AS paid, count(*) FILTER (WHERE status = 'shipped') AS shipped FROM orders	-	-	relation "orders" does not exist
 web	W56	agent	read	no	follows	00000	42P01	no	no	SELECT status, count(*) FROM orders GROUP BY status ORDER BY status	-	-	relation "orders" does not exist
 web	W57	agent	read	no	same	00000	00000	-	-	SELECT rank() OVER (ORDER BY price DESC) AS rank, name FROM products ORDER BY rank	-	-	-
@@ -157,7 +157,7 @@ web	W71	agent	write	no	follows	00000	00000	-	-	INSERT INTO products AS p (sku, n
 web	W72	agent	write	no	follows	00000	42P01	no	no	DELETE FROM orders WHERE id = 999 RETURNING *	-	-	relation "orders" does not exist
 web	W73	agent	write	no	refused	00000	0A000	yes	yes	DELETE FROM order_items USING orders o WHERE order_items.order_id = o.id AND o.status = 'cancelled'	-	-	DELETE with USING is not supported by the postgresql language
 web	W74	agent	read	no	follows	00000	42P01	no	no	SELECT email FROM active_users ORDER BY email	-	-	relation "active_users" does not exist
-web	W75	agent	read	no	refused	00000	0A000	yes	yes	SELECT u.email, latest.id AS latest_order FROM users u LEFT JOIN LATERAL (SELECT id FROM orders o WHERE o.user_id = u.id ORDER BY id DESC LIMIT 1) latest ON true ORDER BY u.email	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+web	W75	agent	read	no	follows	00000	42P01	no	no	SELECT u.email, latest.id AS latest_order FROM users u LEFT JOIN LATERAL (SELECT id FROM orders o WHERE o.user_id = u.id ORDER BY id DESC LIMIT 1) latest ON true ORDER BY u.email	-	-	relation "orders" does not exist
 web	W76	agent	read	no	follows	00000	42P01	no	no	SELECT user_id, count(*) AS n FROM orders GROUP BY user_id HAVING count(*) >= 1 ORDER BY n DESC, user_id	-	-	relation "orders" does not exist
 web	W77	agent	read	no	follows	00000	42P01	no	no	SELECT DISTINCT status FROM orders ORDER BY status	-	-	relation "orders" does not exist
 web	W78	agent	read	no	refused	00000	0A000	no	no way	SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY price) AS median_price FROM products	-	-	WITHIN GROUP is not supported by the postgresql language
@@ -340,7 +340,7 @@ features	F15	probes	read	no	same	00000	00000	-	-	SELECT jsonb_set(meta, '{a}', '
 features	F16	probes	read	no	same	00000	00000	-	-	SELECT meta || '{"z": 1}'::jsonb FROM f WHERE id = 1	-	-	-
 features	F17	probes	read	no	same	00000	00000	-	-	SELECT meta - 'a' FROM f WHERE id = 1	-	-	-
 features	F18	probes	read	no	same	00000	00000	-	-	SELECT jsonb_typeof(meta) FROM f ORDER BY id	-	-	-
-features	F19	probes	read	no	refused	00000	0A000	yes	yes	SELECT id, k.key, k.value FROM f, jsonb_each(meta) k WHERE id = 2	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+features	F19	probes	read	no	same	00000	00000	-	-	SELECT id, k.key, k.value FROM f, jsonb_each(meta) k WHERE id = 2	-	-	-
 features	F20	probes	read	no	refused	00000	0A000	yes	no way	SELECT jsonb_object_keys(meta) FROM f WHERE id = 1 ORDER BY 1	-	-	The function jsonb_object_keys(jsonb) is not supported by the postgresql language
 features	F21	probes	read	no	refused	00000	0A000	yes	no way	SELECT jsonb_array_elements_text(meta->'l') FROM f WHERE id = 1	-	-	The function jsonb_array_elements_text(jsonb) is not supported by the postgresql language
 features	F22	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE id = ANY(ARRAY[1, 2]) ORDER BY id	-	-	-
@@ -349,7 +349,7 @@ features	F24	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE id <> AL
 features	F25	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE tags @> ARRAY['red'] ORDER BY id	-	-	-
 features	F26	probes	read	no	same	00000	00000	-	-	SELECT id FROM f WHERE tags && ARRAY['red', 'green'] ORDER BY id	-	-	-
 features	F27	probes	read	no	refused	00000	0A000	yes	no way	SELECT unnest(tags) FROM f WHERE id = 1	-	-	The function unnest(anyarray) is not supported by the postgresql language
-features	F28	probes	read	no	refused	00000	0A000	yes	yes	SELECT t.x FROM unnest(ARRAY[1, 2, 3]) AS t(x)	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+features	F28	probes	read	no	same	00000	00000	-	-	SELECT t.x FROM unnest(ARRAY[1, 2, 3]) AS t(x)	-	-	-
 features	F29	probes	read	no	refused	00000	0A000	yes	no way	SELECT array_length(tags, 1), cardinality(tags) FROM f ORDER BY id	-	-	The function array_length(anyarray, integer) is not supported by the postgresql language
 features	F30	probes	read	no	refused	00000	0A000	yes	yes	SELECT tags[1] FROM f ORDER BY id	-	-	A subscript is not supported by the postgresql language
 features	F31	probes	read	no	refused	00000	0A000	yes	no way	SELECT array_to_string(tags, ',') FROM f ORDER BY id	-	-	The function array_to_string(anyarray, unknown) is not supported by the postgresql language
@@ -382,9 +382,9 @@ features	F57	probes	read	no	refused	00000	0A000	yes	no way	SELECT ntile(2) OVER 
 features	F58	probes	read	no	refused	00000	0A000	yes	yes	SELECT id, count(*) OVER (), row_number() OVER w FROM f WINDOW w AS (ORDER BY id)	-	-	OVER W is not supported by the postgresql language
 features	F59	probes	read	no	refused	00000	0A000	yes	yes	SELECT name, rank() OVER (ORDER BY sum(n)) FROM f GROUP BY name ORDER BY name	-	-	A window function in a query with GROUP BY, HAVING or an aggregate is not supported
 features	F60	probes	read	no	refused	00000	0A000	yes	yes	WITH RECURSIVE t(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM t WHERE x < 3) SELECT x FROM t	-	-	WITH RECURSIVE is not supported by the postgresql language
-features	F61	probes	read	no	refused	00000	0A000	yes	yes	SELECT * FROM generate_series(1, 3) g(x)	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
-features	F62	probes	read	no	refused	00000	0A000	yes	yes	SELECT d::date FROM generate_series('2026-01-01'::timestamp, '2026-01-03'::timestamp, interval '1 day') d	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
-features	F63	probes	read	no	refused	00000	0A000	yes	yes	SELECT f.id, x.m FROM f, LATERAL (SELECT f.n * 2 AS m) x ORDER BY f.id	-	-	A subquery, a table function or LATERAL in FROM is not supported by the postgresql language
+features	F61	probes	read	no	same	00000	00000	-	-	SELECT * FROM generate_series(1, 3) g(x)	-	-	-
+features	F62	probes	read	no	same	00000	00000	-	-	SELECT d::date FROM generate_series('2026-01-01'::timestamp, '2026-01-03'::timestamp, interval '1 day') d	-	-	-
+features	F63	probes	read	no	same	00000	00000	-	-	SELECT f.id, x.m FROM f, LATERAL (SELECT f.n * 2 AS m) x ORDER BY f.id	-	-	-
 features	F64	probes	read	no	refused	00000	0A000	yes	no way	SELECT bool_or(n > 10), bool_and(n > 0) FROM f	-	-	The aggregate function bool_or is not supported
 features	F65	probes	read	no	refused	00000	0A000	no	no way	SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY n), stddev(n) FROM f	-	-	WITHIN GROUP is not supported by the postgresql language
 features	F66	probes	read	no	same	00000	00000	-	-	SELECT round(avg(price), 2), round(2.5), ceil(1.2), floor(1.8), abs(-3), mod(7, 3), power(2, 10), sqrt(16) FROM f	-	-	-

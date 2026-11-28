@@ -9,16 +9,16 @@ Statements that an LLM wrote ran on PostgreSQL 18 and on the `postgresql` langua
 | | |
 | --- | --- |
 | PostgreSQL | PostgreSQL 18.7 (Debian 18.7-1.pgdg12+2), `C` collation, time zone UTC |
-| engine | [`88a246fa7a`](https://github.com/humemai/arcadedb/commit/88a246fa7a8e3e94f7ae5502b8621b0d374ba848) |
-| CI run | [46081172657](https://github.com/humemai/arcadedb/actions/runs/46081172657) |
-| date | 2026-11-27 (UTC) |
+| engine | [`5d80770d1a`](https://github.com/humemai/arcadedb/commit/5d80770d1aa30a158eaaf2fbd44ebd83a30f544c) |
+| CI run | [46129387641](https://github.com/humemai/arcadedb/actions/runs/46129387641) |
+| date | 2026-11-28 (UTC) |
 
 ## Numbers
 
 | number | what it counts | agent scripts | probes | target |
 | --- | --- | ---: | ---: | ---: |
-| M1 | non-volatile statements that match PostgreSQL 18 as written | 129 of 248 (52.0%) | 204 of 331 (61.6%) | not set |
-| M2 | errors of the language's own that name a next step | 46 of 53 (86.8%) | 97 of 111 (87.4%) | 100% |
+| M1 | non-volatile statements that match PostgreSQL 18 as written | 132 of 248 (53.2%) | 209 of 331 (63.1%) | not set |
+| M2 | errors of the language's own that name a next step | 41 of 48 (85.4%) | 92 of 106 (86.8%) | 100% |
 | M3 | silent differences | 0 | 0 | 0 |
 
 ## M1 by class
@@ -29,10 +29,10 @@ One refused `CREATE TABLE` hides every later statement on its table, so the clas
 | --- | ---: | ---: |
 | schema | 19 of 33 (57.6%) | 60 of 81 (74.1%) |
 | write | 25 of 50 (50.0%) | 41 of 58 (70.7%) |
-| read | 63 of 114 (55.3%) | 77 of 157 (49.0%) |
+| read | 66 of 114 (57.9%) | 82 of 157 (52.2%) |
 | transaction | 15 of 25 (60.0%) | 25 of 32 (78.1%) |
 | discovery | 7 of 26 (26.9%) | 1 of 3 (33.3%) |
-| all | 129 of 248 (52.0%) | 204 of 331 (61.6%) |
+| all | 132 of 248 (53.2%) | 209 of 331 (63.1%) |
 
 ## Every statement, by verdict
 
@@ -40,10 +40,10 @@ Volatile statements are included here.
 
 | verdict | meaning | agent scripts | probes |
 | --- | --- | ---: | ---: |
-| same | the same columns, rows, and count as PostgreSQL, or the same SQLSTATE | 134 | 222 |
-| refused | the language fails where PostgreSQL succeeds | 53 | 103 |
+| same | the same columns, rows, and count as PostgreSQL, or the same SQLSTATE | 137 | 227 |
+| refused | the language fails where PostgreSQL succeeds | 48 | 98 |
 | other code | both fail, with different codes | 0 | 8 |
-| after an earlier failure | differs from PostgreSQL, and equals what PostgreSQL answers after it has run only what the language ran | 78 | 7 |
+| after an earlier failure | differs from PostgreSQL, and equals what PostgreSQL answers after it has run only what the language ran | 80 | 7 |
 | listed difference | succeeds with another answer that the list of kept differences names | 2 | 15 |
 | silent difference | succeeds where PostgreSQL answers otherwise or refuses | 0 | 0 |
 | all | | 267 | 355 |
@@ -78,7 +78,7 @@ Volatile statements are included here.
 
 ## M2: errors that name no next step
 
-21 errors of the language name no next step. Of all 164 errors of its own, 148 use the hint field of the protocol, and 49 of those hints say that there is no way yet. Names and values are taken out of the messages.
+21 errors of the language name no next step. Of all 154 errors of its own, 138 use the hint field of the protocol, and 49 of those hints say that there is no way yet. Names and values are taken out of the messages.
 
 | message | statements |
 | --- | ---: |

@@ -1,5 +1,5 @@
 key	value
 PostgreSQL	PostgreSQL 18.7 (Debian 18.7-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
-engine	88a246fa7a8e3e94f7ae5502b8621b0d374ba848
-CI run	https://github.com/humemai/arcadedb/actions/runs/46081172657
-date	2026-11-27T23:15:28Z
+engine	5d80770d1aa30a158eaaf2fbd44ebd83a30f544c
+CI run	https://github.com/humemai/arcadedb/actions/runs/46129387641
+date	2026-11-28T09:15:02Z
