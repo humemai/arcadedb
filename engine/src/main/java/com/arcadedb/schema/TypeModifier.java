@@ -29,15 +29,15 @@ import java.math.RoundingMode;
  * {@code CREATE TABLE} of the {@code postgresql} language keeps it in the custom value {@value #CUSTOM_KEY} of the property,
  * {@code n} on a {@code STRING} property and {@code p,s} on a {@code DECIMAL} one, and the engine applies it to every record that
  * any language creates or updates, as PostgreSQL's assignment casts do (see {@link #assign}). Records that exist when the custom
- * value is set are not changed or checked until they are written again. {@code ALTER PROPERTY t.c CUSTOM typeModifier = null} of
- * the {@code sql} language removes the limit.
+ * value is set are not changed or checked until they are written again. {@code ALTER PROPERTY t.c CUSTOM arcadedb_typeModifier
+ * = null} of the {@code sql} language removes the limit.
  *
  * @param size  the length of a string in characters, or the precision of a number
  * @param scale the scale of a number, {@code null} for the length of a string
  */
 public record TypeModifier(int size, Integer scale) {
-  /** The key of the custom value of a property. */
-  public static final String CUSTOM_KEY = "typeModifier";
+  /** The key of the custom value of a property, under the engine's prefix as {@link ForeignKey#CUSTOM_KEY}. */
+  public static final String CUSTOM_KEY = "arcadedb_typeModifier";
 
   /** The longest {@code varchar(n)} of PostgreSQL. */
   private static final int MAX_LENGTH    = 10 * 1024 * 1024;
