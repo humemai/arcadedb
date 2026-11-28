@@ -95,6 +95,8 @@ import com.arcadedb.query.facet.FacetResults;
 import com.arcadedb.query.opencypher.optimizer.statistics.GraphStatisticsCache;
 import com.arcadedb.query.opencypher.query.CypherPlanCache;
 import com.arcadedb.query.opencypher.query.CypherStatementCache;
+import com.arcadedb.query.postgresql.PostgreSQLQueryEngine;
+import com.arcadedb.query.postgresql.eval.ForwardedParameters;
 import com.arcadedb.query.select.Select;
 import com.arcadedb.query.sql.executor.CommandTimeoutOverride;
 import com.arcadedb.query.sql.executor.InternalResultSet;
@@ -6233,7 +6235,11 @@ public class RaftReplicatedDatabase implements DatabaseInternal, HAReplicatedDat
     final JSONObject body = new JSONObject();
     body.put("language", language);
     body.put("command", query);
-    if (mapArgs != null && !mapArgs.isEmpty())
+    if (PostgreSQLQueryEngine.ENGINE_NAME.equalsIgnoreCase(language)) {
+      // The postgresql language types a parameter by its Java class, which plain JSON loses (fork issue #341)
+      if (mapArgs != null && !mapArgs.isEmpty() || positionalArgs != null && positionalArgs.length > 0)
+        body.put(ForwardedParameters.REQUEST_FIELD, ForwardedParameters.encode(mapArgs, positionalArgs));
+    } else if (mapArgs != null && !mapArgs.isEmpty())
       body.put("params", new JSONObject(mapArgs));
     else if (positionalArgs != null && positionalArgs.length > 0) {
       // Use ordinal-map format {"0": v0, "1": v1, ...} so the leader's PostCommandHandler

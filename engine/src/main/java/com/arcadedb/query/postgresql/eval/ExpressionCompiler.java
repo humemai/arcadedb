@@ -411,7 +411,7 @@ public final class ExpressionCompiler {
   }
 
   /** The name PostgreSQL gives the type of a value that the language has no type for, in parentheses, when it is known. */
-  private static String missingType(final Object value) {
+  static String missingType(final Object value) {
     if (value instanceof java.time.LocalTime)
       return " (time)";
     if (value instanceof java.time.OffsetTime)

@@ -42,8 +42,11 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
+import java.util.TreeMap;
 
 import static com.arcadedb.postgres.PostgresWireMessages.WireMessage;
 import static com.arcadedb.postgres.PostgresWireMessages.messageTypesOf;
@@ -335,6 +338,155 @@ class PostgresFollowerForwardingIT extends BaseRaftHATest {
   }
 
   /** A table of two notes, {@code 1 a} and {@code 2 b}, that every server has. */
+  /**
+   * One INSERT for each kind of value that psycopg binds, then an UPDATE and a DELETE with values of no declared type. Each
+   * statement is a run of its own in autocommit, which a follower forwards to the leader. It prints {@code ok} or the SQLSTATE.
+   */
+  private static final String BOUND_VALUES = """
+      import datetime as dt
+      import sys
+      import uuid
+      from decimal import Decimal
+
+      import psycopg
+      from psycopg.types.json import Json, Jsonb
+      from psycopg.types.numeric import Float4, Int2, Int8
+
+      run = "@RUN@"
+      aware = dt.datetime(2026, 11, 29, 10, 11, 12, 123456, tzinfo=dt.timezone.utc)
+      naive = aware.replace(tzinfo=None)
+      day = dt.date(2026, 11, 29)
+
+      # name, column, expression, value
+      cases = [
+          ("str", "shown", "%s", "changed"),
+          ("str-as-integer", "shown", "(7 = %s)::text", "7"),
+          ("str-binary", "shown", "%b", "binary"),
+          ("str-array", "ta", "%s", ["a", "b,c"]),
+          ("str-array-empty", "ta", "%s", []),
+          ("str-array-literal", "ta", "%s", "{a,b}"),
+          ("json", "j", "%s", Json({"k": 1})),
+          ("json-binary", "shown", "%b::text", Json({"k": 1})),
+          ("jsonb", "j", "%s", Jsonb({"k": 1})),
+          ("jsonb-string", "shown", "%s::text", Jsonb("x")),
+          ("jsonb-binary", "j", "%b", Jsonb({"k": [1, None]})),
+          ("bool", "shown", "%s::text", True),
+          ("int2", "i4", "%s", Int2(5)),
+          ("int8-product", "shown", "(%s * 2000000000)::text", Int8(5)),
+          ("float4-product", "shown", "(%s * 3)::text", Float4(0.1)),
+          ("float8-nan", "f8", "%s", float("nan")),
+          ("float8-infinity", "shown", "%s::text", float("-inf")),
+          ("numeric-scale", "shown", "%s::text", Decimal("10.50")),
+          ("numeric", "n", "%s", Decimal("12345678901234567890.123456789")),
+          ("numeric-array", "na", "%s", [Decimal("1.50")]),
+          ("int-array", "ia", "%s", [1, 2]),
+          ("bytea", "by", "%s", b"\\x00\\x01\\xff"),
+          ("bytea-binary", "by", "%b", b"\\x00\\x01\\xff"),
+          ("bytea-array", "bya", "%s", [b"\\x01"]),
+          ("date", "d", "%s", day),
+          ("date-shown", "shown", "%s::text", day),
+          ("date-array", "da", "%s", [day]),
+          ("timestamp", "ts", "%s", naive),
+          ("timestamp-binary", "shown", "%b::text", naive),
+          ("timestamp-array", "tsa", "%s", [naive]),
+          ("timestamptz", "shown", "%s::text", aware),
+          ("timestamptz-binary", "shown", "%b::text", aware),
+          ("uuid", "u", "%s", uuid.UUID(int=341)),
+          ("uuid-shown", "shown", "%s::text", uuid.UUID(int=341)),
+          ("time", "shown", "%s::text", dt.time(10, 11, 12)),
+          ("timetz", "shown", "%s::text", dt.time(10, 11, 12, tzinfo=dt.timezone.utc)),
+          ("interval", "shown", "%s::text", dt.timedelta(days=1, seconds=2)),
+          ("null", "shown", "%s", None),
+      ]
+
+      with psycopg.connect(sys.argv[1], autocommit=True) as conn:
+
+          def attempt(name, sql, values):
+              try:
+                  conn.execute(sql, values)
+                  print(name, "ok")
+              except psycopg.Error as e:
+                  print(name, e.sqlstate)
+                  print(name, e, file=sys.stderr)
+
+          for name, column, expression, value in cases:
+              attempt(name, f"INSERT INTO bound341 (id, {column}) VALUES ('{run}:{name}', {expression})", (value,))
+          attempt("update", "UPDATE bound341 SET shown = %s WHERE id = %s AND i4 = %s", ("changed", run + ":update", "7"))
+          attempt("delete", "DELETE FROM bound341 WHERE id = %s AND i4 = %s", (run + ":delete", "7"))
+      """;
+
+  /**
+   * Fork issue #341: a value that a client binds to a write of the {@code postgresql} language through a follower arrives at
+   * the leader as the value it is when the client is connected to the leader, or is refused as it is there. Every case runs
+   * once against the leader and once against a follower, and the answers and the stored rows are compared.
+   */
+  @Test
+  @Timeout(240)
+  void theBoundValuesOfAWriteOnAFollowerAreThoseOfAWriteOnTheLeader() throws Exception {
+    final int leader = requireLeaderIndex();
+    final Database leaderDb = getServerDatabase(leader, getDatabaseName());
+    leaderDb.command("postgresql", "CREATE TABLE bound341 (id text PRIMARY KEY, shown text, i4 int, f8 float8, n numeric, "
+        + "d date, ts timestamp, u uuid, by bytea, j jsonb, ta text[], ia int[], na numeric[], bya bytea[], da date[], "
+        + "tsa timestamp[])");
+    for (final String run : List.of("leader", "follower"))
+      leaderDb.command("postgresql",
+          "INSERT INTO bound341 (id, shown, i4) VALUES ('" + run + ":update', 'a', 7), ('" + run + ":delete', 'a', 7)");
+    waitForAllServers();
+    final int follower = firstFollowerOf(leader);
+
+    final String onLeader = psycopg(leader, BOUND_VALUES.replace("@RUN@", "leader"));
+    final String onFollower = psycopg(follower, BOUND_VALUES.replace("@RUN@", "follower"));
+    waitForAllServers();
+
+    for (int i = 0; i < getServerCount(); i++) {
+      final Map<String, String> expected = outcomes(i, "leader", onLeader);
+      final Map<String, String> actual = outcomes(i, "follower", onFollower);
+      final List<String> differences = new ArrayList<>();
+      expected.forEach((name, outcome) -> {
+        if (!outcome.equals(actual.get(name)))
+          differences.add("\n" + name + ": on the leader <" + outcome + ">, through the follower <" + actual.get(name) + ">");
+      });
+      assertThat(differences).as("server %d", i).isEmpty();
+      assertThat(actual.keySet()).isEqualTo(expected.keySet());
+      // the two runs do not merely agree on a failure: only the types the language does not have are refused
+      expected.forEach((name, outcome) -> assertThat(outcome).as(name)
+          .startsWith(List.of("time", "timetz", "interval").contains(name) ? "0A000" : "ok"));
+      assertThat(actual.get("str")).isEqualTo("ok {shown=String [changed]}");
+    }
+  }
+
+  /** What each case of a run printed, and the values that its row of {@code bound341} holds on a server. */
+  private Map<String, String> outcomes(final int serverIndex, final String run, final String printed) {
+    final Map<String, String> rows = new TreeMap<>();
+    try (final ResultSet result = getServerDatabase(serverIndex, getDatabaseName()).query("sql", "SELECT FROM bound341")) {
+      while (result.hasNext()) {
+        final Result row = result.next();
+        final String id = row.getProperty("id");
+        if (id.startsWith(run + ":"))
+          rows.put(id.substring(run.length() + 1), values(row, "id"));
+      }
+    }
+    final Map<String, String> outcomes = new TreeMap<>();
+    for (final String line : printed.split("\n")) {
+      final String[] parts = line.split(" ", 2);
+      outcomes.put(parts[0], parts[1] + " " + rows.getOrDefault(parts[0], "no row"));
+    }
+    return outcomes;
+  }
+
+  /** The values of a row, each with its class, but for the property that names the row. */
+  private static String values(final Result row, final String key) {
+    final Map<String, String> values = new TreeMap<>();
+    for (final String name : row.getPropertyNames()) {
+      final Object value = row.getProperty(name);
+      if (value != null && !name.equals(key) && !name.startsWith("@"))
+        // the items of a list too: a byte[] in one would print as its identity
+        values.put(name, value.getClass().getSimpleName() + " "
+            + Arrays.deepToString(new Object[] { value instanceof List<?> items ? items.toArray() : value }));
+    }
+    return values.toString();
+  }
+
   private void createNotes(final int leader, final String table) {
     final Database leaderDb = getServerDatabase(leader, getDatabaseName());
     leaderDb.command("postgresql", "CREATE TABLE " + table + " (id int PRIMARY KEY, note text NOT NULL)");

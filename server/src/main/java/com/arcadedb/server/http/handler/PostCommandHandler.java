@@ -25,6 +25,8 @@ import com.arcadedb.database.async.AsyncResultsetCallback;
 import com.arcadedb.exception.CommandSQLParsingException;
 import com.arcadedb.log.LogManager;
 import com.arcadedb.query.facet.FacetResults;
+import com.arcadedb.query.postgresql.PostgreSQLQueryEngine;
+import com.arcadedb.query.postgresql.eval.ForwardedParameters;
 import com.arcadedb.query.sql.antlr.SQLASTBuilder;
 import com.arcadedb.query.sql.antlr.SQLAntlrParser;
 import com.arcadedb.query.sql.executor.ExecutionPlan;
@@ -501,6 +503,12 @@ public class PostCommandHandler extends AbstractQueryHandler {
     // AbstractServerHttpHandler, instead of being wrapped by the surrounding TransactionException
     // and downgraded to HTTP 500.
     paramMap = AbstractQueryHandler.decodeTypedJsonMarkers(paramMap);
+
+    // The parameters of a postgresql write that a replica forwards, each of the class it had there (fork issue #341). After
+    // the markers, which are not read inside them: a jsonb value of the shape of a marker stays the value it is
+    if (PostgreSQLQueryEngine.ENGINE_NAME.equalsIgnoreCase(language)
+        && requestMap.get(ForwardedParameters.REQUEST_FIELD) instanceof String forwarded)
+      paramMap = ForwardedParameters.decode(forwarded);
 
     // The cap used to push a LIMIT down into a command that states none: the caller's own 'limit' when
     // present, the configured default otherwise. A command that already carries a LIMIT is left untouched and
