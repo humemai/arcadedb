@@ -770,8 +770,10 @@ public class PostgresNetworkExecutor extends Thread {
         try {
           final boolean ownTransaction = isRetriedOnItsOwn(portal, portalName);
           executedSinceSync = true;
-          if (!ownTransaction)
+          if (!ownTransaction) {
             beginImplicitTransactionBlock(portal);
+            noteStatementsThatFollow(portal, portalName);
+          }
           final Map<String, PostgresType> fixedColumns = fixedColumnsOf(portal, true);
           if (fixedColumns != null)
             // A projection of declared properties names its columns from the schema (issue #6659): the statement is
@@ -1130,8 +1132,10 @@ public class PostgresNetworkExecutor extends Thread {
       executedSinceSync = true;
       // Not "apply, then decide": applyTransactionControl() clears the marker it acted on, so a guard inside
       // beginImplicitTransactionBlock() reading portal.transactionControl afterwards would never see one.
-      if (!applyTransactionControl(portal) && !ownTransaction)
+      if (!applyTransactionControl(portal) && !ownTransaction) {
         beginImplicitTransactionBlock(portal);
+        noteStatementsThatFollow(portal, null);
+      }
       // A SET is applied here and not at Parse (issue #8135), for the same reason as the transaction control above.
       applyPendingSetting(sessionSettings, portal);
       if (portal.sessionCommand != null) {
@@ -5870,6 +5874,40 @@ public class PostgresNetworkExecutor extends Thread {
       // (issue #11588). A BEGIN that joins it later declares it the client's, which ends that
       ((DatabaseInternal) database).getTransaction().setImplicit(true);
     }
+  }
+
+  /**
+   * Says to the {@code postgresql} language whether more statements follow the schema change that this portal is about to run in
+   * the implicit block of its run (fork issue #335). A failure of a later statement rolls the block back, which cannot take back
+   * what is not of the transaction: what a {@code DROP} dropped and, on a replica, every schema change, which the leader commits
+   * as it runs it. The language refuses such a {@code DROP}, and on a replica every such schema change is refused here. To know
+   * what follows, this waits for the next messages, as {@link #isRetriedOnItsOwn} does.
+   *
+   * @param described the name of the portal when a Describe is about to run it, {@code null} at an Execute
+   */
+  private void noteStatementsThatFollow(final PostgresPortal portal, final String described) {
+    if (portal.executed || portal.ignoreExecution || portal.catalogQuery || portal.emptyQuery || explicitTransactionStarted
+        || !PostgresQueryLanguages.POSTGRESQL.equals(portal.language) || !database.isTransactionActive())
+      return;
+    final PostgreSQLQueryEngine engine = (PostgreSQLQueryEngine) ((DatabaseInternal) database).getQueryEngine(
+        PostgresQueryLanguages.POSTGRESQL);
+    try {
+      if (!engine.analyze(portal.query).isDDL())
+        return;
+    } catch (final RuntimeException refused) {
+      // the statement is refused again, and answered, when it runs
+      return;
+    }
+    boolean follow;
+    try {
+      follow = !PostgresAutocommitRetry.onlySyncFollows(channel.getDataInput(), described);
+    } catch (final IOException e) {
+      // what follows is unknown, so the statement counts as followed: nothing is dropped
+      follow = true;
+    }
+    if (follow && isHAFollower())
+      engine.checkSchemaChangeThatStatementsFollowOnReplica(portal.query);
+    PostgreSQLQueryEngine.statementsFollow(database, follow);
   }
 
   /**

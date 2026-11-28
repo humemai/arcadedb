@@ -242,6 +242,32 @@ public class PostgreSQLQueryEngine implements QueryEngine {
         + " outside the block (" + statement.position() + ")");
   }
 
+  /** The key under which a server says that more statements share the transaction of the one it runs next. */
+  private static final String FOLLOWED = "postgresql:followed";
+
+  /**
+   * For a server that runs several statements in a transaction that it opened, as the PostgreSQL protocol does for the messages
+   * before one {@code Sync} (fork issue #335): says, before a schema change runs, whether more statements follow it in the
+   * current transaction. The failure of one of them rolls the transaction back, which would not bring back what a {@code DROP}
+   * dropped, so a {@code DROP} that more statements follow is refused before it drops anything.
+   */
+  public static void statementsFollow(final Database database, final boolean follow) {
+    ((DatabaseInternal) database).getTransaction().setAttachment(FOLLOWED, follow);
+  }
+
+  /**
+   * A schema change that more statements follow is refused on a replica (fork issue #335): the leader would run it as a
+   * transaction of its own, which the failure of a later statement would not roll back.
+   */
+  public void checkSchemaChangeThatStatementsFollowOnReplica(final String query) {
+    final Statement statement = parse(query);
+    throw new PostgreSQLFeatureNotSupportedException(statementName(statement) + " followed by other statements of the same batch"
+        + " or pipeline is not supported by the postgresql language on a replica of a high availability cluster, because it would"
+        + " run on the leader at once (" + statement.position() + ")",
+        "A failure of a later statement would not take it back: send the statement on its own, in autocommit, or connect to the"
+            + " leader");
+  }
+
   @Override
   public ResultSet query(final String query, final ContextConfiguration configuration, final Map<String, Object> parameters) {
     return execute(query, Parameters.of(parameters), true);
@@ -372,7 +398,10 @@ public class PostgreSQLQueryEngine implements QueryEngine {
             || database.getTransaction().hasChanges()))
           throw new PostgreSQLFeatureNotSupportedException("DROP " + drop.kind() + " inside a transaction block is not supported"
               + " by the postgresql language, because a rollback would not bring back what it drops (" + drop.position() + ")");
-        return new DropPlan(database, catalog(), drop).execute();
+        // nor when the server says that statements follow it, whose failure rolls that transaction back (fork issue #335)
+        final boolean followed = database.isTransactionActive()
+            && Boolean.TRUE.equals(database.getTransaction().getAttachment(FOLLOWED));
+        return new DropPlan(database, catalog(), drop, followed).execute();
       }
       // the time of the transaction, which every clock function and default of the statement answers (fork issue #222)
       final Parameters timed = parameters.at(TransactionClock.now(database));
