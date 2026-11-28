@@ -137,6 +137,9 @@ public final class ForwardedParameters {
           items.put((Object) encodeValue(item, parameter, depth + 1));
         yield tagged("array", array.getClass().getComponentType().getSimpleName()).put((Object) items);
       }
+      // ahead of the collections and the maps: a JSONObject is a Map
+      case JSONObject object -> tagged("jsonObject", object.toString());
+      case JSONArray array -> tagged("jsonArray", array.toString());
       case Collection<?> collection -> {
         final JSONArray items = new JSONArray();
         for (final Object item : collection)
@@ -152,8 +155,6 @@ public final class ForwardedParameters {
         }
         yield tagged("map").put((Object) entries);
       }
-      case JSONObject object -> tagged("jsonObject", object.toString());
-      case JSONArray array -> tagged("jsonArray", array.toString());
       default -> throw cannotSend(value, parameter);
     };
   }

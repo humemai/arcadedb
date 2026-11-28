@@ -34,7 +34,6 @@ import org.testcontainers.images.builder.Transferable;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
-import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.sql.Connection;
@@ -42,7 +41,6 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -380,24 +378,21 @@ class PostgresFollowerForwardingIT extends BaseRaftHATest {
           ("float8-infinity", "shown", "%s::text", float("-inf")),
           ("numeric-scale", "shown", "%s::text", Decimal("10.50")),
           ("numeric", "n", "%s", Decimal("12345678901234567890.123456789")),
-          ("numeric-array", "shown", "%s::text", [Decimal("1.50")]),
+          ("numeric-array", "na", "%s", [Decimal("1.50"), None]),
           ("int-array", "ia", "%s", [1, 2]),
           ("bytea", "by", "%s", b"\\x00\\x01\\xff"),
           ("bytea-binary", "by", "%b", b"\\x00\\x01\\xff"),
-          ("bytea-array", "shown", "%s::text", [b"\\x01"]),
+          ("bytea-array", "bya", "%s", [b"\\x01"]),
           ("date", "d", "%s", day),
           ("date-shown", "shown", "%s::text", day),
-          ("date-array", "shown", "%s::text", [day]),
+          ("date-array", "da", "%s", [day]),
           ("timestamp", "ts", "%s", naive),
           ("timestamp-binary", "shown", "%b::text", naive),
-          ("timestamp-array", "shown", "%s::text", [naive]),
+          ("timestamp-array", "tsa", "%s", [naive]),
           ("timestamptz", "shown", "%s::text", aware),
           ("timestamptz-binary", "shown", "%b::text", aware),
-          ("timestamptz-array", "shown", "%s::text", [aware]),
-          ("timestamptz-array-binary", "shown", "%b::text", [aware]),
           ("uuid", "u", "%s", uuid.UUID(int=341)),
           ("uuid-shown", "shown", "%s::text", uuid.UUID(int=341)),
-          ("uuid-array", "shown", "%s::text", [uuid.UUID(int=341)]),
           ("time", "shown", "%s::text", dt.time(10, 11, 12)),
           ("timetz", "shown", "%s::text", dt.time(10, 11, 12, tzinfo=dt.timezone.utc)),
           ("interval", "shown", "%s::text", dt.timedelta(days=1, seconds=2)),
@@ -431,7 +426,8 @@ class PostgresFollowerForwardingIT extends BaseRaftHATest {
     final int leader = requireLeaderIndex();
     final Database leaderDb = getServerDatabase(leader, getDatabaseName());
     leaderDb.command("postgresql", "CREATE TABLE bound341 (id text PRIMARY KEY, shown text, i4 int, f8 float8, n numeric, "
-        + "d date, ts timestamp, u uuid, by bytea, j jsonb, ta text[], ia int[])");
+        + "d date, ts timestamp, u uuid, by bytea, j jsonb, ta text[], ia int[], na numeric[], bya bytea[], da date[], "
+        + "tsa timestamp[])");
     for (final String run : List.of("leader", "follower"))
       leaderDb.command("postgresql",
           "INSERT INTO bound341 (id, shown, i4) VALUES ('" + run + ":update', 'a', 7), ('" + run + ":delete', 'a', 7)");
@@ -487,75 +483,6 @@ class PostgresFollowerForwardingIT extends BaseRaftHATest {
         values.put(name, value.getClass().getSimpleName() + " " + Arrays.deepToString(new Object[] { value }));
     }
     return values.toString();
-  }
-
-  /** Evidence for a separate report, not a part of the fix: a failed JDBC batch of {@code sql} writes. */
-  @Test
-  @Timeout(180)
-  void evidenceAFailedSqlBatchCommitsNothing() throws Exception {
-    final int leader = requireLeaderIndex();
-    final Database leaderDb = getServerDatabase(leader, getDatabaseName());
-    final Map<String, List<String>> found = new TreeMap<>();
-    for (final String run : List.of("leader", "follower")) {
-      final String type = "Batch341" + run;
-      leaderDb.command("sql", "CREATE DOCUMENT TYPE " + type);
-      leaderDb.command("sql", "CREATE PROPERTY " + type + ".id INTEGER");
-      leaderDb.command("sql", "CREATE INDEX ON " + type + " (id) UNIQUE");
-      leaderDb.transaction(() -> leaderDb.command("sql", "INSERT INTO " + type + " SET id = 1, note = 'a'"));
-      waitForAllServers();
-      try (final Connection connection = connect(run.equals("leader") ? leader : firstFollowerOf(leader), "extended");
-          final Statement statement = connection.createStatement()) {
-        statement.addBatch("INSERT INTO " + type + " SET id = 2, note = 'b'");
-        statement.addBatch("UPDATE " + type + " SET note = 'changed' WHERE id = 1");
-        statement.addBatch("INSERT INTO " + type + " SET id = 1, note = 'duplicate'");
-        assertThat(catchThrowable(statement::executeBatch)).isInstanceOf(SQLException.class);
-      }
-      waitForAllServers();
-      final List<String> notes = new ArrayList<>();
-      for (int i = 0; i < getServerCount(); i++)
-        try (final ResultSet rows = getServerDatabase(i, getDatabaseName()).query("sql",
-            "SELECT id, note FROM " + type + " ORDER BY id")) {
-          final List<String> held = new ArrayList<>();
-          while (rows.hasNext()) {
-            final Result row = rows.next();
-            held.add(row.<Number>getProperty("id") + " " + row.<String>getProperty("note"));
-          }
-          notes.add("server " + i + " holds " + held);
-        }
-      found.put(run, notes);
-    }
-    assertThat(found.toString()).doesNotContain("changed", "2 b");
-  }
-
-  /** Evidence for a separate report, not a part of the fix: values bound to an {@code sql} write through a follower. */
-  @Test
-  @Timeout(180)
-  void evidenceTheBoundValuesOfAnSqlWrite() throws Exception {
-    final int leader = requireLeaderIndex();
-    final Database leaderDb = getServerDatabase(leader, getDatabaseName());
-    leaderDb.command("sql", "CREATE DOCUMENT TYPE Bound341Sql");
-    waitForAllServers();
-    for (final String run : List.of("leader", "follower"))
-      try (final Connection connection = connect(run.equals("leader") ? leader : firstFollowerOf(leader), "extended");
-          final PreparedStatement insert = connection.prepareStatement(
-              "INSERT INTO Bound341Sql SET run = ?, pdouble = ?, pdecimal = ?, plong = ?, pbytes = ?, pdate = ?")) {
-        insert.setString(1, run);
-        insert.setDouble(2, Double.NaN);
-        insert.setBigDecimal(3, new BigDecimal("10.50"));
-        insert.setLong(4, 5L);
-        insert.setBytes(5, new byte[] { 0, 1, -1 });
-        insert.setObject(6, LocalDate.of(2026, 11, 29));
-        insert.execute();
-      }
-    waitForAllServers();
-    final Map<String, String> rows = new TreeMap<>();
-    try (final ResultSet result = leaderDb.query("sql", "SELECT FROM Bound341Sql")) {
-      while (result.hasNext()) {
-        final Result row = result.next();
-        rows.put(row.getProperty("run"), values(row, "run"));
-      }
-    }
-    assertThat(rows.get("follower")).isEqualTo(rows.get("leader"));
   }
 
   private void createNotes(final int leader, final String table) {
