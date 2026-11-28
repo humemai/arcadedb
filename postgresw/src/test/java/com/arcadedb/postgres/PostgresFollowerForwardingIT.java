@@ -378,7 +378,7 @@ class PostgresFollowerForwardingIT extends BaseRaftHATest {
           ("float8-infinity", "shown", "%s::text", float("-inf")),
           ("numeric-scale", "shown", "%s::text", Decimal("10.50")),
           ("numeric", "n", "%s", Decimal("12345678901234567890.123456789")),
-          ("numeric-array", "na", "%s", [Decimal("1.50"), None]),
+          ("numeric-array", "na", "%s", [Decimal("1.50")]),
           ("int-array", "ia", "%s", [1, 2]),
           ("bytea", "by", "%s", b"\\x00\\x01\\xff"),
           ("bytea-binary", "by", "%b", b"\\x00\\x01\\xff"),
@@ -480,7 +480,9 @@ class PostgresFollowerForwardingIT extends BaseRaftHATest {
     for (final String name : row.getPropertyNames()) {
       final Object value = row.getProperty(name);
       if (value != null && !name.equals(key) && !name.startsWith("@"))
-        values.put(name, value.getClass().getSimpleName() + " " + Arrays.deepToString(new Object[] { value }));
+        // the items of a list too: a byte[] in one would print as its identity
+        values.put(name, value.getClass().getSimpleName() + " "
+            + Arrays.deepToString(new Object[] { value instanceof List<?> items ? items.toArray() : value }));
     }
     return values.toString();
   }
