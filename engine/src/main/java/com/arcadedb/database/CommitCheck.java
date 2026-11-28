@@ -41,4 +41,20 @@ public interface CommitCheck {
 
   /** The message of the refusal of a commit that starts on a high-availability replica, where the check is not safe. */
   String replicaRefusal();
+
+  /**
+   * What the check holds now, as a statement of the transaction begins. A statement that is taken back (see
+   * {@link StatementSavepoint}) restores the mark, so the commit checks nothing for it. A check the statement itself registered
+   * is dropped whole and is asked for no mark.
+   */
+  Mark mark();
+
+  /** What a check held when {@link #mark()} was called. A check only takes things in, so the mark says how far to cut it back. */
+  interface Mark {
+    /** Whether the check holds more than it did. */
+    boolean hasGrown();
+
+    /** Drops what the check took in since the mark. */
+    void restore();
+  }
 }

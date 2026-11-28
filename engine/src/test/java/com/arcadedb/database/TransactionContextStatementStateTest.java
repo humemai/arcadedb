@@ -79,6 +79,9 @@ class TransactionContextStatementStateTest {
     CLASSIFICATION.put("insertReservationBuckets", MARKED);
     CLASSIFICATION.put("insertReservationPages", MARKED);
     CLASSIFICATION.put("insertReservationSlots", MARKED);
+    // Fork issue #292: the checks of a query language at the commit. They only take things in: the savepoint takes the mark of each
+    // when the statement begins, drops the checks the statement registered, and cuts the others back to their marks
+    CLASSIFICATION.put("commitChecks", MARKED);
     CLASSIFICATION.put("immutableRecordsCache", REBUILT);
     CLASSIFICATION.put("newRecordRIDs", REBUILT);
     CLASSIFICATION.put("unidirectionalEdgeChanges", REBUILT);

@@ -50,6 +50,7 @@ import com.arcadedb.utility.IntHashSet;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -383,6 +384,48 @@ final class LinkKeys {
     public String replicaRefusal() {
       return "A commit that starts on a replica cannot insert a link by its keys, or change a key that links refer to: run the"
           + " transaction on the leader";
+    }
+
+    /**
+     * How much this check holds: the keys found, the references with a changed key, and the rows of each. All three only grow,
+     * in the order of the statements, so a statement that is taken back is cut off their ends.
+     */
+    @Override
+    public Mark mark() {
+      final int keys = found.size();
+      final int references = moved.size();
+      final int[] rows = moved.values().stream().mapToInt(change -> change.links().size()).toArray();
+      return new Mark() {
+        @Override
+        public boolean hasGrown() {
+          if (found.size() > keys || moved.size() > references)
+            return true;
+          int next = 0;
+          for (final Moved change : moved.values())
+            if (change.links().size() > rows[next++])
+              return true;
+          return false;
+        }
+
+        @Override
+        public void restore() {
+          keepFirst(found.keySet(), keys);
+          keepFirst(moved.keySet(), references);
+          int next = 0;
+          for (final Moved change : moved.values())
+            keepFirst(change.links().keySet(), rows[next++]);
+        }
+      };
+    }
+
+    /** Removes from the keys of a map in insertion order all but the first {@code size}. */
+    private static void keepFirst(final Collection<?> keys, final int size) {
+      int index = 0;
+      for (final Iterator<?> iterator = keys.iterator(); iterator.hasNext(); ++index) {
+        iterator.next();
+        if (index >= size)
+          iterator.remove();
+      }
     }
 
     /**
