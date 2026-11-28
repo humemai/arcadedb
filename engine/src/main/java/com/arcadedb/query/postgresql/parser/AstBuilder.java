@@ -506,8 +506,16 @@ final class AstBuilder {
     Expression offset = null;
     final SelectLimitContext selectLimit = context.selectLimit();
     if (selectLimit != null) {
-      if (selectLimit.limitClause() != null && selectLimit.limitClause().aExpr() != null)
-        limit = expression(selectLimit.limitClause().aExpr());
+      final LimitClauseContext limitClause = selectLimit.limitClause();
+      if (limitClause != null) {
+        if (limitClause.FETCH() != null)
+          // FETCH FIRST n ROWS ONLY is LIMIT n, and one row when no count is written
+          limit = limitClause.fetchFirstValue() == null
+              ? new Expression.IntegerLiteral(position(limitClause.getStart()), BigInteger.ONE)
+              : fetchFirstValue(limitClause.fetchFirstValue());
+        else if (limitClause.aExpr() != null)
+          limit = expression(limitClause.aExpr());
+      }
       final OffsetClauseContext offsetClause = selectLimit.offsetClause();
       if (offsetClause != null) {
         if (offsetClause.aExpr() != null)
@@ -629,14 +637,16 @@ final class AstBuilder {
   /** One {@code SELECT} without its {@code ORDER BY}, {@code OFFSET} and {@code LIMIT}: {@code simple_select} of {@code gram.y}. */
   private SelectStatement simpleSelect(final SimpleSelectContext context) {
     final Token start = context.getStart();
-    if (context.targetList() == null)
-      throw Diagnostics.notSupported("A select list with no item", start);
-
     final boolean distinct = context.selectQuantifier() != null && has(context.selectQuantifier(), PostgreSQLParser.DISTINCT);
 
+    // an empty select list is read where nobody reads a value: in the query of an EXISTS, as in EXISTS (SELECT FROM t)
+    if (context.targetList() == null && (distinct || !directlyInExists(context)))
+      throw Diagnostics.notSupported("A select list with no item", start);
+
     final List<SelectItem> items = new ArrayList<>();
-    for (final TargetElContext item : context.targetList().items)
-      items.add(selectItem(item));
+    if (context.targetList() != null)
+      for (final TargetElContext item : context.targetList().items)
+        items.add(selectItem(item));
 
     final List<TableReference> from = new ArrayList<>();
     if (context.fromClause() != null)
@@ -653,6 +663,12 @@ final class AstBuilder {
     final Expression having = context.havingClause() == null ? null : expression(context.havingClause().aExpr());
 
     return new SelectStatement(position(start), distinct, items, from, where, groupBy, having, List.of(), null, null);
+  }
+
+  /** Whether a {@code SELECT} is the query of an {@code EXISTS} itself, whatever its {@code WITH}, order and limit. */
+  private static boolean directlyInExists(final SimpleSelectContext context) {
+    return context.getParent() instanceof SimpleQueryContext query && query.getParent() instanceof PrimaryQueryContext primary
+        && primary.getParent() instanceof SelectStmtContext statement && statement.getParent() instanceof ExistsExprContext;
   }
 
   private SelectItem selectItem(final TargetElContext context) {
@@ -774,6 +790,19 @@ final class AstBuilder {
     if (context instanceof OperatorExprContext e)
       return binary(operator(e.OP().getSymbol()), e.OP().getSymbol(), expression(e.l), expression(e.r));
     if (context instanceof InListExprContext e) {
+      final ImplicitRowExprContext row = row(e.aExpr());
+      if (row != null) {
+        if (e.exprList().items.size() > MAX_VALUES_ROWS)
+          throw Diagnostics.notSupported("A list of more than " + MAX_VALUES_ROWS + " rows after IN", e.getStart());
+        final List<List<Expression>> rows = new ArrayList<>();
+        for (final AExprContext value : e.exprList().items) {
+          final ImplicitRowExprContext other = row(value);
+          if (other == null)
+            throw Diagnostics.notSupported("A row constructor", row.getStart());
+          rows.add(expressions(other.items));
+        }
+        return RowComparisons.in(position(e.getStart()), expressions(row.items), rows, has(e, PostgreSQLParser.NOT), e.getStart());
+      }
       final List<Expression> values = new ArrayList<>();
       for (final AExprContext value : e.exprList().items)
         values.add(expression(value));
@@ -807,6 +836,10 @@ final class AstBuilder {
       // the comparison operators do not associate: a < b < c is a syntax error in PostgreSQL
       if (e.l instanceof ComparisonExprContext)
         throw Diagnostics.syntaxError(e.op);
+      final ImplicitRowExprContext left = row(e.l);
+      final ImplicitRowExprContext right = row(e.r);
+      if (left != null && right != null)
+        return RowComparisons.compare(position(e.op), comparison(e.op), expressions(left.items), expressions(right.items), e.op);
       return binary(comparison(e.op), e.op, expression(e.l), expression(e.r));
     }
     if (context instanceof IsDistinctExprContext e)
@@ -824,6 +857,23 @@ final class AstBuilder {
     if (context instanceof OrExprContext e)
       return binary(BinaryOperator.OR, e.OR().getSymbol(), expression(e.l), expression(e.r));
     throw new IllegalStateException("An expression the parser did not refuse has no tree: " + context.getText());
+  }
+
+  /** The row {@code (a, b)} that an operand is, in parentheses of its own or not, or {@code null}. */
+  private static ImplicitRowExprContext row(final AExprContext context) {
+    if (!(context instanceof PrimaryExprContext primary))
+      return null;
+    CExprContext inner = primary.cExpr();
+    while (inner instanceof ParenExprContext paren && paren.aExpr() instanceof PrimaryExprContext next)
+      inner = next.cExpr();
+    return inner instanceof ImplicitRowExprContext row ? row : null;
+  }
+
+  private List<Expression> expressions(final List<AExprContext> contexts) {
+    final List<Expression> out = new ArrayList<>(contexts.size());
+    for (final AExprContext context : contexts)
+      out.add(expression(context));
+    return out;
   }
 
   /** {@code b_expr}: the operands of BETWEEN and POSITION. */
@@ -909,6 +959,9 @@ final class AstBuilder {
   }
 
   private Expression primary(final CExprContext context) {
+    // a row is read only where two rows are compared; anywhere else it would be a value of a record type
+    if (context instanceof ImplicitRowExprContext)
+      throw Diagnostics.notSupported("A row constructor", context.getStart());
     if (context instanceof ColumnRefExprContext e) {
       final ColumnRefContext reference = e.columnRef();
       final List<Name> parts = new ArrayList<>();

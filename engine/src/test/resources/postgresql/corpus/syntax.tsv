@@ -247,7 +247,7 @@ limit:152	ok	inside	-	select sum(tenthous) as s1, sum(tenthous) + random()*0 as 
 limit:160	ok	outside	-	SELECT  thousand\n\t\tFROM onek WHERE thousand < 5\n\t\tORDER BY thousand FETCH FIRST 2 ROW WITH TIES	src/test/regress/sql/limit.sql:160; src/test/regress/expected/limit.out:562	42P01
 limit:164	ok	outside	-	SELECT  thousand\n\t\tFROM onek WHERE thousand < 5\n\t\tORDER BY thousand FETCH FIRST ROWS WITH TIES	src/test/regress/sql/limit.sql:164; src/test/regress/expected/limit.out:579	42P01
 limit:168	ok	outside	-	SELECT  thousand\n\t\tFROM onek WHERE thousand < 5\n\t\tORDER BY thousand FETCH FIRST 1 ROW WITH TIES	src/test/regress/sql/limit.sql:168; src/test/regress/expected/limit.out:596	42P01
-limit:172	ok	outside	-	SELECT  thousand\n\t\tFROM onek WHERE thousand < 5\n\t\tORDER BY thousand FETCH FIRST 2 ROW ONLY	src/test/regress/sql/limit.sql:172; src/test/regress/expected/limit.out:613	42P01
+limit:172	ok	inside	-	SELECT  thousand\n\t\tFROM onek WHERE thousand < 5\n\t\tORDER BY thousand FETCH FIRST 2 ROW ONLY	src/test/regress/sql/limit.sql:172; src/test/regress/expected/limit.out:613	42P01
 limit:177	syntax-error	error	-	SELECT  thousand\n\t\tFROM onek WHERE thousand < 5\n\t\tORDER BY thousand FETCH FIRST 1 ROW WITH TIES FOR UPDATE SKIP LOCKED	src/test/regress/sql/limit.sql:177; src/test/regress/expected/limit.out:623	42601
 limit:182	syntax-error	error	-	SELECT ''::text AS two, unique1, unique2, stringu1\n\t\tFROM onek WHERE unique1 > 50\n\t\tFETCH FIRST 2 ROW WITH TIES	src/test/regress/sql/limit.sql:182; src/test/regress/expected/limit.out:630	42601
 strings:8	ok	inside	-	SELECT 'first line'\n' - next line'\n\t' - third line'\n\tAS "Three lines to one"	src/test/regress/sql/strings.sql:8; src/test/regress/expected/strings.out:7	-

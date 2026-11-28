@@ -44,6 +44,7 @@ final class Diagnostics {
   private static final Map<String, String> DESCRIPTIONS = Map.ofEntries(
       Map.entry("unsupportedExplainOption", "EXPLAIN with an option"),
       Map.entry("unsupportedDistinctOn", "DISTINCT ON"),
+      Map.entry("unsupportedDistinctOn", "DISTINCT ON"),
       Map.entry("unsupportedInto", "SELECT INTO"),
       Map.entry("unsupportedWindowClause", "A WINDOW clause"),
       Map.entry("unsupportedLockingClause", "A locking clause (FOR UPDATE and the others)"),
@@ -201,7 +202,7 @@ final class Diagnostics {
       case "unsupportedGroupByQuantifier" -> "List the columns after GROUP BY";
       case "unsupportedGroupingSet" -> "Write one SELECT for each grouping and put them together with UNION ALL";
       case "unsupportedSortUsing" -> "Write ASC or DESC";
-      case "unsupportedFetchClause" -> "Write LIMIT n, with OFFSET m to skip rows";
+      case "unsupportedWithTies" -> "Write ONLY, or keep the tied rows with rank() OVER (ORDER BY ...) in a WITH query";
       case "unsupportedJoinUsingAlias", "unsupportedJoinAlias" -> "Leave the alias out and name the columns by their tables";
       case "unsupportedColumnAliases", "unsupportedTableAlias" -> "Name a query in a WITH clause, with its columns named by AS";
       case "unsupportedTableRef" -> "Write a subquery, as in FROM (SELECT ...) AS s, or a function that returns rows, as in"

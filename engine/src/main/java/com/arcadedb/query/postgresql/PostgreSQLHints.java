@@ -60,6 +60,9 @@ public final class PostgreSQLHints {
     rule("A cross-database", "Leave the database name out: a connection reads one database");
     rule("A VALUES list of more than", "Send the rows in several statements");
     rule("A select list with no item", "Name a column, or write SELECT 1");
+    rule("A row constructor", "Compare two rows with =, <>, <, <=, >, >= or IN with a list of rows, or write the columns one by one");
+    rule("A row comparison with", "Run the subquery or the function first and send its value as a parameter");
+    rule("rows after IN", "Send the rows in several statements");
     rule("A Unicode escape", "Write the characters themselves");
     rule("A subquery is not supported in this clause", "Run the subquery first and send its values as parameters, or join its table");
     rule("A correlated subquery", "Join the table instead, or run the inner query first and send its values as parameters");
