@@ -20,6 +20,7 @@ package com.arcadedb.postgres;
 
 import com.arcadedb.index.TypeIndex;
 import com.arcadedb.log.LogManager;
+import com.arcadedb.query.postgresql.plan.CheckClause;
 import com.arcadedb.schema.DocumentType;
 import com.arcadedb.schema.Schema;
 
@@ -269,8 +270,43 @@ final class PostgresCatalogIndexes {
     };
   }
 
-  /** The indexes and the foreign keys of a database as a statement of the {@code postgresql} language sees them. */
-  record Keys(List<Info> indexes, List<Reference> references) {
+  /**
+   * A check constraint of the relational view, as a {@code pg_constraint} row of kind {@code c} (fork issue #297).
+   *
+   * @param attnums    the numbers of the columns it reads, in the order of their first use
+   * @param type       the table that has it, which declares it or inherits it
+   * @param constraint the constraint as it is declared
+   */
+  record Check(int tableOid, int oid, int[] attnums, DocumentType type, CheckClause.Declared constraint) {
+    /** The expression as PostgreSQL writes it, or as it was declared when {@link CheckClause} does not write its shape. */
+    String written(final boolean pretty) {
+      return CheckClause.of(constraint, type, pretty);
+    }
+  }
+
+  /** {@code pg_constraint.conbin} of a check: the expression that {@code pg_get_expr()} prints, written when it is asked for. */
+  record CheckBin(Check check) {
+    @Override
+    public String toString() {
+      return check.written(false);
+    }
+  }
+
+  /** The {@code pg_constraint} columns of a check constraint, name and value in turn. */
+  static Object[] checkValues(final Check check, final int schemaOid) {
+    final boolean local = check.constraint().declaring().getName().equals(check.type().getName());
+    return new Object[] { "oid", check.oid(), "conname", check.constraint().name(), "connamespace", schemaOid, "contype", "c",
+        "condeferrable", Boolean.FALSE, "condeferred", Boolean.FALSE, "conenforced", Boolean.TRUE, "convalidated", Boolean.TRUE,
+        "conrelid", check.tableOid(), "contypid", 0, "conindid", 0, "conparentid", 0, "confrelid", 0, "confupdtype", " ",
+        "confdeltype", " ", "confmatchtype", " ", "conislocal", local, "coninhcount", local ? 0 : 1, "connoinherit", Boolean.FALSE,
+        "conkey", check.attnums().length == 0 ? null : numbers(check.attnums()), "conbin", new CheckBin(check) };
+  }
+
+  /**
+   * The indexes, the foreign keys and the check constraints of a database as a statement of the {@code postgresql} language sees
+   * them.
+   */
+  record Keys(List<Info> indexes, List<Reference> references, List<Check> checks) {
   }
 
   /**
@@ -397,7 +433,18 @@ final class PostgresCatalogIndexes {
             key.enforced()));
       }
     }
-    return new Keys(infos, references);
+
+    final List<Check> checks = new ArrayList<>();
+    for (final DocumentType type : types) {
+      final com.arcadedb.query.postgresql.catalog.Table table = tables.get(type.getName());
+      if (table == null)
+        continue;
+      for (final CheckClause.Declared check : CheckClause.declaredOn(type))
+        checks.add(new Check(tableOid.applyAsInt(type),
+            freeOid("check:" + type.getName() + ":" + check.name(), used, firstOid, oidSpace),
+            numbersOf(table, check.columns().toArray(new String[0])), type, check));
+    }
+    return new Keys(infos, references, checks);
   }
 
   private static int[] numbersOf(final com.arcadedb.query.postgresql.catalog.Table table, final String[] names) {

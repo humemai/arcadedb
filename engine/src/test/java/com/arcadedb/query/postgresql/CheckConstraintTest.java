@@ -26,6 +26,9 @@ import com.arcadedb.schema.CheckConstraint;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -106,6 +109,28 @@ class CheckConstraintTest extends TestHelper {
     run("sql", "ALTER TYPE products CUSTOM " + CheckConstraint.CUSTOM_KEY + " = null");
     run("sql", "INSERT INTO products SET id = 1, price = -1");
     assertThat(count()).isEqualTo(1);
+  }
+
+  /** Fork issue #297: the view of the checks fails on none of them, whatever their expressions are. */
+  @Test
+  void aCheckThatIsNotWrittenAsPostgreSqlWritesItIsListedAsItWasWritten() {
+    create();
+    final String written = "CASE WHEN a > 0 THEN true ELSE false END";
+    database.command("postgresql", "CREATE TABLE odd (a int, CHECK (" + written + "))").close();
+    assertThat(checkClauses()).contains(written, "(price >= (0)::numeric)");
+
+    // a check that cannot be read, since its column is gone
+    run("sql", "DROP PROPERTY products.price");
+    assertThat(checkClauses()).contains(written, "price >= 0");
+  }
+
+  private List<String> checkClauses() {
+    final List<String> clauses = new ArrayList<>();
+    try (final ResultSet rows = database.query("postgresql", "SELECT check_clause FROM information_schema.check_constraints")) {
+      while (rows.hasNext())
+        clauses.add(rows.next().getProperty("check_clause"));
+    }
+    return clauses;
   }
 
   @Test

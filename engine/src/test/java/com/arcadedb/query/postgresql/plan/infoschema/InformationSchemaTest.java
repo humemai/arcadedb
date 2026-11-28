@@ -40,7 +40,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The seven views of {@code information_schema} on the {@code small} fixture of fork issue #2, with the expected rows written by
+ * The eight views of {@code information_schema} on the {@code small} fixture of fork issue #2, with the expected rows written by
  * hand from the catalog (the tables {@code company}, {@code orders}, {@code person} and {@code works_at}, their declared
  * properties and keys). The same views are compared with a real PostgreSQL 18 by the statements {@code is-*} of the answer
  * corpus; this class pins the rows that the corpus cannot compare, the catalog columns (the name of the database) and the NULL
@@ -107,7 +107,8 @@ class InformationSchemaTest extends TestHelper {
 
     assertThat(rows("SELECT table_name, table_type, is_insertable_into FROM information_schema.tables"
         + " WHERE table_schema = 'information_schema' ORDER BY table_name")).containsExactly(
-        row("columns", "VIEW", "NO"), row("constraint_column_usage", "VIEW", "NO"), row("key_column_usage", "VIEW", "NO"),
+        row("check_constraints", "VIEW", "NO"), row("columns", "VIEW", "NO"), row("constraint_column_usage", "VIEW", "NO"),
+        row("key_column_usage", "VIEW", "NO"),
         row("referential_constraints", "VIEW", "NO"), row("schemata", "VIEW", "NO"), row("table_constraints", "VIEW", "NO"),
         row("tables", "VIEW", "NO"));
   }
@@ -200,7 +201,7 @@ class InformationSchemaTest extends TestHelper {
             "character_data", db, "pg_catalog", "varchar", null, null, null, null, "7", "NO", "NO", null, null, null, null, null,
             "NO", "NEVER", null, "NO"));
     assertThat(rows("SELECT count(*) FROM information_schema.columns WHERE table_schema = 'information_schema'"))
-        .containsExactly(row(99L));
+        .containsExactly(row(103L));
   }
 
   @Test
