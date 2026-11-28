@@ -21,6 +21,7 @@ package com.arcadedb.postgres;
 import com.arcadedb.ContextConfiguration;
 import com.arcadedb.GlobalConfiguration;
 import com.arcadedb.database.Database;
+import com.arcadedb.query.sql.executor.Result;
 import com.arcadedb.query.sql.executor.ResultSet;
 import com.arcadedb.server.ha.raft.BaseRaftHATest;
 import org.junit.jupiter.api.Tag;
@@ -36,6 +37,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
@@ -123,6 +125,46 @@ class PostgresFollowerForwardingIT extends BaseRaftHATest {
     waitForAllServers();
     for (int i = 0; i < getServerCount(); i++)
       assertThat(getServerDatabase(i, getDatabaseName()).getSchema().existsType("facts316")).as("server %d: dropped", i).isFalse();
+  }
+
+  /**
+   * Fork issue #326: the rows that the {@code postgresql} language writes reach every server, whether the statement is a
+   * transaction of its own or a part of a block, run on the leader or sent to a follower.
+   */
+  @Test
+  @Timeout(180)
+  void theRowsThatThePostgresqlLanguageWritesReachEveryServer() throws Exception {
+    final int leader = requireLeaderIndex();
+    final Database leaderDb = getServerDatabase(leader, getDatabaseName());
+    leaderDb.command("postgresql", "CREATE TABLE written326 (id int PRIMARY KEY, note text)");
+    leaderDb.command("postgresql", "INSERT INTO written326 VALUES (1, 'a'), (2, 'b')");
+    leaderDb.command("postgresql", "UPDATE written326 SET note = 'c' WHERE id = 1");
+    leaderDb.command("postgresql", "DELETE FROM written326 WHERE id = 2");
+    leaderDb.command("postgresql", "BEGIN");
+    leaderDb.command("postgresql", "INSERT INTO written326 VALUES (3, 'd')");
+    leaderDb.command("postgresql", "COMMIT");
+    waitForAllServers();
+
+    try (final Connection connection = connect(firstFollowerOf(leader), "simple", "postgresql");
+        final Statement statement = connection.createStatement()) {
+      statement.execute("INSERT INTO written326 VALUES (4, 'e')");
+      connection.setAutoCommit(false);
+      statement.execute("INSERT INTO written326 VALUES (5, 'f')");
+      connection.commit();
+    }
+    waitForAllServers();
+
+    for (int i = 0; i < getServerCount(); i++) {
+      final List<String> found = new ArrayList<>();
+      try (final ResultSet rows = getServerDatabase(i, getDatabaseName()).query("postgresql",
+          "SELECT id, note FROM written326 ORDER BY id")) {
+        while (rows.hasNext()) {
+          final Result row = rows.next();
+          found.add(row.<Number>getProperty("id") + " " + row.<String>getProperty("note"));
+        }
+      }
+      assertThat(found).as("server %d: the rows", i).containsExactly("1 c", "3 d", "4 e", "5 f");
+    }
   }
 
   /*

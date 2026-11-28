@@ -520,10 +520,12 @@ public class PostgreSQLQueryEngine implements QueryEngine {
    * again; the transaction is rolled back and the block is over.
    */
   private ResultSet transaction(final TransactionStatement.Kind kind, final Block state) {
+    // the wrapper of the database ends the transaction, so a high availability server replicates what a COMMIT wrote
+    final DatabaseInternal transactions = database.getWrappedDatabaseInstance();
     switch (kind) {
     case BEGIN -> {
       if (!database.isTransactionActive()) {
-        database.begin();
+        transactions.begin();
         state.open = true;
         // the clock of the transaction is read now
         TransactionClock.now(database);
@@ -535,11 +537,11 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       state.failed = false;
       if (database.isTransactionActive()) {
         try {
-          database.commit();
+          transactions.commit();
         } catch (final RuntimeException e) {
           if (database.isTransactionActive()) {
             try {
-              database.rollback();
+              transactions.rollback();
             } catch (final RuntimeException suppressed) {
               e.addSuppressed(suppressed);
             }
@@ -554,7 +556,7 @@ public class PostgreSQLQueryEngine implements QueryEngine {
       state.open = false;
       state.failed = false;
       if (database.isTransactionActive())
-        database.rollback();
+        transactions.rollback();
       settle();
     }
     }
