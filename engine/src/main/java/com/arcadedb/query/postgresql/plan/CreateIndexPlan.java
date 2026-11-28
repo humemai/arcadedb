@@ -77,10 +77,43 @@ public final class CreateIndexPlan {
   private final RelationalCatalog    catalog;
   private final CreateIndexStatement statement;
 
+  /** What {@link #takeBack} undoes: the table, the name recorded on it, and the properties of the index of the engine built. */
+  private DocumentType changed;
+  private String       recorded;
+  private String[]     built;
+
   public CreateIndexPlan(final Database database, final RelationalCatalog catalog, final CreateIndexStatement statement) {
     this.database = database;
     this.catalog = catalog;
     this.statement = statement;
+  }
+
+  /** The table the statement changed; {@code null} before {@link #execute}, and when it changed nothing. */
+  public DocumentType changed() {
+    return changed;
+  }
+
+  /**
+   * Takes back what the statement made, when the transaction that ran it does not commit (fork issue #293): the name it recorded,
+   * and the index it built. An index that holds a name which another statement recorded meanwhile stays, and a table that is not
+   * there any more is left alone.
+   */
+  public void takeBack() {
+    final String table = changed.getName();
+    // no other schema change comes between the look and the drop
+    database.executeInWriteLock(() -> {
+      final Schema schema = database.getSchema();
+      if (!schema.existsType(table) || schema.getType(table) != changed)
+        return null;
+      DeclaredIndexes.remove(changed, List.of(recorded));
+      if (built != null && DeclaredIndexes.of(changed).values().stream()
+          .noneMatch(index -> index.engine() && index.columns().equals(List.of(built)))) {
+        final TypeIndex index = changed.getPolymorphicIndexByProperties(built);
+        if (index != null)
+          schema.dropIndex(index.getName());
+      }
+      return null;
+    });
   }
 
   /**
@@ -121,8 +154,11 @@ public final class CreateIndexPlan {
 
     final boolean engine = vector ? vectorIndex(table, columns.get(0)) : treeIndex(table, columns);
     final String name = given != null ? given : freeName(table.name(), names);
-    DeclaredIndexes.add(database.getSchema().getType(table.name()), name,
+    final DocumentType type = database.getSchema().getType(table.name());
+    DeclaredIndexes.add(type, name,
         new DeclaredIndexes.Index(engine ? columns.stream().map(Column::property).toList() : names, statement.unique(), engine));
+    changed = type;
+    recorded = name;
     return answer("CREATE INDEX " + name + " ON " + table.name());
   }
 
@@ -217,6 +253,7 @@ public final class CreateIndexPlan {
               "could not create unique index: the table " + table.name() + " holds a key more than once", e);
       throw e;
     }
+    built = properties;
     return true;
   }
 
@@ -259,6 +296,7 @@ public final class CreateIndexPlan {
         builder.withBeamWidth(parameters.get("ef_construction").intValue());
       builder.create();
     });
+    built = new String[] { column.property() };
     return true;
   }
 
