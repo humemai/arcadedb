@@ -44,7 +44,7 @@ class AstTest {
   }
 
   private static SelectStatement select(final List<SelectItem> items, final List<TableReference> from) {
-    return new SelectStatement(P1, false, items, from, null, List.of(), null, List.of(), null, null);
+    return new SelectStatement(P1, false, List.of(), items, from, null, List.of(), null, List.of(), null, null);
   }
 
   @Test
@@ -73,7 +73,7 @@ class AstTest {
     final TableReference join = new TableReference.Join(P1, new TableReference.Table(P1, List.of(name("person")), false, name("p")),
         TableReference.JoinType.LEFT, new TableReference.Table(P1, List.of(name("orders")), false, name("o")), condition);
 
-    final SelectStatement statement = new SelectStatement(P1, false,
+    final SelectStatement statement = new SelectStatement(P1, false, List.of(),
         List.of(new SelectItem.Projection(P1, pName, null), new SelectItem.Projection(P1, oOid, null)), List.of(join), null,
         List.of(), null, List.of(new SortItem(P1, pName, SortItem.Direction.DEFAULT, SortItem.Nulls.DEFAULT),
         new SortItem(P1, oOid, SortItem.Direction.DEFAULT, SortItem.Nulls.DEFAULT)), null, null);

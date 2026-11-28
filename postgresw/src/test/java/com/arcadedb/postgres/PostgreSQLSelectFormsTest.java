@@ -30,8 +30,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@code EXISTS} with an empty select list, {@code FETCH FIRST}, and row comparisons of the {@code postgresql} language next to
- * PostgreSQL 18, both over the PostgreSQL protocol (fork issue #244): the same columns, types, and rows, or the same SQLSTATE.
+ * {@code EXISTS} with an empty select list, {@code FETCH FIRST}, row comparisons, and {@code DISTINCT ON} of the
+ * {@code postgresql} language next to PostgreSQL 18, both over the PostgreSQL protocol (fork issue #244): the same columns, types, and rows, or the same SQLSTATE.
  * <p>
  * Needs a Docker daemon: without one the test is skipped, except on GitHub Actions, where it fails.
  */
@@ -83,7 +83,31 @@ class PostgreSQLSelectFormsTest extends PostgreSQLSideBySideTestBase {
       "SELECT id, ((n, id)) = ((20, 2)) FROM f ORDER BY id",
       "SELECT id FROM f WHERE (n + 0, upper(name)) <= (20, 'A') ORDER BY id",
       "SELECT (1, 'a') < (1, 'b'), (2, NULL) < (1, 0), (1, NULL) < (1, 0), (1, 2, NULL) < (1, 3, 0)",
-      "SELECT (1, NULL) = (2, NULL), (1, NULL) = (1, NULL), (1, NULL) <> (2, NULL)");
+      "SELECT (1, NULL) = (2, NULL), (1, NULL) = (1, NULL), (1, NULL) <> (2, NULL)",
+      // DISTINCT ON: the first row of each value of the keys, in the order of ORDER BY
+      "SELECT DISTINCT ON (n > 0) n FROM f ORDER BY n > 0, n",
+      "SELECT DISTINCT ON (n) n, id FROM f ORDER BY n, id",
+      "SELECT DISTINCT ON (n) n, id FROM f ORDER BY n DESC, id DESC",
+      "SELECT DISTINCT ON (n) n, id FROM f ORDER BY n NULLS FIRST, id",
+      "SELECT DISTINCT ON (f.n) id FROM f ORDER BY n, f.id",
+      "SELECT DISTINCT ON (1) n, id FROM f ORDER BY 1, 2 DESC",
+      "SELECT DISTINCT ON (k) n AS k, id FROM f ORDER BY n, id",
+      "SELECT DISTINCT ON (name, n) name, n, id FROM f ORDER BY n, name, id",
+      "SELECT DISTINCT ON (n, name) id FROM f ORDER BY name",
+      "SELECT DISTINCT ON (n, n) n FROM f",
+      "SELECT DISTINCT ON (n) n FROM f ORDER BY n, n DESC",
+      "SELECT DISTINCT ON (n + 1) id FROM f ORDER BY n + 1, id, n + 1",
+      "SELECT DISTINCT ON (n) n, id FROM f ORDER BY n, id LIMIT 2 OFFSET 1",
+      "SELECT DISTINCT ON (f_id) f_id, score, id FROM facts ORDER BY f_id, score DESC, id",
+      "SELECT DISTINCT ON (f.id) f.id, facts.score FROM f JOIN facts ON facts.f_id = f.id ORDER BY f.id, facts.score DESC",
+      "SELECT DISTINCT ON (c) n, count(*) AS c FROM f GROUP BY n ORDER BY c, n",
+      "SELECT DISTINCT ON (count(*)) count(*), n FROM f GROUP BY n ORDER BY count(*), n",
+      "SELECT DISTINCT ON (row_number() OVER (ORDER BY id) % 2) id FROM f ORDER BY row_number() OVER (ORDER BY id) % 2, id",
+      "SELECT x.id FROM (SELECT DISTINCT ON (n) id FROM f ORDER BY n, id DESC) x ORDER BY x.id",
+      "WITH last AS (SELECT DISTINCT ON (f_id) f_id, id FROM facts ORDER BY f_id, id DESC) SELECT * FROM last ORDER BY f_id",
+      "SELECT EXISTS (SELECT DISTINCT ON (n) n FROM f ORDER BY n)",
+      "SELECT id, (SELECT DISTINCT ON (facts.f_id) facts.id FROM facts WHERE facts.f_id = f.id ORDER BY facts.f_id, facts.id DESC)"
+          + " FROM f ORDER BY f.id");
 
   /** Statements that both refuse with the same SQLSTATE. */
   private static final List<List<String>> ERRORS = List.of(
@@ -91,7 +115,18 @@ class PostgreSQLSelectFormsTest extends PostgreSQLSideBySideTestBase {
       List.of("SELECT id FROM f WHERE (n, id) IN ((1, 2), (1, 2, 3))", "42601"),
       List.of("SELECT EXISTS (SELECT FROM f ORDER BY 1)", "42P10"),
       List.of("SELECT id FROM f ORDER BY id FETCH FIRST -1 ROWS ONLY", "2201W"),
-      List.of("SELECT id FROM f LIMIT 1 FETCH FIRST 1 ROWS ONLY", "42601"));
+      List.of("SELECT id FROM f LIMIT 1 FETCH FIRST 1 ROWS ONLY", "42601"),
+      List.of("SELECT DISTINCT ON (n) n, id FROM f ORDER BY id", "42P10"),
+      List.of("SELECT DISTINCT ON (n) n, id FROM f ORDER BY id, n", "42P10"),
+      List.of("SELECT DISTINCT ON (n, name) id FROM f ORDER BY n, id", "42P10"),
+      List.of("SELECT DISTINCT ON (1) n, n AS m FROM f ORDER BY 2", "42P10"),
+      List.of("SELECT DISTINCT ON (3) n, id FROM f", "42P10"),
+      List.of("SELECT DISTINCT ON ('n') n FROM f", "42601"),
+      List.of("SELECT DISTINCT ON (NULL) n FROM f", "42601"),
+      List.of("SELECT n FROM f ORDER BY 'n'", "42601"),
+      List.of("SELECT n FROM f ORDER BY 1.5", "42601"),
+      List.of("SELECT DISTINCT ON n n FROM f", "42601"),
+      List.of("SELECT DISTINCT ON (n) count(*) FROM f", "42803"));
 
   @Test
   void selectFormsAnswerAsPostgreSqlDoes() throws Exception {
@@ -119,7 +154,8 @@ class PostgreSQLSelectFormsTest extends PostgreSQLSideBySideTestBase {
       refused(arcade, "SELECT id FROM f WHERE (n, id) IS NULL", "A row constructor");
       refused(arcade, "SELECT id FROM f WHERE (n, id) < ((SELECT 20), 5)", "A row comparison with");
       refused(arcade, "SELECT EXISTS (SELECT FROM f UNION SELECT FROM facts)", "A select list with no item");
-      refused(arcade, "SELECT DISTINCT ON (n) n FROM f ORDER BY n", "DISTINCT ON");
+      refused(arcade, "SELECT id FROM f WHERE EXISTS (SELECT DISTINCT ON (f_id) 1 FROM facts WHERE facts.f_id = f.id)",
+          "A correlated EXISTS with DISTINCT ON");
     }
     assertThat(failures).as(String.join("\n", failures)).isEmpty();
   }

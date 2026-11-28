@@ -117,6 +117,8 @@ class StatementParserTest {
         .isEqualTo(
             "SELECT DISTINCT a, count(*) AS n FROM t WHERE (b > 1) GROUP BY a HAVING (count(*) > 1) ORDER BY a, 2 DESC NULLS FIRST LIMIT 5 OFFSET 2");
     assertThat(print("SELECT ALL a FROM t LIMIT ALL")).isEqualTo("SELECT a FROM t");
+    assertThat(print("SELECT DISTINCT ON (a, b > 0) c FROM t ORDER BY a, b > 0"))
+        .isEqualTo("SELECT DISTINCT ON (a, (b > 0)) c FROM t ORDER BY a, (b > 0)");
     assertThat(print("SELECT a FROM t OFFSET 3 LIMIT 4")).isEqualTo("SELECT a FROM t LIMIT 4 OFFSET 3");
     assertThat(print("SELECT a FROM t OFFSET 1 ROWS")).isEqualTo("SELECT a FROM t OFFSET 1");
     assertThat(select("SELECT a FROM t").limit()).isNull();
@@ -460,7 +462,6 @@ class StatementParserTest {
         new String[] { "SELECT (1, 2)", "A row constructor is not supported" },
         new String[] { "SELECT count(*) OVER w FROM t", "OVER W is not supported by the postgresql language (line 1, column 17)" },
         new String[] { "SELECT mode() WITHIN GROUP (ORDER BY a) FROM t", "WITHIN GROUP is not supported" },
-        new String[] { "SELECT DISTINCT ON (a) a FROM t", "DISTINCT ON is not supported by the postgresql language (line 1, column 17)" },
         new String[] { "SELECT 1 INTO t", "SELECT INTO is not supported" },
         new String[] { "SELECT 1 FROM t WINDOW w AS ()", "A WINDOW clause is not supported" },
         new String[] { "SELECT 1 FOR UPDATE", "A locking clause (FOR UPDATE and the others) is not supported by the postgresql language (line 1, column 10)" },
@@ -525,7 +526,7 @@ class StatementParserTest {
       "WITH x AS (INSERT INTO t VALUES (1) RETURNING a) SELECT * FROM x", "TABLE t", "EXPLAIN ANALYZE SELECT 1",
       "EXPLAIN CREATE TABLE t (a int)", "SELECT * FROM a NATURAL JOIN b", "SELECT * FROM a JOIN b USING (x) AS j",
       "SELECT * FROM ROWS FROM (generate_series(1, 3))", "SELECT (1, 2)", "SELECT count(*) OVER w FROM t",
-      "SELECT DISTINCT ON (a) a FROM t", "SELECT 1 INTO t", "SELECT 1 FOR UPDATE",
+      "SELECT 1 INTO t", "SELECT 1 FOR UPDATE",
       "SELECT a FROM t ORDER BY a FETCH FIRST 1 ROWS WITH TIES", "SELECT a SIMILAR TO b", "SELECT a IS TRUE", "SELECT 1 + ANY (ARRAY[1])",
       "SELECT a < ALL (SELECT b FROM t)",
       "SELECT a COLLATE \"C\"", "SELECT a[1] FROM t", "SELECT f(a => 1)", "TRUNCATE t", "CREATE EXTENSION vector",

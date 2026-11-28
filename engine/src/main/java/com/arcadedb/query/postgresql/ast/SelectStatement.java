@@ -26,26 +26,28 @@ import java.util.Objects;
  * its {@code sort_clause} and {@code select_limit}; a set operation is a {@link SetOperationStatement} and a query with common
  * table expressions a {@link WithStatement}. It holds the clauses in the order PostgreSQL evaluates their meaning:
  * {@code FROM}, {@code WHERE}, {@code GROUP BY}, {@code HAVING}, the select list, {@code DISTINCT}, {@code ORDER BY},
- * {@code OFFSET}, {@code LIMIT}. {@code FETCH FIRST n ROWS ONLY} is the {@code LIMIT}. Not in the subset, and refused with
- * SQLSTATE 0A000: {@code WITH RECURSIVE}, {@code TABLE}, {@code SELECT INTO}, {@code DISTINCT ON}, {@code WINDOW},
+ * {@code DISTINCT ON}, {@code OFFSET}, {@code LIMIT}. {@code FETCH FIRST n ROWS ONLY} is the {@code LIMIT}. Not in the subset,
+ * and refused with SQLSTATE 0A000: {@code WITH RECURSIVE}, {@code TABLE}, {@code SELECT INTO}, {@code WINDOW},
  * {@code GROUPING SETS}, {@code ROLLUP} and {@code CUBE}, {@code FETCH FIRST ... WITH TIES}, and the locking clause
  * ({@code FOR UPDATE}).
  *
- * @param distinct true for {@code SELECT DISTINCT}; {@code SELECT ALL} and nothing are false
- * @param items    the select list; empty only in the query of an {@code EXISTS}, where nobody reads a value
- * @param from     the {@code FROM} items separated by commas, empty when there is no {@code FROM} clause
- * @param where    the {@code WHERE} condition, or {@code null}
- * @param groupBy  the {@code GROUP BY} expressions, empty when there is no {@code GROUP BY} clause
- * @param having   the {@code HAVING} condition, or {@code null}
- * @param orderBy  the {@code ORDER BY} keys, empty when there is none
- * @param limit    the {@code LIMIT} count, or {@code null} for no {@code LIMIT} clause and for {@code LIMIT ALL}
- * @param offset   the {@code OFFSET} count, or {@code null}
+ * @param distinct   true for {@code SELECT DISTINCT}; {@code SELECT ALL}, {@code SELECT DISTINCT ON} and nothing are false
+ * @param distinctOn the keys of {@code DISTINCT ON (...)}, empty when there is none
+ * @param items      the select list; empty only in the query of an {@code EXISTS}, where nobody reads a value
+ * @param from       the {@code FROM} items separated by commas, empty when there is no {@code FROM} clause
+ * @param where      the {@code WHERE} condition, or {@code null}
+ * @param groupBy    the {@code GROUP BY} expressions, empty when there is no {@code GROUP BY} clause
+ * @param having     the {@code HAVING} condition, or {@code null}
+ * @param orderBy    the {@code ORDER BY} keys, empty when there is none
+ * @param limit      the {@code LIMIT} count, or {@code null} for no {@code LIMIT} clause and for {@code LIMIT ALL}
+ * @param offset     the {@code OFFSET} count, or {@code null}
  */
-public record SelectStatement(SourcePosition position, boolean distinct, List<SelectItem> items, List<TableReference> from,
-                              Expression where, List<Expression> groupBy, Expression having, List<SortItem> orderBy,
-                              Expression limit, Expression offset) implements Statement {
+public record SelectStatement(SourcePosition position, boolean distinct, List<Expression> distinctOn, List<SelectItem> items,
+                              List<TableReference> from, Expression where, List<Expression> groupBy, Expression having,
+                              List<SortItem> orderBy, Expression limit, Expression offset) implements Statement {
   public SelectStatement {
     Objects.requireNonNull(position, "position");
+    distinctOn = List.copyOf(distinctOn);
     items = List.copyOf(items);
     from = List.copyOf(from);
     groupBy = List.copyOf(groupBy);

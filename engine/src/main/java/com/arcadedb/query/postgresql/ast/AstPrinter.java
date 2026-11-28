@@ -215,6 +215,8 @@ public final class AstPrinter {
     final StringBuilder text = new StringBuilder("SELECT ");
     if (select.distinct())
       text.append("DISTINCT ");
+    if (!select.distinctOn().isEmpty())
+      text.append("DISTINCT ON (").append(printAll(select.distinctOn())).append(") ");
     text.append(select.items().stream().map(AstPrinter::print).collect(Collectors.joining(", ")));
     if (!select.from().isEmpty())
       text.append(" FROM ").append(select.from().stream().map(AstPrinter::print).collect(Collectors.joining(", ")));

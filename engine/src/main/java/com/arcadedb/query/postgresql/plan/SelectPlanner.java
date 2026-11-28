@@ -60,6 +60,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -322,7 +323,7 @@ public class SelectPlanner {
    * @param windows     the number of window functions, 0 for none
    */
   private record PlanSteps(Supplier<List<String>> source, String exactReason, boolean where, int groupKeys, int aggregates,
-      boolean having, int windows, int outputs, boolean distinct, int sortKeys, boolean offset, boolean limit,
+      boolean having, int windows, int outputs, boolean distinct, int sortKeys, int distinctOnKeys, boolean offset, boolean limit,
       List<String> warnings) implements Supplier<List<String>> {
     @Override
     public List<String> get() {
@@ -342,6 +343,8 @@ public class SelectPlanner {
         steps.add("DISTINCT");
       if (sortKeys > 0)
         steps.add("SORT " + sortKeys + " key(s)");
+      if (distinctOnKeys > 0)
+        steps.add("DISTINCT ON " + distinctOnKeys + " key(s)");
       if (offset)
         steps.add("OFFSET");
       if (limit)
@@ -441,31 +444,25 @@ public class SelectPlanner {
     // ORDER BY: a key is an output column (by position or name) or an expression over the input row
     final List<SelectPlan.SortKey> sortKeys = new ArrayList<>();
     final List<Evaluable> extras = new ArrayList<>();
+    final KeyTargets targets = new KeyTargets(outputs, extras, new ArrayList<>(asts), listCompiler);
+    final boolean distinctOn = !select.distinctOn().isEmpty();
     for (final SortItem item : select.orderBy()) {
-      int outputIndex = outputIndex(item.expression(), names);
-      if (outputIndex < 0 && select.distinct())
-        outputIndex = asts.indexOf(item.expression());
-      final Evaluable key;
-      final int position;
-      if (outputIndex >= 0) {
-        key = outputs.get(outputIndex);
-        position = outputIndex;
-      } else {
-        if (select.distinct())
-          throw PostgreSQLReferenceException.invalidReference("for SELECT DISTINCT, ORDER BY expressions must appear in select list");
-        key = listCompiler.resolveOutput(listCompiler.compile(item.expression()));
-        position = outputs.size() + extras.size();
-        extras.add(key);
+      int position = outputIndex(item.expression(), names, "ORDER BY");
+      if (position < 0) {
+        refuseConstantKey(item.expression(), "ORDER BY");
+        if (select.distinct()) {
+          position = asts.indexOf(item.expression());
+          if (position < 0)
+            throw PostgreSQLReferenceException.invalidReference("for SELECT DISTINCT, ORDER BY expressions must appear in select list");
+        } else
+          // with DISTINCT ON an expression that is already a column of the row is that column, so that the two clauses meet on it
+          position = targets.add(item.expression(), distinctOn);
       }
-      Comparison.refuseJsonOrder(key.type());
-      if (!Comparison.isComparable(key.type()))
-        throw new PostgreSQLFeatureNotSupportedException(
-            "ORDER BY a value of type " + key.type().displayName() + " is not supported");
       final Boolean nullsFirst = item.nulls() == SortItem.Nulls.FIRST ? Boolean.TRUE
           : item.nulls() == SortItem.Nulls.LAST ? Boolean.FALSE : null;
-      sortKeys.add(new SelectPlan.SortKey(position,
-          Comparison.ordering(key.type(), item.direction() == SortItem.Direction.DESC, nullsFirst)));
+      sortKeys.add(sortKey(position, targets.value(position), item.direction() == SortItem.Direction.DESC, nullsFirst));
     }
+    final int[] distinctKeys = distinctOn ? distinctOnKeys(select.distinctOn(), names, targets, sortKeys) : new int[0];
 
     // LIMIT and OFFSET: constants, typed bigint
     final ExpressionCompiler constants = new ExpressionCompiler(reference -> {
@@ -506,7 +503,7 @@ public class SelectPlanner {
     // the plan lines are built when they are read (EXPLAIN, the plan of a result set): a statement is planned on every call
     final PlanSteps steps = new PlanSteps(source.planLines(), exactReason, where != null, group == null ? -1 : group.keyCount(),
         group == null ? 0 : group.aggregateCount(), having != null, windows == null ? 0 : windows.count(), outputs.size(),
-        select.distinct(), sortKeys.size(), offset != null, limit != null, warnings);
+        select.distinct(), sortKeys.size(), distinctKeys.length, offset != null, limit != null, warnings);
 
     // A scan of one table reads only the columns that the compiled expressions read, and applies the WHERE clause to a row that holds
     // only its own columns, reading the rest for the records that pass (fork issue #85). The plan lines above are those of the
@@ -522,7 +519,98 @@ public class SelectPlanner {
     }
 
     return new SelectPlan(source, filter, group, having, outputs.toArray(new Evaluable[0]), extras.toArray(new Evaluable[0]), columns,
-        select.distinct(), sortKeys, limit, offset, steps, warnings, windows, recordIds);
+        select.distinct(), sortKeys, distinctKeys, limit, offset, steps, warnings, windows, recordIds);
+  }
+
+  // ---- the keys of ORDER BY and DISTINCT ON ----
+
+  /**
+   * The values that the keys of {@code ORDER BY} and {@code DISTINCT ON} read in a row: the output values, then the extra keys.
+   *
+   * @param asts the expression of each of those values, in the same order
+   */
+  private record KeyTargets(List<Evaluable> outputs, List<Evaluable> extras, List<Expression> asts, ExpressionCompiler compiler) {
+    Evaluable value(final int position) {
+      return position < outputs.size() ? outputs.get(position) : extras.get(position - outputs.size());
+    }
+
+    /**
+     * Where the value of a key that names no output column is. With {@code reuse} the first value that is the same expression
+     * answers, as in {@code findTargetlistEntrySQL99} of PostgreSQL: equal as written, or two names of one column of the input.
+     * Otherwise, and when there is none, the key is a new extra value.
+     */
+    int add(final Expression expression, final boolean reuse) {
+      final Evaluable key = compiler.resolveOutput(compiler.compile(expression));
+      if (reuse)
+        for (int i = 0; i < asts.size(); i++)
+          if (asts.get(i).equals(expression) || expression instanceof Expression.ColumnRef
+              && asts.get(i) instanceof Expression.ColumnRef && key instanceof Evaluable.Slot slot
+              && value(i) instanceof Evaluable.Slot other && slot.index() == other.index())
+            return i;
+      asts.add(expression);
+      extras.add(key);
+      return asts.size() - 1;
+    }
+  }
+
+  /** A constant that is not an integer is no key of a query's {@code ORDER BY} or {@code DISTINCT ON}: SQLSTATE {@code 42601}. */
+  private static void refuseConstantKey(final Expression expression, final String clause) {
+    if (expression instanceof Expression.StringLiteral || expression instanceof Expression.DecimalLiteral
+        || expression instanceof Expression.BooleanLiteral || expression instanceof Expression.NullLiteral)
+      throw new PostgreSQLSyntaxException("non-integer constant in " + clause);
+  }
+
+  private static SelectPlan.SortKey sortKey(final int position, final Evaluable key, final boolean descending,
+      final Boolean nullsFirst) {
+    Comparison.refuseJsonOrder(key.type());
+    if (!Comparison.isComparable(key.type()))
+      throw new PostgreSQLFeatureNotSupportedException("ORDER BY a value of type " + key.type().displayName() + " is not supported");
+    return new SelectPlan.SortKey(position, Comparison.ordering(key.type(), descending, nullsFirst));
+  }
+
+  /**
+   * The positions of the keys of {@code DISTINCT ON}, and the sort that puts the rows of one value of them together
+   * ({@code transformDistinctOnClause} of PostgreSQL): {@code ORDER BY} starts with keys of {@code DISTINCT ON}, in any order,
+   * and the keys that it lacks are added to the sort, ascending, which they can be only when it has no other key before.
+   *
+   * @throws PostgreSQLReferenceException with SQLSTATE {@code 42P10} when {@code ORDER BY} does not start so
+   */
+  private static int[] distinctOnKeys(final List<Expression> keys, final List<String> names, final KeyTargets targets,
+      final List<SelectPlan.SortKey> sortKeys) {
+    final Set<Integer> wanted = new LinkedHashSet<>();
+    for (final Expression expression : keys) {
+      int position = outputIndex(expression, names, "DISTINCT ON");
+      if (position < 0) {
+        refuseConstantKey(expression, "DISTINCT ON");
+        position = targets.add(expression, true);
+      }
+      wanted.add(position);
+    }
+
+    boolean otherKeys = false;
+    final Set<Integer> sorted = new HashSet<>();
+    for (final SelectPlan.SortKey key : sortKeys) {
+      // a value that is sorted by already decides nothing more, so PostgreSQL drops a repeated key
+      if (!sorted.add(key.position()))
+        continue;
+      if (!wanted.contains(key.position()))
+        otherKeys = true;
+      else if (otherKeys)
+        throw distinctOnOrder();
+    }
+    for (final int position : wanted)
+      if (!sorted.contains(position)) {
+        if (otherKeys)
+          throw distinctOnOrder();
+        final Evaluable key = targets.value(position);
+        Comparison.requireEquality(key.type());
+        sortKeys.add(sortKey(position, key, false, null));
+      }
+    return wanted.stream().mapToInt(Integer::intValue).toArray();
+  }
+
+  private static PostgreSQLReferenceException distinctOnOrder() {
+    return PostgreSQLReferenceException.invalidReference("SELECT DISTINCT ON expressions must match initial ORDER BY expressions");
   }
 
   /** Whether an expression of this planner's query can read a column of a query around it. */
@@ -631,6 +719,7 @@ public class SelectPlanner {
       expressions.add(select.having());
     for (final SortItem item : select.orderBy())
       expressions.add(item.expression());
+    expressions.addAll(select.distinctOn());
     for (final Expression expression : expressions)
       if (aggregateOfTheOuterQuery(expression, outer))
         throw new PostgreSQLFeatureNotSupportedException(
@@ -715,8 +804,8 @@ public class SelectPlanner {
         return correlated;
     }
     final Statement asked = query instanceof SelectStatement select && select.limit() == null && select.offset() == null
-        ? new SelectStatement(select.position(), select.distinct(), existsItems(select, outer), select.from(), select.where(),
-        select.groupBy(), select.having(), select.orderBy(),
+        ? new SelectStatement(select.position(), select.distinct(), select.distinctOn(), existsItems(select, outer), select.from(),
+        select.where(), select.groupBy(), select.having(), select.orderBy(),
         new Expression.IntegerLiteral(select.position(), java.math.BigInteger.ONE), null)
         : query;
     if (query instanceof SelectStatement select && readsInFrom(select.from())) {
@@ -746,7 +835,8 @@ public class SelectPlanner {
    * table of the subquery hides a column of that name. Not for a grouping or {@code DISTINCT} query, where the name can matter.
    */
   private static List<SelectItem> existsItems(final SelectStatement select, final ExpressionCompiler outer) {
-    if (select.distinct() || !select.groupBy().isEmpty() || select.having() != null || hasAggregate(select))
+    if (select.distinct() || !select.distinctOn().isEmpty() || !select.groupBy().isEmpty() || select.having() != null
+        || hasAggregate(select))
       return select.items();
     final List<SelectItem> items = new ArrayList<>(select.items().size());
     for (final SelectItem item : select.items())
@@ -804,6 +894,8 @@ public class SelectPlanner {
 
     if (!select.groupBy().isEmpty() || select.having() != null || select.limit() != null || select.offset() != null)
       throw new PostgreSQLFeatureNotSupportedException("A correlated EXISTS with GROUP BY, HAVING, LIMIT or OFFSET is not supported");
+    if (!select.distinctOn().isEmpty())
+      throw new PostgreSQLFeatureNotSupportedException("A correlated EXISTS with DISTINCT ON is not supported");
     for (final SelectItem item : select.items())
       if (item instanceof SelectItem.Projection projection && ExpressionCompiler.containsAggregate(projection.expression()))
         throw new PostgreSQLFeatureNotSupportedException("A correlated EXISTS with an aggregate is not supported");
@@ -828,8 +920,8 @@ public class SelectPlanner {
     Expression rest = null;
     for (final Expression term : local)
       rest = rest == null ? term : new Expression.BinaryOp(select.position(), Expression.BinaryOperator.AND, rest, term);
-    final QueryPlan plan = planQuery(new SelectStatement(select.position(), false, items, select.from(), rest, List.of(), null,
-        List.of(), null, null), false);
+    final QueryPlan plan = planQuery(new SelectStatement(select.position(), false, List.of(), items, select.from(), rest, List.of(),
+        null, List.of(), null, null), false);
     final MaterializedSource.Materialization kept = new MaterializedSource.Materialization(plan, joinMemoryCap, "an EXISTS subquery");
 
     final int count = outerKeys.size();
@@ -1178,7 +1270,7 @@ public class SelectPlanner {
 
     final List<SelectPlan.SortKey> sortKeys = new ArrayList<>();
     for (final SortItem item : set.orderBy()) {
-      final int position = outputIndex(item.expression(), names);
+      final int position = outputIndex(item.expression(), names, "ORDER BY");
       if (position < 0) {
         if (item.expression() instanceof Expression.ColumnRef reference)
           throw PostgreSQLReferenceException.undefinedColumn(reference.column().value(),
@@ -1208,7 +1300,8 @@ public class SelectPlanner {
    */
   private static VectorDistance nearestNeighbourKey(final SelectStatement select, final boolean grouping,
       final List<SelectPlan.SortKey> sortKeys, final List<Evaluable> outputs, final List<Evaluable> extras) {
-    if (sortKeys.size() != 1 || select.orderBy().size() != 1 || grouping || select.distinct())
+    // DISTINCT ON drops rows before the LIMIT, so the nearest k rows are not the answer
+    if (sortKeys.size() != 1 || select.orderBy().size() != 1 || grouping || select.distinct() || !select.distinctOn().isEmpty())
       return null;
     final SortItem item = select.orderBy().get(0);
     if (item.direction() == SortItem.Direction.DESC || item.nulls() == SortItem.Nulls.FIRST)
@@ -1283,7 +1376,7 @@ public class SelectPlanner {
     for (final SortItem item : select.orderBy())
       if (ExpressionCompiler.containsAggregate(item.expression()))
         return true;
-    return false;
+    return select.distinctOn().stream().anyMatch(ExpressionCompiler::containsAggregate);
   }
 
   /** The {@code GROUP BY} expressions, a position standing for the select list item it names. */
@@ -1639,12 +1732,12 @@ public class SelectPlanner {
 
   // ---- ORDER BY, LIMIT and names ----
 
-  /** The output column an {@code ORDER BY} item names by position or by output name, {@code -1} for neither. */
-  private static int outputIndex(final Expression expression, final List<String> names) {
+  /** The output column a key of {@code clause} names by position or by output name, {@code -1} for neither. */
+  private static int outputIndex(final Expression expression, final List<String> names, final String clause) {
     if (expression instanceof Expression.IntegerLiteral position) {
       final int index = position.value().bitLength() > 31 ? 0 : position.value().intValue();
       if (index < 1 || index > names.size())
-        throw PostgreSQLReferenceException.invalidReference("ORDER BY position " + position.value() + " is not in select list");
+        throw PostgreSQLReferenceException.invalidReference(clause + " position " + position.value() + " is not in select list");
       return index - 1;
     }
     if (expression instanceof Expression.ColumnRef reference && reference.qualifier().isEmpty()) {

@@ -86,8 +86,8 @@ final class ColumnNames {
     for (final Expression group : select.groupBy())
       if (!expression(group, names))
         return false;
-    return expression(select.where(), names) && expression(select.having(), names) && sorts(select.orderBy(), names)
-        && expression(select.limit(), names) && expression(select.offset(), names);
+    return all(select.distinctOn(), names) && expression(select.where(), names) && expression(select.having(), names)
+        && sorts(select.orderBy(), names) && expression(select.limit(), names) && expression(select.offset(), names);
   }
 
   private static boolean reference(final TableReference reference, final Set<String> names) {
