@@ -234,6 +234,67 @@ class LinkKeyRaceTest extends TestHelper {
     assertThat(links("knows")).containsExactly("1>2");
   }
 
+  /**
+   * Runs in one transaction a write to {@code note}, the statements of {@code before}, and {@code failing}, which a foreign key
+   * refuses; commits {@code concurrent} in another thread; and commits the first transaction.
+   *
+   * @return what that commit threw, or {@code null}
+   */
+  private Throwable commitAfterAFailure(final int note, final List<String> before, final String failing, final String concurrent)
+      throws Exception {
+    final ExecutorService other = Executors.newSingleThreadExecutor();
+    try {
+      database.begin();
+      // a commit with nothing to write runs no check
+      run("INSERT INTO note VALUES (" + note + ")");
+      for (final String statement : before)
+        run(statement);
+      assertThat(catchThrowable(() -> run(failing))).as(failing).hasStackTraceContaining("foreign key constraint");
+      other.submit(() -> write(concurrent)).get(60, TimeUnit.SECONDS);
+      return catchThrowable(() -> database.commit());
+    } finally {
+      if (database.isTransactionActive())
+        database.rollback();
+      other.shutdownNow();
+    }
+  }
+
+  @Test
+  void aStatementThatFailedLeavesTheCommitNothingToCheck() throws Exception {
+    run("CREATE TABLE note (id bigint PRIMARY KEY)");
+    people(1, 2, 3, 4, 5);
+    write("INSERT INTO knows VALUES (2, 3)");
+
+    // a new link that names a row, and then a row that is not there: the first row can still change its key
+    assertThat(commitAfterAFailure(1, List.of(), "INSERT INTO knows VALUES (1, 999)",
+        "UPDATE person SET id = 10 WHERE id = 1")).as("the new link").isNull();
+    // a key change that a link refuses at the second end: the other row can still be linked
+    assertThat(commitAfterAFailure(2, List.of(), "UPDATE person SET id = id + 100 WHERE id IN (3, 4)",
+        "INSERT INTO knows VALUES (4, 5)")).as("the refused key change").isNull();
+    assertThat(links("knows")).containsExactly("2>3", "4>5");
+  }
+
+  @Test
+  void aStatementThatFailedKeepsWhatTheStatementsBeforeItLeftToCheck() throws Exception {
+    run("CREATE TABLE note (id bigint PRIMARY KEY)");
+    people(1, 2, 3, 4, 5, 6, 7);
+    write("INSERT INTO knows VALUES (2, 3)");
+
+    // the link of the statement before still stops a change of its key
+    assertThat(commitAfterAFailure(1, List.of("INSERT INTO knows VALUES (1, 2)"), "INSERT INTO knows VALUES (4, 999)",
+        "UPDATE person SET id = 10 WHERE id = 1")).as("the link before").isInstanceOf(ConcurrentModificationException.class);
+    // the key change of the statement before still stops a link by the old key
+    assertThat(commitAfterAFailure(2, List.of("UPDATE person SET id = 50 WHERE id = 5"),
+        "UPDATE person SET id = id + 100 WHERE id IN (3, 4)", "INSERT INTO knows VALUES (5, 6)")).as("the key change before")
+        .isInstanceOf(ConcurrentModificationException.class);
+    // what the failed key change read about its own rows is gone: a link of one of them is not refused for it
+    final Throwable lost = commitAfterAFailure(3, List.of("UPDATE person SET id = 70 WHERE id = 7"),
+        "UPDATE person SET id = id + 100 WHERE id IN (3, 4)", "INSERT INTO knows VALUES (4, 6)");
+    if (lost != null)
+      // the two transactions may write one page of rows, which is a conflict of the engine and not of this check
+      assertThat(lost).hasMessageNotContaining("whose key changes");
+  }
+
   @Test
   void twoNewLinksOfOneRowBothCommit() throws Exception {
     people(1, 2, 3, 4);

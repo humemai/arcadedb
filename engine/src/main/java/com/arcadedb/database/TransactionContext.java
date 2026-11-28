@@ -1784,14 +1784,54 @@ public class TransactionContext implements Transaction {
   /**
    * The check of this transaction registered under {@code key}, made by {@code create} the first time it is asked for (fork issue
    * #292). The commit of the transaction locks the files it names and runs it under those locks, see {@link CommitCheck}. It is
-   * dropped with the transaction. A statement that is taken back does not take back what it added to a check, so a check has to
-   * find nothing to refuse for it, or refuse with a conflict that a retry resolves.
+   * dropped with the transaction. A statement that is taken back takes with it the checks it registered and what it added to
+   * the others, see {@link CommitCheck#mark}.
    */
   @SuppressWarnings("unchecked")
   public <T extends CommitCheck> T commitCheck(final String key, final Supplier<T> create) {
     if (commitChecks == null)
       commitChecks = new LinkedHashMap<>(2);
     return (T) commitChecks.computeIfAbsent(key, k -> create.get());
+  }
+
+  /** The mark of each registered check, in the order of their registration, or null when none is registered. */
+  CommitCheck.Mark[] markCommitChecks() {
+    if (commitChecks == null)
+      return null;
+    final CommitCheck.Mark[] marks = new CommitCheck.Mark[commitChecks.size()];
+    int next = 0;
+    for (final CommitCheck check : commitChecks.values())
+      marks[next++] = check.mark();
+    return marks;
+  }
+
+  /** Whether a check was registered, or one took something in, since {@link #markCommitChecks} answered {@code marks}. */
+  boolean haveCommitChecksGrown(final CommitCheck.Mark[] marks) {
+    if (commitChecks == null)
+      return false;
+    if (marks == null || commitChecks.size() > marks.length)
+      return true;
+    for (final CommitCheck.Mark mark : marks)
+      if (mark.hasGrown())
+        return true;
+    return false;
+  }
+
+  /** A failed statement takes back the checks it registered, and what it added to those registered before it. */
+  void restoreCommitChecks(final CommitCheck.Mark[] marks) {
+    if (marks == null) {
+      commitChecks = null;
+      return;
+    }
+    // registration order: the checks the statement registered come after the marked ones
+    int index = 0;
+    for (final Iterator<CommitCheck> checks = commitChecks.values().iterator(); checks.hasNext(); ++index) {
+      checks.next();
+      if (index >= marks.length)
+        checks.remove();
+    }
+    for (final CommitCheck.Mark mark : marks)
+      mark.restore();
   }
 
   /** Runs the registered checks in a transaction of their own, which reads the pages as they are committed. */

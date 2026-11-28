@@ -103,6 +103,8 @@ public final class StatementSavepoint implements PageUndoLog.GrainBudget {
   private long    mergedEdgeMark;
   private int     indexJournalMark;
   private long    unidirectionalSequence;
+  // The checks of the commit a query language registered (fork issue #292), or null when it had registered none
+  private CommitCheck.Mark[] commitCheckMarks;
   // The scan for incoming unidirectional edges the deletes of the transaction made before the statement, to put back (copied only when
   // a delete did scan)
   private long       scanEpoch;
@@ -162,6 +164,7 @@ public final class StatementSavepoint implements PageUndoLog.GrainBudget {
     scanEpoch = tx.getUnidirectionalScanEpoch();
     scannedBucketsCount = tx.getScannedBucketsCount();
     scannedBuckets = tx.copyOfScannedBuckets();
+    commitCheckMarks = tx.markCommitChecks();
     indexJournalMark = tx.getIndexChanges().beginStatementJournal(limit);
   }
 
@@ -181,7 +184,7 @@ public final class StatementSavepoint implements PageUndoLog.GrainBudget {
     return size > 0 || logCount > 0 || !pendingRecords.isEmpty() || !obtained.isEmpty()
         || tx.getIndexChanges().getStatementJournalSize(indexJournalMark) > 0 || tx.getUnidirectionalScanEpoch() != scanEpoch
         || tx.getScannedBucketsCount() != scannedBucketsCount || tx.getAfterCommitCallbackCount() != callbackMark
-        || tx.getMergedEdgeMark() != mergedEdgeMark
+        || tx.getMergedEdgeMark() != mergedEdgeMark || tx.haveCommitChecksGrown(commitCheckMarks)
         || isQueuedRecordNotKept();
   }
 
@@ -541,6 +544,7 @@ public final class StatementSavepoint implements PageUndoLog.GrainBudget {
 
     tx.restoreAppendOnlyState(newRecordsMark, reservationMark, callbackMark, completedRecordWrites, unidirectionalSequence);
     tx.restoreMergedEdges(mergedEdgeMark);
+    tx.restoreCommitChecks(commitCheckMarks);
     tx.restoreUnidirectionalScan(scanEpoch, scannedBuckets);
     // handed to the transaction: the next statement takes its own copy
     scannedBuckets = null;
@@ -611,6 +615,7 @@ public final class StatementSavepoint implements PageUndoLog.GrainBudget {
     queuedInStatement = null;
     snapshotted = null;
     scannedBuckets = null;
+    commitCheckMarks = null;
     readQueuedRecord = false;
     obtained.clear();
     pendingRecords.clear();

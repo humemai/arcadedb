@@ -138,6 +138,73 @@ class StatementSavepointTest extends TestHelper {
     assertDatabaseIsConsistent();
   }
 
+  /** A check of the commit that only takes things in, as {@link CommitCheck#mark} asks. */
+  private static final class ListCheck implements CommitCheck {
+    private final List<String> taken = new ArrayList<>();
+
+    @Override
+    public void filesToLock(final IntHashSet files) {
+      // NOTHING TO LOCK
+    }
+
+    @Override
+    public void checkCommitted() {
+      // NOTHING TO CHECK
+    }
+
+    @Override
+    public String replicaRefusal() {
+      return "refused";
+    }
+
+    @Override
+    public Mark mark() {
+      final int size = taken.size();
+      return new Mark() {
+        @Override
+        public boolean hasGrown() {
+          return taken.size() > size;
+        }
+
+        @Override
+        public void restore() {
+          taken.subList(size, taken.size()).clear();
+        }
+      };
+    }
+  }
+
+  /** Fork issue #292: what a failed statement added to the checks of the commit goes with it, and so does a check it registered. */
+  @Test
+  void aFailedStatementTakesBackWhatItAddedToTheChecksOfTheCommit() {
+    database.begin();
+    final TransactionContext tx = ((DatabaseInternal) database).getTransaction();
+    final ListCheck earlier = tx.commitCheck("earlier", ListCheck::new);
+    earlier.taken.add("kept");
+
+    // the statement writes no record: what it added to the checks is all there is to take back
+    final StatementSavepoint savepoint = tx.beginStatement();
+    earlier.taken.add("gone");
+    final ListCheck later = tx.commitCheck("later", ListCheck::new);
+    later.taken.add("gone");
+    tx.statementFailed(savepoint, tx.getCompletedRecordWrites(), new IllegalStateException("the statement failed"));
+    tx.endStatement(savepoint);
+
+    assertThat(earlier.taken).containsExactly("kept");
+    final ListCheck earlierNow = tx.commitCheck("earlier", ListCheck::new);
+    assertThat(earlierNow).isSameAs(earlier);
+    final ListCheck laterNow = tx.commitCheck("later", ListCheck::new);
+    assertThat(laterNow).isNotSameAs(later);
+
+    // a statement that ends well keeps what it added
+    final StatementSavepoint next = tx.beginStatement();
+    earlier.taken.add("also kept");
+    tx.endStatement(next);
+
+    assertThat(earlier.taken).containsExactly("kept", "also kept");
+    database.rollback();
+  }
+
   @Test
   void theLimitOfTheJournalFallsBackToRefusingTheCommit() {
     database.getConfiguration().setValue(GlobalConfiguration.TX_STATEMENT_SAVEPOINT_MAX_ENTRIES, 4);
