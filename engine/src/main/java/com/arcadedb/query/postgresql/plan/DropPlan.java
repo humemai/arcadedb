@@ -66,7 +66,7 @@ import java.util.Set;
  * engine that serves another name, or the referring columns of a foreign key, stays; only the name goes.
  * <p>
  * The schema of the engine is not transactional and a rollback could not bring rows back, so the caller refuses both statements in
- * a transaction block.
+ * a transaction block, and a statement that would drop something while others follow it in a run (fork issue #335).
  */
 public final class DropPlan {
   /** One foreign key between columns that stands in the way of a drop: the type that declares it, and the key. */
@@ -80,11 +80,17 @@ public final class DropPlan {
   private final Database          database;
   private final RelationalCatalog catalog;
   private final DropStatement     statement;
+  private final boolean           followed;
 
-  public DropPlan(final Database database, final RelationalCatalog catalog, final DropStatement statement) {
+  /**
+   * @param followed whether more statements follow in a transaction that a server opened (fork issue #335): a statement that
+   *                 would drop something is then refused, after every check, and before anything changes
+   */
+  public DropPlan(final Database database, final RelationalCatalog catalog, final DropStatement statement, final boolean followed) {
     this.database = database;
     this.catalog = catalog;
     this.statement = statement;
+    this.followed = followed;
   }
 
   /** Drops what the statement names; the answer has no column and no row. */
@@ -120,6 +126,7 @@ public final class DropPlan {
       return answer("DROP TABLE: no such table, nothing to do");
 
     final List<Dependency> keys = dependencies(dropped);
+    requireNothingFollows();
 
     final Deque<Runnable> undo = new ArrayDeque<>();
     final List<String> counters = new ArrayList<>();
@@ -299,6 +306,7 @@ public final class DropPlan {
         }
       engine.add(index.getName());
     }
+    requireNothingFollows();
 
     final Deque<Runnable> undo = new ArrayDeque<>();
     boolean done = false;
@@ -368,6 +376,13 @@ public final class DropPlan {
   }
 
   // ------------------------------------------------------------------------------------------------ the schema
+
+  /** What a statement dropped is gone at once, so none is dropped while a later statement can still fail the transaction. */
+  private void requireNothingFollows() {
+    if (followed)
+      throw refused("DROP " + statement.kind() + " followed by other statements of the same batch or pipeline",
+          "A failure of a later statement would not bring back what it drops: send the DROP on its own, in autocommit");
+  }
 
   private static List<ForeignKey> declaredKeys(final DocumentType type) {
     final Object value = type.getCustomValue(ForeignKey.CUSTOM_KEY);
