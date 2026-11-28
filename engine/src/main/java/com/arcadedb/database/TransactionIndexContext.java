@@ -945,11 +945,11 @@ public class TransactionIndexContext {
   }
 
   /**
-   * Whether what this transaction has queued gives {@code rid} the key {@code value} of {@code index}: then the record has the key
-   * by the change of this transaction, whatever is committed. Asked by a {@link CommitCheck}, before the index changes reach the
-   * pages (fork issue #292).
+   * Whether what this transaction has queued changes the key {@code value} of {@code index} for {@code rid}: it gives the record
+   * the key, or takes it away. Then what the record holds under that key is the work of this transaction, which writes the record,
+   * and not of another one. Asked by a {@link CommitCheck}, before the index changes reach the pages (fork issue #292).
    */
-  public boolean isKeyAdded(final TypeIndex index, final Object[] value, final RID rid) {
+  public boolean isKeyChanged(final TypeIndex index, final Object[] value, final RID rid) {
     for (final IndexInternal bucketIndex : index.getIndexesOnBuckets()) {
       final var keys = getIndexKeys(bucketIndex.getName());
       if (keys == null)
@@ -958,7 +958,7 @@ public class TransactionIndexContext {
       if (entries == null)
         continue;
       for (final IndexKey entry : entries.values())
-        if (entry.operation != IndexKey.IndexKeyOperation.REMOVE && rid.equals(entry.rid))
+        if (rid.equals(entry.rid) || rid.equals(entry.oldRid))
           return true;
     }
     return false;

@@ -301,7 +301,8 @@ final class LinkKeys {
    * page versions see neither side: a new link writes the lists of links, a change of a key writes the row. Both commits lock the
    * bucket file of the row, so they run one after the other, and the second one reads what the first one committed:
    * <ul>
-   * <li>a new link: the row still has the key that the link names, unless the transaction gave it that key itself;</li>
+   * <li>a new link: the row still has the key that the link names, unless the transaction changed that key of the row
+   * itself;</li>
    * <li>a changed key: the row has no committed link that it did not have when the statement ran. Those it had then are the ones
    * the transaction deleted before, since the statement found none in its own view.</li>
    * </ul>
@@ -351,7 +352,7 @@ final class LinkKeys {
     @Override
     public void checkCommitted() {
       for (final Found key : found.values()) {
-        if (changes.isKeyAdded(key.index(), new Object[] { key.key() }, key.row()))
+        if (changes.isKeyChanged(key.index(), new Object[] { key.key() }, key.row()))
           continue;
         final Vertex row = load(key.row());
         if (row == null || !same(key.column(), row.get(key.property()), key.key()))
