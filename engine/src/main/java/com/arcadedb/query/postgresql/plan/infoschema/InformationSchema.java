@@ -26,6 +26,7 @@ import com.arcadedb.query.postgresql.catalog.Column;
 import com.arcadedb.query.postgresql.catalog.ColumnType;
 import com.arcadedb.query.postgresql.catalog.RelationalCatalog;
 import com.arcadedb.query.postgresql.catalog.Table;
+import com.arcadedb.query.postgresql.plan.CheckClause;
 import com.arcadedb.query.postgresql.plan.RelationSource;
 
 import java.util.ArrayList;
@@ -43,9 +44,9 @@ import static com.arcadedb.query.postgresql.plan.infoschema.InfoType.YES_OR_NO;
  * those of PostgreSQL 18 (chapter 35 of the manual, checked against a real server by the answer corpus), their rows describe the
  * relational view and nothing else.
  *
- * <p>The seven views are {@code schemata}, {@code tables}, {@code columns}, {@code table_constraints}, {@code key_column_usage},
- * {@code referential_constraints} and {@code constraint_column_usage}. They are read-only relations and are themselves listed in
- * {@code tables} and {@code columns}, as views of the schema {@value #SCHEMA}.
+ * <p>The eight views are {@code schemata}, {@code tables}, {@code columns}, {@code table_constraints}, {@code key_column_usage},
+ * {@code referential_constraints}, {@code constraint_column_usage} and {@code check_constraints}. They are read-only relations and
+ * are themselves listed in {@code tables} and {@code columns}, as views of the schema {@value #SCHEMA}.
  *
  * <p><b>Resolution.</b> A relation written {@code information_schema.x} is resolved here, before the tables of the catalog, so
  * a type can never be reached under that qualifier: {@code information_schema.person} is {@code 42P01} even when a type
@@ -69,7 +70,8 @@ import static com.arcadedb.query.postgresql.plan.infoschema.InfoType.YES_OR_NO;
  * points at can be deleted.
  * Not-null columns are {@code is_nullable = 'NO'}; PostgreSQL also lists each of them as a {@code CHECK} constraint in
  * {@code table_constraints}, with a name made of object ids, and the engine does not. The check constraints that a table
- * declares are listed there and in {@code constraint_column_usage} (fork issue #227).
+ * declares are listed there and in {@code constraint_column_usage} (fork issue #227), and in {@code check_constraints} with its
+ * expression as {@link CheckClause} writes it (fork issue #297): a database with a check that it cannot write refuses that view.
  */
 public final class InformationSchema {
   /** The name of the schema. */
@@ -123,7 +125,9 @@ public final class InformationSchema {
           CHARACTER_DATA, "delete_rule", CHARACTER_DATA), InformationSchema::referentialConstraintsRows),
       new View("constraint_column_usage", cols("table_catalog", SQL_IDENTIFIER, "table_schema", SQL_IDENTIFIER, "table_name",
           SQL_IDENTIFIER, "column_name", SQL_IDENTIFIER, "constraint_catalog", SQL_IDENTIFIER, "constraint_schema",
-          SQL_IDENTIFIER, "constraint_name", SQL_IDENTIFIER), InformationSchema::constraintColumnUsageRows));
+          SQL_IDENTIFIER, "constraint_name", SQL_IDENTIFIER), InformationSchema::constraintColumnUsageRows),
+      new View("check_constraints", cols("constraint_catalog", SQL_IDENTIFIER, "constraint_schema", SQL_IDENTIFIER,
+          "constraint_name", SQL_IDENTIFIER, "check_clause", CHARACTER_DATA), InformationSchema::checkConstraintsRows));
 
   private InformationSchema() {
   }
@@ -280,6 +284,17 @@ public final class InformationSchema {
         rows.add(row(view, db, RelationalCatalog.SCHEMA, constraint.name(), constraint.referencedKey() == null ? null : db,
             constraint.referencedKey() == null ? null : RelationalCatalog.SCHEMA, constraint.referencedKey(), "NONE",
             constraint.updateRule(), constraint.deleteRule()));
+    return rows;
+  }
+
+  private static List<Object[]> checkConstraintsRows(final RelationalCatalog catalog) {
+    final View view = view("check_constraints");
+    final String db = catalog.databaseName();
+    final List<Object[]> rows = new ArrayList<>();
+    for (final Table table : catalog.tables())
+      for (final CheckClause.Declared check : CheckClause.declaredOn(table.documentType()))
+        rows.add(row(view, db, RelationalCatalog.SCHEMA, check.name(),
+            CheckClause.of(check, table.documentType(), false)));
     return rows;
   }
 

@@ -19,6 +19,7 @@
 package com.arcadedb.postgres;
 
 import org.junit.jupiter.api.Test;
+import org.testcontainers.Testcontainers;
 import org.testcontainers.containers.GenericContainer;
 
 import java.sql.Connection;
@@ -27,6 +28,7 @@ import java.sql.Statement;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -56,6 +58,96 @@ class PostgreSQLCheckConstraintTest extends PostgreSQLSideBySideTestBase {
       "CREATE TABLE g (a int CHECK (10 / a > 0))", "CREATE TABLE person (id bigint PRIMARY KEY)",
       "CREATE TABLE knows (source_id bigint NOT NULL REFERENCES person (id), target_id bigint NOT NULL"
           + " REFERENCES person (id), weight int CHECK (weight > 0))");
+
+  /** Every shape of an expression whose text is written back (fork issue #297), each under a name of its own. */
+  private static final List<String> SHAPES = List.of("s > 0 AND i > 0 AND b > 0", "s < i OR i < b",
+      "(i + 1) * 2 - b % 3 > -1", "i - (b - 1) < 100 AND (i - b) - 1 < 100", "n * 2 >= 1.50 AND i * 1.5 < n",
+      "r + 1 > 0.5 AND f > n", "r < f AND r <= 1.5 AND f / 2 > -1.5", "v = 'x' OR v <> t", "'a' <= t AND v >= w",
+      "v IN ('a', 'b''c')", "t NOT IN ('a', 'b')", "b IN (1, 2)", "s IN (1, 2)", "n NOT IN (1, 2.5, -3)",
+      "i IN (1, 2.5)", "i IN (7)", "NOT flag OR t IS NOT NULL", "NOT (i > 0 AND b > 0)",
+      "(i > 0 AND b > 0) AND (s > 0 OR flag)", "flag = true OR flag", "i NOT BETWEEN 1 AND 5",
+      "i BETWEEN 1 AND 5 AND b > 0", "v NOT LIKE 'a%' AND t ILIKE 'b%'",
+      "lower(v) = 'x' AND length(btrim(t, 'x')) > 0 AND abs(i) < 10", "upper(t) <> ltrim(v) AND char_length(w) < 9",
+      "coalesce(n, 0) > 0 AND greatest(b, 1) < 5 AND least(i, 2) > 0", "coalesce(w, 'x') = v", "t || v <> 'a' || t",
+      "- i < 0", "i + b > s AND i % s = 0", "d >= '2000-01-01' AND ts < '2100-01-01 00:00:00'", "\"Mixed Case\" > \"order\"",
+      "(i > 0) IS NOT NULL", "(i + b) IS NULL OR (i > 0 OR b > 0) AND s > 0", "jsonb_typeof(j) = 'object'",
+      "j -> 'a' IS NULL OR j ->> 0 <> 'x'", "(i > 0) = (b > 0)");
+
+  /** What SQLAlchemy reflects: the name and the text of each check. */
+  private static final String REFLECTION = """
+      import sys
+      import psycopg
+      from sqlalchemy import create_engine, inspect
+
+      engine = create_engine("postgresql+psycopg://", creator=lambda: psycopg.connect(sys.argv[1]))
+      inspector = inspect(engine)
+      for table in ("p13", "p14", "products", "facts", "c", "times", "g", "knows", "shapes"):
+          checks = inspector.get_check_constraints(table)
+          print(table, sorted((check["name"], check["sqltext"]) for check in checks))
+      """;
+
+  @Test
+  void checkConstraintsAreListedWithTheirExpressions() throws Exception {
+    // before the container starts, so that its psql reaches this server
+    Testcontainers.exposeHostPorts(getServerPostgresPort());
+    try (final GenericContainer<?> container = startPostgres()) {
+      try (final Connection postgres = postgres(container, ""); final Connection arcade = arcade("")) {
+        final StringBuilder shapes = new StringBuilder("CREATE TABLE shapes (id int PRIMARY KEY, s smallint, i int, b bigint,"
+            + " n numeric(10, 2), r real, f double precision, t text, v varchar(10), w varchar, flag boolean, d date,"
+            + " ts timestamp, j jsonb, \"Mixed Case\" int, \"order\" int");
+        for (int k = 0; k < SHAPES.size(); k++)
+          shapes.append(", CONSTRAINT k").append(100 + k).append(" CHECK (").append(SHAPES.get(k)).append(')');
+        for (final String table : TABLES)
+          both(postgres, arcade, table);
+        both(postgres, arcade, shapes.append(')').toString());
+        assertThat(failures).as(String.join("\n", failures)).isEmpty();
+
+        // the query of psql \d, the one without the pretty form, and conbin as pg_get_expr prints it
+        for (final String table : List.of("p13", "p14", "products", "facts", "c", "times", "g", "knows", "shapes")) {
+          sameValues(postgres, arcade, definitions(table));
+          compare("\\d " + table, checksOfPsql(container, true, table), checksOfPsql(container, false, table));
+        }
+        assertThat(checksOfPsql(container, false, "products")).contains("\"products_price_check\" CHECK (price >= 0::numeric)");
+        sameValues(postgres, arcade, "SELECT relname, relchecks FROM pg_catalog.pg_class WHERE relname IN " + CHECKED
+            + " ORDER BY 1");
+        sameValues(postgres, arcade, "SELECT constraint_name, check_clause FROM information_schema.check_constraints"
+            + " WHERE constraint_schema = 'public' AND constraint_name NOT LIKE '%not_null' ORDER BY 1");
+        sameValues(postgres, arcade, "SELECT check_clause FROM information_schema.check_constraints"
+            + " WHERE constraint_name = 'products_price_check'");
+        python(container, REFLECTION);
+
+        // a shape that is not written as PostgreSQL writes it is refused, and the check is still listed
+        run(arcade, "CREATE TABLE odd (a int, CONSTRAINT odd_case CHECK (CASE WHEN a > 0 THEN true ELSE false END))");
+        refused(arcade, definitions("odd"), "odd_case");
+        refused(arcade, "SELECT check_clause FROM information_schema.check_constraints", "odd_case");
+        compare("the names of the checks of odd", "    conname|\n    odd_case|\n", answer(arcade,
+            "SELECT conname FROM pg_catalog.pg_constraint WHERE conrelid = 'odd'::regclass AND contype = 'c'", false));
+
+        assertThat(failures).as(String.join("\n", failures)).isEmpty();
+      }
+    }
+  }
+
+  private static String definitions(final String table) {
+    return "SELECT r.conname, pg_catalog.pg_get_constraintdef(r.oid, true), pg_catalog.pg_get_constraintdef(r.oid),"
+        + " pg_catalog.pg_get_expr(r.conbin, r.conrelid) FROM pg_catalog.pg_constraint r WHERE r.conrelid = '" + table
+        + "'::regclass AND r.contype = 'c' ORDER BY 1";
+  }
+
+  /** The "Check constraints:" part of what psql prints for {@code \d table}, run in the container of PostgreSQL. */
+  private String checksOfPsql(final GenericContainer<?> container, final boolean real, final String table) throws Exception {
+    final String server = real ?
+        "PGPASSWORD=sidebyside psql -h localhost -p 5432 -U postgres -d sidebyside" :
+        "PGPASSWORD=" + DEFAULT_PASSWORD_FOR_TESTS + " PGOPTIONS='-c arcadedb.language=postgresql' psql -h"
+            + " host.testcontainers.internal -p " + getServerPostgresPort() + " -U root -d " + getDatabaseName();
+    final String printed = container.execInContainer("sh", "-c", "PGSSLMODE=disable " + server + " -X -q -c '\\d " + table
+        + "' 2>&1").getStdout();
+    final int start = printed.indexOf("Check constraints:\n");
+    if (start < 0)
+      return printed;
+    return printed.substring(start).lines().skip(1).takeWhile(line -> line.startsWith("    "))
+        .collect(Collectors.joining("\n", "Check constraints:\n", "\n"));
+  }
 
   private static final String CHECKED = "('p13', 'p14', 'products', 'facts', 'c', 'times', 'g', 'knows')";
 

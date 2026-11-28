@@ -1039,8 +1039,9 @@ public class PostgresCatalog {
       return answer;
     for (final Map<String, Object> row : answer.rows)
       for (final Map.Entry<String, Object> column : row.entrySet())
-        if (column.getValue() instanceof PostgresCatalogIndexes.Vector vector)
-          column.setValue(vector.toString());
+        if (column.getValue() instanceof PostgresCatalogIndexes.Vector
+            || column.getValue() instanceof PostgresCatalogIndexes.CheckBin)
+          column.setValue(column.getValue().toString());
     return answer;
   }
 
@@ -2092,6 +2093,7 @@ public class PostgresCatalog {
     /** The tables of the relational view by the name of their type, built at most once per statement, for a relational one only. */
     private Map<String, Table> tablesByName;
     private List<PostgresCatalogIndexes.Reference>                  references = List.of();
+    private List<PostgresCatalogIndexes.Check>                      checks     = List.of();
 
     /** The types the session's principal may read, in name order: every relation of this catalog is built off it, once per statement. */
     private List<DocumentType>        readableTypes;
@@ -2148,6 +2150,12 @@ public class PostgresCatalog {
       return references;
     }
 
+    /** The check constraints of the relational view (fork issue #297): none for a statement that is not relational. */
+    List<PostgresCatalogIndexes.Check> checks() {
+      indexes();
+      return checks;
+    }
+
     /** The run-time parameters of the connection that asked, which {@code pg_settings} lists (issue #10591). */
     PostgresSessionSettings settings() {
       return settings;
@@ -2175,6 +2183,7 @@ public class PostgresCatalog {
               type -> oidOf(type.getName()), typeOids, FIRST_USER_OID, OID_SPACE);
           indexes = keys.indexes();
           references = keys.references();
+          checks = keys.checks();
         } else
           indexes = PostgresCatalogIndexes.of(types, type -> oidOf(type.getName()), this::columnNames, typeOids, FIRST_USER_OID,
               OID_SPACE);
@@ -2662,7 +2671,9 @@ public class PostgresCatalog {
             "relhasindex", hasIndexes, "relhasrules", view != null,//
             "relhastriggers", Boolean.FALSE, "relhassubclass", !type.getSubTypes().isEmpty(),//
             "relispartition", Boolean.FALSE, "relisshared", Boolean.FALSE, "relispopulated", view == null || view.populated(),//
-            "relrowsecurity", Boolean.FALSE, "relforcerowsecurity", Boolean.FALSE, "relchecks", 0,//
+            "relrowsecurity", Boolean.FALSE, "relforcerowsecurity", Boolean.FALSE,//
+            // psql asks for the check constraints of a table only when this is not zero (fork issue #297)
+            "relchecks", (int) context.checks().stream().filter(check -> check.type().getName().equals(type.getName())).count(),//
             // -1 is PostgreSQL's own "never analysed, count unknown", which is honest here: counting the
             // records of every type to answer a table list would turn a metadata query into a full scan.
             // reltype names the relation's row type, which pg_type has (issue #10873): 0 is PostgreSQL's answer for an index alone
@@ -2949,6 +2960,8 @@ public class PostgresCatalog {
     // the foreign keys of the relational view have no index to be read from: a second source of constraints (fork issue #10)
     for (final PostgresCatalogIndexes.Reference key : context.references())
       rows.add(completeMap("pg_constraint", PostgresCatalogIndexes.referenceValues(key, SCHEMA_OID)));
+    for (final PostgresCatalogIndexes.Check check : context.checks())
+      rows.add(completeMap("pg_constraint", PostgresCatalogIndexes.checkValues(check, SCHEMA_OID)));
     return rows;
   }
 
@@ -4228,12 +4241,14 @@ public class PostgresCatalog {
         case "regclass" -> regClass(arguments, context, true);
         case "to_regclass" -> regClass(arguments, context, false);
         case "regtype", "to_regtype" -> regType(arguments, context);
-        // The one expression this catalog stores is a column default, whose text pg_attrdef.adbin holds
-        // (issue #10228). Anything else - a partition bound, a policy - has no ArcadeDB equivalent, and NULL is
-        // what PostgreSQL answers for an object that has none.
+        // The expressions this catalog stores are a column default, whose text pg_attrdef.adbin holds (issue #10228), and a
+        // check constraint of the postgresql language (pg_constraint.conbin, fork issue #297). Anything else - a partition
+        // bound, a policy - has no ArcadeDB equivalent, and NULL is what PostgreSQL answers for an object that has none.
         case "pg_get_expr" -> arguments.isEmpty() || arguments.get(0) == null
             || arguments.get(0) == PostgresCatalogExpression.UNKNOWN ? null :
-            PostgresCatalogExpression.asString(arguments.get(0));
+            arguments.get(0) instanceof PostgresCatalogIndexes.CheckBin bin ?
+                bin.check().written(arguments.size() == 3 && Boolean.TRUE.equals(arguments.get(2))) :
+                PostgresCatalogExpression.asString(arguments.get(0));
         case "array_to_string" -> arrayToString(arguments);
         // Comments, defaults and ACLs have no ArcadeDB equivalent, and NULL is what PostgreSQL answers for an
         // object that has none.
@@ -4343,6 +4358,9 @@ public class PostgresCatalog {
       for (final PostgresCatalogIndexes.Reference key : context.references())
         if (key.oid() == oid.intValue())
           return PostgresCatalogIndexes.referenceDefinition(key);
+      for (final PostgresCatalogIndexes.Check check : context.checks())
+        if (check.oid() == oid.intValue())
+          return "CHECK (" + check.written(arguments.size() == 2 && Boolean.TRUE.equals(arguments.get(1))) + ")";
       return null;
     }
 
