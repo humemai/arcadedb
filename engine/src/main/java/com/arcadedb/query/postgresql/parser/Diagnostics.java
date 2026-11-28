@@ -51,7 +51,7 @@ final class Diagnostics {
       Map.entry("unsupportedGroupingSet", "ROLLUP, CUBE, GROUPING SETS and the empty grouping set"),
       Map.entry("unsupportedSortUsing", "ORDER BY with USING"),
       Map.entry("unsupportedLimitComma", "LIMIT with two values"),
-      Map.entry("unsupportedFetchClause", "FETCH FIRST"),
+      Map.entry("unsupportedWithTies", "FETCH FIRST ... WITH TIES"),
       Map.entry("unsupportedJoinUsingAlias", "A join alias (USING ... AS name)"),
       Map.entry("unsupportedJoinAlias", "An alias on a parenthesised join"),
       Map.entry("unsupportedTablesample", "TABLESAMPLE"),
@@ -201,7 +201,7 @@ final class Diagnostics {
       case "unsupportedGroupByQuantifier" -> "List the columns after GROUP BY";
       case "unsupportedGroupingSet" -> "Write one SELECT for each grouping and put them together with UNION ALL";
       case "unsupportedSortUsing" -> "Write ASC or DESC";
-      case "unsupportedFetchClause" -> "Write LIMIT n, with OFFSET m to skip rows";
+      case "unsupportedWithTies" -> "Write ONLY, or keep the tied rows with rank() OVER (ORDER BY ...) in a WITH query";
       case "unsupportedJoinUsingAlias", "unsupportedJoinAlias" -> "Leave the alias out and name the columns by their tables";
       case "unsupportedColumnAliases", "unsupportedTableAlias" -> "Name a query in a WITH clause, with its columns named by AS";
       case "unsupportedTableRef" -> "Write a subquery, as in FROM (SELECT ...) AS s, or a function that returns rows, as in"

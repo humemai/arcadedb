@@ -26,11 +26,13 @@ import java.util.Objects;
  * its {@code sort_clause} and {@code select_limit}; a set operation is a {@link SetOperationStatement} and a query with common
  * table expressions a {@link WithStatement}. It holds the clauses in the order PostgreSQL evaluates their meaning:
  * {@code FROM}, {@code WHERE}, {@code GROUP BY}, {@code HAVING}, the select list, {@code DISTINCT}, {@code ORDER BY},
- * {@code OFFSET}, {@code LIMIT}. Not in the subset, and refused with SQLSTATE 0A000: {@code WITH RECURSIVE}, {@code VALUES}, {@code TABLE}, {@code SELECT INTO}, {@code DISTINCT ON}, {@code WINDOW},
- * {@code GROUPING SETS}, {@code ROLLUP} and {@code CUBE}, {@code FETCH FIRST}, and the locking clause ({@code FOR UPDATE}).
+ * {@code OFFSET}, {@code LIMIT}. {@code FETCH FIRST n ROWS ONLY} is the {@code LIMIT}. Not in the subset, and refused with
+ * SQLSTATE 0A000: {@code WITH RECURSIVE}, {@code TABLE}, {@code SELECT INTO}, {@code DISTINCT ON}, {@code WINDOW},
+ * {@code GROUPING SETS}, {@code ROLLUP} and {@code CUBE}, {@code FETCH FIRST ... WITH TIES}, and the locking clause
+ * ({@code FOR UPDATE}).
  *
  * @param distinct true for {@code SELECT DISTINCT}; {@code SELECT ALL} and nothing are false
- * @param items    the select list, at least one item
+ * @param items    the select list; empty only in the query of an {@code EXISTS}, where nobody reads a value
  * @param from     the {@code FROM} items separated by commas, empty when there is no {@code FROM} clause
  * @param where    the {@code WHERE} condition, or {@code null}
  * @param groupBy  the {@code GROUP BY} expressions, empty when there is no {@code GROUP BY} clause
@@ -48,7 +50,5 @@ public record SelectStatement(SourcePosition position, boolean distinct, List<Se
     from = List.copyOf(from);
     groupBy = List.copyOf(groupBy);
     orderBy = List.copyOf(orderBy);
-    if (items.isEmpty())
-      throw new IllegalArgumentException("A select list has at least one item");
   }
 }
