@@ -48,8 +48,8 @@ public final class PostgreSQLHints {
 
   static {
     // statements and clauses
-    rule("inside a transaction block", "Send ROLLBACK, then run it outside a transaction block, in autocommit: psycopg"
-        + " autocommit=True, SQLAlchemy isolation_level=\"AUTOCOMMIT\"");
+    rule("inside a transaction block", "Send ROLLBACK if a block is open, then send the statement on its own, in autocommit:"
+        + " psycopg autocommit=True, SQLAlchemy isolation_level=\"AUTOCOMMIT\"");
     rule("An empty statement", "Leave it out");
     rule("A ? parameter", "Write $1, $2 and so on");
     rule("A set operation or a WITH in the source", "Run the query first and insert its rows with INSERT ... VALUES");

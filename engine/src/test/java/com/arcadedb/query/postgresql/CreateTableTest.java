@@ -471,6 +471,39 @@ class CreateTableTest extends TestHelper {
   }
 
   @Test
+  void aRollbackOfAServerTransactionTakesBackTheIndexOfATableThatWasThere() {
+    run("CREATE TABLE old (a int, b text, e vector(3))");
+    run("CREATE INDEX old_b ON old (b)");
+
+    database.begin();
+    ((DatabaseInternal) database).getTransaction().setImplicit(true);
+    run("CREATE UNIQUE INDEX old_a ON old (a)");
+    run("CREATE INDEX old_e ON old USING hnsw (e vector_l2_ops)");
+    // a second name over columns that have an index: only the name is taken back
+    run("CREATE INDEX old_b2 ON old (b)");
+    database.rollback();
+    run("SELECT 1");
+
+    final DocumentType old = database.getSchema().getType("old");
+    assertThat(old.getPolymorphicIndexByProperties("a")).isNull();
+    assertThat(old.getPolymorphicIndexByProperties("e")).isNull();
+    assertThat(old.getPolymorphicIndexByProperties("b")).isNotNull();
+    run("INSERT INTO old (a) VALUES (1), (1)");
+    // the name that was there stays, and the others are free
+    assertState("CREATE INDEX old_b ON old (b)", "42P07");
+    run("CREATE INDEX old_b2 ON old (b)");
+
+    run("DELETE FROM old");
+    database.begin();
+    ((DatabaseInternal) database).getTransaction().setImplicit(true);
+    run("CREATE INDEX old_a ON old (a)");
+    database.commit();
+    run("SELECT 1");
+    assertThat(database.getSchema().getType("old").getPolymorphicIndexByProperties("a")).isNotNull();
+    assertState("CREATE INDEX old_a ON old (a)", "42P07");
+  }
+
+  @Test
   void itIsASchemaChangeThatAQueryRefuses() {
     final QueryEngine.AnalyzedQuery analyzed = ((DatabaseInternal) database).getQueryEngine("postgresql")
         .analyze("CREATE TABLE t (a int)");

@@ -144,6 +144,50 @@ class PostgreSQLCreateTableInBlockTest extends PostgreSQLSideBySideTestBase {
       print(sa.inspect(engine).has_table("left_open"))
       """;
 
+  /** {@code CREATE INDEX} on a table that was there, and a failing statement after it (fork issue #293). */
+  private static final String INDEX_SCRIPT = """
+      import sys
+      import psycopg
+
+      with psycopg.connect(sys.argv[1], autocommit=True) as conn:
+          conn.execute("CREATE TABLE sent (a int)")
+
+          def state(statement):
+              try:
+                  conn.execute(statement)
+                  return "00000"
+              except psycopg.Error as e:
+                  return e.sqlstate
+
+          # whether a unique index over a is there: a key that repeats, and the name
+          def index(key):
+              print(state(f"INSERT INTO sent VALUES ({key}), ({key})"), state("DROP INDEX sent_a"))
+              conn.execute("DELETE FROM sent")
+
+          # one simple query message: PostgreSQL takes the index back, and the language refuses it and says what to do
+          try:
+              conn.execute("CREATE UNIQUE INDEX sent_a ON sent (a); SELECT nope FROM sent")
+          except psycopg.Error as e:
+              if e.sqlstate == "0A000":
+                  told = f"{e} {e.diag.message_hint}"
+                  assert "send the statement on its own" in told, told
+              else:
+                  assert e.sqlstate == "42703", (e.sqlstate, str(e))
+              print("simple query failed")
+          index(1)
+          # a pipeline, as messages before one Sync: both take the index back
+          try:
+              with conn.pipeline():
+                  conn.execute("CREATE UNIQUE INDEX sent_a ON sent (a)")
+                  conn.execute("SELECT nope FROM sent")
+          except psycopg.Error as e:
+              print("pipeline failed", e.sqlstate)
+          index(2)
+          # on its own it runs, and stays
+          conn.execute("CREATE UNIQUE INDEX sent_a ON sent (a)")
+          index(3)
+      """;
+
   @Test
   void aTransactionBlockCreatesTablesAndARollbackTakesTheEmptyOnesBack() throws Exception {
     try (final GenericContainer<?> container = startPostgres()) {
@@ -240,9 +284,26 @@ class PostgreSQLCreateTableInBlockTest extends PostgreSQLSideBySideTestBase {
         arcade.setAutoCommit(false);
         refused(arcade, "CREATE INDEX ON t2 (v)", "CREATE INDEX inside a transaction block");
         arcade.rollback();
+
+        // statements that JDBC sends together, as messages before one Sync: the error takes the index of a table that was there
+        // before them back (fork issue #293)
+        for (final Connection connection : new Connection[] { postgres, arcade })
+          connection.setAutoCommit(true);
+        both(postgres, arcade, "CREATE TABLE t9 (a int, b int)");
+        both(postgres, arcade, "INSERT INTO t9 VALUES (1, 1)");
+        sameError(postgres, arcade, "CREATE INDEX t9_a ON t9 (a); CREATE UNIQUE INDEX t9_b ON t9 (b); SELECT nope FROM t9", "42703");
+        // the names are free, and the key of the unique index holds no more
+        sameError(postgres, arcade, "DROP INDEX t9_a", "42704");
+        sameError(postgres, arcade, "DROP INDEX t9_b", "42704");
+        both(postgres, arcade, "INSERT INTO t9 VALUES (2, 1)");
+        sameValues(postgres, arcade, "SELECT a, b FROM t9 ORDER BY a");
+        // and an index of statements that all succeed stays
+        both(postgres, arcade, "CREATE INDEX t9_a ON t9 (a); SELECT a FROM t9");
+        sameError(postgres, arcade, "CREATE INDEX t9_a ON t9 (a)", "42P07");
         assertThat(failures).as(String.join("\n", failures)).isEmpty();
       }
       python(container, SCRIPT);
+      python(container, INDEX_SCRIPT);
     }
   }
 }

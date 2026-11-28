@@ -344,8 +344,15 @@ public class PostgreSQLQueryEngine implements QueryEngine {
           dropIfRolledBack(plan.created());
         return made;
       }
-      if (statement instanceof CreateIndexStatement create)
-        return new CreateIndexPlan(database, catalog(), create).execute(table -> requireTableOfBlock(state, table, create));
+      if (statement instanceof CreateIndexStatement create) {
+        final CreateIndexPlan plan = new CreateIndexPlan(database, catalog(), create);
+        final PostgreSQLResultSet made = plan.execute(table -> requireTableOfBlock(state, table, create));
+        // a transaction that a server opened around the statement can still be ended by a later one of the same run (fork issue
+        // #293): the index of a table that was there before is taken back then, and that of a table it made goes with the table
+        if (plan.changed() != null && database.isTransactionActive() && !createdByTransaction(plan.changed()))
+          owed().back.add(plan::takeBack);
+        return made;
+      }
       if (statement instanceof AlterTableStatement alter) {
         final AlterTablePlan plan = new AlterTablePlan(database, catalog(), alter, parameters.at(TransactionClock.now(database)));
         final PostgreSQLResultSet changed = plan.execute();
@@ -496,20 +503,24 @@ public class PostgreSQLQueryEngine implements QueryEngine {
   }
 
   /**
-   * A rollback takes an index back only together with its table, which it drops when the block made it. So
-   * {@code CREATE INDEX} runs in a transaction block on a table that the same transaction made, and is refused with SQLSTATE
-   * {@code 0A000} on any other (fork issue #277). A block is a transaction that this language opened, or the caller: a
-   * transaction that a server opened around one request, as its auto-commit, is not one.
+   * A transaction block can stay open for long, and other sessions see an index as soon as it is made. So {@code CREATE INDEX}
+   * runs in a transaction block only on a table that the same transaction made, whose rollback drops the table with its indexes,
+   * and is refused with SQLSTATE {@code 0A000} on any other (fork issue #277). A block is a transaction that this language
+   * opened, or the caller: a transaction that a server opened around one request, as its auto-commit, is not one. There the
+   * statement runs, and a rollback takes the index back (fork issue #293).
    */
   private void requireTableOfBlock(final Block state, final DocumentType table, final CreateIndexStatement create) {
     if (!database.isTransactionActive())
       return;
-    final TransactionContext transaction = database.getTransaction();
-    if ((state.open || !transaction.isImplicit())
-        && !(transaction.getAttachment(OWED) instanceof Owed owed && owed.created.contains(table)))
+    if ((state.open || !database.getTransaction().isImplicit()) && !createdByTransaction(table))
       throw new PostgreSQLFeatureNotSupportedException("CREATE INDEX inside a transaction block is not supported by the"
           + " postgresql language on a table that the block did not create, because a rollback would not take the index back ("
           + create.position() + ")");
+  }
+
+  /** Whether {@code CREATE TABLE} made the table in the current transaction. */
+  private boolean createdByTransaction(final DocumentType table) {
+    return database.getTransaction().getAttachment(OWED) instanceof Owed owed && owed.created.contains(table);
   }
 
   /**
